@@ -840,6 +840,35 @@
 
             } catch (error) {
                 logBuffer.push(`Acquisition FAILED: ${error.message}`);
+                
+                // --- NEW DIAGNOSTIC CODE ---
+                if (error.message.includes('Dropdown listbox/menu container was not found')) {
+                    logBuffer.push('--- DIAGNOSTIC MODE ACTIVATED ---');
+                    logBuffer.push('Could not find the dropdown container. Dumping all direct children of <body> that are currently visible, as popovers often live here.');
+                    
+                    const candidates = document.querySelectorAll('body > div');
+                    let foundVisibleCandidates = 0;
+                    
+                    if (candidates.length > 0) {
+                        candidates.forEach((el, index) => {
+                             const style = window.getComputedStyle(el);
+                             if (style.display !== 'none' && style.visibility !== 'hidden' && style.position !== 'static') {
+                                 foundVisibleCandidates++;
+                                 const rect = el.getBoundingClientRect();
+                                 logBuffer.push(
+                                     `[Visible Candidate #${index}] Tag: ${el.tagName}, ID: ${el.id || 'N/A'}, Class: ${el.className || 'N/A'}, Role: ${el.getAttribute('role') || 'N/A'}, z-index: ${style.zIndex}, Position: ${style.position}, Size: ${Math.round(rect.width)}x${Math.round(rect.height)}, Content: "${el.textContent.substring(0, 100).replace(/\s+/g, ' ')}"`
+                                 );
+                             }
+                        });
+                    }
+                    
+                    if (foundVisibleCandidates === 0) {
+                         logBuffer.push('Diagnostic check found no visible, non-static <div> elements as direct children of <body>. The dropdown may be nested elsewhere or failed to trigger.');
+                    }
+                    logBuffer.push('--- END DIAGNOSTIC REPORT ---');
+                }
+                // --- END DIAGNOSTIC CODE ---
+
                 await TaskRunner.advanceDetailTask(taskPayload, false, logBuffer);
             }
         },
