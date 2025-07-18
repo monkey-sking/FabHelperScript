@@ -16,6 +16,7 @@
 // @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
 // @grant        GM_webRequest
+// @grant        GM_openInTab
 // @grant        unsafeWindow
 // @grant        window.close
 // @connect      api.fab.com
@@ -364,21 +365,33 @@
                 Utils.logger('info', 'Reconnaissance stopped by user.');
             }
         },
-        toggleExecution: () => {
-            State.isExecuting = !State.isExecuting;
-            UI.update();
+        // This is now the dedicated function for starting the execution loop.
+        // It ensures the main page never navigates away.
+        startExecution: () => {
             if (State.isExecuting) {
-                if (State.db.todo.length === 0) {
-                    alert(Utils.getText('log_exec_no_tasks'));
-                    State.isExecuting = false;
-                    UI.update();
-                    return;
-                }
-                TaskRunner.executeBatch();
-            } else {
-                // When stopping, we must clean up any active task to prevent "ghost" workers.
-                GM_deleteValue(Config.DB_KEYS.TASK);
+                Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
+                return;
             }
+            if (State.db.todo.length === 0) {
+                Utils.logger('info', '"待办"清单是空的，无需启动。');
+                return;
+            }
+            Utils.logger('info', '队列中有任务，即将开始执行...');
+            State.isExecuting = true;
+            UI.update();
+            TaskRunner.executeBatch();
+        },
+
+        // This function is for the main UI button to toggle start/stop.
+        toggleExecution: () => {
+            if (State.isExecuting) {
+                State.isExecuting = false;
+                GM_deleteValue(Config.DB_KEYS.TASK); // Stop all workers
+                Utils.logger('info', '执行已由用户手动停止。');
+            } else {
+                TaskRunner.startExecution();
+            }
+            UI.update();
         },
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
@@ -732,7 +745,8 @@
                     currentIndex: 0
                 };
                 await GM_setValue(Config.DB_KEYS.TASK, detailTaskPayload);
-                window.open(detailTaskPayload.batch[0].url, '_blank').focus();
+                // Use the correct API to open tabs in the background without navigating the main page.
+                GM_openInTab(detailTaskPayload.batch[0].url, { active: false });
             } else if (State.isExecuting) {
                 setTimeout(TaskRunner.executeBatch, 1000);
             }
@@ -997,10 +1011,15 @@
             const currentTask = taskPayload.batch[taskPayload.currentIndex];
 
             if (success) {
+                logBuffer.push(`SUCCESS: Item acquired.`);
                 await Database.markAsDone(currentTask);
             } else {
+                logBuffer.push(`FAILURE: Could not acquire item.`);
                 await Database.markAsFailed(currentTask);
             }
+
+            // After logging, add the progress message
+            TaskRunner.addProgressToLog(logBuffer, taskPayload, success ? '成功' : '失败');
 
             // BUG FIX: After processing the current item, we MUST re-check if the master task has been cancelled.
             // The main tab signals a stop by deleting the TASK key. If it's gone, we must abort.
@@ -1194,31 +1213,43 @@
                 const cards = document.querySelectorAll(Config.SELECTORS.card);
                 const newlyAddedList = [];
                 let alreadyInQueueCount = 0;
+                let ownedCount = 0;
 
                 cards.forEach(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href : '';
+                    const url = link ? link.href.split('?')[0] : null;
+                    if (!url) return;
 
-                    const isOwned = (link && Database.isDone(link.href)) ||
-                        card.textContent.includes('已保存在我的库中') ||
-                        card.textContent.includes('Saved in My Library');
+                    // **FINAL CORE FIX**: Dual-check for ownership, this prevents adding owned items to queue.
+                    const isOwned = Database.isDone(url) || 
+                                  card.textContent.includes('已保存在我的库中') || 
+                                  card.textContent.includes('Saved in My Library');
 
-                    const buttons = Array.from(card.querySelectorAll('button'));
-                    const hasActionableButton = buttons.some(btn => {
-                        const buttonAriaLabel = btn.getAttribute('aria-label') || '';
-                        const buttonText = btn.textContent;
-                        const claimKeywords = [
-                            '添加到我的库', 'Add to my library', '选择许可', 'Select License', '将商品添加至购物车', 'Add to cart'
-                        ];
-                        return claimKeywords.some(keyword => buttonAriaLabel.includes(keyword) || buttonText.includes(keyword));
-                    });
+                    if (isOwned) {
+                        ownedCount++;
+                        return;
+                    }
 
-                    if (!isOwned && hasActionableButton && url) {
-                        const task = { url, type: 'detail', uid: url.split('/').pop() };
-                        if (!State.db.todo.some(t => t.url === task.url)) {
-                            newlyAddedList.push(task);
-                        } else {
-                            alreadyInQueueCount++;
+                    // If not done, is it already in the queue?
+                    if (Database.isTodo(url) || State.db.failed.some(t => t.url.startsWith(url))) {
+                        alreadyInQueueCount++;
+                    } else {
+                        // Only add to queue if there's an actionable button.
+                        // This prevents adding items that are "free" but have no way to be claimed on the page or detail page.
+                        const buttons = Array.from(card.querySelectorAll('button'));
+                        const hasActionableButton = buttons.some(btn => {
+                            const buttonAriaLabel = btn.getAttribute('aria-label') || '';
+                            const buttonText = btn.textContent;
+                            const claimKeywords = [
+                                '添加到我的库', 'Add to my library',
+                                '选择许可', 'Select License',
+                                '将商品添加至购物车', 'Add to cart'
+                            ];
+                            return claimKeywords.some(keyword => buttonAriaLabel.includes(keyword) || buttonText.includes(keyword));
+                        });
+
+                        if (hasActionableButton) {
+                             newlyAddedList.push({ url, type: 'detail', uid: url.split('/').pop() });
                         }
                     }
                 });
@@ -1230,19 +1261,14 @@
                     Database.saveTodo();
                     Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
                 }
-
+                
                 if (actionableCount > 0) {
                     if (newlyAddedList.length === 0) {
                         Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
                     }
-                    if (!State.isExecuting) {
-                        Utils.logger('info', '队列中有任务，即将开始执行...');
-                        TaskRunner.toggleExecution();
-                    } else {
-                        Utils.logger('info', '执行器已在运行中，新发现的任务已加入队列等待处理。');
-                    }
+                    TaskRunner.startExecution();
                 } else {
-                    Utils.logger('info', '本页没有可领取的新商品。');
+                    Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
                 }
             };
             // 本页刷新状态
@@ -1362,12 +1388,37 @@
             State.ui.resetReconBtn.style.background = 'var(--gray)';
         },
 
-        applyOverlay: (card) => {
-            if (!card || card.querySelector('.fab-helper-overlay-v8')) return;
+        applyOverlay: (card, type = 'owned') => {
+            // Always remove existing overlay to reflect the latest state.
+            const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
+            if (existingOverlay) existingOverlay.remove();
+
+            // If the page natively shows it's owned, our job is done. Don't add any icon.
+            const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
+            if (isNativelyOwned) {
+                return;
+            }
+
             const overlay = document.createElement('div');
             overlay.className = 'fab-helper-overlay-v8';
-            Object.assign(overlay.style, { position: 'absolute', top: '0', left: '0', width: '100%', height: '100%', background: 'rgba(25, 25, 25, 0.6)', zIndex: '10', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#4caf50', fontSize: '24px', fontWeight: 'bold', backdropFilter: 'blur(2px)', borderRadius: 'inherit' });
-            overlay.innerHTML = '✅';
+            
+            const styles = {
+                position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
+                background: 'rgba(25, 25, 25, 0.6)', zIndex: '10', display: 'flex',
+                justifyContent: 'center', alignItems: 'center', fontSize: '24px',
+                fontWeight: 'bold', backdropFilter: 'blur(2px)', borderRadius: 'inherit'
+            };
+
+            if (type === 'owned') {
+                styles.color = '#4caf50'; // Green
+                overlay.innerHTML = '✅';
+            } else if (type === 'queued') {
+                styles.color = '#ff9800'; // Orange
+                overlay.innerHTML = '⏳';
+            }
+
+            Object.assign(overlay.style, styles);
+
             const thumbnail = card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
             if (thumbnail) {
                 if (getComputedStyle(thumbnail).position === 'static') {
@@ -1380,8 +1431,27 @@
         applyOverlaysToPage: () => {
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (link && Database.isDone(link.href)) {
-                    UI.applyOverlay(card);
+                if (link) {
+                    const url = link.href.split('?')[0];
+                    const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
+
+                    // If the page says it's owned, we trust it. Clean up any of our overlays.
+                    if (isNativelyOwned) {
+                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
+                        if (existingOverlay) existingOverlay.remove();
+                        return;
+                    }
+
+                    // If the page does NOT say it's owned, then we apply our own state icons.
+                    if (Database.isDone(url)) {
+                        UI.applyOverlay(card, 'owned');
+                    } else if (Database.isTodo(url)) {
+                        UI.applyOverlay(card, 'queued');
+                    } else {
+                        // If it's not in any of our lists, ensure no overlay is present.
+                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
+                        if (existingOverlay) existingOverlay.remove();
+                    }
                 }
             });
         }
@@ -1438,7 +1508,9 @@
                             if (node.matches(Config.SELECTORS.card)) {
                                 const link = node.querySelector(Config.SELECTORS.cardLink);
                                 if (link && Database.isDone(link.href)) {
-                                    UI.applyOverlay(node);
+                                    UI.applyOverlay(node, 'owned');
+                                } else if (link && Database.isTodo(link.href)) {
+                                    UI.applyOverlay(node, 'queued');
                                 }
                                 TaskRunner.runHideOrShow(); // Run hide/show logic which is relatively fast
                             }
@@ -1465,6 +1537,7 @@
         }));
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TODO, (name, old_value, new_value) => {
             State.db.todo = new_value;
+            UI.applyOverlaysToPage();
             UI.update();
         }));
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.FAILED, (name, old_value, new_value) => {
