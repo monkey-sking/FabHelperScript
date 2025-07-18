@@ -1,24 +1,27 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
+// @name:en      Fab API-Driven Helper
+// @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
 // @version      1.0.0
 // @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
-// @description:en [v8.1 Architectural Upgrade] Fully embraces server-side cursors, removing the page number concept to improve long-term recon stability.
-// @author        gpt-4 & user & Gemini
-// @match         https://www.fab.com/*
-// @grant         GM_setValue
-// @grant         GM_getValue
-// @grant         GM_deleteValue
-// @grant         GM_addValueChangeListener
-// @grant         GM_removeValueChangeListener
-// @grant         GM_xmlhttpRequest
-// @grant         GM_webRequest
-// @grant         unsafeWindow
-// @grant         window.close
-// @connect       api.fab.com
-// @connect       www.fab.com
-// @downloadURL   https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.user.js
-// @updateURL     https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.meta.js
+// @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
+// @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
+// @author       gpt-4 & user & Gemini
+// @match        https://www.fab.com/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_deleteValue
+// @grant        GM_addValueChangeListener
+// @grant        GM_removeValueChangeListener
+// @grant        GM_xmlhttpRequest
+// @grant        GM_webRequest
+// @grant        unsafeWindow
+// @grant        window.close
+// @connect      api.fab.com
+// @connect      www.fab.com
+// @downloadURL  https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.user.js
+// @updateURL    https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.meta.js
 // ==/UserScript==
 
 (function () {
