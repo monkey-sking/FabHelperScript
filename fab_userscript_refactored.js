@@ -1195,14 +1195,34 @@
                 cards.forEach(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     const url = link ? link.href : '';
-                    // 用数据库和UI双重判定是否已拥有
+
+                    // 1. 检查是否已拥有
                     const isOwned = (link && Database.isDone(link.href)) ||
                         card.textContent.includes('已保存在我的库中') ||
                         card.textContent.includes('Saved in My Library');
-                    if (!isOwned && url && !State.db.todo.some(task => task.url === url)) {
+
+                    // 2. 检查是否存在任何可操作的“领取”按钮 (核心 bug 修复)
+                    const buttons = Array.from(card.querySelectorAll('button'));
+                    const hasActionableButton = buttons.some(btn => {
+                        const buttonAriaLabel = btn.getAttribute('aria-label') || '';
+                        const buttonText = btn.textContent;
+                        
+                        // 扩展关键字，现在也识别“添加至购物车”
+                        const claimKeywords = [
+                            '添加到我的库', 'Add to my library',
+                            '选择许可', 'Select License',
+                            '将商品添加至购物车', 'Add to cart'
+                        ];
+
+                        return claimKeywords.some(keyword => buttonAriaLabel.includes(keyword) || buttonText.includes(keyword));
+                    });
+
+                    // 3. 最终决定：未拥有、有按钮、不在队列中
+                    if (!isOwned && hasActionableButton && url && !State.db.todo.some(task => task.url === url)) {
                         claimList.push({ url, type: 'detail', uid: url.split('/').pop() });
                     }
                 });
+
                 const total = claimList.length;
                 if (total === 0) {
                     Utils.logger('info', '本页没有可领取的新商品，或都已在待办队列。');
