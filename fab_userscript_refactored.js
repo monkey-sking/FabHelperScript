@@ -499,6 +499,9 @@
 
                 Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} card states.`);
 
+                // 刷新后自动执行隐藏/显示逻辑，保证 UI 实时同步
+                TaskRunner.runHideOrShow();
+
             } catch (e) {
                 Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
                 alert('API 刷新失败。请检查控制台中的错误信息，并确认您已登录。');
