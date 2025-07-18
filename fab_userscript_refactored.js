@@ -2,9 +2,9 @@
 // @name          Fab API驱动型全能助手 (v8.0.0 Refactored)
 // @name:en       Fab API-Driven Omnipotent Helper (v8.0.0 Refactored)
 // @namespace     https://fab.com/
-// @version       8.0.0
-// @description   【v8 重构版】通过模块化重构，提升代码稳定性、可读性和可维护性。保留全部核心功能，优化逻辑流程。
-// @description:en [v8 Refactored] Improved stability, readability, and maintainability through modular refactoring. All core features retained with an optimized logic flow.
+// @version       8.1.0
+// @description   【v8.1 架构升级】全面拥抱服务器端游标，移除页码概念，提升侦察任务的长期稳定性。
+// @description:en [v8.1 Architectural Upgrade] Fully embraces server-side cursors, removing the page number concept to improve long-term recon stability.
 // @author        gpt-4 & user & Gemini
 // @match         https://www.fab.com/*
 // @grant         GM_setValue
@@ -27,7 +27,7 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v8.0.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v8.1.0]',
         UI_CONTAINER_ID: 'fab-helper-container-v8',
         DB_KEYS: {
             TODO: 'fab_todoList_v8',
@@ -35,7 +35,7 @@
             FAILED: 'fab_failedList_v8', // For items that failed processing
             HIDE: 'fab_hideSaved_v8',
             TASK: 'fab_activeDetailTask_v8',
-            CURSOR: 'fab_reconCursor_v8',
+            NEXT_URL: 'fab_reconNextUrl_v8', // REPLACES CURSOR
             DETAIL_LOG: 'fab_detailLog_v8', // For worker tab remote logging
         },
         SELECTORS: {
@@ -46,8 +46,8 @@
             successBanner: 'div[class*="Toast-root"]'
         },
         TEXTS: {
-            en: { hide: '🙈 Hide', show: '👀 Show', recon: '🔍 Recon', reconning: 'Reconning...', execute: '🚀 Start Tasks', executing: 'Executing...', stopExecute: '🛑 Stop', seek: '🚀 Seek New', seeking: 'Seeking...', added: 'Added', failed: 'Failed', todo: 'To-Do', batchSize: 'Batch Size:', clearLog: 'Clear Log', copyLog: '📄 Copy Log', copied: 'Copied!', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_recon_start: 'Starting scan for new items...', log_recon_end: 'Scan complete!', log_task_added: 'Found new item:', log_api_request: 'Requesting page data (Page: %page%). Scanned: %scanned%, Owned: %owned%...', log_api_owned_check: 'Checking ownership for %count% items...', log_api_owned_done: 'Ownership check complete. Found %newCount% new items.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_seek_start: 'Seeking first new item...', log_seek_found: 'Found it! Stopping here.', log_seek_end: 'End of page reached.', log_429_error: 'Request limit hit! Taking a 15s break...', log_recon_error: 'An error occurred during recon cycle:', goto_page_label: 'Page:', goto_page_btn: 'Go', retry_failed: '🔁 Retry Failed' },
-            zh: { hide: '🙈 隐藏', show: '👀 显示', recon: '🔍 侦察', reconning: '侦察中...', execute: '🚀 启动任务', executing: '执行中...', stopExecute: '🛑 停止', seek: '🚀 寻新', seeking: '寻新中...', added: '已添加', failed: '失败', todo: '待办', batchSize: '本批数量:', clearLog: '清空日志', copyLog: '📄 复制日志', copied: '已复制!', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '“待办”清单是空的。', log_recon_start: '开始扫描新宝贝...', log_recon_end: '扫描完成！', log_task_added: '发现一个新宝贝:', log_api_request: '正在请求页面数据 (页码: %page%)。已扫描: %scanned%，已拥有: %owned%...', log_api_owned_check: '正在批量验证 %count% 个项目的所有权...', log_api_owned_done: '所有权验证完毕，发现 %newCount% 个全新项目！', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_seek_start: '好的，我来帮您找到第一个新宝贝...', log_seek_found: '找到了！就停在这里。', log_seek_end: '已经到页面底啦，没有发现新东西。', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', log_recon_error: '侦察周期中发生严重错误：', goto_page_label: '页码:', goto_page_btn: '跳转', retry_failed: '🔁 重试失败' }
+            en: { hide: '🙈 Hide', show: '👀 Show', recon: '🔍 Recon', reconning: 'Reconning...', execute: '🚀 Start Tasks', executing: 'Executing...', stopExecute: '🛑 Stop', seek: '🚀 Seek New', seeking: 'Seeking...', added: 'Added', failed: 'Failed', todo: 'To-Do', batchSize: 'Batch Size:', clearLog: 'Clear Log', copyLog: '📄 Copy Log', copied: 'Copied!', refresh: '🔄 Refresh State', resetRecon: '⏮️ Reset Recon', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_recon_start: 'Starting scan for new items...', log_recon_end: 'Scan complete!', log_task_added: 'Found new item:', log_api_request: 'Requesting page data (Page: %page%). Scanned: %scanned%, Owned: %owned%...', log_api_owned_check: 'Checking ownership for %count% items...', log_api_owned_done: 'Ownership check complete. Found %newCount% new items.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_seek_start: 'Seeking first new item...', log_seek_found: 'Found it! Stopping here.', log_seek_end: 'End of page reached.', log_429_error: 'Request limit hit! Taking a 15s break...', log_recon_error: 'An error occurred during recon cycle:', goto_page_label: 'Page:', goto_page_btn: 'Go', retry_failed: '🔁 Retry Failed' },
+            zh: { hide: '🙈 隐藏', show: '👀 显示', recon: '🔍 侦察', reconning: '侦察中...', execute: '🚀 启动任务', executing: '执行中...', stopExecute: '🛑 停止', seek: '🚀 寻新', seeking: '寻新中...', added: '已添加', failed: '失败', todo: '待办', batchSize: '本批数量:', clearLog: '清空日志', copyLog: '📄 复制日志', copied: '已复制!', refresh: '🔄 刷新状态', resetRecon: '⏮️ 重置进度', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '“待办”清单是空的。', log_recon_start: '开始扫描新宝贝...', log_recon_end: '扫描完成！', log_task_added: '发现一个新宝贝:', log_api_request: '正在请求页面数据 (页码: %page%)。已扫描: %scanned%，已拥有: %owned%...', log_api_owned_check: '正在批量验证 %count% 个项目的所有权...', log_api_owned_done: '所有权验证完毕，发现 %newCount% 个全新项目！', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_seek_start: '好的，我来帮您找到第一个新宝贝...', log_seek_found: '找到了！就停在这里。', log_seek_end: '已经到页面底啦，没有发现新东西。', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', log_recon_error: '侦察周期中发生严重错误：', goto_page_label: '页码:', goto_page_btn: '跳转', retry_failed: '🔁 重试失败' }
         },
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
         OWNED_SUCCESS_CRITERIA: {
@@ -89,9 +89,10 @@
             seekBtn: null,
             reconBtn: null,
             retryBtn: null, // For the new button
+            refreshBtn: null, // For the API refresh button
+            resetReconBtn: null, // New button
             batchInput: null,
-            pageInput: null,
-            jumpBtn: null,
+            reconProgressDisplay: null, // Replaces pageInput
         },
         valueChangeListeners: []
     };
@@ -152,32 +153,29 @@
                 }, timeout);
             });
         },
-        decodeCursorToPageNum: (cursor) => {
-            if (!cursor) return '1';
+        // This function is now for UI display purposes only.
+        getDisplayPageFromUrl: (url) => {
+            if (!url) return '1';
             try {
-                const decoded = atob(cursor); // e.g., "o=24"
-                const offsetMatch = decoded.match(/o=(\d+)/);
-                if (offsetMatch && offsetMatch[1]) {
-                    const offset = parseInt(offsetMatch[1], 10);
-                    const pageSize = 24; // Deduced from server behavior
-                    const pageNum = Math.round((offset / pageSize) + 1);
-                    return pageNum.toString();
+                const urlParams = new URLSearchParams(new URL(url).search);
+                const cursor = urlParams.get('cursor');
+                if (!cursor) return '1';
+                
+                // Try to decode offset-based cursors for a nice page number display.
+                if (cursor.startsWith('bz')) {
+                    const decoded = atob(cursor);
+                    const offsetMatch = decoded.match(/o=(\d+)/);
+                    if (offsetMatch && offsetMatch[1]) {
+                        const offset = parseInt(offsetMatch[1], 10);
+                        const pageSize = 24;
+                        const pageNum = Math.round((offset / pageSize) + 1);
+                        return pageNum.toString();
+                    }
                 }
-                return cursor.substring(0, 10) + '...';
+                // For timestamp-based cursors, we can't calculate a page number.
+                return 'Cursor Mode';
             } catch (e) {
-                return cursor.substring(0, 10) + '...';
-            }
-        },
-        encodePageNumToCursor: (pageNum) => {
-            if (!pageNum || pageNum <= 1) {
-                return ''; // Page 1 has no cursor
-            }
-            try {
-                const pageSize = 24;
-                const offset = (pageNum - 1) * pageSize;
-                return btoa(`o=${offset}`);
-            } catch (e) {
-                return ''; // Fallback
+                return '...';
             }
         },
         getCookie: (name) => {
@@ -193,20 +191,20 @@
             // A small delay to ensure the browser's event loop is clear and any framework
             // event listeners on the element have had a chance to attach.
             setTimeout(() => {
-                const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-                Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
+            Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
                 
                 // Add pointerdown for modern frameworks
                 const pointerDownEvent = new PointerEvent('pointerdown', { view: pageWindow, bubbles: true, cancelable: true });
-                const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
-                const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
+            const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
+            const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
                 
                 element.dispatchEvent(pointerDownEvent);
-                element.dispatchEvent(mouseDownEvent);
-                element.dispatchEvent(mouseUpEvent);
-                // Also trigger the standard click for maximum compatibility.
-                element.click();
+            element.dispatchEvent(mouseDownEvent);
+            element.dispatchEvent(mouseUpEvent);
+            // Also trigger the standard click for maximum compatibility.
+            element.click();
             }, 50); // 50ms delay
         }
     };
@@ -356,16 +354,13 @@
                 State.reconScannedCount = 0;
                 State.reconOwnedCount = 0;
                 Utils.logger('info', Utils.getText('log_recon_start'));
-                const savedCursor = await GM_getValue(Config.DB_KEYS.CURSOR, '');
-                if (savedCursor) {
-                    Utils.logger('info', `Resuming recon from cursor: ${savedCursor.substring(0, 10)}...`);
+                const nextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
+                if (nextUrl) {
+                    Utils.logger('info', `Resuming recon from saved URL.`);
                 }
-                TaskRunner.reconWithApi(savedCursor);
+                TaskRunner.reconWithApi(nextUrl);
             } else {
                 Utils.logger('info', 'Reconnaissance stopped by user.');
-                // BUG FIX: Do NOT delete the cursor on manual stop. The user expects to resume from here.
-                // The cursor should only be deleted when the recon process completes naturally (reaches the end).
-                // await GM_deleteValue(Config.DB_KEYS.CURSOR); 
             }
         },
         toggleExecution: () => {
@@ -400,6 +395,127 @@
             TaskRunner.runHideOrShow();
         },
 
+        resetReconProgress: async () => {
+            if (State.isReconning) {
+                Utils.logger('warn', 'Cannot reset progress while recon is active.');
+                return;
+            }
+            await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
+            if (State.ui.reconProgressDisplay) {
+                State.ui.reconProgressDisplay.textContent = 'Page: 1';
+            }
+            Utils.logger('info', 'Recon progress has been reset. Next scan will start from the beginning.');
+        },
+
+        refreshVisibleStates: async () => {
+            const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
+            const CARD_SELECTOR = 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root';
+            const LINK_SELECTOR = 'a[href*="/listings/"]';
+            const CSRF_COOKIE_NAME = 'fab_csrftoken';
+            
+            // Selectors for the part of the card that shows the price/owned status
+            const FREE_STATUS_SELECTOR = '.csZFzinF'; // The container for the "免费" text
+            const OWNED_STATUS_SELECTOR = '.cUUvxo_s'; // The container for the "已保存..." text
+
+            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
+
+            // --- DOM Creation Helpers ---
+            const createOwnedElement = () => {
+                const ownedDiv = document.createElement('div');
+                ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
+                
+                const icon = document.createElement('i');
+                icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
+                icon.setAttribute('aria-hidden', 'true');
+                
+                ownedDiv.appendChild(icon);
+                ownedDiv.append('已保存在我的库中');
+                return ownedDiv;
+            };
+
+            const createFreeElement = () => {
+                const freeContainer = document.createElement('div');
+                freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
+                const innerStack = document.createElement('div');
+                innerStack.className = 'fabkit-Stack-root fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 J9vFXlBh';
+                const freeText = document.createElement('div');
+                freeText.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-primary fabkit-Text--sm fabkit-Text--regular';
+                freeText.textContent = '免费';
+                innerStack.appendChild(freeText);
+                freeContainer.appendChild(innerStack);
+                return freeContainer;
+            };
+            
+            const isElementInViewport = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
+            };
+
+            // --- Main Logic ---
+            try {
+                const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
+                if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
+
+                const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport);
+                const uidToCardMap = new Map();
+                
+                visibleCards.forEach(card => {
+                    const link = card.querySelector(LINK_SELECTOR);
+                    if (link) {
+                        const match = link.href.match(/listings\/([a-f0-9-]+)/);
+                        if (match && match[1]) uidToCardMap.set(match[1], card);
+                    }
+                });
+
+                const uidsToQuery = [...uidToCardMap.keys()];
+                if (uidsToQuery.length === 0) {
+                    Utils.logger('info', '[Fab DOM Refresh] No visible items to check.');
+                    return;
+                }
+                Utils.logger('info', `[Fab DOM Refresh] Found ${uidsToQuery.length} visible items. Querying API...`);
+
+                const apiUrl = new URL(API_ENDPOINT);
+                uidsToQuery.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
+
+                // Use fetch directly as it's a simple GET request with standard headers.
+                const response = await fetch(apiUrl.href, {
+                    headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                });
+
+                if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
+                const data = await response.json();
+                
+                const ownedUids = new Set(data.filter(item => item.acquired).map(item => item.uid));
+                Utils.logger('info', `[Fab DOM Refresh] API reports ${ownedUids.size} owned items in this batch.`);
+
+                let updatedCount = 0;
+                uidToCardMap.forEach((card, uid) => {
+                    const isOwned = ownedUids.has(uid);
+                    
+                    if (isOwned) {
+                        const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
+                        if (freeElement) { // If it currently shows "Free", replace it.
+                            freeElement.replaceWith(createOwnedElement());
+                            updatedCount++;
+                        }
+                    } else { // Item is not owned
+                        const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
+                        if (ownedElement) { // If it currently shows "Owned", replace it.
+                            ownedElement.replaceWith(createFreeElement());
+                            updatedCount++;
+                        }
+                    }
+                });
+
+                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} card states.`);
+
+            } catch (e) {
+                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
+                alert('API 刷新失败。请检查控制台中的错误信息，并确认您已登录。');
+            }
+        },
+
         retryFailedTasks: async () => {
             if (State.db.failed.length === 0) {
                 Utils.logger('info', 'No failed tasks to retry.');
@@ -414,38 +530,14 @@
             UI.update(); // Force immediate UI update
         },
 
-        jumpToPageAndRecon: async () => {
-            const pageNum = parseInt(State.ui.pageInput.value, 10);
-            if (isNaN(pageNum) || pageNum < 1) {
-                Utils.logger('warn', 'Please enter a valid page number > 0.');
-                return;
-            }
-
-            if (State.isExecuting) {
-                 Utils.logger('warn', 'Cannot start recon while execution is in progress.');
-                 return;
-            }
-
-            // If recon is running, stop it first. The toggle will handle cleanup.
-            if (State.isReconning) {
-                await TaskRunner.toggleRecon();
-                await new Promise(r => setTimeout(r, 100)); // Brief pause to ensure state is updated.
-            }
-
-            const cursor = Utils.encodePageNumToCursor(pageNum);
-            await GM_setValue(Config.DB_KEYS.CURSOR, cursor);
-
-            Utils.logger('info', `Set start page to ${pageNum}. Starting recon.`);
-
-            // Now, start the recon.
-            await TaskRunner.toggleRecon();
-        },
-
         // --- Core Logic Functions ---
-        reconWithApi: async (cursor = '') => {
+        reconWithApi: async (url = null) => {
             if (!State.isReconning) return;
 
             let searchResponse = null;
+            
+            // If no URL is provided, start from the beginning.
+            const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=-relevance&page_size=24`;
 
             try {
                 const csrfToken = Utils.getCookie('fab_csrftoken');
@@ -467,17 +559,10 @@
                 };
 
                 // --- Step 1: Initial Scan ---
-                const searchUrl = new URL('https://www.fab.com/i/listings/search');
-                searchUrl.searchParams.set('page_size', '24');
-                searchUrl.searchParams.set('sort_by', '-relevance');
-                // We keep is_free=1 as a preliminary filter to reduce candidates
-                searchUrl.searchParams.set('is_free', '1');
-                if (cursor) { searchUrl.searchParams.set('cursor', cursor); }
-
-                const displayPage = Utils.decodeCursorToPageNum(cursor);
-                // UX Improvement: Update the page input to reflect the current recon page.
-                if (State.ui.pageInput) {
-                    State.ui.pageInput.value = displayPage;
+                const displayPage = Utils.getDisplayPageFromUrl(requestUrl);
+                // UX Improvement: Update the progress display.
+                if (State.ui.reconProgressDisplay) {
+                    State.ui.reconProgressDisplay.textContent = `Page: ${displayPage}`;
                 }
                 
                 Utils.logger('info', "Step 1: " + Utils.getText('log_api_request', {
@@ -485,16 +570,16 @@
                     scanned: State.reconScannedCount,
                     owned: State.reconOwnedCount
                 }));
-                searchResponse = await API.gmFetch({ method: 'GET', url: searchUrl.href, headers: apiHeaders });
+                searchResponse = await API.gmFetch({ method: 'GET', url: requestUrl, headers: apiHeaders });
 
-                if (searchResponse.finalUrl && new URL(searchResponse.finalUrl).pathname !== new URL(searchUrl.href).pathname) {
+                if (searchResponse.finalUrl && new URL(searchResponse.finalUrl).pathname !== new URL(requestUrl).pathname) {
                     Utils.logger('warn', `Request was redirected, which may indicate a login issue. Final URL: ${searchResponse.finalUrl}`);
                 }
                 
                 if (searchResponse.status === 429) {
                     Utils.logger('error', Utils.getText('log_429_error'));
                     await new Promise(r => setTimeout(r, 15000));
-                    TaskRunner.reconWithApi(cursor);
+                    TaskRunner.reconWithApi(requestUrl); // Retry with the same URL
                     return;
                 }
                 
@@ -504,7 +589,7 @@
 
                 if (!searchData.results || initialResultsCount === 0) {
                     State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.CURSOR);
+                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
                     Utils.logger('info', Utils.getText('log_recon_end'));
                     UI.update();
                     return;
@@ -534,22 +619,14 @@
 
                 if (candidates.length === 0) {
                     // No new candidates on this page, go to next page
-                    const nextCursor = searchData.cursors?.next;
-                    if (nextCursor && State.isReconning) {
-                        if (nextCursor === cursor) {
-                            Utils.logger('warn', "服务器返回了相同的游标，为防止无限循环，侦察任务已停止。");
-                            Utils.logger('warn', "Server returned the same cursor, halting recon to prevent an infinite loop.");
-                            State.isReconning = false;
-                            await GM_deleteValue(Config.DB_KEYS.CURSOR);
-                            UI.update();
-                            return;
-                        }
-                        await GM_setValue(Config.DB_KEYS.CURSOR, nextCursor);
+                    const nextUrl = searchData.next;
+                    if (nextUrl && State.isReconning) {
+                        await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
                         await new Promise(r => setTimeout(r, 300));
-                        TaskRunner.reconWithApi(nextCursor);
+                        TaskRunner.reconWithApi(nextUrl);
                     } else {
                          State.isReconning = false;
-                         await GM_deleteValue(Config.DB_KEYS.CURSOR);
+                         await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
                          Utils.logger('info', Utils.getText('log_recon_end'));
                     }
                     UI.update();
@@ -616,22 +693,14 @@
 
 
                 // --- Pagination ---
-                const nextCursor = searchData.cursors?.next;
-                if (nextCursor && State.isReconning) {
-                    if (nextCursor === cursor) {
-                        Utils.logger('warn', "服务器返回了相同的游标，为防止无限循环，侦察任务已停止。");
-                        Utils.logger('warn', "Server returned the same cursor, halting recon to prevent an infinite loop.");
-                        State.isReconning = false;
-                        await GM_deleteValue(Config.DB_KEYS.CURSOR);
-                        UI.update();
-                        return;
-                    }
-                    await GM_setValue(Config.DB_KEYS.CURSOR, nextCursor);
+                const nextUrl = searchData.next;
+                if (nextUrl && State.isReconning) {
+                    await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
                     await new Promise(r => setTimeout(r, 500)); // Rate limit
-                    TaskRunner.reconWithApi(nextCursor);
+                    TaskRunner.reconWithApi(nextUrl);
                 } else {
                     State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.CURSOR);
+                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
                     Utils.logger('info', Utils.getText('log_recon_end'));
                 }
 
@@ -778,9 +847,9 @@
                         const cleanupAndResolve = () => {
                             clearTimeout(retryTimeout);
                             clearTimeout(finalTimeout);
-                            observer.disconnect();
+                                        observer.disconnect();
                             logBuffer.push(`License option processed successfully.`);
-                            resolve();
+                                        resolve();
                         };
 
                         const cleanupAndReject = (message) => {
@@ -834,10 +903,10 @@
                             cleanupAndReject('Timeout (5s): The "免费" option did not appear in the DOM after multiple click attempts.');
                         }, 5000);
                     });
-
+                    
                     // Execute the new, combined function.
                     await findAndClickFreeLicenseOption();
-
+                    
                     // --- NEW VERIFICATION STEP ---
                     // After clicking the license, the page might already be in an "owned" state.
                     // We must check for this state before proceeding.
@@ -1064,12 +1133,17 @@
             State.ui.execBtn.onclick = TaskRunner.toggleExecution;
             State.ui.retryBtn = createButton('retryBtn', 'retry_failed');
             State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
+            State.ui.refreshBtn = createButton('refreshBtn', 'refresh');
+            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
             State.ui.hideBtn = createButton('hideBtn', 'hide');
             State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
             State.ui.seekBtn = createButton('seekBtn', 'seek');
             State.ui.seekBtn.onclick = TaskRunner.toggleSeek;
             State.ui.reconBtn = createButton('reconBtn', 'recon');
             State.ui.reconBtn.onclick = TaskRunner.toggleRecon;
+            State.ui.resetReconBtn = createButton('resetReconBtn', 'resetRecon');
+            State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
+
 
             // Batch Input
             const batchContainer = document.createElement('div');
@@ -1083,31 +1157,24 @@
             State.ui.batchInput.style.cssText = 'width: 60px; border: none; padding: 10px; border-radius: 0 8px 8px 0; text-align: center;';
             batchContainer.append(batchLabel, State.ui.batchInput);
             
-            // Page Jump Input
-            const jumpContainer = document.createElement('div');
-            jumpContainer.style.cssText = 'display: flex;';
-            const pageLabel = document.createElement('span');
-            pageLabel.textContent = Utils.getText('goto_page_label');
-            pageLabel.style.cssText = 'color: white; background: #555; padding: 10px; border-radius: 8px 0 0 8px; font-size: 12px; display: flex; align-items: center; flex-shrink: 0;';
-            State.ui.pageInput = document.createElement('input');
-            State.ui.pageInput.type = 'number';
-            State.ui.pageInput.placeholder = '1';
-            State.ui.pageInput.style.cssText = 'width: 100%; border: none; padding: 10px; text-align: center;';
-            State.ui.jumpBtn = createButton('jumpBtn', 'goto_page_btn');
-            State.ui.jumpBtn.style.borderRadius = '0 8px 8px 0';
-            State.ui.jumpBtn.style.flexShrink = '0';
-            State.ui.jumpBtn.onclick = TaskRunner.jumpToPageAndRecon;
-            jumpContainer.append(pageLabel, State.ui.pageInput, State.ui.jumpBtn);
+            // Recon Progress Display (Replaces Page Jump Input)
+            const reconProgressContainer = document.createElement('div');
+            reconProgressContainer.style.cssText = 'display: flex;';
+            State.ui.reconProgressDisplay = document.createElement('div');
+            State.ui.reconProgressDisplay.textContent = 'Page: 1';
+            State.ui.reconProgressDisplay.style.cssText = 'color: white; background: #555; padding: 10px; border-radius: 8px 0 0 8px; font-size: 12px; display: flex; align-items: center; flex-grow: 1; justify-content: center;';
+            State.ui.resetReconBtn.style.borderRadius = '0 8px 8px 0';
+            reconProgressContainer.append(State.ui.reconProgressDisplay, State.ui.resetReconBtn);
 
             // Append elements one by one to avoid layout conflicts
             container.append(State.ui.logPanel);
             container.append(statusRow);
             container.append(State.ui.execBtn);
-            container.append(State.ui.retryBtn);
+            container.append(uiRow([State.ui.retryBtn, State.ui.refreshBtn]));
             // Group the discovery buttons in a single row for a cleaner layout.
             container.append(uiRow([State.ui.hideBtn, State.ui.seekBtn, State.ui.reconBtn]));
             container.append(batchContainer);
-            container.append(jumpContainer);
+            container.append(reconProgressContainer);
             
             document.body.appendChild(container);
             
@@ -1130,6 +1197,16 @@
             State.ui.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
             State.ui.retryBtn.style.background = hasFailedTasks && !State.isExecuting ? '#ff9f0a' : '#555'; // Orange when active, gray otherwise
             State.ui.retryBtn.style.cursor = State.ui.retryBtn.disabled ? 'not-allowed' : 'pointer';
+
+            // New Refresh Button
+            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning || State.isSeeking;
+            State.ui.refreshBtn.style.background = State.ui.refreshBtn.disabled ? '#555' : '#1e90ff'; // Dodger Blue
+            State.ui.refreshBtn.style.cursor = State.ui.refreshBtn.disabled ? 'not-allowed' : 'pointer';
+
+            // New Reset Recon Button
+            State.ui.resetReconBtn.disabled = State.isExecuting || State.isReconning;
+            State.ui.resetReconBtn.style.background = State.ui.resetReconBtn.disabled ? '#555' : '#6c757d'; // Gray
+            State.ui.resetReconBtn.style.cursor = State.ui.resetReconBtn.disabled ? 'not-allowed' : 'pointer';
 
             // Style the buttons in the discovery row to have equal width.
             // Hide Button
@@ -1201,14 +1278,11 @@
         UI.create();
 
         // NEW: Immediately reflect saved recon progress in the UI on load.
-        const savedCursor = await GM_getValue(Config.DB_KEYS.CURSOR, '');
-        if (savedCursor && State.ui.pageInput) {
-            const pageNum = Utils.decodeCursorToPageNum(savedCursor);
-            if (!isNaN(parseInt(pageNum, 10))) { // Check if it's a valid number string.
-                State.ui.pageInput.value = pageNum;
-                Utils.logger('info', `发现已保存的侦察进度。准备从第 ${pageNum} 页恢复。`);
-                Utils.logger('info', `Found saved recon progress. Ready to resume from page ${pageNum}.`);
-            }
+        const savedNextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
+        if (savedNextUrl && State.ui.reconProgressDisplay) {
+            const displayPage = Utils.getDisplayPageFromUrl(savedNextUrl);
+            State.ui.reconProgressDisplay.textContent = `Page: ${displayPage}`;
+            Utils.logger('info', `Found saved recon progress. Ready to resume.`);
         }
 
         UI.applyOverlaysToPage();
