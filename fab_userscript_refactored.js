@@ -765,36 +765,36 @@
                         logBuffer.push('Performing deep click on "选择许可" to reveal options...');
                         Utils.deepClick(licenseButton); // Click to open the dropdown.
 
-                        // Now, wait directly for the listbox to appear.
-                        // I'm also broadening the selector to improve resilience against minor site changes.
-                        const listbox = await Utils.waitForElement('div[role="listbox"], div[role="menu"]', 10000); // 10s timeout
-                        if (!listbox) {
-                             throw new Error('Dropdown listbox/menu container was not found even after waiting 10s.');
-                        }
-                        logBuffer.push('Found license dropdown container.');
+                        // --- FINAL, MOST ROBUST STRATEGY ---
+                        // Instead of searching for a container, we will now directly search for the final "免费"
+                        // text node anywhere in the document. This is resilient to container changes.
+                        logBuffer.push('Searching for the "免费" license option directly...');
 
-                        // A small delay is still useful for the options *inside* the listbox to render.
-                        await new Promise(r => setTimeout(r, 300));
-                        
-                        let optionToClick = null;
-                        
-                        // Strategy: Find the element with the exact text "免费", then find its clickable parent.
-                        const freeTextElement = [...listbox.querySelectorAll('span, div')].find(el => {
-                            return el.textContent.trim() === '免费';
+                        await new Promise(r => setTimeout(r, 500)); // A brief delay for the dropdown to render.
+
+                        let freeOptionElement = null;
+                        const allElements = document.querySelectorAll('span, div, button');
+
+                        // Find the element whose direct text content is "免费".
+                        const freeTextElement = Array.from(allElements).find(el => {
+                            // Check only direct child text nodes to be more specific.
+                            return Array.from(el.childNodes).some(node => node.nodeType === 3 && node.textContent.trim() === '免费');
                         });
 
                         if (freeTextElement) {
-                            logBuffer.push('Found the "免费" text element.');
-                            optionToClick = freeTextElement.closest('[role="option"]');
+                            logBuffer.push(`Found text element with "免费". Now finding its clickable parent.`);
+                            // Find the closest clickable ancestor. This is the real target.
+                            freeOptionElement = freeTextElement.closest('[role="option"], button');
                         }
 
-                        if (optionToClick) {
+                        if (freeOptionElement) {
                              logBuffer.push(`Found free license option container. Performing deep click...`);
-                             Utils.deepClick(optionToClick);
+                             Utils.deepClick(freeOptionElement);
                              await new Promise(r => setTimeout(r, 500)); // Wait for UI to update
                              logBuffer.push(`Successfully dispatched click events on the license option.`);
                         } else {
-                            throw new Error('Could not find a clickable "免费" license option inside the listbox.');
+                            // If the direct text search fails, throw the diagnostic error.
+                            throw new Error('Could not find a clickable "免费" license option after extensive search.');
                         }
                     };
 
@@ -839,34 +839,38 @@
                 throw new Error('Could not find any button matching the acquisition keyword sets after all steps.');
 
             } catch (error) {
-                logBuffer.push(`Acquisition FAILED: ${error.message}`);
+                logBuffer.push(`Acquisition FAILED. An unexpected error occurred.`);
                 
-                // --- NEW DIAGNOSTIC CODE ---
-                if (error.message.includes('Dropdown listbox/menu container was not found')) {
-                    logBuffer.push('--- DIAGNOSTIC MODE ACTIVATED ---');
-                    logBuffer.push('Could not find the dropdown container. Dumping all direct children of <body> that are currently visible, as popovers often live here.');
-                    
-                    const candidates = document.querySelectorAll('body > div');
-                    let foundVisibleCandidates = 0;
-                    
-                    if (candidates.length > 0) {
-                        candidates.forEach((el, index) => {
-                             const style = window.getComputedStyle(el);
-                             if (style.display !== 'none' && style.visibility !== 'hidden' && style.position !== 'static') {
-                                 foundVisibleCandidates++;
-                                 const rect = el.getBoundingClientRect();
-                                 logBuffer.push(
-                                     `[Visible Candidate #${index}] Tag: ${el.tagName}, ID: ${el.id || 'N/A'}, Class: ${el.className || 'N/A'}, Role: ${el.getAttribute('role') || 'N/A'}, z-index: ${style.zIndex}, Position: ${style.position}, Size: ${Math.round(rect.width)}x${Math.round(rect.height)}, Content: "${el.textContent.substring(0, 100).replace(/\s+/g, ' ')}"`
-                                 );
-                             }
-                        });
-                    }
-                    
-                    if (foundVisibleCandidates === 0) {
-                         logBuffer.push('Diagnostic check found no visible, non-static <div> elements as direct children of <body>. The dropdown may be nested elsewhere or failed to trigger.');
-                    }
-                    logBuffer.push('--- END DIAGNOSTIC REPORT ---');
+                // --- ENHANCED "BLACK BOX" DIAGNOSTIC CODE ---
+                // No longer checks for a specific message. It runs for ANY error during the process.
+                logBuffer.push('--- BLACK BOX RECORDER ACTIVATED ---');
+                logBuffer.push(`Error Details: Name: ${error.name}, Message: ${error.message}`);
+                if (error.stack) {
+                    logBuffer.push(`Stack Trace: ${error.stack}`);
                 }
+                logBuffer.push('Dumping all direct children of <body> that are currently visible, as popovers often live here.');
+                
+                const candidates = document.querySelectorAll('body > div');
+                let foundVisibleCandidates = 0;
+                
+                if (candidates.length > 0) {
+                    candidates.forEach((el, index) => {
+                         const style = window.getComputedStyle(el);
+                         // Loosened criteria: also check for elements that just take up space (height > 0)
+                         if (style.display !== 'none' && style.visibility !== 'hidden' && (style.position !== 'static' || el.clientHeight > 0)) {
+                             foundVisibleCandidates++;
+                             const rect = el.getBoundingClientRect();
+                             logBuffer.push(
+                                 `[Visible Candidate #${index}] Tag: ${el.tagName}, ID: ${el.id || 'N/A'}, Class: ${el.className || 'N/A'}, Role: ${el.getAttribute('role') || 'N/A'}, z-index: ${style.zIndex}, Position: ${style.position}, Size: ${Math.round(rect.width)}x${Math.round(rect.height)}, Content: "${el.textContent.substring(0, 100).replace(/\s+/g, ' ')}"`
+                             );
+                         }
+                    });
+                }
+                
+                if (foundVisibleCandidates === 0) {
+                     logBuffer.push('Diagnostic check found no visible, non-static <div> elements as direct children of <body>. The dropdown may be nested elsewhere or failed to trigger.');
+                }
+                logBuffer.push('--- END BLACK BOX REPORT ---');
                 // --- END DIAGNOSTIC CODE ---
 
                 await TaskRunner.advanceDetailTask(taskPayload, false, logBuffer);
