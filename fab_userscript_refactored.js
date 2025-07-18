@@ -813,6 +813,19 @@
 
                     // Execute the new, combined function.
                     await findAndClickFreeLicenseOption();
+
+                    // --- NEW VERIFICATION STEP ---
+                    // After clicking the license, the page might already be in an "owned" state.
+                    // We must check for this state before proceeding.
+                    logBuffer.push('Re-evaluating page state after license selection...');
+                    await new Promise(r => setTimeout(r, 1500)); // A generous wait for the UI to update.
+                    const stateAfterLicenseClick = isItemOwned();
+                    if (stateAfterLicenseClick.owned) {
+                        logBuffer.push(`Acquisition confirmed after license click! (PASS: ${stateAfterLicenseClick.reason})`);
+                        await TaskRunner.advanceDetailTask(taskPayload, true, logBuffer);
+                        return; // Mission accomplished, do not proceed further.
+                    }
+                    logBuffer.push('License selection did not result in ownership. Proceeding to find main button...');
                 }
 
                 // Step 3: Find and click the standard Acquisition Button (Rule 2)
