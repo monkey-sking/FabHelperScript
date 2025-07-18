@@ -769,37 +769,43 @@
                     // This promise now directly waits for the listbox element to appear in the DOM after a click.
                     // This is more robust than waiting for an attribute change and then for the element.
                     const findAndClickFreeLicenseOption = () => new Promise((resolve, reject) => {
-                        logBuffer.push('Performing deep click on "选择许可" to reveal options...');
-                        Utils.deepClick(licenseButton);
+                        logBuffer.push('Starting multi-attempt license selection process...');
 
-                        const timeout = setTimeout(() => {
+                        let attemptCount = 0;
+                        let retryTimeout = null;
+                        let finalTimeout = null;
+
+                        const cleanupAndResolve = () => {
+                            clearTimeout(retryTimeout);
+                            clearTimeout(finalTimeout);
                             observer.disconnect();
-                            reject(new Error('Timeout (10s): The "免费" option did not appear in the DOM after click.'));
-                        }, 10000);
+                            logBuffer.push(`License option processed successfully.`);
+                            resolve();
+                        };
 
-                        const observer = new MutationObserver((mutationsList) => {
+                        const cleanupAndReject = (message) => {
+                            observer.disconnect();
+                            reject(new Error(message));
+                        };
+
+                        const observer = new MutationObserver((mutationsList, obs) => {
                             for (const mutation of mutationsList) {
                                 if (mutation.addedNodes.length > 0) {
                                     for (const node of mutation.addedNodes) {
-                                        if (node.nodeType !== 1) continue; // Only check element nodes
+                                        if (node.nodeType !== 1) continue;
 
-                                        // Search within the new node for the target text
-                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el => {
-                                            return Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费');
-                                        });
+                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el => 
+                                            Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
+                                        );
 
                                         if (freeTextElement) {
-                                            logBuffer.push(`"MutationObserver" found the "免费" element. Finding clickable parent...`);
+                                            logBuffer.push(`[Attempt ${attemptCount}] "MutationObserver" found the "免费" element. Finding clickable parent...`);
                                             const clickableParent = freeTextElement.closest('[role="option"], button');
                                             if (clickableParent) {
                                                 logBuffer.push(`Clickable parent found. Performing deep click...`);
                                                 Utils.deepClick(clickableParent);
-                                                
-                                                // Cleanup and resolve
-                                                clearTimeout(timeout);
-                                                observer.disconnect();
-                                                resolve();
-                                                return; // Exit mutation loop
+                                                cleanupAndResolve();
+                                                return; // Stop processing further mutations
                                             }
                                         }
                                     }
@@ -807,8 +813,26 @@
                             }
                         });
 
+                        const tryClick = () => {
+                            attemptCount++;
+                            logBuffer.push(`[Attempt ${attemptCount}] Performing deep click on "选择许可".`);
+                            Utils.deepClick(licenseButton);
+                        };
+
+                        // --- Execution Flow ---
                         observer.observe(document.body, { childList: true, subtree: true });
-                        logBuffer.push('MutationObserver is now watching the entire document for the "免费" option to be added.');
+                        logBuffer.push('MutationObserver is now watching the document.');
+                        
+                        tryClick(); // First attempt
+
+                        retryTimeout = setTimeout(() => {
+                            logBuffer.push('Dropdown not detected after 1.5s. Retrying click.');
+                            tryClick(); // Second attempt
+                        }, 1500);
+
+                        finalTimeout = setTimeout(() => {
+                            cleanupAndReject('Timeout (5s): The "免费" option did not appear in the DOM after multiple click attempts.');
+                        }, 5000);
                     });
 
                     // Execute the new, combined function.
