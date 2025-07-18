@@ -1,9 +1,8 @@
 // ==UserScript==
-// @name          Fab API驱动型全能助手 (v8.0.0 Refactored)
-// @name:en       Fab API-Driven Omnipotent Helper (v8.0.0 Refactored)
-// @namespace     https://fab.com/
-// @version       8.1.0
-// @description   【v8.1 架构升级】全面拥抱服务器端游标，移除页码概念，提升侦察任务的长期稳定性。
+// @name         Fab API-Driven Helper
+// @namespace    http://tampermonkey.net/
+// @version      1.0.0
+// @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:en [v8.1 Architectural Upgrade] Fully embraces server-side cursors, removing the page number concept to improve long-term recon stability.
 // @author        gpt-4 & user & Gemini
 // @match         https://www.fab.com/*
@@ -27,7 +26,7 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v8.1.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
         UI_CONTAINER_ID: 'fab-helper-container-v8',
         DB_KEYS: {
             TODO: 'fab_todoList_v8',
@@ -47,7 +46,7 @@
         },
         TEXTS: {
             en: { hide: 'Hide', show: 'Show', recon: 'Recon', reconning: 'Reconning...', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', added: 'Added', failed: 'Failed', todo: 'To-Do', clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!', refresh: 'Refresh State', resetRecon: 'Reset Recon', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_recon_start: 'Starting scan for new items...', log_recon_end: 'Scan complete!', log_task_added: 'Found new item:', log_api_request: 'Requesting page data (Page: %page%). Scanned: %scanned%, Owned: %owned%...', log_api_owned_check: 'Checking ownership for %count% items...', log_api_owned_done: 'Ownership check complete. Found %newCount% new items.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_429_error: 'Request limit hit! Taking a 15s break...', log_recon_error: 'An error occurred during recon cycle:', goto_page_label: 'Page:', goto_page_btn: 'Go', retry_failed: 'Retry Failed' },
-            zh: { hide: '隐藏', show: '显示', recon: '侦察', reconning: '侦察中...', execute: '启动任务', executing: '执行中...', stopExecute: '停止', added: '已添加', failed: '失败', todo: '待办', clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!', refresh: '刷新状态', resetRecon: '重置进度', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '“待办”清单是空的。', log_recon_start: '开始扫描新宝贝...', log_recon_end: '扫描完成！', log_task_added: '发现一个新宝贝:', log_api_request: '正在请求页面数据 (页码: %page%)。已扫描: %scanned%，已拥有: %owned%...', log_api_owned_check: '正在批量验证 %count% 个项目的所有权...', log_api_owned_done: '所有权验证完毕，发现 %newCount% 个全新项目！', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', log_recon_error: '侦察周期中发生严重错误：', goto_page_label: '页码:', goto_page_btn: '跳转', retry_failed: '重试失败' }
+            zh: { hide: '隐藏', show: '显示', recon: '侦察', reconning: '侦察中...', execute: '启动任务', executing: '执行中...', stopExecute: '停止', added: '已添加', failed: '失败', todo: '待办', clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!', refresh: '刷新状态', resetRecon: '重置进度', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '"待办"清单是空的。', log_recon_start: '开始扫描新宝贝...', log_recon_end: '扫描完成！', log_task_added: '发现一个新宝贝:', log_api_request: '正在请求页面数据 (页码: %page%)。已扫描: %scanned%，已拥有: %owned%...', log_api_owned_check: '正在批量验证 %count% 个项目的所有权...', log_api_owned_done: '所有权验证完毕，发现 %newCount% 个全新项目！', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', log_recon_error: '侦察周期中发生严重错误：', goto_page_label: '页码:', goto_page_btn: '跳转', retry_failed: '重试失败' }
         },
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
         OWNED_SUCCESS_CRITERIA: {
@@ -1190,70 +1189,58 @@
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = () => {
                 const cards = document.querySelectorAll(Config.SELECTORS.card);
-                // 统计本次可领取的商品
-                const claimList = [];
+                const newlyAddedList = [];
+                let alreadyInQueueCount = 0;
+
                 cards.forEach(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     const url = link ? link.href : '';
 
-                    // 1. 检查是否已拥有
                     const isOwned = (link && Database.isDone(link.href)) ||
                         card.textContent.includes('已保存在我的库中') ||
                         card.textContent.includes('Saved in My Library');
 
-                    // 2. 检查是否存在任何可操作的“领取”按钮 (核心 bug 修复)
                     const buttons = Array.from(card.querySelectorAll('button'));
                     const hasActionableButton = buttons.some(btn => {
                         const buttonAriaLabel = btn.getAttribute('aria-label') || '';
                         const buttonText = btn.textContent;
-                        
-                        // 扩展关键字，现在也识别“添加至购物车”
                         const claimKeywords = [
-                            '添加到我的库', 'Add to my library',
-                            '选择许可', 'Select License',
-                            '将商品添加至购物车', 'Add to cart'
+                            '添加到我的库', 'Add to my library', '选择许可', 'Select License', '将商品添加至购物车', 'Add to cart'
                         ];
-
                         return claimKeywords.some(keyword => buttonAriaLabel.includes(keyword) || buttonText.includes(keyword));
                     });
 
-                    // 3. 最终决定：未拥有、有按钮、不在队列中
-                    if (!isOwned && hasActionableButton && url && !State.db.todo.some(task => task.url === url)) {
-                        claimList.push({ url, type: 'detail', uid: url.split('/').pop() });
+                    if (!isOwned && hasActionableButton && url) {
+                        const task = { url, type: 'detail', uid: url.split('/').pop() };
+                        if (!State.db.todo.some(t => t.url === task.url)) {
+                            newlyAddedList.push(task);
+                        } else {
+                            alreadyInQueueCount++;
+                        }
                     }
                 });
 
-                const total = claimList.length;
-                if (total === 0) {
-                    Utils.logger('info', '本页没有可领取的新商品，或都已在待办队列。');
-                    return;
+                const actionableCount = newlyAddedList.length + alreadyInQueueCount;
+
+                if (newlyAddedList.length > 0) {
+                    State.db.todo.push(...newlyAddedList);
+                    Database.saveTodo();
+                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
                 }
-                let current = 0;
-                addAllBtn.disabled = true;
-                addAllBtn.innerHTML = `领取中... (0/${total})`;
-                // 逐步加入 To-Do 队列并实时反馈
-                claimList.forEach((task, idx) => {
-                    State.db.todo.push(task);
-                    current++;
-                    addAllBtn.innerHTML = `领取中... (${current}/${total})`;
-                    Utils.logger('info', `领取进度：${current}/${total}，已加入队列：${task.url}`);
-                });
-                Database.saveTodo();
-                Utils.logger('info', `本页一键领取：已将 ${total} 个商品加入批量领取队列，自动串行处理。`);
-                // 启动批量领取
-                TaskRunner.toggleExecution();
-                // 监听批量领取结束，恢复按钮
-                const restoreBtn = () => {
-                    addAllBtn.disabled = false;
-                    addAllBtn.innerHTML = '🛒 本页一键领取';
-                };
-                // 简单轮询 To-Do 队列变化（更优可用事件/回调）
-                let checkInterval = setInterval(() => {
-                    if (State.db.todo.length === 0 || !State.isExecuting) {
-                        clearInterval(checkInterval);
-                        restoreBtn();
+
+                if (actionableCount > 0) {
+                    if (newlyAddedList.length === 0) {
+                        Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
                     }
-                }, 1000);
+                    if (!State.isExecuting) {
+                        Utils.logger('info', '队列中有任务，即将开始执行...');
+                        TaskRunner.toggleExecution();
+                    } else {
+                        Utils.logger('info', '执行器已在运行中，新发现的任务已加入队列等待处理。');
+                    }
+                } else {
+                    Utils.logger('info', '本页没有可领取的新商品。');
+                }
             };
             // 本页刷新状态
             const refreshPageBtn = document.createElement('button');
