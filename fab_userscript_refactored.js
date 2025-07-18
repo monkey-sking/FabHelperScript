@@ -1099,24 +1099,14 @@
                     font-size: 14px; font-weight: 500; cursor: pointer;
                     transition: all 0.2s; color: #fff; flex-grow: 1;
                 }
-                #${Config.UI_CONTAINER_ID} .fab-helper-btn-grid {
-                    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+                .fab-helper-btn-section {
+                    display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;
                 }
-                .fab-helper-btn-full { grid-column: 1 / -1; }
-                #${Config.UI_CONTAINER_ID} button:disabled {
-                    background: var(--dark-gray) !important; cursor: not-allowed; opacity: 0.6;
+                .fab-helper-section-title {
+                    font-size: 13px; color: var(--text-color-secondary); font-weight: 600; margin: 8px 0 4px 0; letter-spacing: 1px;
                 }
-                #${Config.UI_CONTAINER_ID} #fab-log-panel {
-                    background: rgba(0,0,0,0.3); border-radius: var(--radius-s);
-                    max-height: 150px;
-                }
-                 .fab-helper-input-group {
-                    display: flex; align-items: center; background: rgba(255, 255, 255, 0.1);
-                    border-radius: var(--radius-m); padding: 4px 4px 4px 12px; font-size: 12px;
-                }
-                .fab-helper-input-group input {
-                    background: var(--dark-gray); border-radius: var(--radius-s); border: none;
-                    color: white; text-align: center; width: 100%; padding: 6px; margin-left: 8px;
+                .fab-helper-divider {
+                    border: none; border-top: 1px solid var(--border-color); margin: 8px 0;
                 }
             `;
             const styleSheet = document.createElement("style");
@@ -1124,10 +1114,9 @@
             styleSheet.innerText = styles;
             document.head.appendChild(styleSheet);
 
-
             const container = document.createElement('div');
             container.id = Config.UI_CONTAINER_ID;
-            
+
             // -- Header --
             const header = document.createElement('div');
             header.className = 'fab-helper-header';
@@ -1138,7 +1127,7 @@
             copyLogBtn.className = 'fab-helper-icon-btn';
             copyLogBtn.innerHTML = '📄';
             copyLogBtn.title = Utils.getText('copyLog');
-             copyLogBtn.onclick = () => {
+            copyLogBtn.onclick = () => {
                 navigator.clipboard.writeText(State.ui.logPanel.innerText).then(() => {
                     const originalIcon = copyLogBtn.innerHTML;
                     copyLogBtn.innerHTML = '✅';
@@ -1166,45 +1155,105 @@
             State.ui.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
             State.ui.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
             statusBar.append(State.ui.statusTodo, State.ui.statusDone, State.ui.statusFailed);
-            
+
             // -- Log Panel --
             State.ui.logPanel = document.createElement('div');
-            State.ui.logPanel.id = 'fab-log-panel'; // ID from old script for compatibility
+            State.ui.logPanel.id = 'fab-log-panel';
             State.ui.logPanel.style.cssText = 'padding: 8px; overflow-y: auto; display: flex; flex-direction: column-reverse;';
 
-            // -- Action Buttons --
-            const btnGrid = document.createElement('div');
-            btnGrid.className = 'fab-helper-btn-grid';
-            
-            State.ui.execBtn = document.createElement('button');
-            State.ui.execBtn.className = 'fab-helper-btn-full';
-            State.ui.execBtn.onclick = TaskRunner.toggleExecution;
-
-            State.ui.reconBtn = document.createElement('button');
-            State.ui.reconBtn.onclick = TaskRunner.toggleRecon;
-            
-            State.ui.retryBtn = document.createElement('button');
-            State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
-            
-            State.ui.refreshBtn = document.createElement('button');
-            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
-            
+            // -- Basic Section --
+            const basicSection = document.createElement('div');
+            basicSection.className = 'fab-helper-btn-section';
+            const basicTitle = document.createElement('div');
+            basicTitle.className = 'fab-helper-section-title';
+            basicTitle.textContent = '🧩 基础功能 (Basic)';
+            // 本页一键领取
+            const addAllBtn = document.createElement('button');
+            addAllBtn.innerHTML = '🛒 本页一键领取';
+            addAllBtn.style.background = 'var(--green)';
+            addAllBtn.onclick = () => {
+                // 遍历当前页面所有可领取卡片，模拟点击领取按钮
+                const cards = document.querySelectorAll(Config.SELECTORS.card);
+                let count = 0;
+                cards.forEach(card => {
+                    const btn = card.querySelector(Config.SELECTORS.addButton);
+                    if (btn && !btn.disabled) {
+                        btn.click();
+                        count++;
+                    }
+                });
+                Utils.logger('info', `本页一键领取已尝试点击 ${count} 个领取按钮。`);
+            };
+            // 本页刷新状态
+            const refreshPageBtn = document.createElement('button');
+            refreshPageBtn.innerHTML = '🔄 本页刷新状态';
+            refreshPageBtn.style.background = 'var(--blue)';
+            refreshPageBtn.onclick = TaskRunner.refreshVisibleStates;
+            // 本页隐藏/显示已拥有
             State.ui.hideBtn = document.createElement('button');
+            State.ui.hideBtn.innerHTML = '🙈 隐藏已拥有';
+            State.ui.hideBtn.style.background = 'var(--blue)';
             State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
+            basicSection.append(basicTitle, addAllBtn, refreshPageBtn, State.ui.hideBtn);
 
+            // -- Divider --
+            const divider = document.createElement('hr');
+            divider.className = 'fab-helper-divider';
+
+            // -- Advanced Section --
+            const advSection = document.createElement('div');
+            advSection.className = 'fab-helper-btn-section';
+            advSection.style.display = '';
+            const advTitle = document.createElement('div');
+            advTitle.className = 'fab-helper-section-title';
+            advTitle.textContent = '⚡ 高级功能 (Advanced/API)';
+            // 批量侦察
+            State.ui.reconBtn = document.createElement('button');
+            State.ui.reconBtn.innerHTML = '🔍 批量侦察';
+            State.ui.reconBtn.style.background = 'var(--green)';
+            State.ui.reconBtn.onclick = TaskRunner.toggleRecon;
+            // 批量领取
+            State.ui.execBtn = document.createElement('button');
+            State.ui.execBtn.innerHTML = '🚀 批量领取';
+            State.ui.execBtn.style.background = 'var(--pink)';
+            State.ui.execBtn.onclick = TaskRunner.toggleExecution;
+            // 批量重试失败
+            State.ui.retryBtn = document.createElement('button');
+            State.ui.retryBtn.innerHTML = '🔁 批量重试失败';
+            State.ui.retryBtn.style.background = 'var(--orange)';
+            State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
+            // 批量刷新所有状态
+            State.ui.refreshBtn = document.createElement('button');
+            State.ui.refreshBtn.innerHTML = '🔄 批量刷新所有状态';
+            State.ui.refreshBtn.style.background = 'var(--blue)';
+            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
+            // 重置侦察进度
             State.ui.resetReconBtn = document.createElement('button');
+            State.ui.resetReconBtn.innerHTML = '⏮️ 重置侦察进度';
+            State.ui.resetReconBtn.style.background = 'var(--gray)';
             State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
+            advSection.append(advTitle, State.ui.reconBtn, State.ui.execBtn, State.ui.retryBtn, State.ui.refreshBtn, State.ui.resetReconBtn);
 
-            btnGrid.append(
-                State.ui.execBtn, State.ui.reconBtn, State.ui.retryBtn, State.ui.refreshBtn,
-                State.ui.hideBtn, State.ui.resetReconBtn
-            );
-            
+            // -- Advanced Wrapper (状态栏+高级区) --
+            const advancedWrapper = document.createElement('div');
+            advancedWrapper.style.display = 'none'; // 默认隐藏
+            advancedWrapper.append(statusBar, divider, advSection);
+
             // -- Assemble UI --
-            container.append(header, statusBar, State.ui.logPanel, btnGrid);
+            container.append(header, State.ui.logPanel, basicSection, advancedWrapper);
             document.body.appendChild(container);
-            
             State.ui.container = container;
+
+            // --- 控制台解锁高级功能 ---
+            window.FabHelperShowAdvanced = function() {
+                advancedWrapper.style.display = '';
+                console.log('Fab Helper 高级功能区和批量状态栏已显示。');
+            };
+            window.FabHelperHideAdvanced = function() {
+                advancedWrapper.style.display = 'none';
+                console.log('Fab Helper 高级功能区和批量状态栏已隐藏。');
+            };
+
             UI.update();
         },
 
