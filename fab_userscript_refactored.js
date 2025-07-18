@@ -1082,100 +1082,178 @@
         create: () => {
             if (document.getElementById(Config.UI_CONTAINER_ID)) return;
 
+            // --- Style Injection ---
+            const styles = `
+                :root {
+                    --bg-color: rgba(28, 28, 30, 0.7);
+                    --border-color: rgba(255, 255, 255, 0.1);
+                    --text-color-primary: #f5f5f7;
+                    --text-color-secondary: #a0a0a5;
+                    --radius-l: 16px;
+                    --radius-m: 10px;
+                    --radius-s: 8px;
+                    --blue: #007aff; --pink: #ff2d55; --green: #34c759;
+                    --orange: #ff9500; --gray: #8e8e93; --dark-gray: #555;
+                }
+                #${Config.UI_CONTAINER_ID} {
+                    background: var(--bg-color);
+                    backdrop-filter: blur(12px) saturate(1.5);
+                    border: 1px solid var(--border-color);
+                    border-radius: var(--radius-l);
+                    color: var(--text-color-primary);
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 12px;
+                    padding: 12px;
+                    width: 300px;
+                    font-size: 14px;
+                }
+                .fab-helper-header, .fab-helper-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 8px;
+                }
+                .fab-helper-header h2 {
+                    font-size: 16px; font-weight: 600; margin: 0;
+                }
+                .fab-helper-icon-btn {
+                    background: transparent; border: none; color: var(--text-color-secondary);
+                    cursor: pointer; padding: 4px; font-size: 18px; line-height: 1;
+                }
+                .fab-helper-status-bar {
+                    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+                }
+                .fab-helper-status-item {
+                    background: rgba(255, 255, 255, 0.1); padding: 6px;
+                    border-radius: var(--radius-s); font-size: 11px; text-align: center;
+                    color: var(--text-color-secondary);
+                }
+                .fab-helper-status-item span {
+                    display: block; font-size: 16px; font-weight: 600; color: #fff;
+                }
+                #${Config.UI_CONTAINER_ID} button {
+                    border: none; border-radius: var(--radius-m); padding: 10px 14px;
+                    font-size: 14px; font-weight: 500; cursor: pointer;
+                    transition: all 0.2s; color: #fff; flex-grow: 1;
+                }
+                #${Config.UI_CONTAINER_ID} .fab-helper-btn-grid {
+                    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+                }
+                .fab-helper-btn-full { grid-column: 1 / -1; }
+                #${Config.UI_CONTAINER_ID} button:disabled {
+                    background: var(--dark-gray) !important; cursor: not-allowed; opacity: 0.6;
+                }
+                #${Config.UI_CONTAINER_ID} #fab-log-panel {
+                    background: rgba(0,0,0,0.3); border-radius: var(--radius-s);
+                    max-height: 150px;
+                }
+                 .fab-helper-input-group {
+                    display: flex; align-items: center; background: rgba(255, 255, 255, 0.1);
+                    border-radius: var(--radius-m); padding: 4px 4px 4px 12px; font-size: 12px;
+                }
+                .fab-helper-input-group input {
+                    background: var(--dark-gray); border-radius: var(--radius-s); border: none;
+                    color: white; text-align: center; width: 100%; padding: 6px; margin-left: 8px;
+                }
+            `;
+            const styleSheet = document.createElement("style");
+            styleSheet.type = "text/css";
+            styleSheet.innerText = styles;
+            document.head.appendChild(styleSheet);
+
+
             const container = document.createElement('div');
             container.id = Config.UI_CONTAINER_ID;
-            Object.assign(container.style, { position: 'fixed', bottom: '20px', right: '20px', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'stretch', width: '280px' });
-
-            const createButton = (id, textKey) => {
-                const btn = document.createElement('button');
-                btn.id = id;
-                btn.textContent = Utils.getText(textKey);
-                Object.assign(btn.style, { padding: '10px 14px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontFamily: 'system-ui, sans-serif', fontSize: '14px', color: 'white', transition: 'all 0.2s', flexGrow: '1', whiteSpace: 'nowrap' });
-                return btn;
-            };
             
-            const uiRow = (children) => {
-                const row = document.createElement('div');
-                row.style.display = 'flex';
-                row.style.gap = '10px';
-                row.style.justifyContent = 'space-between';
-                children.forEach(c => row.appendChild(c));
-                return row;
-            };
-
-            // Log Panel
-            State.ui.logPanel = document.createElement('div');
-            State.ui.logPanel.style.cssText = 'background: rgba(0,0,0,0.7); color: white; padding: 8px; border-radius: 8px; max-height: 200px; overflow-y: auto; display: flex; flex-direction: column-reverse;';
-
-            // Status Row
-            const statusRow = document.createElement('div');
-            statusRow.style.cssText = 'display: flex; gap: 10px; align-items: center;';
-            State.ui.statusDisplay = document.createElement('div');
-            State.ui.statusDisplay.style.cssText = 'background: #333; color: white; padding: 8px; border-radius: 8px; text-align: center; font-size: 12px; flex-grow: 1;';
-            const clearLogBtn = createButton('clearLogBtn', 'clearLog');
-            clearLogBtn.style.flexGrow = '0';
-            clearLogBtn.onclick = () => { State.ui.logPanel.innerHTML = ''; };
-            const copyLogBtn = createButton('copyLogBtn', 'copyLog');
-            copyLogBtn.style.flexGrow = '0';
-            copyLogBtn.onclick = () => {
+            // -- Header --
+            const header = document.createElement('div');
+            header.className = 'fab-helper-header';
+            const title = document.createElement('h2');
+            title.textContent = `Fab Helper ${Config.SCRIPT_NAME.match(/v(\d+\.\d+\.\d+)/)[1]}`;
+            const headerControls = document.createElement('div');
+            const copyLogBtn = document.createElement('button');
+            copyLogBtn.className = 'fab-helper-icon-btn';
+            copyLogBtn.innerHTML = '📄';
+            copyLogBtn.title = Utils.getText('copyLog');
+             copyLogBtn.onclick = () => {
                 navigator.clipboard.writeText(State.ui.logPanel.innerText).then(() => {
-                    const originalText = copyLogBtn.textContent;
-                    copyLogBtn.textContent = Utils.getText('copied');
-                    setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
-                }).catch(err => {
-                    Utils.logger('error', 'Failed to copy log:', err);
-                });
+                    const originalIcon = copyLogBtn.innerHTML;
+                    copyLogBtn.innerHTML = '✅';
+                    setTimeout(() => { copyLogBtn.innerHTML = originalIcon; }, 1500);
+                }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
             };
-            statusRow.append(State.ui.statusDisplay, copyLogBtn, clearLogBtn);
+            const clearLogBtn = document.createElement('button');
+            clearLogBtn.className = 'fab-helper-icon-btn';
+            clearLogBtn.innerHTML = '🗑️';
+            clearLogBtn.title = Utils.getText('clearLog');
+            clearLogBtn.onclick = () => { State.ui.logPanel.innerHTML = ''; };
+            headerControls.append(copyLogBtn, clearLogBtn);
+            header.append(title, headerControls);
+
+            // -- Status Bar --
+            const statusBar = document.createElement('div');
+            statusBar.className = 'fab-helper-status-bar';
+            const createStatusItem = (id, label) => {
+                const item = document.createElement('div');
+                item.className = 'fab-helper-status-item';
+                item.innerHTML = `${label} <span id="${id}">0</span>`;
+                return item;
+            };
+            State.ui.statusTodo = createStatusItem('fab-status-todo', `📥 ${Utils.getText('todo')}`);
+            State.ui.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
+            State.ui.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
+            statusBar.append(State.ui.statusTodo, State.ui.statusDone, State.ui.statusFailed);
             
-            // Buttons
-            State.ui.execBtn = createButton('execBtn', 'execute');
+            // -- Log Panel --
+            State.ui.logPanel = document.createElement('div');
+            State.ui.logPanel.id = 'fab-log-panel'; // ID from old script for compatibility
+            State.ui.logPanel.style.cssText = 'padding: 8px; overflow-y: auto; display: flex; flex-direction: column-reverse;';
+
+            // -- Action Buttons --
+            const btnGrid = document.createElement('div');
+            btnGrid.className = 'fab-helper-btn-grid';
+            
+            State.ui.execBtn = document.createElement('button');
+            State.ui.execBtn.className = 'fab-helper-btn-full';
             State.ui.execBtn.onclick = TaskRunner.toggleExecution;
-            State.ui.retryBtn = createButton('retryBtn', 'retry_failed');
-            State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
-            State.ui.refreshBtn = createButton('refreshBtn', 'refresh');
-            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
-            State.ui.hideBtn = createButton('hideBtn', 'hide');
-            State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            State.ui.seekBtn = createButton('seekBtn', 'seek');
-            State.ui.seekBtn.onclick = TaskRunner.toggleSeek;
-            State.ui.reconBtn = createButton('reconBtn', 'recon');
+
+            State.ui.reconBtn = document.createElement('button');
             State.ui.reconBtn.onclick = TaskRunner.toggleRecon;
-            State.ui.resetReconBtn = createButton('resetReconBtn', 'resetRecon');
+            
+            State.ui.retryBtn = document.createElement('button');
+            State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
+            
+            State.ui.refreshBtn = document.createElement('button');
+            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
+            
+            State.ui.hideBtn = document.createElement('button');
+            State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
+
+            State.ui.seekBtn = document.createElement('button');
+            State.ui.seekBtn.onclick = TaskRunner.toggleSeek;
+
+            State.ui.resetReconBtn = document.createElement('button');
             State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
 
-
-            // Batch Input
-            const batchContainer = document.createElement('div');
-            batchContainer.style.display = 'flex';
-            const batchLabel = document.createElement('span');
+            btnGrid.append(
+                State.ui.execBtn, State.ui.reconBtn, State.ui.retryBtn, State.ui.refreshBtn,
+                State.ui.hideBtn, State.ui.seekBtn, State.ui.resetReconBtn
+            );
+            
+            // -- Batch Input --
+            const batchGroup = document.createElement('div');
+            batchGroup.className = 'fab-helper-input-group';
+            const batchLabel = document.createElement('label');
             batchLabel.textContent = Utils.getText('batchSize');
-            batchLabel.style.cssText = 'color: white; background: #555; padding: 10px; border-radius: 8px 0 0 8px; font-size: 12px; display: flex; align-items: center;';
             State.ui.batchInput = document.createElement('input');
             State.ui.batchInput.type = 'number';
             State.ui.batchInput.value = '100';
-            State.ui.batchInput.style.cssText = 'width: 60px; border: none; padding: 10px; border-radius: 0 8px 8px 0; text-align: center;';
-            batchContainer.append(batchLabel, State.ui.batchInput);
-            
-            // Recon Progress Display (Replaces Page Jump Input)
-            const reconProgressContainer = document.createElement('div');
-            reconProgressContainer.style.cssText = 'display: flex;';
-            State.ui.reconProgressDisplay = document.createElement('div');
-            State.ui.reconProgressDisplay.textContent = 'Page: 1';
-            State.ui.reconProgressDisplay.style.cssText = 'color: white; background: #555; padding: 10px; border-radius: 8px 0 0 8px; font-size: 12px; display: flex; align-items: center; flex-grow: 1; justify-content: center;';
-            State.ui.resetReconBtn.style.borderRadius = '0 8px 8px 0';
-            reconProgressContainer.append(State.ui.reconProgressDisplay, State.ui.resetReconBtn);
+            batchGroup.append(batchLabel, State.ui.batchInput);
 
-            // Append elements one by one to avoid layout conflicts
-            container.append(State.ui.logPanel);
-            container.append(statusRow);
-            container.append(State.ui.execBtn);
-            container.append(uiRow([State.ui.retryBtn, State.ui.refreshBtn]));
-            // Group the discovery buttons in a single row for a cleaner layout.
-            container.append(uiRow([State.ui.hideBtn, State.ui.seekBtn, State.ui.reconBtn]));
-            container.append(batchContainer);
-            container.append(reconProgressContainer);
-            
+            // -- Assemble UI --
+            container.append(header, statusBar, State.ui.logPanel, btnGrid, batchGroup);
             document.body.appendChild(container);
             
             State.ui.container = container;
@@ -1185,44 +1263,50 @@
         update: () => {
             if (!State.ui.container) return;
             
-            // Status Display
-            State.ui.statusDisplay.innerHTML = `${Utils.getText('todo')}: <b>${State.db.todo.length}</b> | ${Utils.getText('added')}: <b>${State.db.done.length}</b> | ${Utils.getText('failed')}: <b style="color: #ff453a;">${State.db.failed.length}</b>`;
+            // Status Bar
+            State.ui.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
+            State.ui.container.querySelector('#fab-status-done').textContent = State.db.done.length;
+            State.ui.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
             
             // Execute Button
-            State.ui.execBtn.innerHTML = State.isExecuting ? Utils.getText('executing') : Utils.getText('execute');
-            State.ui.execBtn.style.background = State.isExecuting ? '#ff453a' : '#e91e63';
-
-            // Retry Button - Full width, placed below the main execute button.
-            const hasFailedTasks = State.db.failed.length > 0;
-            State.ui.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
-            State.ui.retryBtn.style.background = hasFailedTasks && !State.isExecuting ? '#ff9f0a' : '#555'; // Orange when active, gray otherwise
-            State.ui.retryBtn.style.cursor = State.ui.retryBtn.disabled ? 'not-allowed' : 'pointer';
-
-            // New Refresh Button
-            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning || State.isSeeking;
-            State.ui.refreshBtn.style.background = State.ui.refreshBtn.disabled ? '#555' : '#1e90ff'; // Dodger Blue
-            State.ui.refreshBtn.style.cursor = State.ui.refreshBtn.disabled ? 'not-allowed' : 'pointer';
-
-            // New Reset Recon Button
-            State.ui.resetReconBtn.disabled = State.isExecuting || State.isReconning;
-            State.ui.resetReconBtn.style.background = State.ui.resetReconBtn.disabled ? '#555' : '#6c757d'; // Gray
-            State.ui.resetReconBtn.style.cursor = State.ui.resetReconBtn.disabled ? 'not-allowed' : 'pointer';
-
-            // Style the buttons in the discovery row to have equal width.
-            // Hide Button
-            const hideText = State.hideSaved ? Utils.getText('show') : Utils.getText('hide');
-            State.ui.hideBtn.innerHTML = `${hideText} (${State.hiddenThisPageCount})`;
-            State.ui.hideBtn.style.background = '#0a84ff';
-
-            // Seek Button
-            State.ui.seekBtn.innerHTML = State.isSeeking ? Utils.getText('seeking') : Utils.getText('seek');
-            State.ui.seekBtn.disabled = State.isReconning || State.isExecuting;
-            State.ui.seekBtn.style.background = State.isSeeking ? '#ff9800' : '#00b8d4';
+            State.ui.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
+            State.ui.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
             
             // Recon Button
-            State.ui.reconBtn.innerHTML = State.isReconning ? Utils.getText('reconning') : Utils.getText('recon');
-            State.ui.reconBtn.disabled = State.isExecuting; // BUG FIX: Should only be disabled during execution, not during its own process.
-            State.ui.reconBtn.style.background = State.isReconning ? '#ff9800' : '#34c759';
+            if (State.isReconning) {
+                const displayPage = Utils.getDisplayPageFromUrl(GM_getValue(Config.DB_KEYS.NEXT_URL, ''));
+                State.ui.reconBtn.innerHTML = `⏳ ${Utils.getText('reconning')} (${displayPage})`;
+            } else {
+                State.ui.reconBtn.innerHTML = `🔍 ${Utils.getText('recon')}`;
+            }
+            State.ui.reconBtn.disabled = State.isExecuting;
+            State.ui.reconBtn.style.background = State.isReconning ? 'var(--orange)' : 'var(--green)';
+
+            // Retry Button
+            const hasFailedTasks = State.db.failed.length > 0;
+            State.ui.retryBtn.innerHTML = `🔁 ${Utils.getText('retry_failed')} (${State.db.failed.length})`;
+            State.ui.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
+            State.ui.retryBtn.style.background = 'var(--orange)';
+            
+            // Refresh Button
+            State.ui.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
+            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning || State.isSeeking;
+            State.ui.refreshBtn.style.background = 'var(--blue)';
+
+            // Hide/Show Button
+            const hideText = State.hideSaved ? Utils.getText('show') : Utils.getText('hide');
+            State.ui.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
+            State.ui.hideBtn.style.background = 'var(--blue)';
+
+            // Seek Button
+            State.ui.seekBtn.innerHTML = `🔭 ${Utils.getText('seek')}`;
+            State.ui.seekBtn.disabled = State.isReconning || State.isExecuting;
+            State.ui.seekBtn.style.background = State.isSeeking ? 'var(--orange)' : 'var(--blue)';
+            
+            // Reset Recon Button
+            State.ui.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
+            State.ui.resetReconBtn.disabled = State.isExecuting || State.isReconning;
+            State.ui.resetReconBtn.style.background = 'var(--gray)';
         },
 
         applyOverlay: (card) => {
