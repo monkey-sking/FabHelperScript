@@ -1159,7 +1159,21 @@
             // -- Log Panel --
             State.ui.logPanel = document.createElement('div');
             State.ui.logPanel.id = 'fab-log-panel';
-            State.ui.logPanel.style.cssText = 'padding: 8px; overflow-y: auto; display: flex; flex-direction: column-reverse;';
+            State.ui.logPanel.style.cssText = `
+  background: rgba(30,30,30,0.85);
+  color: #eee;
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 6px 8px 8px;
+  border-radius: 8px;
+  margin: 8px 0;
+  max-height: 40vh;
+  overflow-y: auto;
+  min-height: 40px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  display: flex;
+  flex-direction: column-reverse;
+`;
 
             // -- Basic Section --
             const basicSection = document.createElement('div');
