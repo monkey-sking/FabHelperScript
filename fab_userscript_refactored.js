@@ -890,6 +890,15 @@
                 await Database.markAsFailed(currentTask);
             }
 
+            // BUG FIX: After processing the current item, we MUST re-check if the master task has been cancelled.
+            // The main tab signals a stop by deleting the TASK key. If it's gone, we must abort.
+            const masterTaskStillActive = await GM_getValue(Config.DB_KEYS.TASK);
+            if (!masterTaskStillActive) {
+                Utils.logger('info', 'Execution stopped by main tab. Worker tab will now close.');
+                window.close(); // Halt all further action.
+                return;
+            }
+
             taskPayload.currentIndex++;
 
             if (taskPayload.currentIndex >= taskPayload.batch.length) {
