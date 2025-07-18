@@ -759,74 +759,47 @@
                 if (licenseButton) {
                     logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
 
-                    // Use a Promise that resolves when the observer sees the dropdown open.
-                    // This is more robust than waiting a fixed time.
-                    const waitForDropdownOpen = new Promise((resolve, reject) => {
-                        let observer;
-                        const timeout = setTimeout(() => {
-                            if (observer) observer.disconnect();
-                            reject(new Error('Timeout (10s): "选择许可" dropdown did not open.'));
-                        }, 10000);
+                    // This promise now directly waits for the listbox element to appear in the DOM after a click.
+                    // This is more robust than waiting for an attribute change and then for the element.
+                    const findAndClickFreeLicenseOption = async () => {
+                        logBuffer.push('Performing deep click on "选择许可" to reveal options...');
+                        Utils.deepClick(licenseButton); // Click to open the dropdown.
 
-                        observer = new MutationObserver((mutationsList) => {
-                            for (const mutation of mutationsList) {
-                                if (mutation.type === 'attributes' && mutation.attributeName === 'aria-expanded') {
-                                    if (licenseButton.getAttribute('aria-expanded') === 'true') {
-                                        logBuffer.push('Observer detected aria-expanded="true". Dropdown is open.');
-                                        clearTimeout(timeout);
-                                        observer.disconnect();
-                                        resolve();
-                                        return; // We're done, no need to check other mutations.
-                                    }
-                                }
-                            }
+                        // Now, wait directly for the listbox to appear.
+                        // I'm also broadening the selector to improve resilience against minor site changes.
+                        const listbox = await Utils.waitForElement('div[role="listbox"], div[role="menu"]', 10000); // 10s timeout
+                        if (!listbox) {
+                             throw new Error('Dropdown listbox/menu container was not found even after waiting 10s.');
+                        }
+                        logBuffer.push('Found license dropdown container.');
+
+                        // A small delay is still useful for the options *inside* the listbox to render.
+                        await new Promise(r => setTimeout(r, 300));
+                        
+                        let optionToClick = null;
+                        
+                        // Strategy: Find the element with the exact text "免费", then find its clickable parent.
+                        const freeTextElement = [...listbox.querySelectorAll('span, div')].find(el => {
+                            return el.textContent.trim() === '免费';
                         });
 
-                        observer.observe(licenseButton, { attributes: true });
-                    });
+                        if (freeTextElement) {
+                            logBuffer.push('Found the "免费" text element.');
+                            optionToClick = freeTextElement.closest('[role="option"]');
+                        }
 
-                    logBuffer.push('Performing deep click on "选择许可" to trigger observer...');
-                    Utils.deepClick(licenseButton); // This click should trigger the observer.
+                        if (optionToClick) {
+                             logBuffer.push(`Found free license option container. Performing deep click...`);
+                             Utils.deepClick(optionToClick);
+                             await new Promise(r => setTimeout(r, 500)); // Wait for UI to update
+                             logBuffer.push(`Successfully dispatched click events on the license option.`);
+                        } else {
+                            throw new Error('Could not find a clickable "免费" license option inside the listbox.');
+                        }
+                    };
 
-                    // Wait for the dropdown to actually open, with a timeout.
-                    await waitForDropdownOpen;
-                    
-                    // BUG FIX #1: Don't rely on a fixed delay. Actively wait for the listbox to appear
-                    // after the observer confirms the dropdown is logically open.
-                    const listbox = await Utils.waitForElement('div[role="listbox"]');
-                    if (!listbox) {
-                        // This case should theoretically not be reached if waitForElement works correctly, but it's good practice.
-                        throw new Error('Dropdown opened, but listbox container (div[role="listbox"]) was not found even after waiting.');
-                    }
-                    
-                    // A small delay is still useful for the options *inside* the listbox to render.
-                    await new Promise(r => setTimeout(r, 300));
-                    
-                    // --- New robust clicking logic based on user screenshot ---
-                    let optionToClick = null;
-                    
-                    // Strategy: Find the element with the exact text "免费", then find its clickable parent.
-                    const freeTextElement = [...listbox.querySelectorAll('span, div')].find(el => {
-                        // Use exact match for "免费" to avoid picking up other text.
-                        return el.textContent.trim() === '免费';
-                    });
-
-                    if (freeTextElement) {
-                        logBuffer.push('Found the "免费" text element.');
-                        // Now, find the closest ancestor element that is the actual clickable option.
-                        optionToClick = freeTextElement.closest('[role="option"]');
-                    }
-                    // --- End of new logic ---
-
-                    if (optionToClick) {
-                         logBuffer.push(`Found free license option container. Performing deep click...`);
-                         Utils.deepClick(optionToClick); // Keep deepClick on the option as well.
-                         // After clicking a license, the UI needs a moment to update the main "Add" button.
-                         await new Promise(r => setTimeout(r, 500));
-                         logBuffer.push(`Successfully dispatched click events on the license option.`);
-                    } else {
-                        throw new Error('Could not find a clickable "免费" license option inside the listbox.');
-                    }
+                    // Execute the new, combined function.
+                    await findAndClickFreeLicenseOption();
                 }
 
                 // Step 3: Find and click the standard Acquisition Button (Rule 2)
@@ -1132,6 +1105,18 @@
 
         // --- Standard page setup ---
         UI.create();
+
+        // NEW: Immediately reflect saved recon progress in the UI on load.
+        const savedCursor = await GM_getValue(Config.DB_KEYS.CURSOR, '');
+        if (savedCursor && State.ui.pageInput) {
+            const pageNum = Utils.decodeCursorToPageNum(savedCursor);
+            if (!isNaN(parseInt(pageNum, 10))) { // Check if it's a valid number string.
+                State.ui.pageInput.value = pageNum;
+                Utils.logger('info', `发现已保存的侦察进度。准备从第 ${pageNum} 页恢复。`);
+                Utils.logger('info', `Found saved recon progress. Ready to resume from page ${pageNum}.`);
+            }
+        }
+
         UI.applyOverlaysToPage();
         TaskRunner.runHideOrShow(); // Initial run
 
