@@ -1190,27 +1190,50 @@
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = () => {
                 const cards = document.querySelectorAll(Config.SELECTORS.card);
-                let added = 0;
+                // 统计本次可领取的商品
+                const claimList = [];
                 cards.forEach(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     const url = link ? link.href : '';
-                    // 判断是否已拥有（UI）
-                    const owned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
-                    if (!owned && url) {
-                        // 避免重复加入 To-Do
-                        if (!State.db.todo.some(task => task.url === url)) {
-                            State.db.todo.push({ url, type: 'detail', uid: url.split('/').pop() });
-                            added++;
-                        }
+                    // 用数据库和UI双重判定是否已拥有
+                    const isOwned = (link && Database.isDone(link.href)) ||
+                        card.textContent.includes('已保存在我的库中') ||
+                        card.textContent.includes('Saved in My Library');
+                    if (!isOwned && url && !State.db.todo.some(task => task.url === url)) {
+                        claimList.push({ url, type: 'detail', uid: url.split('/').pop() });
                     }
                 });
-                Database.saveTodo();
-                Utils.logger('info', `本页一键领取：已将 ${added} 个商品加入批量领取队列，自动串行处理。`);
-                if (added > 0) {
-                    TaskRunner.toggleExecution();
-                } else {
+                const total = claimList.length;
+                if (total === 0) {
                     Utils.logger('info', '本页没有可领取的新商品，或都已在待办队列。');
+                    return;
                 }
+                let current = 0;
+                addAllBtn.disabled = true;
+                addAllBtn.innerHTML = `领取中... (0/${total})`;
+                // 逐步加入 To-Do 队列并实时反馈
+                claimList.forEach((task, idx) => {
+                    State.db.todo.push(task);
+                    current++;
+                    addAllBtn.innerHTML = `领取中... (${current}/${total})`;
+                    Utils.logger('info', `领取进度：${current}/${total}，已加入队列：${task.url}`);
+                });
+                Database.saveTodo();
+                Utils.logger('info', `本页一键领取：已将 ${total} 个商品加入批量领取队列，自动串行处理。`);
+                // 启动批量领取
+                TaskRunner.toggleExecution();
+                // 监听批量领取结束，恢复按钮
+                const restoreBtn = () => {
+                    addAllBtn.disabled = false;
+                    addAllBtn.innerHTML = '🛒 本页一键领取';
+                };
+                // 简单轮询 To-Do 队列变化（更优可用事件/回调）
+                let checkInterval = setInterval(() => {
+                    if (State.db.todo.length === 0 || !State.isExecuting) {
+                        clearInterval(checkInterval);
+                        restoreBtn();
+                    }
+                }, 1000);
             };
             // 本页刷新状态
             const refreshPageBtn = document.createElement('button');
