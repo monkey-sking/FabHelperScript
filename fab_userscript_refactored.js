@@ -190,17 +190,24 @@
         // where a simple .click() is ignored by a framework's event handling.
         deepClick: (element) => {
             if (!element) return;
-             // unsafeWindow refers to the page's real window object, which is necessary for creating events
-            // that the page's own scripts will recognize correctly. Using it is crucial in sandboxed environments.
-            const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+            // A small delay to ensure the browser's event loop is clear and any framework
+            // event listeners on the element have had a chance to attach.
+            setTimeout(() => {
+                const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
-            Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
-            const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
-            const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
-            element.dispatchEvent(mouseDownEvent);
-            element.dispatchEvent(mouseUpEvent);
-            // Also trigger the standard click for maximum compatibility.
-            element.click();
+                Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
+                
+                // Add pointerdown for modern frameworks
+                const pointerDownEvent = new PointerEvent('pointerdown', { view: pageWindow, bubbles: true, cancelable: true });
+                const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
+                const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
+                
+                element.dispatchEvent(pointerDownEvent);
+                element.dispatchEvent(mouseDownEvent);
+                element.dispatchEvent(mouseUpEvent);
+                // Also trigger the standard click for maximum compatibility.
+                element.click();
+            }, 50); // 50ms delay
         }
     };
 
@@ -761,42 +768,48 @@
 
                     // This promise now directly waits for the listbox element to appear in the DOM after a click.
                     // This is more robust than waiting for an attribute change and then for the element.
-                    const findAndClickFreeLicenseOption = async () => {
+                    const findAndClickFreeLicenseOption = () => new Promise((resolve, reject) => {
                         logBuffer.push('Performing deep click on "选择许可" to reveal options...');
-                        Utils.deepClick(licenseButton); // Click to open the dropdown.
+                        Utils.deepClick(licenseButton);
 
-                        // --- FINAL, MOST ROBUST STRATEGY ---
-                        // Instead of searching for a container, we will now directly search for the final "免费"
-                        // text node anywhere in the document. This is resilient to container changes.
-                        logBuffer.push('Searching for the "免费" license option directly...');
+                        const timeout = setTimeout(() => {
+                            observer.disconnect();
+                            reject(new Error('Timeout (10s): The "免费" option did not appear in the DOM after click.'));
+                        }, 10000);
 
-                        await new Promise(r => setTimeout(r, 500)); // A brief delay for the dropdown to render.
+                        const observer = new MutationObserver((mutationsList) => {
+                            for (const mutation of mutationsList) {
+                                if (mutation.addedNodes.length > 0) {
+                                    for (const node of mutation.addedNodes) {
+                                        if (node.nodeType !== 1) continue; // Only check element nodes
 
-                        let freeOptionElement = null;
-                        const allElements = document.querySelectorAll('span, div, button');
+                                        // Search within the new node for the target text
+                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el => {
+                                            return Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费');
+                                        });
 
-                        // Find the element whose direct text content is "免费".
-                        const freeTextElement = Array.from(allElements).find(el => {
-                            // Check only direct child text nodes to be more specific.
-                            return Array.from(el.childNodes).some(node => node.nodeType === 3 && node.textContent.trim() === '免费');
+                                        if (freeTextElement) {
+                                            logBuffer.push(`"MutationObserver" found the "免费" element. Finding clickable parent...`);
+                                            const clickableParent = freeTextElement.closest('[role="option"], button');
+                                            if (clickableParent) {
+                                                logBuffer.push(`Clickable parent found. Performing deep click...`);
+                                                Utils.deepClick(clickableParent);
+                                                
+                                                // Cleanup and resolve
+                                                clearTimeout(timeout);
+                                                observer.disconnect();
+                                                resolve();
+                                                return; // Exit mutation loop
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         });
 
-                        if (freeTextElement) {
-                            logBuffer.push(`Found text element with "免费". Now finding its clickable parent.`);
-                            // Find the closest clickable ancestor. This is the real target.
-                            freeOptionElement = freeTextElement.closest('[role="option"], button');
-                        }
-
-                        if (freeOptionElement) {
-                             logBuffer.push(`Found free license option container. Performing deep click...`);
-                             Utils.deepClick(freeOptionElement);
-                             await new Promise(r => setTimeout(r, 500)); // Wait for UI to update
-                             logBuffer.push(`Successfully dispatched click events on the license option.`);
-                        } else {
-                            // If the direct text search fails, throw the diagnostic error.
-                            throw new Error('Could not find a clickable "免费" license option after extensive search.');
-                        }
-                    };
+                        observer.observe(document.body, { childList: true, subtree: true });
+                        logBuffer.push('MutationObserver is now watching the entire document for the "免费" option to be added.');
+                    });
 
                     // Execute the new, combined function.
                     await findAndClickFreeLicenseOption();
