@@ -1173,65 +1173,27 @@
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = () => {
                 const cards = document.querySelectorAll(Config.SELECTORS.card);
-                let count = 0, success = 0, failed = 0, pending = 0;
+                let added = 0;
                 cards.forEach(card => {
-                    const addBtn = card.querySelector(Config.SELECTORS.addButton);
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     const url = link ? link.href : '';
-                    if (addBtn && !addBtn.disabled) {
-                        Utils.deepClick(addBtn);
-                        setTimeout(() => {
-                            // 判断是否直接领取成功
-                            if (card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library')) {
-                                Utils.logger('info', '领取成功：' + url);
-                                success++;
-                            } else if (document.body.textContent.includes('选择许可')) {
-                                // 处理多许可选择
-                                let found = false;
-                                // 优先选择“专业免费”，否则“个人免费”
-                                const options = Array.from(document.querySelectorAll('[role="option"], button'));
-                                // 先找专业免费
-                                let proOption = options.find(opt => opt.textContent.includes('专业') && opt.textContent.includes('免费'));
-                                let personalOption = options.find(opt => opt.textContent.includes('个人') && opt.textContent.includes('免费'));
-                                let targetOption = proOption || personalOption;
-                                if (targetOption) {
-                                    Utils.deepClick(targetOption);
-                                    found = true;
-                                }
-                                setTimeout(() => {
-                                    if (card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library')) {
-                                        Utils.logger('info', '多许可领取成功：' + url);
-                                        success++;
-                                    } else {
-                                        Utils.logger('warn', '多许可领取失败：' + url);
-                                        failed++;
-                                        // 可选：加入待办
-                                    }
-                                }, 1500);
-                                if (!found) {
-                                    Utils.logger('warn', '未找到免费许可选项：' + url);
-                                    failed++;
-                                }
-                            } else {
-                                Utils.logger('warn', '领取失败或流程未知：' + url);
-                                failed++;
-                                // 可选：加入待办
-                            }
-                        }, 1500);
-                        count++;
-                    } else {
-                        // 按钮不可点击，加入“待办”，后续详情页处理
-                        if (url) {
-                            if (!State.db.todo.some(task => task.url === url)) {
-                                State.db.todo.push({ url, type: 'detail', uid: url.split('/').pop() });
-                                pending++;
-                                Utils.logger('info', '已加入待办，需详情页处理：' + url);
-                            }
+                    // 判断是否已拥有（UI）
+                    const owned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
+                    if (!owned && url) {
+                        // 避免重复加入 To-Do
+                        if (!State.db.todo.some(task => task.url === url)) {
+                            State.db.todo.push({ url, type: 'detail', uid: url.split('/').pop() });
+                            added++;
                         }
                     }
                 });
-                Utils.logger('info', `本页一键领取已尝试点击 ${count} 个领取按钮，成功 ${success}，失败 ${failed}，待办 ${pending}`);
                 Database.saveTodo();
+                Utils.logger('info', `本页一键领取：已将 ${added} 个商品加入批量领取队列，自动串行处理。`);
+                if (added > 0) {
+                    TaskRunner.toggleExecution();
+                } else {
+                    Utils.logger('info', '本页没有可领取的新商品，或都已在待办队列。');
+                }
             };
             // 本页刷新状态
             const refreshPageBtn = document.createElement('button');
