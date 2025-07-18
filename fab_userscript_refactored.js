@@ -71,7 +71,6 @@
         hiddenThisPageCount: 0,
         isReconning: false,
         isExecuting: false,
-        isSeeking: false,
         reconScannedCount: 0,
         reconOwnedCount: 0,
         debounceTimer: null,
@@ -377,16 +376,6 @@
             } else {
                 // When stopping, we must clean up any active task to prevent "ghost" workers.
                 GM_deleteValue(Config.DB_KEYS.TASK);
-            }
-        },
-        toggleSeek: () => {
-            State.isSeeking = !State.isSeeking;
-            UI.update();
-            if (State.isSeeking) {
-                Utils.logger('info', Utils.getText('log_seek_start'));
-                TaskRunner.seekNew();
-            } else {
-                Utils.logger('info', 'Seek stopped by user.');
             }
         },
         toggleHideSaved: async () => {
@@ -723,30 +712,23 @@
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
-            const batchSize = parseInt(State.ui.batchInput.value, 10) || 50;
-            const batch = State.db.todo.slice(0, batchSize);
-
+            const batch = State.db.todo;
             if (batch.length === 0) {
                 Utils.logger('info', 'All tasks completed!');
                 State.isExecuting = false;
                 UI.update();
                 return;
             }
-
             // In this refactored version, all tasks are 'detail' tasks.
             const detailTasks = batch.filter(t => t.type === 'detail');
-            
             if (detailTasks.length > 0) {
-                 const detailTaskPayload = {
-                    // Pass the whole task object, not just the URL.
+                const detailTaskPayload = {
                     batch: detailTasks,
                     currentIndex: 0
                 };
                 await GM_setValue(Config.DB_KEYS.TASK, detailTaskPayload);
-                // Open the first task's URL in a new tab
                 window.open(detailTaskPayload.batch[0].url, '_blank').focus();
             } else if (State.isExecuting) {
-                // If for some reason there are no detail tasks, continue the loop
                 setTimeout(TaskRunner.executeBatch, 1000);
             }
         },
@@ -1035,31 +1017,6 @@
             }
         },
 
-        seekNew: async () => {
-             if (!State.isSeeking) return;
-            const cards = [...document.querySelectorAll(Config.SELECTORS.card)].filter(c => c.style.display !== 'none');
-            const firstNewCard = cards.find(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                return link && !Database.isDone(link.href) && !Database.isTodo(link.href);
-            });
-
-            if (firstNewCard) {
-                Utils.logger('info', Utils.getText('log_seek_found'));
-                firstNewCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                State.isSeeking = false;
-                UI.update();
-            } else {
-                 if (window.innerHeight + window.scrollY >= document.body.scrollHeight) {
-                    Utils.logger('info', Utils.getText('log_seek_end'));
-                    State.isSeeking = false;
-                    UI.update();
-                    return;
-                }
-                window.scrollBy(0, window.innerHeight);
-                setTimeout(TaskRunner.seekNew, 1500);
-            }
-        },
-
         runHideOrShow: () => {
             State.hiddenThisPageCount = 0;
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
@@ -1231,29 +1188,16 @@
             State.ui.hideBtn = document.createElement('button');
             State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
 
-            State.ui.seekBtn = document.createElement('button');
-            State.ui.seekBtn.onclick = TaskRunner.toggleSeek;
-
             State.ui.resetReconBtn = document.createElement('button');
             State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
 
             btnGrid.append(
                 State.ui.execBtn, State.ui.reconBtn, State.ui.retryBtn, State.ui.refreshBtn,
-                State.ui.hideBtn, State.ui.seekBtn, State.ui.resetReconBtn
+                State.ui.hideBtn, State.ui.resetReconBtn
             );
             
-            // -- Batch Input --
-            const batchGroup = document.createElement('div');
-            batchGroup.className = 'fab-helper-input-group';
-            const batchLabel = document.createElement('label');
-            batchLabel.textContent = Utils.getText('batchSize');
-            State.ui.batchInput = document.createElement('input');
-            State.ui.batchInput.type = 'number';
-            State.ui.batchInput.value = '100';
-            batchGroup.append(batchLabel, State.ui.batchInput);
-
             // -- Assemble UI --
-            container.append(header, statusBar, State.ui.logPanel, btnGrid, batchGroup);
+            container.append(header, statusBar, State.ui.logPanel, btnGrid);
             document.body.appendChild(container);
             
             State.ui.container = container;
@@ -1290,7 +1234,7 @@
             
             // Refresh Button
             State.ui.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
-            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning || State.isSeeking;
+            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning;
             State.ui.refreshBtn.style.background = 'var(--blue)';
 
             // Hide/Show Button
@@ -1298,11 +1242,6 @@
             State.ui.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
             State.ui.hideBtn.style.background = 'var(--blue)';
 
-            // Seek Button
-            State.ui.seekBtn.innerHTML = `🔭 ${Utils.getText('seek')}`;
-            State.ui.seekBtn.disabled = State.isReconning || State.isExecuting;
-            State.ui.seekBtn.style.background = State.isSeeking ? 'var(--orange)' : 'var(--blue)';
-            
             // Reset Recon Button
             State.ui.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
             State.ui.resetReconBtn.disabled = State.isExecuting || State.isReconning;
