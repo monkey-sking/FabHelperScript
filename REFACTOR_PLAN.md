@@ -114,3 +114,4 @@
 **第十五阶段：基于稳定版的最终特性重构 (Phase 15)**
 [x] 44. 实现"基于会话的 ✅ 标记" (State.sessionCompleted + 修改 UI.applyOverlay)
 [x] 45. 实现"'眼见为实'的 DOM 优先逻辑" (setupOwnershipObserver + 精简 runHideOrShow)
+[x] 46. 实现"日志区域收缩/展开功能" (增加折叠按钮、状态记忆和平滑动画)

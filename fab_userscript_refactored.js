@@ -33,7 +33,7 @@
         SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 3, // Maximum number of concurrent worker tabs
+        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
         UI_CONTAINER_ID: 'fab-helper-container-v8',
         UI_LOG_ID: 'fab-helper-log-v8',
         DB_KEYS: {
@@ -105,6 +105,10 @@
             refreshBtn: null,
             resetReconBtn: null,
             reconProgressDisplay: null,
+            lastHiddenCount: 0,
+            rpsDisplay: null,
+            peakRpsDisplay: null,
+            last429Display: null,
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -457,6 +461,13 @@
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
             await Database.saveHidePref();
+
+            // 移除所有卡片的"已处理"标记，以强制全局刷新
+            document.querySelectorAll('.fab-helper-processed').forEach(card => {
+                card.classList.remove('fab-helper-processed');
+            });
+            Utils.logger('info', '强制全局刷新：所有卡片的"已处理"状态已被重置。');
+
             TaskRunner.runHideOrShow();
         },
 
@@ -549,7 +560,12 @@
                 });
 
                 if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
-                const data = await response.json();
+                let data;
+                try {
+                    data = await response.json();
+                } catch (jsonError) {
+                    throw new Error('Failed to parse API response as JSON.');
+                }
                 
                 const ownedUids = new Set(data.filter(item => item.acquired).map(item => item.uid));
                 Utils.logger('info', `[Fab DOM Refresh] API reports ${ownedUids.size} owned items in this batch.`);
@@ -579,8 +595,17 @@
                 TaskRunner.runHideOrShow();
 
             } catch (e) {
-                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
-                alert('API 刷新失败。请检查控制台中的错误信息，并确认您已登录。');
+                let userMessage = 'API 刷新失败。';
+                if (e.message.includes('CSRF token not found')) {
+                    userMessage += ' 无法获取 CSRF 令牌。请尝试刷新页面并重新登录。';
+                } else if (e.message.includes('API request failed')) {
+                    userMessage += ` 服务器返回错误: ${e.message.split(': ')[1]}。这可能是临时问题，请稍后重试。`;
+                } else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
+                     userMessage += ' 网络请求失败。请检查您的网络连接。';
+                }
+                
+                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e.message);
+                alert(userMessage);
             }
         },
 
@@ -1020,28 +1045,105 @@
         // This function is now fully obsolete.
         advanceDetailTask: async () => {},
 
-        runHideOrShow: () => {
+        runHideOrShow: async () => {
+            // 重置计数
             State.hiddenThisPageCount = 0;
-            document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
+            
+            // 获取所有尚未处理的卡片
+            const cards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
+            const cardsArray = Array.from(cards);
+            
+            // 如果没有新卡片需要处理，直接更新UI并返回
+            if (cardsArray.length === 0) {
+                // 仍然需要更新UI以防计数在其他地方被改变
+                const allHiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`);
+                State.hiddenThisPageCount = allHiddenCards.length;
+                UI.update();
+                return;
+            }
+            
+            // 预处理：找出所有需要隐藏的卡片
+            const cardsToHide = [];
+            const cardsToShow = [];
+            
+            for (const card of cardsArray) {
                 const text = card.textContent || '';
                 const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (!link) return;
+                if (!link) continue;
+                
                 const url = link.href.split('?')[0];
-                
-                // 检查是否由网站原生标记为已保存
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                
-                // 检查是否在本次会话中已经完成
                 const isSessionCompleted = State.sessionCompleted.has(url);
                 
-                // 如果设置为隐藏已保存项目，并且项目是已保存的或在本次会话中完成的
-                if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
-                    card.style.display = 'none';
-                    State.hiddenThisPageCount++;
-                } else {
-                    card.style.display = '';
+                // 确保将已保存但未记录的项目添加到会话完成集合
+                if (isNativelySaved && !isSessionCompleted) {
+                    State.sessionCompleted.add(url);
                 }
+                
+                // 分类卡片
+                if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
+                    cardsToHide.push(card);
+                } else {
+                    cardsToShow.push({card, isOwned: isNativelySaved || isSessionCompleted});
+                }
+            }
+            
+            // 更新隐藏计数
+            State.hiddenThisPageCount = cardsToHide.length;
+            Utils.logger('info', `需要隐藏的卡片总数: ${cardsToHide.length}`);
+            
+            // 处理需要隐藏的卡片
+            if (cardsToHide.length > 100) {
+                // 对于大量卡片，只对最后100个添加延迟
+                const directHideCards = cardsToHide.slice(0, cardsToHide.length - 100);
+                const delayHideCards = cardsToHide.slice(cardsToHide.length - 100);
+                
+                // 直接隐藏大部分卡片
+                directHideCards.forEach(card => {
+                    card.style.display = 'none';
+                });
+                
+                // 对最后100个卡片添加延迟
+                for (let i = 0; i < delayHideCards.length; i++) {
+                    delayHideCards[i].style.display = 'none';
+                    delayHideCards[i].classList.add('fab-helper-processed'); // 标记为已处理
+                    
+                    // 添加小延迟
+                    if (i < delayHideCards.length - 1) {
+                        const delay = Math.floor(Math.random() * 50) + 20; // 更短的延迟(20-70ms)
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            } else {
+                // 对于少量卡片，全部添加延迟
+                for (let i = 0; i < cardsToHide.length; i++) {
+                    cardsToHide[i].style.display = 'none';
+                    cardsToHide[i].classList.add('fab-helper-processed'); // 标记为已处理
+                    
+                    // 添加小延迟
+                    if (i < cardsToHide.length - 1) {
+                        const delay = Math.floor(Math.random() * 100) + 50; // 50-150ms延迟
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+            }
+            
+            // 处理需要显示的卡片
+            cardsToShow.forEach(({card, isOwned}) => {
+                card.style.display = '';
+                
+                // 确保已拥有的项目在UI上有正确的标记
+                if (isOwned) {
+                    UI.applyOverlay(card, 'owned');
+                } else {
+                    // 移除任何现有的覆盖层
+                    const existing = card.querySelector('.fab-helper-overlay-v8');
+                    if (existing) existing.remove();
+                }
+                card.classList.add('fab-helper-processed'); // 标记为已处理
             });
+            
+            // 更新UI显示
             UI.update();
         },
     };
@@ -1359,11 +1461,65 @@
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
             basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn);
 
-            // -- Divider --
+            const networkAnalysisSection = document.createElement('div');
+            networkAnalysisSection.className = 'fab-helper-network-analysis';
+            networkAnalysisSection.style.display = 'block'; // 默认显示
+
+            const networkTitle = document.createElement('div');
+            networkTitle.className = 'fab-helper-section-title';
+            networkTitle.textContent = '📈 网络分析 (Network Analysis)';
+            networkTitle.style.cursor = 'pointer';
+            networkTitle.onclick = () => {
+                const content = networkAnalysisSection.querySelector('.fab-helper-network-content');
+                content.style.display = content.style.display === 'none' ? 'grid' : 'none';
+            };
+
+            const networkContent = document.createElement('div');
+            networkContent.className = 'fab-helper-network-content';
+            networkContent.style.cssText = `
+                display: grid; /* 默认内容显示 */
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+                background: rgba(0,0,0,0.2);
+                padding: 8px;
+                border-radius: var(--radius-m);
+                margin-top: 4px;
+            `;
+
+            const createMetricDisplay = (id, label, value) => {
+                const item = document.createElement('div');
+                item.className = 'fab-helper-status-item';
+                item.innerHTML = `${label}<span id="${id}">${value}</span>`;
+                return item;
+            };
+
+            State.UI.rpsDisplay = createMetricDisplay('fab-rps-display', '实时RPS', '0');
+            State.UI.peakRpsDisplay = createMetricDisplay('fab-peak-rps-display', '峰值RPS', '0');
+            networkContent.append(State.UI.rpsDisplay, State.UI.peakRpsDisplay);
+
+            const last429Info = document.createElement('div');
+            last429Info.id = 'fab-last-429-info';
+            last429Info.style.cssText = `
+                grid-column: 1 / -1;
+                font-size: 11px;
+                color: var(--text-color-secondary);
+                background: rgba(0,0,0,0.2);
+                padding: 6px;
+                border-radius: var(--radius-s);
+                line-height: 1.4;
+            `;
+            last429Info.innerHTML = '<b>最近429事件:</b><br>尚无记录';
+            State.UI.last429Display = last429Info;
+            networkContent.appendChild(last429Info);
+            
+            networkAnalysisSection.append(networkTitle, networkContent);
+            basicSection.appendChild(networkAnalysisSection);
+
+            // -- Advanced Wrapper (状态栏+高级区) --
+            const advancedWrapper = document.createElement('div');
+            advancedWrapper.style.display = 'none'; 
             const divider = document.createElement('hr');
             divider.className = 'fab-helper-divider';
-
-            // -- Advanced Section --
             const advSection = document.createElement('div');
             advSection.className = 'fab-helper-btn-section';
             advSection.style.display = '';
@@ -1400,14 +1556,15 @@
             resetDataBtn.innerHTML = '⚠️ 重置所有数据';
             resetDataBtn.style.background = 'var(--pink)'; // Use a "danger" color
             resetDataBtn.onclick = Database.resetAllData;
-            advSection.append(advTitle, State.UI.reconBtn, /* State.UI.execBtn, */ State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
-
-            // -- Advanced Wrapper (状态栏+高级区) --
-            const advancedWrapper = document.createElement('div');
-            // Restore to hidden by default.
-            advancedWrapper.style.display = 'none'; 
+            advSection.append(advTitle, State.UI.reconBtn, State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
             advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
-
+            
+            // 将其添加到基础功能区
+            // basicSection.appendChild(networkAnalysisSection); // 暂时禁用
+            
+            // 组装 advancedWrapper
+            advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
+            
             // -- Assemble UI --
             container.append(header, logHeader, State.UI.logPanel, basicSection, advancedWrapper);
             document.body.appendChild(container);
@@ -1482,6 +1639,15 @@
             const hideText = State.hideSaved ? Utils.getText('show') : Utils.getText('hide');
             State.UI.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
             State.UI.hideBtn.style.background = 'var(--blue)';
+            
+            // 添加计数变更时的动画效果
+            if (State.UI.lastHiddenCount !== State.hiddenThisPageCount) {
+                State.UI.hideBtn.classList.add('fab-helper-count-change');
+                setTimeout(() => {
+                    State.UI.hideBtn.classList.remove('fab-helper-count-change');
+                }, 1000);
+                State.UI.lastHiddenCount = State.hiddenThisPageCount;
+            }
 
             // Reset Recon Button
             State.UI.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
@@ -1554,28 +1720,41 @@
         },
 
         setupOwnershipObserver: (card) => {
-            const checkHide=()=>{
-                const text=card.textContent||'';
-                if(State.hideSaved && [...Config.SAVED_TEXT_SET].some(s=>text.includes(s))){card.style.display='none';UI.update();return true;} return false;
-            };
-            if (checkHide()) return;
-            
             // 获取卡片的 URL
             const link = card.querySelector(Config.SELECTORS.cardLink);
             if (!link) return;
             const url = link.href.split('?')[0];
             
+            // 初始检查 - 如果卡片已经被标记为拥有，则隐藏它
+            const initialCheck = () => {
+                const text = card.textContent || '';
+                const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
+                
+                if (State.hideSaved && isNativelySaved) {
+                    card.style.display = 'none';
+                    // 这里也不应该直接修改计数，runHideOrShow 会统一处理
+                    return true; // 卡片已被隐藏
+                }
+                return false; // 卡片未被隐藏
+            };
+            
+            // 进行初始检查，但无论结果如何，都继续设置观察器
+            initialCheck();
+            
             const obs = new MutationObserver((mutations) => {
                 // 检查文本变化，判断是否商品已被拥有
-                if ([...Config.SAVED_TEXT_SET].some(s => card.textContent.includes(s))) {
+                const text = card.textContent || '';
+                const isNowSaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
+                
+                if (isNowSaved) {
                     // 如果检测到"已保存"文本，将该 URL 添加到会话完成集合中
                     State.sessionCompleted.add(url);
                     
                     // 更新 UI 显示（隐藏卡片或应用覆盖层）
                     if (State.hideSaved) {
                         card.style.display = 'none';
-                        State.hiddenThisPageCount++;
-                        UI.update();
+                        // 不再手动递增，而是触发一次完整的重新计算
+                        TaskRunner.runHideOrShow();
                     } else {
                         UI.applyOverlay(card, 'owned');
                     }
@@ -1585,11 +1764,11 @@
                 }
             });
             
-            // 监听卡片的文本变化
+            // 监听卡片的文本变化，无论卡片当前是否被隐藏
             obs.observe(card, {childList: true, subtree: true, characterData: true});
             
             // 设置超时，确保不会无限期监听
-            setTimeout(() => obs.disconnect(), 10000);
+            setTimeout(() => obs.disconnect(), 15000);
         },
     };
 
@@ -1600,31 +1779,30 @@
         State.isInitialized = true;
 
         Utils.detectLanguage();
-        // Initialize the network filter as early as possible, per Rule #6.
+        
+        // 这些模块不依赖UI，可以先初始化
         NetworkFilter.init();
         await Database.load();
 
-        // The new, correct worker detection logic.
-        // We check if a workerId is present in the URL. If so, it's a worker tab.
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('workerId')) {
-            // This is a worker tab. Its only job is to process the page and then close.
             TaskRunner.processDetailPage();
-            return; // IMPORTANT: Stop all further script execution for this worker tab.
+            return; 
         }
 
-        // --- Standard page setup (runs only for the main, non-worker tab) ---
-        // The UI.create() function now internally checks if it should run,
-        // so we can call it unconditionally here.
+        // 必须先创建UI
         UI.create();
 
-        // The rest of the setup only makes sense if the UI was actually created.
+        // 必须在创建UI后检查容器是否存在
         if (!State.UI.container) {
              Utils.logger('info', 'UI container not found, skipping remaining setup for this page.');
              return;
         }
 
-        // NEW: Immediately reflect saved recon progress in the UI on load.
+        // 现在UI元素已存在，可以安全地初始化网络分析模块了
+        NetworkRecorder.init();
+        NetworkAnalyzer.init();
+
         const savedNextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
         if (savedNextUrl && State.UI.reconProgressDisplay) {
             const displayPage = Utils.getDisplayPageFromUrl(savedNextUrl);
@@ -1639,28 +1817,40 @@
 
         // Attach listeners and observers
         const mainObserver = new MutationObserver((mutations) => {
+            let hasNewCards = false;
+            let newCardsFound = [];
+            
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                     mutation.addedNodes.forEach(node => {
-                        // We only care about element nodes
+                        // 我们只关心元素节点
                         if (node.nodeType === 1) {
-                            // Check if the added node itself is a card
-                            if (node.matches(Config.SELECTORS.card)) {
+                            // 检查添加的节点本身是否是卡片，并且尚未被处理
+                            if (node.matches(Config.SELECTORS.card) && !node.classList.contains('fab-helper-processed')) {
+                                hasNewCards = true;
+                                newCardsFound.push(node);
                                 UI.setupOwnershipObserver(node);
-                                UI.applyOverlaysToPage();
-                                TaskRunner.runHideOrShow();
                             }
                             
-                            // Check if the added node contains new cards (e.g., a container was added)
-                            const newCards = node.querySelectorAll(Config.SELECTORS.card);
-                            if (newCards.length > 0) {
-                                newCards.forEach(c => UI.setupOwnershipObserver(c));
-                                UI.applyOverlaysToPage();
-                                TaskRunner.runHideOrShow();
+                            // 检查添加的节点是否包含新卡片（例如，添加了一个容器）
+                            const containedCards = node.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
+                            if (containedCards.length > 0) {
+                                hasNewCards = true;
+                                Array.from(containedCards).forEach(card => {
+                                    newCardsFound.push(card);
+                                    UI.setupOwnershipObserver(card);
+                                });
                             }
                         }
                     });
                 }
+            }
+            
+            // 只有当检测到新卡片时，才更新UI和运行隐藏/显示逻辑
+            if (hasNewCards) {
+                Utils.logger('info', `检测到${newCardsFound.length}个新卡片加载`);
+                UI.applyOverlaysToPage();
+                TaskRunner.runHideOrShow();
             }
         });
         
@@ -1795,5 +1985,106 @@
         State.valueChangeListeners = [];
     };
     main();
+
+    const NetworkRecorder = {
+        DB_KEY: 'fab_network_log_v1',
+        MAX_RECORDS: 500, // 只保留最近500条记录以防无限增长
+        log: [],
+
+        init: () => {
+            // 从 localStorage 加载历史记录
+            const savedLog = localStorage.getItem(NetworkRecorder.DB_KEY);
+            if (savedLog) {
+                try {
+                    NetworkRecorder.log = JSON.parse(savedLog);
+                } catch (e) {
+                    NetworkRecorder.log = [];
+                }
+            }
+
+            if (typeof GM_webRequest !== 'function') {
+                Utils.logger('warn', 'Network Recorder is disabled (GM_webRequest not available).');
+                return;
+            }
+
+            GM_webRequest(
+                { url: 'https://www.fab.com/i/users/me/listings-states*', type: 'xmlhttprequest' },
+                (details) => {
+                    // 添加诊断日志，确认监听器是否被触发
+                    console.log('[Fab Helper Debug] NetworkRecorder captured a request:', details);
+
+                    if (details.type === 'error' || !details.response) {
+                        // 网络层面的错误或没有响应体，暂时不记录
+                        return;
+                    }
+                    
+                    const url = new URL(details.finalUrl || details.url);
+                    const idCount = url.searchParams.getAll('listing_ids').length;
+
+                    const record = {
+                        timestamp: Date.now(),
+                        url: url.href,
+                        status: details.status,
+                        idCount: idCount
+                    };
+                    
+                    // 添加新记录并保持日志大小
+                    NetworkRecorder.log.push(record);
+                    if (NetworkRecorder.log.length > NetworkRecorder.MAX_RECORDS) {
+                        NetworkRecorder.log.shift(); // 移除最旧的记录
+                    }
+
+                    // 保存到 localStorage
+                    localStorage.setItem(NetworkRecorder.DB_KEY, JSON.stringify(NetworkRecorder.log));
+                    
+                    // 触发一个自定义事件，通知UI更新
+                    document.dispatchEvent(new CustomEvent('fab-network-update'));
+                }
+            );
+             Utils.logger('info', 'Network flight recorder is active.');
+        }
+    };
+
+    const NetworkAnalyzer = {
+        peakRps: 0,
+        updateUI: () => {
+            if (!State.UI.rpsDisplay) return; // 如果UI还没创建，则不执行
+
+            const now = Date.now();
+            const lastSecondLog = NetworkRecorder.log.filter(r => now - r.timestamp <= 1000);
+            const rps = lastSecondLog.length;
+
+            if (rps > NetworkAnalyzer.peakRps) {
+                NetworkAnalyzer.peakRps = rps;
+            }
+
+            State.UI.rpsDisplay.querySelector('span').textContent = rps;
+            State.UI.peakRpsDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
+
+            // 查找最后一个429错误
+            const last429 = [...NetworkRecorder.log].reverse().find(r => r.status === 429);
+            if (last429) {
+                const eventTime = new Date(last429.timestamp).toLocaleTimeString();
+                
+                // 计算当时的RPS
+                const oneSecondBefore = last429.timestamp - 1000;
+                const rpsAt429 = NetworkRecorder.log.filter(r => r.timestamp > oneSecondBefore && r.timestamp <= last429.timestamp).length;
+
+                State.UI.last429Display.innerHTML = `
+                    <b>最近429事件:</b>
+                    <br><b>时间:</b> ${eventTime}
+                    <br><b>当时RPS:</b> ${rpsAt429}
+                    <br><b>ID 数量:</b> ${last429.idCount}
+                    <br><b>URL:</b> <span style="word-break: break-all;">${last429.url.substring(0, 100)}...</span>
+                `;
+            }
+        },
+        init: () => {
+             // 监听自定义事件，实时更新UI
+            document.addEventListener('fab-network-update', NetworkAnalyzer.updateUI);
+            // 初始加载时也更新一次
+            NetworkAnalyzer.updateUI();
+        }
+    };
 
 })(); 
