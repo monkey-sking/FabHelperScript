@@ -405,21 +405,32 @@
         // This is now the dedicated function for starting the execution loop.
         // It ensures the main page never navigates away.
         startExecution: () => {
+            // Case 1: Execution is already running. We just need to update the total task count.
             if (State.isExecuting) {
-                Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
+                const newTotal = State.db.todo.length;
+                if (newTotal > State.executionTotalTasks) {
+                    Utils.logger('info', `任务执行中，新任务已添加。总任务数更新为: ${newTotal}`);
+                    State.executionTotalTasks = newTotal;
+                    UI.update(); // Update the UI to reflect the new total.
+                } else {
+                    Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
+                }
+                // IMPORTANT: Do not start a new execution loop. The current one will pick up the new tasks.
                 return;
             }
-                if (State.db.todo.length === 0) {
+
+            // Case 2: Starting a new execution from an idle state.
+            if (State.db.todo.length === 0) {
                 Utils.logger('info', '"待办"清单是空的，无需启动。');
-                    return;
-                }
-            Utils.logger('info', '队列中有任务，即将开始执行...');
+                return;
+            }
+            Utils.logger('info', `队列中有 ${State.db.todo.length} 个任务，即将开始执行...`);
             State.isExecuting = true;
             State.executionTotalTasks = State.db.todo.length;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
             UI.update();
-                TaskRunner.executeBatch();
+            TaskRunner.executeBatch();
         },
 
         // This function is for the main UI button to toggle start/stop.
@@ -1278,20 +1289,23 @@
                 if (newlyAddedList.length > 0) {
                     State.db.todo.push(...newlyAddedList);
                     Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+                }
 
-                    if (State.isExecuting) {
-                        State.executionTotalTasks += newlyAddedList.length;
+                const actionableCount = State.db.todo.length;
+                if (actionableCount > 0) {
+                    if (newlyAddedList.length === 0) {
+                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办队列中。`);
                     }
-                    UI.update();
+                    TaskRunner.startExecution();
                 } else {
-                    const actionableCount = alreadyInQueueCount;
-                    if (actionableCount > 0) {
-                         Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
-                    } else {
-                         Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
-                    }
+                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
                 }
             };
+            // 启动任务
+            State.UI.execBtn = document.createElement('button');
+            State.UI.execBtn.innerHTML = '🚀 启动任务';
+            State.UI.execBtn.style.background = 'var(--pink)';
+            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
             // 本页刷新状态
             const refreshPageBtn = document.createElement('button');
             refreshPageBtn.innerHTML = '🔄 本页刷新状态';
@@ -1302,7 +1316,7 @@
             State.UI.hideBtn.innerHTML = '🙈 隐藏已拥有';
             State.UI.hideBtn.style.background = 'var(--blue)';
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            basicSection.append(basicTitle, addAllBtn, refreshPageBtn, State.UI.hideBtn);
+            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn);
 
             // -- Divider --
             const divider = document.createElement('hr');
@@ -1321,10 +1335,10 @@
             State.UI.reconBtn.style.background = 'var(--green)';
             State.UI.reconBtn.onclick = TaskRunner.toggleRecon;
             // 批量领取
-            State.UI.execBtn = document.createElement('button');
-            State.UI.execBtn.innerHTML = '�� 批量领取';
-            State.UI.execBtn.style.background = 'var(--pink)';
-            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
+            // State.UI.execBtn = document.createElement('button');
+            // State.UI.execBtn.innerHTML = '🚀 批量领取';
+            // State.UI.execBtn.style.background = 'var(--pink)';
+            // State.UI.execBtn.onclick = TaskRunner.toggleExecution;
             // 批量重试失败
             State.UI.retryBtn = document.createElement('button');
             State.UI.retryBtn.innerHTML = '🔁 批量重试失败';
@@ -1345,11 +1359,12 @@
             resetDataBtn.innerHTML = '⚠️ 重置所有数据';
             resetDataBtn.style.background = 'var(--pink)'; // Use a "danger" color
             resetDataBtn.onclick = Database.resetAllData;
-            advSection.append(advTitle, State.UI.reconBtn, State.UI.execBtn, State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
+            advSection.append(advTitle, State.UI.reconBtn, /* State.UI.execBtn, */ State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
 
             // -- Advanced Wrapper (状态栏+高级区) --
             const advancedWrapper = document.createElement('div');
-            advancedWrapper.style.display = 'none'; // 默认隐藏
+            // Restore to hidden by default.
+            advancedWrapper.style.display = 'none'; 
             advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
 
             // -- Assemble UI --
@@ -1358,6 +1373,7 @@
             State.UI.container = container;
 
             // --- Console Commands (Fix using unsafeWindow) ---
+            // These commands are now less critical but kept for power users.
             unsafeWindow.FabHelperShowAdvanced = function() {
                 advancedWrapper.style.display = '';
                 console.log('Fab Helper Advanced UI is now visible.');
