@@ -106,7 +106,8 @@
             resetReconBtn: null,
             reconProgressDisplay: null,
         },
-        valueChangeListeners: []
+        valueChangeListeners: [],
+        sessionCompleted: new Set(), // Phase15: URLs completed this session
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -1021,13 +1022,23 @@
         runHideOrShow: () => {
             State.hiddenThisPageCount = 0;
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
                 const text = card.textContent || '';
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                if (!link) return;
+                const url = link.href.split('?')[0];
+                
+                // 检查是否由网站原生标记为已保存
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                const isScriptSaved = link && Database.isDone(link.href);
-                if (isNativelySaved || isScriptSaved) {
-                    card.style.display = State.hideSaved ? 'none' : '';
-                    if(State.hideSaved) State.hiddenThisPageCount++;
+                
+                // 检查是否在本次会话中已经完成
+                const isSessionCompleted = State.sessionCompleted.has(url);
+                
+                // 如果设置为隐藏已保存项目，并且项目是已保存的或在本次会话中完成的
+                if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
+                    card.style.display = 'none';
+                    State.hiddenThisPageCount++;
+                } else {
+                    card.style.display = '';
                 }
             });
             UI.update();
@@ -1448,44 +1459,31 @@
             State.UI.resetReconBtn.style.background = 'var(--gray)';
         },
 
-        applyOverlay: (card, type = 'owned') => {
-            // Always remove existing overlay to reflect the latest state.
-            const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-            if (existingOverlay) existingOverlay.remove();
-
-            // If the page natively shows it's owned, our job is done. Don't add any icon.
+        applyOverlay: (card, type='owned') => {
+            const existing = card.querySelector('.fab-helper-overlay-v8');
+            if (existing) existing.remove();
             const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
-            if (isNativelyOwned) {
-                return;
-            }
-
-            const overlay = document.createElement('div');
-            overlay.className = 'fab-helper-overlay-v8';
+            if (isNativelyOwned) return;
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            const url = link && link.href.split('?')[0];
+            if (!url) return;
+            const overlay = document.createElement('div'); overlay.className='fab-helper-overlay-v8';
+            const styles={position:'absolute',top:'0',left:'0',width:'100%',height:'100%',background:'rgba(25,25,25,0.6)',zIndex:'10',display:'flex',justifyContent:'center',alignItems:'center',fontSize:'24px',fontWeight:'bold',backdropFilter:'blur(2px)',borderRadius:'inherit'};
             
-            const styles = {
-                position: 'absolute', top: '0', left: '0', width: '100%', height: '100%',
-                background: 'rgba(25, 25, 25, 0.6)', zIndex: '10', display: 'flex',
-                justifyContent: 'center', alignItems: 'center', fontSize: '24px',
-                fontWeight: 'bold', backdropFilter: 'blur(2px)', borderRadius: 'inherit'
-            };
-
-            if (type === 'owned') {
-                styles.color = '#4caf50'; // Green
-            overlay.innerHTML = '✅';
-            } else if (type === 'queued') {
-                styles.color = '#ff9800'; // Orange
-                overlay.innerHTML = '⏳';
+            // 改进基于会话的标记显示逻辑
+            if (type==='owned' || State.sessionCompleted.has(url)) {
+                styles.color='#4caf50';  // 绿色
+                overlay.innerHTML='✅';   // 勾选标记
             }
-
-            Object.assign(overlay.style, styles);
-
-            const thumbnail = card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
-            if (thumbnail) {
-                if (getComputedStyle(thumbnail).position === 'static') {
-                    thumbnail.style.position = 'relative';
-                }
-                thumbnail.appendChild(overlay);
+            else if (type==='queued' && Database.isTodo(url)) {
+                styles.color='#ff9800';  // 橙色
+                overlay.innerHTML='⏳';   // 等待标记
             }
+            else return;
+            
+            Object.assign(overlay.style,styles);
+            const thumb=card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
+            if (thumb) {if(getComputedStyle(thumb).position==='static')thumb.style.position='relative';thumb.appendChild(overlay);}
         },
 
         removeAllOverlays: () => {
@@ -1493,32 +1491,56 @@
         },
 
         applyOverlaysToPage: () => {
-            document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (link) {
-                    const url = link.href.split('?')[0];
-                    const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
+            document.querySelectorAll(Config.SELECTORS.card).forEach(card=>{
+                const link=card.querySelector(Config.SELECTORS.cardLink);
+                if (!link) return;
+                const url=link.href.split('?')[0];
+                const isNativelyOwned=[...Config.SAVED_TEXT_SET].some(s=>card.textContent.includes(s));
+                if (isNativelyOwned) {const ex=card.querySelector('.fab-helper-overlay-v8'); if(ex)ex.remove(); return;}
+                if (State.sessionCompleted.has(url)) UI.applyOverlay(card,'owned');
+                else if (Database.isTodo(url)) UI.applyOverlay(card,'queued');
+                else {const ex=card.querySelector('.fab-helper-overlay-v8'); if(ex)ex.remove();}
+            });
+        },
 
-                    // If the page says it's owned, we trust it. Clean up any of our overlays.
-                    if (isNativelyOwned) {
-                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-                        if (existingOverlay) existingOverlay.remove();
-                        return;
-                    }
-
-                    // If the page does NOT say it's owned, then we apply our own state icons.
-                    if (Database.isDone(url)) {
-                        UI.applyOverlay(card, 'owned');
-                    } else if (Database.isTodo(url)) {
-                        UI.applyOverlay(card, 'queued');
+        setupOwnershipObserver: (card) => {
+            const checkHide=()=>{
+                const text=card.textContent||'';
+                if(State.hideSaved && [...Config.SAVED_TEXT_SET].some(s=>text.includes(s))){card.style.display='none';UI.update();return true;} return false;
+            };
+            if (checkHide()) return;
+            
+            // 获取卡片的 URL
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            if (!link) return;
+            const url = link.href.split('?')[0];
+            
+            const obs = new MutationObserver((mutations) => {
+                // 检查文本变化，判断是否商品已被拥有
+                if ([...Config.SAVED_TEXT_SET].some(s => card.textContent.includes(s))) {
+                    // 如果检测到"已保存"文本，将该 URL 添加到会话完成集合中
+                    State.sessionCompleted.add(url);
+                    
+                    // 更新 UI 显示（隐藏卡片或应用覆盖层）
+                    if (State.hideSaved) {
+                        card.style.display = 'none';
+                        State.hiddenThisPageCount++;
+                        UI.update();
                     } else {
-                        // If it's not in any of our lists, ensure no overlay is present.
-                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-                        if (existingOverlay) existingOverlay.remove();
+                        UI.applyOverlay(card, 'owned');
                     }
+                    
+                    // 断开观察器连接，不再需要监听
+                    obs.disconnect();
                 }
             });
-        }
+            
+            // 监听卡片的文本变化
+            obs.observe(card, {childList: true, subtree: true, characterData: true});
+            
+            // 设置超时，确保不会无限期监听
+            setTimeout(() => obs.disconnect(), 10000);
+        },
     };
 
 
@@ -1574,18 +1596,15 @@
                         if (node.nodeType === 1) {
                             // Check if the added node itself is a card
                             if (node.matches(Config.SELECTORS.card)) {
-                                const link = node.querySelector(Config.SELECTORS.cardLink);
-                                if (link && Database.isDone(link.href)) {
-                                    UI.applyOverlay(node, 'owned');
-                                } else if (link && Database.isTodo(link.href)) {
-                                    UI.applyOverlay(node, 'queued');
-                                }
-                                TaskRunner.runHideOrShow(); // Run hide/show logic which is relatively fast
+                                UI.setupOwnershipObserver(node);
+                                UI.applyOverlaysToPage();
+                                TaskRunner.runHideOrShow();
                             }
                             
                             // Check if the added node contains new cards (e.g., a container was added)
                             const newCards = node.querySelectorAll(Config.SELECTORS.card);
                             if (newCards.length > 0) {
+                                newCards.forEach(c => UI.setupOwnershipObserver(c));
                                 UI.applyOverlaysToPage();
                                 TaskRunner.runHideOrShow();
                             }
@@ -1668,8 +1687,14 @@
 
             // --- Then, process the result ---
             if (State.runningWorkers[workerId]) {
+                const task = State.runningWorkers[workerId].task;  // Get the task from runningWorkers
                 if (success) {
                     State.executionCompletedTasks++;
+                    // Phase15: Track successfully completed tasks in the current session
+                    if (task && task.url) {
+                        State.sessionCompleted.add(task.url.split('?')[0]); // Add the clean URL to sessionCompleted
+                        UI.applyOverlaysToPage(); // Update UI to reflect the new session completion
+                    }
                 } else {
                     State.executionFailedTasks++;
                 }

@@ -111,3 +111,6 @@
 *   [ ] **40. 在隐藏功能开启的情况下，新出现的“已保存在我的库中”的卡片没有隐藏
 
 *   [ ] **41. 认认真真地检查代码
+**第十五阶段：基于稳定版的最终特性重构 (Phase 15)**
+[x] 44. 实现"基于会话的 ✅ 标记" (State.sessionCompleted + 修改 UI.applyOverlay)
+[x] 45. 实现"'眼见为实'的 DOM 优先逻辑" (setupOwnershipObserver + 精简 runHideOrShow)
