@@ -33,7 +33,7 @@
         SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 3, // Maximum number of concurrent worker tabs
+        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
         UI_CONTAINER_ID: 'fab-helper-container-v8',
         UI_LOG_ID: 'fab-helper-log-v8',
         DB_KEYS: {
@@ -107,7 +107,6 @@
             resetReconBtn: null,
             reconProgressDisplay: null,
         },
-        apiStateCache: new Map(), // The new source of truth, populated by the listener.
         valueChangeListeners: []
     };
 
@@ -232,7 +231,11 @@
                 } catch (e) { /* Ignore errors */ }
             });
             State.valueChangeListeners = [];
-        }
+        },
+        getShortId: (workerId) => {
+            if (!workerId || typeof workerId !== 'string') return 'invalid-id';
+            return workerId.split('_').pop();
+        },
     };
 
     // --- 模块四: 异步网络请求 (Promisified GM_xmlhttpRequest) ---
@@ -402,6 +405,53 @@
     };
 
 
+    // --- NEW MODULE: Server Truth Provider ---
+    // This module is responsible for actively fetching the ground truth from the server when needed.
+    const ServerTruth = {
+        fetchOwnershipInBatches: async (uids) => {
+            if (!uids || uids.length === 0) {
+                return new Set();
+            }
+            const ownedUids = new Set();
+            try {
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) throw new Error('CSRF token not found for server truth check.');
+
+                const CHUNK_SIZE = 24; // API limit
+                const uidChunks = [];
+                for (let i = 0; i < uids.length; i += CHUNK_SIZE) {
+                    uidChunks.push(uids.slice(i, i + CHUNK_SIZE));
+                }
+                Utils.logger('info', `[ServerTruth] 主动分 ${uidChunks.length} 批次查询 ${uids.length} 个商品...`);
+
+                for (let i = 0; i < uidChunks.length; i++) {
+                    const chunk = uidChunks[i];
+                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                    chunk.forEach(uid => statesUrl.searchParams.append('listing_ids', uid));
+                    
+                    const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' } });
+                    const statesData = JSON.parse(statesResponse.responseText);
+
+                    const statesArray = (statesData && Array.isArray(statesData.results)) ? statesData.results : null;
+                    if (statesArray === null) {
+                        Utils.logger('error', `[ServerTruth] API批次[${i+1}/${uidChunks.length}]响应格式错误:`, JSON.stringify(statesData));
+                        throw new Error('服务器返回的所有权数据格式无法解析。');
+                    }
+                    statesArray.forEach(item => {
+                        if (item.acquired) ownedUids.add(item.uid);
+                    });
+                    if (i < uidChunks.length - 1) await new Promise(r => setTimeout(r, 250));
+                }
+                 Utils.logger('info', `[ServerTruth] 主动查询完成，确认 ${ownedUids.size} 个已拥有商品。`);
+            } catch (e) {
+                Utils.logger('error', '[ServerTruth] 主动获取所有权状态时出错:', e);
+                // In case of error, return what we have so far.
+            }
+            return ownedUids;
+        }
+    };
+
+
     // --- 模块七: 任务运行器与事件处理 (Task Runner & Event Handlers) ---
     const TaskRunner = {
         // --- Toggles ---
@@ -497,7 +547,7 @@
             const FREE_STATUS_SELECTOR = '.csZFzinF'; // The container for the "免费" text
             const OWNED_STATUS_SELECTOR = '.cUUvxo_s'; // The container for the "已保存..." text
 
-            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
+            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items (Max 24)...');
 
             // --- DOM Creation Helpers ---
             const createOwnedElement = () => {
@@ -537,7 +587,8 @@
                 const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
                 if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
 
-                const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport);
+                // NEW: Scan only VISIBLE cards, with a hard limit of 24
+                const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport).slice(0, 24);
                 const uidToCardMap = new Map();
                 
                 visibleCards.forEach(card => {
@@ -558,7 +609,6 @@
                 const apiUrl = new URL(API_ENDPOINT);
                 uidsToQuery.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
 
-                // Use fetch directly as it's a simple GET request with standard headers.
                 const response = await fetch(apiUrl.href, {
                     headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
                 });
@@ -572,19 +622,15 @@
                 let updatedCount = 0;
                 uidToCardMap.forEach((card, uid) => {
                     const isOwned = ownedUids.has(uid);
-                    
-                    if (isOwned) {
-                        const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
-                        if (freeElement) { // If it currently shows "Free", replace it.
-                            freeElement.replaceWith(createOwnedElement());
-                            updatedCount++;
-                        }
-                    } else { // Item is not owned
-                        const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
-                        if (ownedElement) { // If it currently shows "Owned", replace it.
-                            ownedElement.replaceWith(createFreeElement());
-                            updatedCount++;
-                        }
+                    const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
+                    const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
+
+                    if (isOwned && freeElement) {
+                        freeElement.replaceWith(createOwnedElement());
+                        updatedCount++;
+                    } else if (!isOwned && ownedElement) {
+                        ownedElement.replaceWith(createFreeElement());
+                        updatedCount++;
                     }
                 });
 
@@ -592,10 +638,8 @@
 
                 // 刷新后自动执行隐藏/显示逻辑，保证 UI 实时同步
                 TaskRunner.runHideOrShow();
-
-            } catch (e) {
-                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
-                alert('API 刷新失败。请检查控制台中的错误信息，并确认您已登录。');
+            } catch (err) {
+                Utils.logger('error', '[Fab DOM Refresh] Error:', err);
             }
         },
 
@@ -830,7 +874,7 @@
                 for (const workerId in State.runningWorkers) {
                     const workerInfo = State.runningWorkers[workerId];
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
-                        Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
+                        Utils.logger('error', `🚨 WATCHDOG: Worker [${Utils.getShortId(workerId)}] for task "${workerInfo.task.name}" has stalled!`);
                         
                         Database.markAsFailed(workerInfo.task);
 
@@ -869,7 +913,7 @@
                 
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
 
-                Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
+                Utils.logger('info', `🚀 Dispatching Worker [${Utils.getShortId(workerId)}] for: ${task.name}`);
                 
                 await GM_setValue(workerId, { task });
 
@@ -899,7 +943,7 @@
             }
 
             const currentTask = payload.task;
-            const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+            const logBuffer = [`[${Utils.getShortId(workerId)}] Started: ${currentTask.name}`];
             let success = false;
 
             try {
@@ -929,6 +973,10 @@
                 if (!success) {
                     try {
                         const isItemOwned = () => {
+                            // NEW: Check for redirection to library page as a success condition
+                            if (window.location.href.includes('/my-library/')) {
+                                return { owned: true, reason: 'Redirected to library page' };
+                            }
                             const criteria = Config.OWNED_SUCCESS_CRITERIA;
                             const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
                             if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
@@ -992,9 +1040,11 @@
                                 if (actionButton) {
                                     Utils.deepClick(actionButton);
                                     await new Promise((resolve, reject) => {
-                                        const timeout = 25000;
+                                        const timeout = 40000; // Increased from 25000 to 40000
                                         const interval = setInterval(() => {
-                                            if (isItemOwned().owned) {
+                                            const ownedState = isItemOwned();
+                                            if (ownedState.owned) {
+                                                logBuffer.push(`✅ Ownership confirmed via: ${ownedState.reason}`);
                                                 success = true;
                                                 clearInterval(interval);
                                                 resolve();
@@ -1284,8 +1334,8 @@
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = async () => {
                 try {
-                    // --- The New "Listener" Logic ---
-                    Utils.logger('info', '正在根据已监听到的真实状态，处理本页商品...');
+                    // --- The Final "WYSIWYG" Logic ---
+                    Utils.logger('info', '开始处理本页商品 (眼见为实模式)...');
                     const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
                     const newlyAddedList = [];
                     let alreadyOwnedCount = 0;
@@ -1295,25 +1345,25 @@
                         const link = card.querySelector(Config.SELECTORS.cardLink);
                         if (!link) return;
                         
-                        const match = link.href.match(/listings\/([a-f0-9-]+)/);
-                        const uid = match ? match[1] : null;
                         const url = link.href.split('?')[0];
+                        const uid = url.split('/').pop();
 
-                        if (!uid) return;
-
-                        // Step 1: Check ownership using the highly reliable, pre-filled cache.
-                        if (State.apiStateCache.get(uid) === true) {
+                        // The ultimate source of truth is now the DOM itself.
+                        const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => card.textContent.includes(s));
+                        if (isVisiblyOwned) {
                             alreadyOwnedCount++;
+                            // Sync this visible truth to our simple DB for hiding/overlays
+                            if (!Database.isDone(url)) {
+                                State.db.done.push(url);
+                            }
                             return;
                         }
 
-                        // Step 2: If not owned, check if it's already in our local queue.
                         if (Database.isTodo(url)) {
                             alreadyInQueueCount++;
                             return;
                         }
 
-                        // Step 3: If neither, it's a valid new task.
                         const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || 'Untitled';
                         newlyAddedList.push({ name, url, type: 'detail', uid });
                     });
@@ -1321,15 +1371,24 @@
                     if (newlyAddedList.length > 0) {
                         State.db.todo.push(...newlyAddedList);
                         Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+                        // NEW: If execution is already running, increment total task count accurately
+                        if (State.isExecuting) {
+                            State.executionTotalTasks += newlyAddedList.length;
+                            UI.update();
+                        }
                     }
+                    
+                    // The 'done' list might have been updated, save it.
+                    await Database.saveDone();
+                    UI.applyOverlaysToPage();
 
-                    // --- Step 4: Start execution ---
+
                     if (State.db.todo.length > 0) {
                          if (newlyAddedList.length === 0) {
                              if (alreadyInQueueCount > 0) {
                                 Utils.logger('info', `本页所有可领取商品已在队列中。`);
                              } else {
-                                Utils.logger('info', `本页所有商品均已拥有。`);
+                                Utils.logger('info', `本页所有商品均已拥有 (共 ${alreadyOwnedCount} 个)。`);
                              }
                          }
                          TaskRunner.startExecution();
@@ -1546,11 +1605,9 @@
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 if (link) {
-                    const match = link.href.match(/listings\/([a-f0-9-]+)/);
-                    const uid = match ? match[1] : null;
                     const url = link.href.split('?')[0];
 
-                    if (uid && State.apiStateCache.get(uid) === true) {
+                    if (Database.isDone(url)) {
                         UI.applyOverlay(card, 'owned');
                     } else if (Database.isTodo(url)) {
                         UI.applyOverlay(card, 'queued');
@@ -1560,6 +1617,60 @@
                     }
                 }
             });
+        },
+
+        // NEW: Patient observer for ownership detection
+        setupOwnershipObserver: (card, link) => {
+            if (!link) return; // No link means no URL to track
+            
+            const url = link.href.split('?')[0];
+            
+            // Skip if already owned in database
+            if (Database.isDone(url)) return;
+            
+            // Create a patient observer for this specific card
+            const ownershipObserver = new MutationObserver((mutations) => {
+                // Check if ownership text has appeared
+                const isNativelyOwned = card.textContent.includes('已保存在我的库中') || 
+                                       card.textContent.includes('Saved in My Library');
+                
+                if (isNativelyOwned) {
+                    Utils.logger('info', `Patient observer detected ownership for: ${url}`);
+                    
+                    // Mark as done in database
+                    Database.markAsDone({ url, name: link.textContent.trim() || 'Unknown Item' });
+                    
+                    // Update UI overlay
+                    UI.applyOverlay(card, 'owned');
+                    
+                    // Update hide/show state
+                    if (State.hideSaved) {
+                        card.style.display = 'none';
+                    }
+                    
+                    // Update progress counters
+                    State.executionCompletedTasks++;
+                    UI.update();
+                    
+                    // NEW: Re-evaluate hide/show logic so hidden count更新
+                    TaskRunner.runHideOrShow();
+                    
+                    // Disconnect observer to save resources
+                    ownershipObserver.disconnect();
+                }
+            });
+            
+            // Observe the card for text changes
+            ownershipObserver.observe(card, { 
+                childList: true, 
+                subtree: true, 
+                characterData: true 
+            });
+            
+            // Auto-disconnect after 10 seconds to prevent memory leaks
+            setTimeout(() => {
+                ownershipObserver.disconnect();
+            }, 10000);
         }
     };
 
@@ -1603,6 +1714,11 @@
         }
 
         UI.applyOverlaysToPage();
+        // NEW: Set up patient observers for existing cards on page load
+        document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            UI.setupOwnershipObserver(card, link);
+        });
         TaskRunner.runHideOrShow(); // Initial run
 
         Utils.logger('info', Utils.getText('log_init'));
@@ -1622,6 +1738,8 @@
                                 } else if (link && Database.isTodo(link.href)) {
                                     UI.applyOverlay(node, 'queued');
                                 }
+                                // NEW: Set up patient observer for ownership detection
+                                UI.setupOwnershipObserver(node, link);
                                 TaskRunner.runHideOrShow(); // Run hide/show logic which is relatively fast
                             }
                             
@@ -1629,6 +1747,11 @@
                             const newCards = node.querySelectorAll(Config.SELECTORS.card);
                             if (newCards.length > 0) {
                                 UI.applyOverlaysToPage();
+                                // NEW: Set up patient observers for all new cards
+                                newCards.forEach(card => {
+                                    const cardLink = card.querySelector(Config.SELECTORS.cardLink);
+                                    UI.setupOwnershipObserver(card, cardLink);
+                                });
                                 TaskRunner.runHideOrShow();
                             }
                         }
@@ -1644,6 +1767,7 @@
             State.db.done = new_value;
             UI.update();
             UI.applyOverlaysToPage();
+            TaskRunner.runHideOrShow();
         }));
         // TODO list is now session-based, so listening for its changes across tabs is no longer needed.
         /*
@@ -1700,9 +1824,9 @@
 
             // --- Log printing first ---
             if (logs && Array.isArray(logs)) {
-                Utils.logger('info', `--- Log Report from Worker [${workerId.substring(0,12)}] ---`);
+                Utils.logger('info', `--- Log Report from Worker [${Utils.getShortId(workerId)}] ---`);
                 logs.forEach(logMsg => {
-                    const logType = logMsg.includes('FAIL') ? 'error' : 'info';
+                    const logType = logMsg.includes('FAIL') || logMsg.includes('❌') ? 'error' : 'info';
                     Utils.logger(logType, logMsg);
                 });
                 Utils.logger('info', '--- End Log Report ---');
@@ -1719,7 +1843,7 @@
                 State.activeWorkers--;
                 delete State.runningWorkers[workerId];
                 // This log now makes more sense as it comes AFTER the detailed log report.
-                Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}. Progress: ${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`);
+                Utils.logger('info', `Worker [${Utils.getShortId(workerId)}] has finished. Active: ${State.activeWorkers}. Progress: ${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`);
                 
                 // Explicitly update UI to show progress immediately
                 UI.update();
