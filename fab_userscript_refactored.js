@@ -783,19 +783,37 @@
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
-            // Start the watchdog if it's not already running
-            if (!State.watchdogTimer && Object.keys(State.runningWorkers).length > 0) {
+            // Stop condition for the entire execution process
+            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                State.isExecuting = false;
+                if (State.watchdogTimer) {
+                    clearInterval(State.watchdogTimer);
+                    State.watchdogTimer = null;
+                }
+                UI.update();
+                return;
+            }
+
+            // --- TASK TYPE ROUTING ---
+            // Process recon tasks first if they are at the front of the queue.
+            while (State.db.todo.length > 0 && State.db.todo[0].type === 'recon') {
+                const reconTask = State.db.todo.shift(); // Take the recon task
+                await TaskRunner.reconWithApi(reconTask.apiUrl); // Process it sequentially
+            }
+
+            // Start the watchdog if it's not already running and there are workers
+            if (!State.watchdogTimer && State.activeWorkers > 0) {
                 TaskRunner.runWatchdog();
             }
 
-            // The dispatcher loop
-            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
+            // --- DISPATCHER FOR DETAIL TASKS ---
+            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0 && State.db.todo[0].type === 'detail') {
                 const task = State.db.todo.shift();
                 State.activeWorkers++;
                 
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 
-                // Register the worker with the watchdog
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
 
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
@@ -806,19 +824,11 @@
                 workerUrl.searchParams.set('workerId', workerId);
                 GM_openInTab(workerUrl.href, { active: false, setParent: true });
 
-                // Ensure the watchdog is started after the first worker is dispatched
                 if (!State.watchdogTimer) {
                     TaskRunner.runWatchdog();
                 }
             }
             UI.update();
-
-            if (State.db.todo.length === 0 && State.activeWorkers === 0 && State.isExecuting) {
-                Utils.logger('info', '✅ 🎉 All batch tasks have been completed!');
-                State.isExecuting = false;
-                if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
-                UI.update();
-            }
         },
 
         processDetailPage: async () => {
