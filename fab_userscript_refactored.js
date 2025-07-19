@@ -78,7 +78,8 @@
         isReconning: false,
         hideSaved: false,
         showAdvanced: false,
-        activeWorkers: 0, // Count of currently active worker tabs
+        activeWorkers: 0,
+        runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
         hiddenThisPageCount: 0,
         totalTasks: 0,
         completedTasks: 0,
@@ -744,31 +745,74 @@
             }
         },
 
+        // This is the watchdog timer that patrols for stalled workers.
+        runWatchdog: () => {
+            if (State.watchdogTimer) clearInterval(State.watchdogTimer); // Clear any existing timer
+
+            State.watchdogTimer = setInterval(() => {
+                if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
+                    clearInterval(State.watchdogTimer);
+                    State.watchdogTimer = null;
+                    return;
+                }
+
+                const now = Date.now();
+                const STALL_TIMEOUT = 45000; // 45 seconds
+
+                for (const workerId in State.runningWorkers) {
+                    const workerInfo = State.runningWorkers[workerId];
+                    if (now - workerInfo.startTime > STALL_TIMEOUT) {
+                        Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
+                        
+                        // Mark the task as failed
+                        Database.markAsFailed(workerInfo.task);
+
+                        // Clean up the stalled worker
+                        delete State.runningWorkers[workerId];
+                        State.activeWorkers--;
+
+                        Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
+
+                        // Trigger the dispatcher to check if it can send a new worker.
+                        TaskRunner.executeBatch();
+                    }
+                }
+            }, 5000); // Check every 5 seconds
+        },
+
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
-            // This is the dispatcher loop. It will keep dispatching workers
-            // as long as there are tasks and available worker slots.
+            // Start the watchdog if it's not already running
+            if (!State.watchdogTimer && Object.keys(State.runningWorkers).length > 0) {
+                TaskRunner.runWatchdog();
+            }
+
+            // The dispatcher loop
             while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
-                const task = State.db.todo.shift(); // Take a task from the queue
+                const task = State.db.todo.shift();
                 State.activeWorkers++;
                 
-                // A unique ID for this worker instance.
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 
+                // Register the worker with the watchdog
+                State.runningWorkers[workerId] = { task, startTime: Date.now() };
+
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
                 
-                // The worker will find its task using this unique ID.
                 await GM_setValue(workerId, { task });
 
-                // Pass the workerId in the URL so the worker tab knows who it is.
                 const workerUrl = new URL(task.url);
                 workerUrl.searchParams.set('workerId', workerId);
                 GM_openInTab(workerUrl.href, { active: false, setParent: true });
-            }
-            UI.update(); // Update the UI to reflect the new state of the queue and workers
 
-            // Check for completion of the entire batch.
+                // Ensure the watchdog is started after the first worker is dispatched
+                if (!State.watchdogTimer) {
+                    TaskRunner.runWatchdog();
+                }
+            }
+            UI.update();
+
             if (State.db.todo.length === 0 && State.activeWorkers === 0 && State.isExecuting) {
                 Utils.logger('info', '✅ 🎉 All batch tasks have been completed!');
                 State.isExecuting = false;
@@ -1489,12 +1533,18 @@
         State.valueChangeListeners.push(
             GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
                 if (!newValue || !newValue.workerId) return;
-                
-                State.activeWorkers--;
-                Utils.logger('info', `✅ Worker [${newValue.workerId.substring(0,12)}] finished. Active: ${State.activeWorkers}`);
-                
-                // Immediately try to dispatch a new worker.
-                TaskRunner.executeBatch();
+                const { workerId } = newValue;
+
+                // Only proceed if the worker was actually registered
+                if (State.runningWorkers[workerId]) {
+                    State.activeWorkers--;
+                    // Unregister from watchdog
+                    delete State.runningWorkers[workerId];
+                    Utils.logger('info', `✅ Worker [${workerId.substring(0,12)}] finished. Active: ${State.activeWorkers}`);
+                    
+                    // Immediately try to dispatch a new worker.
+                    TaskRunner.executeBatch();
+                }
             })
         );
     }
