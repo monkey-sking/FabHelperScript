@@ -638,6 +638,8 @@
 
                 // 刷新后自动执行隐藏/显示逻辑，保证 UI 实时同步
                 TaskRunner.runHideOrShow();
+                // NEW: Also re-apply overlays to remove checkmarks from newly confirmed items
+                UI.applyOverlaysToPage();
             } catch (err) {
                 Utils.logger('error', '[Fab DOM Refresh] Error:', err);
             }
@@ -1095,16 +1097,18 @@
         runHideOrShow: () => {
             State.hiddenThisPageCount = 0;
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
                 const text = card.textContent || '';
+                // NEW LOGIC: Hiding is now ONLY based on the visible text on the card.
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                const isScriptSaved = link && Database.isDone(link.href);
-                if (isNativelySaved || isScriptSaved) {
-                    card.style.display = State.hideSaved ? 'none' : '';
-                    if(State.hideSaved) State.hiddenThisPageCount++;
+                
+                if (State.hideSaved && isNativelySaved) {
+                    card.style.display = 'none';
+                    State.hiddenThisPageCount++;
+                } else {
+                    card.style.display = '';
                 }
             });
-            UI.update();
+            UI.update(); // This will refresh the hidden count in the button text.
         },
     };
 
