@@ -108,6 +108,7 @@
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
+        isLogCollapsed: localStorage.getItem('fab_helper_log_collapsed') === 'true' || false, // 日志面板折叠状态
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -1241,6 +1242,23 @@
             State.UI.progressBarFill = progressBarFill;
 
             // -- Log Panel --
+            // 创建日志面板标题行
+            const logHeader = document.createElement('div');
+            logHeader.className = 'fab-helper-header';
+            
+            const logTitle = document.createElement('span');
+            logTitle.textContent = '📝 操作日志';
+            logTitle.style.fontWeight = '500';
+            
+            const toggleLogBtn = document.createElement('button');
+            toggleLogBtn.className = 'fab-helper-icon-btn';
+            toggleLogBtn.innerHTML = State.isLogCollapsed ? '📂' : '📁';
+            toggleLogBtn.title = State.isLogCollapsed ? '展开日志' : '收起日志';
+            toggleLogBtn.onclick = () => UI.toggleLogPanel();
+            
+            logHeader.append(logTitle, toggleLogBtn);
+            
+            // 创建日志内容面板
             State.UI.logPanel = document.createElement('div');
             State.UI.logPanel.id = 'fab-log-panel';
             State.UI.logPanel.style.cssText = `
@@ -1250,14 +1268,20 @@
   line-height: 1.5;
   padding: 8px 6px 8px 8px;
   border-radius: 8px;
-  margin: 8px 0;
+  margin: 4px 0;
   max-height: 40vh;
   overflow-y: auto;
   min-height: 40px;
+  height: ${State.isLogCollapsed ? '42px' : '200px'};
   box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   display: flex;
   flex-direction: column-reverse;
+  transition: height 0.3s ease;
 `;
+            // 如果日志面板处于折叠状态，设置overflow为hidden
+            if (State.isLogCollapsed) {
+                State.UI.logPanel.style.overflowY = 'hidden';
+            }
 
             // -- Basic Section --
             const basicSection = document.createElement('div');
@@ -1280,7 +1304,13 @@
                     const url = link ? link.href.split('?')[0] : null;
                     if (!url) return;
 
-                    const isOwned = Database.isDone(url);
+                    // 首先检查卡片DOM上是否已经显示"已保存"文本（眼见为实）
+                    const cardText = card.textContent || '';
+                    const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+                    
+                    // 然后检查数据库记录
+                    const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
+                    
                     if (isOwned) {
                         ownedCount++;
                         return;
@@ -1379,7 +1409,7 @@
             advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
 
             // -- Assemble UI --
-            container.append(header, State.UI.logPanel, basicSection, advancedWrapper);
+            container.append(header, logHeader, State.UI.logPanel, basicSection, advancedWrapper);
             document.body.appendChild(container);
             State.UI.container = container;
 
@@ -1501,6 +1531,26 @@
                 else if (Database.isTodo(url)) UI.applyOverlay(card,'queued');
                 else {const ex=card.querySelector('.fab-helper-overlay-v8'); if(ex)ex.remove();}
             });
+        },
+
+        toggleLogPanel: () => {
+            // 切换折叠状态
+            State.isLogCollapsed = !State.isLogCollapsed;
+            
+            // 保存状态到localStorage
+            localStorage.setItem('fab_helper_log_collapsed', State.isLogCollapsed);
+            
+            // 找到切换按钮并更新图标和提示
+            const logHeader = State.UI.logPanel.previousSibling;
+            const toggleBtn = logHeader.querySelector('.fab-helper-icon-btn');
+            if (toggleBtn) {
+                toggleBtn.innerHTML = State.isLogCollapsed ? '📂' : '📁';
+                toggleBtn.title = State.isLogCollapsed ? '展开日志' : '收起日志';
+            }
+            
+            // 更新日志面板高度和滚动行为
+            State.UI.logPanel.style.height = State.isLogCollapsed ? '42px' : '200px';
+            State.UI.logPanel.style.overflowY = State.isLogCollapsed ? 'hidden' : 'auto';
         },
 
         setupOwnershipObserver: (card) => {
