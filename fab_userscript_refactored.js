@@ -87,6 +87,7 @@
         executionCompletedTasks: 0, // For execution progress
         executionFailedTasks: 0, // For execution progress
         watchdogTimer: null,
+        sessionCompleted: new Set(), // NEW: Tracks items completed in this session only
         // UI-related state
         UI: {
             container: null,
@@ -1571,6 +1572,9 @@
                 return;
             }
 
+            const url = card.querySelector(Config.SELECTORS.cardLink)?.href.split('?')[0];
+            if (!url) return;
+
             const overlay = document.createElement('div');
             overlay.className = 'fab-helper-overlay-v8';
             
@@ -1581,12 +1585,16 @@
                 fontWeight: 'bold', backdropFilter: 'blur(2px)', borderRadius: 'inherit'
             };
 
-            if (type === 'owned') {
+            // NEW LOGIC: The checkmark (✅) is now ONLY for items completed IN THIS SESSION.
+            if (type === 'owned' && State.sessionCompleted.has(url)) {
                 styles.color = '#4caf50'; // Green
-            overlay.innerHTML = '✅';
-            } else if (type === 'queued') {
+                overlay.innerHTML = '✅';
+            } else if (type === 'queued' && Database.isTodo(url)) { // Queued logic remains the same
                 styles.color = '#ff9800'; // Orange
                 overlay.innerHTML = '⏳';
+            } else {
+                // Do not add any overlay if it doesn't match session completed or queued
+                return;
             }
 
             Object.assign(overlay.style, styles);
@@ -1604,21 +1612,24 @@
             document.querySelectorAll('.fab-helper-overlay-v8').forEach(overlay => overlay.remove());
         },
 
-        // This function now uses the new apiStateCache as its source of truth.
+        // This function now uses the new session-based logic for ✅ and db-based for ⏳
         applyOverlaysToPage: () => {
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (link) {
-                    const url = link.href.split('?')[0];
+                const link = card.querySelector(Config.SELECTLORS.cardLink);
+                if (!link) return;
+                
+                const url = link.href.split('?')[0];
 
-                    if (Database.isDone(url)) {
-                        UI.applyOverlay(card, 'owned');
-                    } else if (Database.isTodo(url)) {
-                        UI.applyOverlay(card, 'queued');
-                    } else {
-                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-                        if (existingOverlay) existingOverlay.remove();
-                    }
+                // The applyOverlay function now contains all the logic.
+                // We determine the type based on our session/db state.
+                if (State.sessionCompleted.has(url)) {
+                    UI.applyOverlay(card, 'owned');
+                } else if (Database.isTodo(url)) {
+                    UI.applyOverlay(card, 'queued');
+                } else {
+                    // If neither, ensure no overlay is present.
+                    const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
+                    if (existingOverlay) existingOverlay.remove();
                 }
             });
         },
@@ -1770,8 +1781,9 @@
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.DONE, (name, old_value, new_value) => {
             State.db.done = new_value;
             UI.update();
-            UI.applyOverlaysToPage();
-            TaskRunner.runHideOrShow();
+            // We still need to re-apply overlays here for cross-tab updates.
+            UI.applyOverlaysToPage(); 
+            // Hide/show logic is now independent and based on DOM, so no need to call it here.
         }));
         // TODO list is now session-based, so listening for its changes across tabs is no longer needed.
         /*
@@ -1838,8 +1850,10 @@
 
             // --- Then, process the result ---
             if (State.runningWorkers[workerId]) {
+                const task = State.runningWorkers[workerId].task;
                 if (success) {
                     State.executionCompletedTasks++;
+                    State.sessionCompleted.add(task.url); // Track for this session
                 } else {
                     State.executionFailedTasks++;
                 }
