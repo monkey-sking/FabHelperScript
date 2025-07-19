@@ -98,7 +98,8 @@
             statusTodo: null,
             statusDone: null,
             statusFailed: null,
-            execBtn: null,
+            execBtn: null, // This now represents the "本页一键领取" button.
+            stopBtn: null, // The new, separate "Stop" button.
             hideBtn: null,
             reconBtn: null,
             retryBtn: null,
@@ -106,6 +107,7 @@
             resetReconBtn: null,
             reconProgressDisplay: null,
         },
+        apiStateCache: new Map(), // The new source of truth, populated by the listener.
         valueChangeListeners: []
     };
 
@@ -354,30 +356,47 @@
                 return;
             }
 
-            Utils.logger('info', 'Initializing domain-specific network filter for fab.com.');
+            Utils.logger('info', 'Initializing network listeners...');
 
+            // --- Listener #1: The "Source of Truth" Listener ---
+            // This listener intercepts the page's OWN request to get item states.
+            // This is the most reliable way to know what the user actually owns.
+            const statesUrlPattern = '*://www.fab.com/i/users/me/listings-states*';
+            GM_webRequest(statesUrlPattern, (info, message, details) => {
+                if (details.type === 'xmlhttprequest' && details.method.toUpperCase() === 'GET') {
+                    const responseBody = details.response;
+                    try {
+                        const data = JSON.parse(responseBody);
+                        const statesArray = (data && Array.isArray(data.results)) ? data.results : [];
+                        Utils.logger('info', `[Listener] Intercepted ownership data for ${statesArray.length} items.`);
+                        statesArray.forEach(item => {
+                            State.apiStateCache.set(item.uid, item.acquired);
+                        });
+                        // Now that we have fresh data, we can re-render overlays.
+                        UI.applyOverlaysToPage();
+                    } catch (e) {
+                        Utils.logger('warn', '[Listener] Could not parse intercepted state data.', e);
+                    }
+                }
+            });
+
+
+            // --- Listener #2: Resource Blocker (unchanged) ---
             const resourceTypesToBlock = new Set(['image', 'media', 'font']);
-
             try {
                 GM_webRequest(
                     [
-                        // Rule #6: This selector is now domain-specific. It will only match requests
-                        // to fab.com and its subdomains (like www.fab.com, cdn.fab.com, etc.).
                         { selector: '*://*.fab.com/*', action: 'cancel' }
                     ],
                     (info, message, details) => {
-                        // Because the selector already filtered by domain, we only need to check the type.
                         if (resourceTypesToBlock.has(details.type)) {
-                            // Add logging for transparency, so the user knows the filter is working.
-                            Utils.logger('info', `Blocking resource [${details.type}]: ${details.url}`);
-                            // Cancel the request if its type is in our block set.
+                            // Utils.logger('info', `Blocking resource [${details.type}]: ${details.url}`);
                             return { cancel: true };
                         }
-                        // For any other request type to fab.com (like 'script', 'xhr'), we do nothing.
                     }
                 );
             } catch (e) {
-                 Utils.logger('error', 'Failed to initialize GM_webRequest filter:', e.message);
+                 Utils.logger('error', 'Failed to initialize GM_webRequest resource blocker:', e.message);
             }
         }
     };
@@ -434,22 +453,20 @@
         },
 
         // This function is for the main UI button to toggle start/stop.
-        toggleExecution: () => {
-            if (State.isExecuting) {
-                State.isExecuting = false;
-                // This will signal all active workers to stop, but relies on them checking the key.
-                // A more robust stop would involve cleaning up workers directly.
-                GM_deleteValue(Config.DB_KEYS.TASK); 
-                // We also clear the running workers so the watchdog stops.
-                State.runningWorkers = {};
-                State.activeWorkers = 0;
-                State.executionTotalTasks = 0;
-                State.executionCompletedTasks = 0;
-                State.executionFailedTasks = 0;
-                Utils.logger('info', '执行已由用户手动停止。');
-            } else {
-                TaskRunner.startExecution();
+        // It's no longer a toggle. The stop button is separate.
+        stopExecution: () => {
+            if (!State.isExecuting) return;
+
+            State.isExecuting = false;
+            // Clear any outstanding workers and timers
+            if (State.watchdogTimer) {
+                clearInterval(State.watchdogTimer);
+                State.watchdogTimer = null;
             }
+            State.runningWorkers = {};
+            State.activeWorkers = 0;
+            // We keep the todo list as is, allowing the user to resume later.
+            Utils.logger('info', 'Execution stopped by user. Remaining tasks are in the queue.');
             UI.update();
         },
         toggleHideSaved: async () => {
@@ -706,8 +723,9 @@
                 const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
                 const statesData = JSON.parse(statesResponse.responseText);
 
-                // API returns an array, convert it to a Set for efficient lookup.
-                const ownedUids = new Set(statesData.filter(s => s.acquired).map(s => s.uid));
+                // FIX: API returns an object { results: [...] }, not a raw array.
+                const statesArray = (statesData && Array.isArray(statesData.results)) ? statesData.results : [];
+                const ownedUids = new Set(statesArray.filter(s => s.acquired).map(s => s.uid));
 
                 const notOwnedItems = [];
                 candidates.forEach(item => {
@@ -716,6 +734,12 @@
                     } else {
                         // This item is already owned according to the API, so we increment the owned count.
                         State.completedTasks++;
+                        // Also add it to our local 'done' list for UI hiding purposes.
+                        const langPath = State.lang === 'zh' ? '/zh-cn' : '';
+                        const itemUrl = `${window.location.origin}${langPath}/listings/${item.uid}`;
+                        if (!Database.isDone(itemUrl)) {
+                            State.db.done.push(itemUrl);
+                        }
                     }
                 });
 
@@ -1258,54 +1282,76 @@
             const addAllBtn = document.createElement('button');
             addAllBtn.innerHTML = '🛒 本页一键领取';
             addAllBtn.style.background = 'var(--green)';
-            addAllBtn.onclick = () => {
-                const cards = document.querySelectorAll(Config.SELECTORS.card);
-                const newlyAddedList = [];
-                let alreadyInQueueCount = 0;
-                let ownedCount = 0;
+            addAllBtn.onclick = async () => {
+                try {
+                    // --- The New "Listener" Logic ---
+                    Utils.logger('info', '正在根据已监听到的真实状态，处理本页商品...');
+                    const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
+                    const newlyAddedList = [];
+                    let alreadyOwnedCount = 0;
+                    let alreadyInQueueCount = 0;
 
-                cards.forEach(card => {
-                    const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href.split('?')[0] : null;
-                    if (!url) return;
+                    visibleCards.forEach(card => {
+                        const link = card.querySelector(Config.SELECTORS.cardLink);
+                        if (!link) return;
+                        
+                        const match = link.href.match(/listings\/([a-f0-9-]+)/);
+                        const uid = match ? match[1] : null;
+                        const url = link.href.split('?')[0];
 
-                    const isOwned = Database.isDone(url);
-                    if (isOwned) {
-                        ownedCount++;
-                        return;
-                    }
+                        if (!uid) return;
 
-                    const isTodo = Database.isTodo(url);
-                    const isFailed = State.db.failed.some(t => t.url.startsWith(url));
-                    if (isTodo || isFailed) {
-                        alreadyInQueueCount++;
-                        return;
-                    }
+                        // Step 1: Check ownership using the highly reliable, pre-filled cache.
+                        if (State.apiStateCache.get(uid) === true) {
+                            alreadyOwnedCount++;
+                            return;
+                        }
+
+                        // Step 2: If not owned, check if it's already in our local queue.
+                        if (Database.isTodo(url)) {
+                            alreadyInQueueCount++;
+                            return;
+                        }
+
+                        // Step 3: If neither, it's a valid new task.
+                        const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || 'Untitled';
+                        newlyAddedList.push({ name, url, type: 'detail', uid });
+                    });
                     
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-                });
-
-                if (newlyAddedList.length > 0) {
-                    State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-                }
-
-                const actionableCount = State.db.todo.length;
-                if (actionableCount > 0) {
-                    if (newlyAddedList.length === 0) {
-                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办队列中。`);
+                    if (newlyAddedList.length > 0) {
+                        State.db.todo.push(...newlyAddedList);
+                        Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
                     }
-                    TaskRunner.startExecution();
-                } else {
-                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+
+                    // --- Step 4: Start execution ---
+                    if (State.db.todo.length > 0) {
+                         if (newlyAddedList.length === 0) {
+                             if (alreadyInQueueCount > 0) {
+                                Utils.logger('info', `本页所有可领取商品已在队列中。`);
+                             } else {
+                                Utils.logger('info', `本页所有商品均已拥有。`);
+                             }
+                         }
+                         TaskRunner.startExecution();
+                    } else {
+                         Utils.logger('info', '本页没有可领取的新商品。');
+                    }
+
+                } catch (e) {
+                    Utils.logger('error', '处理本页商品时发生错误:', e);
+                    alert('处理本页商品时发生错误，请检查控制台获取详情。');
                 }
             };
-            // 启动任务
-            State.UI.execBtn = document.createElement('button');
-            State.UI.execBtn.innerHTML = '🚀 启动任务';
-            State.UI.execBtn.style.background = 'var(--pink)';
-            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
+            State.UI.execBtn = addAllBtn;
+
+            // NEW: The separate Stop button
+            const stopBtn = document.createElement('button');
+            stopBtn.innerHTML = '🛑 停止';
+            stopBtn.style.background = 'var(--pink)';
+            stopBtn.style.display = 'none'; // Initially hidden
+            stopBtn.onclick = TaskRunner.stopExecution;
+            State.UI.stopBtn = stopBtn;
+            
             // 本页刷新状态
             const refreshPageBtn = document.createElement('button');
             refreshPageBtn.innerHTML = '🔄 本页刷新状态';
@@ -1316,7 +1362,7 @@
             State.UI.hideBtn.innerHTML = '🙈 隐藏已拥有';
             State.UI.hideBtn.style.background = 'var(--blue)';
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn);
+            basicSection.append(basicTitle, State.UI.execBtn, State.UI.stopBtn, refreshPageBtn, State.UI.hideBtn);
 
             // -- Divider --
             const divider = document.createElement('hr');
@@ -1408,12 +1454,15 @@
                 State.UI.progressContainer.style.display = 'none';
             }
             
-            // Execute Button
-            State.UI.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
-            State.UI.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
-            State.UI.execBtn.classList.remove('fab-helper-pulse');
-            if (!State.isExecuting && State.db.todo.length > 0) {
-                State.UI.execBtn.classList.add('fab-helper-pulse');
+            // Execute/Stop Button State
+            if (State.isExecuting) {
+                State.UI.execBtn.disabled = true;
+                State.UI.execBtn.innerHTML = '🏃‍♂️ 执行中...';
+                State.UI.stopBtn.style.display = ''; // Show stop button
+            } else {
+                State.UI.execBtn.disabled = false;
+                State.UI.execBtn.innerHTML = '🛒 本页一键领取';
+                State.UI.stopBtn.style.display = 'none'; // Hide stop button
             }
             
             // Recon Button
@@ -1492,27 +1541,20 @@
             document.querySelectorAll('.fab-helper-overlay-v8').forEach(overlay => overlay.remove());
         },
 
+        // This function now uses the new apiStateCache as its source of truth.
         applyOverlaysToPage: () => {
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 if (link) {
+                    const match = link.href.match(/listings\/([a-f0-9-]+)/);
+                    const uid = match ? match[1] : null;
                     const url = link.href.split('?')[0];
-                    const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
 
-                    // If the page says it's owned, we trust it. Clean up any of our overlays.
-                    if (isNativelyOwned) {
-                        const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-                        if (existingOverlay) existingOverlay.remove();
-                        return;
-                    }
-
-                    // If the page does NOT say it's owned, then we apply our own state icons.
-                    if (Database.isDone(url)) {
+                    if (uid && State.apiStateCache.get(uid) === true) {
                         UI.applyOverlay(card, 'owned');
                     } else if (Database.isTodo(url)) {
                         UI.applyOverlay(card, 'queued');
                     } else {
-                        // If it's not in any of our lists, ensure no overlay is present.
                         const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
                         if (existingOverlay) existingOverlay.remove();
                     }
