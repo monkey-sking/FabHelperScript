@@ -77,6 +77,7 @@
         reconScannedCount: 0,
         reconOwnedCount: 0,
         debounceTimer: null,
+        watchdogTimer: null, // For monitoring worker tab health
         db: {
             todo: [],
             done: [],
@@ -243,6 +244,20 @@
         saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
 
+        resetAllData: async () => {
+            if (window.confirm('您确定要清空所有本地存储的脚本数据（待办、已完成、失败列表）吗？此操作不可逆！')) {
+                await GM_deleteValue(Config.DB_KEYS.TODO);
+                await GM_deleteValue(Config.DB_KEYS.DONE);
+                await GM_deleteValue(Config.DB_KEYS.FAILED);
+                State.db.todo = [];
+                State.db.done = [];
+                State.db.failed = [];
+                Utils.logger('info', '所有脚本数据已重置。');
+                UI.removeAllOverlays();
+                UI.update();
+            }
+        },
+
         isDone: (url) => {
             if (!url) return false;
             return State.db.done.includes(url.split('?')[0]);
@@ -372,14 +387,14 @@
                 Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
                 return;
             }
-            if (State.db.todo.length === 0) {
+                if (State.db.todo.length === 0) {
                 Utils.logger('info', '"待办"清单是空的，无需启动。');
-                return;
-            }
+                    return;
+                }
             Utils.logger('info', '队列中有任务，即将开始执行...');
             State.isExecuting = true;
             UI.update();
-            TaskRunner.executeBatch();
+                TaskRunner.executeBatch();
         },
 
         // This function is for the main UI button to toggle start/stop.
@@ -730,6 +745,10 @@
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
+            // Clear any lingering watchdog timer from a previous run.
+            // The new timer will be set by the TASK listener itself.
+            if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
+
             const batch = State.db.todo;
             if (batch.length === 0) {
                 Utils.logger('info', 'All tasks completed!');
@@ -744,10 +763,14 @@
                     batch: detailTasks,
                     currentIndex: 0
                 };
+                // Setting this value will trigger the value-change listener,
+                // which will in turn set the watchdog timer.
                 await GM_setValue(Config.DB_KEYS.TASK, detailTaskPayload);
+
                 // Use the correct API to open tabs in the background without navigating the main page.
                 GM_openInTab(detailTaskPayload.batch[0].url, { active: false });
             } else if (State.isExecuting) {
+                // This case should ideally not be hit if all tasks are 'detail' type.
                 setTimeout(TaskRunner.executeBatch, 1000);
             }
         },
@@ -1019,7 +1042,9 @@
             }
 
             // After logging, add the progress message
-            TaskRunner.addProgressToLog(logBuffer, taskPayload, success ? '成功' : '失败');
+            // TaskRunner.addProgressToLog(logBuffer, taskPayload, success ? '成功' : '失败');
+            // BUG FIX: The above line was removed as this function no longer exists.
+            // Progress is now handled entirely on the main page via the TASK listener.
 
             // BUG FIX: After processing the current item, we MUST re-check if the master task has been cancelled.
             // The main tab signals a stop by deleting the TASK key. If it's gone, we must abort.
@@ -1220,38 +1245,24 @@
                     const url = link ? link.href.split('?')[0] : null;
                     if (!url) return;
 
-                    // **FINAL CORE FIX**: Dual-check for ownership, this prevents adding owned items to queue.
-                    const isOwned = Database.isDone(url) || 
-                                  card.textContent.includes('已保存在我的库中') || 
-                                  card.textContent.includes('Saved in My Library');
-
+                    // Final, Correct Logic:
+                    // 1. Check ownership first (DB source of truth).
+                    const isOwned = Database.isDone(url);
                     if (isOwned) {
                         ownedCount++;
                         return;
                     }
 
-                    // If not done, is it already in the queue?
-                    if (Database.isTodo(url) || State.db.failed.some(t => t.url.startsWith(url))) {
+                    // 2. If not owned, check if it's already in any queue.
+                    const isTodo = Database.isTodo(url);
+                    const isFailed = State.db.failed.some(t => t.url.startsWith(url));
+                    if (isTodo || isFailed) {
                         alreadyInQueueCount++;
-                    } else {
-                        // Only add to queue if there's an actionable button.
-                        // This prevents adding items that are "free" but have no way to be claimed on the page or detail page.
-                        const buttons = Array.from(card.querySelectorAll('button'));
-                        const hasActionableButton = buttons.some(btn => {
-                            const buttonAriaLabel = btn.getAttribute('aria-label') || '';
-                            const buttonText = btn.textContent;
-                            const claimKeywords = [
-                                '添加到我的库', 'Add to my library',
-                                '选择许可', 'Select License',
-                                '将商品添加至购物车', 'Add to cart'
-                            ];
-                            return claimKeywords.some(keyword => buttonAriaLabel.includes(keyword) || buttonText.includes(keyword));
-                        });
-
-                        if (hasActionableButton) {
-                             newlyAddedList.push({ url, type: 'detail', uid: url.split('/').pop() });
-                        }
+                        return;
                     }
+                    
+                    // 3. If not owned and not in a queue, it's a new, valid task.
+                    newlyAddedList.push({ url, type: 'detail', uid: url.split('/').pop() });
                 });
 
                 const actionableCount = newlyAddedList.length + alreadyInQueueCount;
@@ -1267,7 +1278,7 @@
                         Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
                     }
                     TaskRunner.startExecution();
-                } else {
+                    } else {
                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
                 }
             };
@@ -1319,7 +1330,12 @@
             State.ui.resetReconBtn.innerHTML = '⏮️ 重置侦察进度';
             State.ui.resetReconBtn.style.background = 'var(--gray)';
             State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
-            advSection.append(advTitle, State.ui.reconBtn, State.ui.execBtn, State.ui.retryBtn, State.ui.refreshBtn, State.ui.resetReconBtn);
+            // 新增：重置所有数据
+            const resetDataBtn = document.createElement('button');
+            resetDataBtn.innerHTML = '⚠️ 重置所有数据';
+            resetDataBtn.style.background = 'var(--pink)'; // Use a "danger" color
+            resetDataBtn.onclick = Database.resetAllData;
+            advSection.append(advTitle, State.ui.reconBtn, State.ui.execBtn, State.ui.retryBtn, State.ui.refreshBtn, State.ui.resetReconBtn, resetDataBtn);
 
             // -- Advanced Wrapper (状态栏+高级区) --
             const advancedWrapper = document.createElement('div');
@@ -1331,15 +1347,16 @@
             document.body.appendChild(container);
             State.ui.container = container;
 
-            // --- 控制台解锁高级功能 ---
-            window.FabHelperShowAdvanced = function() {
+            // --- Console Commands (Fix using unsafeWindow) ---
+            unsafeWindow.FabHelperShowAdvanced = function() {
                 advancedWrapper.style.display = '';
-                console.log('Fab Helper 高级功能区和批量状态栏已显示。');
+                console.log('Fab Helper Advanced UI is now visible.');
             };
-            window.FabHelperHideAdvanced = function() {
+            unsafeWindow.FabHelperHideAdvanced = function() {
                 advancedWrapper.style.display = 'none';
-                console.log('Fab Helper 高级功能区和批量状态栏已隐藏。');
+                console.log('Fab Helper Advanced UI is now hidden.');
             };
+            unsafeWindow.FabHelperResetData = Database.resetAllData;
 
             UI.update();
         },
@@ -1411,7 +1428,7 @@
 
             if (type === 'owned') {
                 styles.color = '#4caf50'; // Green
-                overlay.innerHTML = '✅';
+            overlay.innerHTML = '✅';
             } else if (type === 'queued') {
                 styles.color = '#ff9800'; // Orange
                 overlay.innerHTML = '⏳';
@@ -1426,6 +1443,10 @@
                 }
                 thumbnail.appendChild(overlay);
             }
+        },
+
+        removeAllOverlays: () => {
+            document.querySelectorAll('.fab-helper-overlay-v8').forEach(overlay => overlay.remove());
         },
 
         applyOverlaysToPage: () => {
@@ -1547,13 +1568,32 @@
         // NEW LISTENER: This now exclusively handles the execution flow continuation.
         // It triggers when a worker tab finishes its batch and deletes the TASK key.
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TASK, (name, old_value, new_value) => {
-            if (State.isExecuting && !new_value && old_value) { // A batch has just finished.
+            if (!State.isExecuting) return;
+
+            // Any activity from the worker (update or deletion) means it's alive. Clear the current watchdog.
+            if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
+            State.watchdogTimer = null; // Clear the timer ID
+
+            if (new_value) { // This is a "heartbeat" from the worker (task was updated).
+                const payload = new_value; // GM listener passes the direct object
+                // Update button with real-time progress
+                const progressText = `(${payload.currentIndex + 1} / ${payload.batch.length})`;
+                State.ui.execBtn.innerHTML = `🛑 ${Utils.getText('stopExecute')} ${progressText}`;
+
+                // Set a new watchdog for the next step.
+                State.watchdogTimer = setTimeout(() => {
+                    Utils.logger('error', 'Watchdog: Worker tab seems to have stalled. Resetting executor state.');
+                    State.isExecuting = false;
+                    GM_deleteValue(Config.DB_KEYS.TASK); // Prevent a zombie worker from resuming later.
+                    UI.update(); // Reset button text to default.
+                }, 30000); // 30-second timeout for the next action.
+
+            } else { // Batch is complete (new_value is null).
                 Utils.logger('info', 'Batch completed. Checking for more tasks...');
-                // The individual TODO/DONE listeners are responsible for updating state.
-                // This listener's ONLY job is to continue the execution loop.
+                // The main UI button will be reset to its default state by UI.update() if we stop.
                 if (State.db.todo.length > 0) {
-                    Utils.logger('info', 'More tasks to process. Starting next batch in 1 second.');
-                    setTimeout(TaskRunner.executeBatch, 1000);
+                    Utils.logger('info', `Found ${State.db.todo.length} more tasks. Starting next batch in 1 second.`);
+                    setTimeout(TaskRunner.executeBatch, 1000); // This will set its own watchdog via the listener.
                 } else {
                     Utils.logger('info', 'All tasks are completed. Execution stopped.');
                     State.isExecuting = false;
