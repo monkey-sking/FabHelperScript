@@ -1117,6 +1117,14 @@
                 .fab-helper-divider {
                     border: none; border-top: 1px solid var(--border-color); margin: 8px 0;
                 }
+                @keyframes fab-pulse {
+                    0% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0.7); }
+                    70% { box-shadow: 0 0 0 10px rgba(255, 45, 85, 0); }
+                    100% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0); }
+                }
+                .fab-helper-pulse {
+                    animation: fab-pulse 2s infinite;
+                }
                 .fab-helper-progress-container {
                     display: none; /* Hidden by default */
                     flex-direction: column;
@@ -1250,15 +1258,12 @@
                     const url = link ? link.href.split('?')[0] : null;
                     if (!url) return;
 
-                    // Final, Correct Logic:
-                    // 1. Check ownership first (DB source of truth).
                     const isOwned = Database.isDone(url);
                     if (isOwned) {
                         ownedCount++;
                         return;
                     }
 
-                    // 2. If not owned, check if it's already in any queue.
                     const isTodo = Database.isTodo(url);
                     const isFailed = State.db.failed.some(t => t.url.startsWith(url));
                     if (isTodo || isFailed) {
@@ -1266,30 +1271,25 @@
                         return;
                     }
                     
-                    // 3. If not owned and not in a queue, it's a new, valid task.
                     const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
                     newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
                 });
 
-                const actionableCount = newlyAddedList.length + alreadyInQueueCount;
-
                 if (newlyAddedList.length > 0) {
                     State.db.todo.push(...newlyAddedList);
-                    // FIX: If execution is already running, update the total task count.
+                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+
                     if (State.isExecuting) {
                         State.executionTotalTasks += newlyAddedList.length;
-                        UI.update(); // Immediately update the progress bar denominator
                     }
-                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-                }
-                
-                if (actionableCount > 0) {
-                    if (newlyAddedList.length === 0) {
-                        Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
-                    }
-                    TaskRunner.startExecution();
+                    UI.update();
+                } else {
+                    const actionableCount = alreadyInQueueCount;
+                    if (actionableCount > 0) {
+                         Utils.logger('info', `本页的 ${actionableCount} 个可领取商品已全部在待办队列中。`);
                     } else {
-                    Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+                         Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+                    }
                 }
             };
             // 本页刷新状态
@@ -1395,6 +1395,10 @@
             // Execute Button
             State.UI.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
             State.UI.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
+            State.UI.execBtn.classList.remove('fab-helper-pulse');
+            if (!State.isExecuting && State.db.todo.length > 0) {
+                State.UI.execBtn.classList.add('fab-helper-pulse');
+            }
             
             // Recon Button
             if (State.isReconning) {
