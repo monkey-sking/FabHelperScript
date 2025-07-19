@@ -697,11 +697,13 @@
                     const newTasks = [];
                     notOwnedItems.forEach(item => {
                         const priceInfo = priceMap.get(item.offerId);
-                        if (priceInfo && priceInfo.price === 0) {
-                            const task = { 
-                                url: `${window.location.origin}${langPath}/listings/${item.uid}`, 
-                                type: 'detail', 
-                                uid: item.uid 
+                        const originalItem = validResults.find(r => r.uid === item.uid); // Find original item to get the title
+                        if (priceInfo && priceInfo.price === 0 && originalItem) {
+                            const task = {
+                                name: originalItem.title, // Correctly get the title from the original API result
+                                url: `${window.location.origin}${langPath}/listings/${item.uid}`,
+                                type: 'detail',
+                                uid: item.uid
                             };
                             newTasks.push(task);
                         }
@@ -1182,7 +1184,8 @@
                     }
                     
                     // 3. If not owned and not in a queue, it's a new, valid task.
-                    newlyAddedList.push({ url, type: 'detail', uid: url.split('/').pop() });
+                    const name = card.querySelector('.title-row a')?.textContent.trim() || 'Untitled';
+                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
                 });
 
                 const actionableCount = newlyAddedList.length + alreadyInQueueCount;
