@@ -31,15 +31,20 @@
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
         SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
+        DB_VERSION: 3,
+        DB_NAME: 'fab_helper_db',
+        MAX_WORKERS: 3, // Maximum number of concurrent worker tabs
         UI_CONTAINER_ID: 'fab-helper-container-v8',
+        UI_LOG_ID: 'fab-helper-log-v8',
         DB_KEYS: {
             TODO: 'fab_todoList_v8',
             DONE: 'fab_doneList_v8',
             FAILED: 'fab_failedList_v8', // For items that failed processing
             HIDE: 'fab_hideSaved_v8',
-            TASK: 'fab_activeDetailTask_v8',
+            TASK: 'fab_currentTask_v8', // Legacy, will be phased out
             NEXT_URL: 'fab_reconNextUrl_v8', // REPLACES CURSOR
             DETAIL_LOG: 'fab_detailLog_v8', // For worker tab remote logging
+            WORKER_DONE: 'fab_worker_done_v8', // New key for worker completion status
         },
         SELECTORS: {
             card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
@@ -68,34 +73,31 @@
 
     // --- 模块二: 全局状态管理 (Global State) ---
     const State = {
-        lang: 'en',
-        isInitialized: false,
-        hideSaved: false,
-        hiddenThisPageCount: 0,
-        isReconning: false,
+        db: {},
         isExecuting: false,
-        reconScannedCount: 0,
-        reconOwnedCount: 0,
-        debounceTimer: null,
-        watchdogTimer: null, // For monitoring worker tab health
-        db: {
-            todo: [],
-            done: [],
-            failed: []
-        },
-        ui: { // To be populated by the UI module
+        isReconning: false,
+        hideSaved: false,
+        showAdvanced: false,
+        activeWorkers: 0, // Count of currently active worker tabs
+        hiddenThisPageCount: 0,
+        totalTasks: 0,
+        completedTasks: 0,
+        watchdogTimer: null,
+        // UI-related state
+        UI: {
             container: null,
             logPanel: null,
-            statusDisplay: null,
+            progressBar: null,
+            statusTodo: null,
+            statusDone: null,
+            statusFailed: null,
             execBtn: null,
             hideBtn: null,
-            seekBtn: null,
             reconBtn: null,
-            retryBtn: null, // For the new button
-            refreshBtn: null, // For the API refresh button
-            resetReconBtn: null, // New button
-            batchInput: null,
-            reconProgressDisplay: null, // Replaces pageInput
+            retryBtn: null,
+            refreshBtn: null,
+            resetReconBtn: null,
+            reconProgressDisplay: null,
         },
         valueChangeListeners: []
     };
@@ -106,14 +108,14 @@
             console[type](`${Config.SCRIPT_NAME}`, ...args);
             // The actual logging to screen will be handled by the UI module
             // to keep modules decoupled.
-            if (State.ui.logPanel) {
+            if (State.UI.logPanel) {
                 const logEntry = document.createElement('div');
                 logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px;';
                 const timestamp = new Date().toLocaleTimeString();
                 logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${args.join(' ')}`;
-                State.ui.logPanel.prepend(logEntry);
-                while (State.ui.logPanel.children.length > 100) {
-                    State.ui.logPanel.removeChild(State.ui.logPanel.lastChild);
+                State.UI.logPanel.prepend(logEntry);
+                while (State.UI.logPanel.children.length > 100) {
+                    State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
                 }
             }
         },
@@ -368,8 +370,8 @@
             State.isReconning = !State.isReconning;
             UI.update();
             if (State.isReconning) {
-                State.reconScannedCount = 0;
-                State.reconOwnedCount = 0;
+                State.totalTasks = 0;
+                State.completedTasks = 0;
                 Utils.logger('info', Utils.getText('log_recon_start'));
                 const nextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
                 if (nextUrl) {
@@ -420,8 +422,8 @@
                 return;
             }
             await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-            if (State.ui.reconProgressDisplay) {
-                State.ui.reconProgressDisplay.textContent = 'Page: 1';
+            if (State.UI.reconProgressDisplay) {
+                State.UI.reconProgressDisplay.textContent = 'Page: 1';
             }
             Utils.logger('info', 'Recon progress has been reset. Next scan will start from the beginning.');
         },
@@ -583,14 +585,14 @@
                 // --- Step 1: Initial Scan ---
                 const displayPage = Utils.getDisplayPageFromUrl(requestUrl);
                 // UX Improvement: Update the progress display.
-                if (State.ui.reconProgressDisplay) {
-                    State.ui.reconProgressDisplay.textContent = `Page: ${displayPage}`;
+                if (State.UI.reconProgressDisplay) {
+                    State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
                 }
                 
                 Utils.logger('info', "Step 1: " + Utils.getText('log_api_request', {
                     page: displayPage,
-                    scanned: State.reconScannedCount,
-                    owned: State.reconOwnedCount
+                    scanned: State.totalTasks,
+                    owned: State.completedTasks
                 }));
                 searchResponse = await API.gmFetch({ method: 'GET', url: requestUrl, headers: apiHeaders });
 
@@ -607,7 +609,7 @@
                 
                 const searchData = JSON.parse(searchResponse.responseText);
                 const initialResultsCount = searchData.results.length;
-                State.reconScannedCount += initialResultsCount;
+                State.totalTasks += initialResultsCount;
 
                 if (!searchData.results || initialResultsCount === 0) {
                     State.isReconning = false;
@@ -637,7 +639,7 @@
                 });
 
                 const initiallySkippedCount = initialResultsCount - candidates.length;
-                State.reconOwnedCount += initiallySkippedCount;
+                State.completedTasks += initiallySkippedCount;
 
                 if (candidates.length === 0) {
                     // No new candidates on this page, go to next page
@@ -671,7 +673,7 @@
                         notOwnedItems.push(item);
                     } else {
                         // This item is already owned according to the API, so we increment the owned count.
-                        State.reconOwnedCount++;
+                        State.completedTasks++;
                     }
                 });
 
@@ -745,326 +747,190 @@
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
-            // Clear any lingering watchdog timer from a previous run.
-            // The new timer will be set by the TASK listener itself.
-            if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
+            // This is the dispatcher loop. It will keep dispatching workers
+            // as long as there are tasks and available worker slots.
+            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
+                const task = State.db.todo.shift(); // Take a task from the queue
+                State.activeWorkers++;
+                
+                // A unique ID for this worker instance.
+                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                
+                Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
+                
+                // The worker will find its task using this unique ID.
+                await GM_setValue(workerId, { task });
 
-            const batch = State.db.todo;
-            if (batch.length === 0) {
-                Utils.logger('info', 'All tasks completed!');
-                State.isExecuting = false;
-                UI.update();
-                return;
+                // Pass the workerId in the URL so the worker tab knows who it is.
+                const workerUrl = new URL(task.url);
+                workerUrl.searchParams.set('workerId', workerId);
+                GM_openInTab(workerUrl.href, { active: false, setParent: true });
             }
-            // In this refactored version, all tasks are 'detail' tasks.
-            const detailTasks = batch.filter(t => t.type === 'detail');
-            if (detailTasks.length > 0) {
-                const detailTaskPayload = {
-                    batch: detailTasks,
-                    currentIndex: 0
-                };
-                // Setting this value will trigger the value-change listener,
-                // which will in turn set the watchdog timer.
-                await GM_setValue(Config.DB_KEYS.TASK, detailTaskPayload);
+            UI.update(); // Update the UI to reflect the new state of the queue and workers
 
-                // Use the correct API to open tabs in the background without navigating the main page.
-                GM_openInTab(detailTaskPayload.batch[0].url, { active: false });
-            } else if (State.isExecuting) {
-                // This case should ideally not be hit if all tasks are 'detail' type.
-                setTimeout(TaskRunner.executeBatch, 1000);
+            // Check for completion of the entire batch.
+            if (State.db.todo.length === 0 && State.activeWorkers === 0 && State.isExecuting) {
+                Utils.logger('info', '✅ 🎉 All batch tasks have been completed!');
+                State.isExecuting = false;
+                if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
+                UI.update();
             }
         },
 
         processDetailPage: async () => {
-            const logBuffer = [`Task started on: ${window.location.href}`];
-            // BUG FIX #2: Read the task payload ONCE at the beginning and use it throughout.
-            // This prevents race conditions where the value in GM storage might change during execution.
-            const taskPayload = await GM_getValue(Config.DB_KEYS.TASK);
-            const currentTask = taskPayload?.batch?.[taskPayload?.currentIndex];
+            const urlParams = new URLSearchParams(window.location.search);
+            const workerId = urlParams.get('workerId');
 
-            if (!currentTask || !currentTask.uid) {
-                logBuffer.push(`CRITICAL ERROR: Could not retrieve current task from GM_getValue or task is invalid.`);
-                // Pass the potentially null taskPayload, advanceDetailTask must handle it gracefully.
-                await TaskRunner.advanceDetailTask(taskPayload, false, logBuffer);
+            // If there's no workerId, this is not a worker tab, so we do nothing.
+            if (!workerId) return;
+
+            // This is a safety check. If the main tab stops execution, it might delete the task.
+            const payload = await GM_getValue(workerId);
+            if (!payload || !payload.task) {
+                window.close();
                 return;
             }
 
-            // --- New API-First Ownership Check ---
+            const currentTask = payload.task;
+            const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+            let success = false;
+
             try {
-                const csrfToken = Utils.getCookie('fab_csrftoken');
-                 if (!csrfToken) throw new Error("CSRF token not found for API check.");
-
-                const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                // This entire block is the acquisition logic, moved from the old sequential version.
                 
-                const response = await API.gmFetch({
-                    method: 'GET',
-                    url: statesUrl.href,
-                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
-
-                const statesData = JSON.parse(response.responseText);
-                const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
-
-                if (isOwned) {
-                    logBuffer.push(`API check confirms item is already owned. Marking as success.`);
-                    await TaskRunner.advanceDetailTask(taskPayload, true, logBuffer);
-                    return; // Stop further processing
-                }
-                logBuffer.push(`API check confirms item is not owned. Proceeding with UI interaction.`);
-
-            } catch (apiError) {
-                logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
-            }
-            // --- End of API Check ---
-
-
-            // This function is the single source of truth for checking the "owned" state.
-            // It adheres STRICTLY to the rules defined in FAB_HELPER_RULES.md.
-            const isItemOwned = () => {
-                const criteria = Config.OWNED_SUCCESS_CRITERIA;
-                
-                // Rule 1: Look for the H2 success message.
-                const successHeader = document.querySelector('h2');
-                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) {
-                    return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                // --- API-First Ownership Check ---
+                try {
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    if (!csrfToken) throw new Error("CSRF token not found for API check.");
+                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                    statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                    const response = await API.gmFetch({
+                        method: 'GET',
+                        url: statesUrl.href,
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+                    const statesData = JSON.parse(response.responseText);
+                    const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
+                    if (isOwned) {
+                        logBuffer.push(`API check confirms item is already owned.`);
+                        success = true;
+                    } else {
+                        logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+                    }
+                } catch (apiError) {
+                    logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
                 }
 
-                // Rule 1: Look for the "View in My Library" button.
-                // NOTE: "Download" is explicitly IGNORED as per Rule 2.
-                const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
-                const ownedButton = allButtons.find(btn => 
-                    criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword))
-                );
-                if (ownedButton) {
-                    return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-                }
+                // If API check was successful, we can skip the entire UI interaction block.
+                if (!success) {
+                    const isItemOwned = () => {
+                        const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                        const snackbar = document.querySelector('.fabkit-Snackbar-root');
+                        if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                        const successHeader = document.querySelector('h2');
+                        if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                        const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                        const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                        if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                        return { owned: false };
+                    };
 
-                return { owned: false };
-            };
-            
-            try {
-                // --- Logic Based on FAB_HELPER_RULES.md ---
-
-                // Step 1: Check for Owned State (Rule 1) - Kept as a fallback
-                const initialState = isItemOwned();
-                if (initialState.owned) {
-                    logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}). Marking as success.`);
-                    await TaskRunner.advanceDetailTask(taskPayload, true, logBuffer);
-                    return;
-                }
-
-                // Step 2: Check for Multi-License State (Rule 3) - Now with MutationObserver
-                const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
-                if (licenseButton) {
-                    logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
-
-                    // This promise now directly waits for the listbox element to appear in the DOM after a click.
-                    // This is more robust than waiting for an attribute change and then for the element.
-                    const findAndClickFreeLicenseOption = () => new Promise((resolve, reject) => {
-                        logBuffer.push('Starting multi-attempt license selection process...');
-
-                        let attemptCount = 0;
-                        let retryTimeout = null;
-                        let finalTimeout = null;
-
-                        const cleanupAndResolve = () => {
-                            clearTimeout(retryTimeout);
-                            clearTimeout(finalTimeout);
-                                        observer.disconnect();
-                            logBuffer.push(`License option processed successfully.`);
-                                        resolve();
-                        };
-
-                        const cleanupAndReject = (message) => {
-                            observer.disconnect();
-                            reject(new Error(message));
-                        };
-
-                        const observer = new MutationObserver((mutationsList, obs) => {
-                            for (const mutation of mutationsList) {
-                                if (mutation.addedNodes.length > 0) {
-                                    for (const node of mutation.addedNodes) {
-                                        if (node.nodeType !== 1) continue;
-
-                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el => 
-                                            Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
-                                        );
-
-                                        if (freeTextElement) {
-                                            logBuffer.push(`[Attempt ${attemptCount}] "MutationObserver" found the "免费" element. Finding clickable parent...`);
-                                            const clickableParent = freeTextElement.closest('[role="option"], button');
-                                            if (clickableParent) {
-                                                logBuffer.push(`Clickable parent found. Performing deep click...`);
-                                                Utils.deepClick(clickableParent);
-                                                cleanupAndResolve();
-                                                return; // Stop processing further mutations
+                    const initialState = isItemOwned();
+                    if (initialState.owned) {
+                        logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                        success = true;
+                    } else {
+                        const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
+                        if (licenseButton) {
+                            logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                            await new Promise((resolve, reject) => {
+                                const observer = new MutationObserver((mutationsList, obs) => {
+                                    for (const mutation of mutationsList) {
+                                        if (mutation.addedNodes.length > 0) {
+                                            for (const node of mutation.addedNodes) {
+                                                if (node.nodeType !== 1) continue;
+                                                const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                    Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
+                                                );
+                                                if (freeTextElement) {
+                                                    const clickableParent = freeTextElement.closest('[role="option"], button');
+                                                    if (clickableParent) {
+                                                        Utils.deepClick(clickableParent);
+                                                        observer.disconnect();
+                                                        resolve();
+                                                        return;
+                                                    }
+                                                }
                                             }
                                         }
                                     }
-                                }
-                            }
-                        });
-
-                        const tryClick = () => {
-                            attemptCount++;
-                            logBuffer.push(`[Attempt ${attemptCount}] Performing deep click on "选择许可".`);
-                            Utils.deepClick(licenseButton);
-                        };
-
-                        // --- Execution Flow ---
-                        observer.observe(document.body, { childList: true, subtree: true });
-                        logBuffer.push('MutationObserver is now watching the document.');
+                                });
+                                observer.observe(document.body, { childList: true, subtree: true });
+                                Utils.deepClick(licenseButton); // First click attempt
+                                setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
+                                setTimeout(() => {
+                                    observer.disconnect();
+                                    reject(new Error('Timeout (5s): The "免费" option did not appear.'));
+                                }, 5000);
+                            });
+                            // After license selection, re-check ownership before trying the main button
+                            await new Promise(r => setTimeout(r, 500)); // wait for UI update
+                            if(isItemOwned().owned) success = true;
+                        }
                         
-                        tryClick(); // First attempt
+                        // If not successful after license check, or if it wasn't a license item
+                        if (!success) {
+                             const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
+                                [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                            );
 
-                        retryTimeout = setTimeout(() => {
-                            logBuffer.push('Dropdown not detected after 1.5s. Retrying click.');
-                            tryClick(); // Second attempt
-                        }, 1500);
-
-                        finalTimeout = setTimeout(() => {
-                            cleanupAndReject('Timeout (5s): The "免费" option did not appear in the DOM after multiple click attempts.');
-                        }, 5000);
-                    });
-                    
-                    // Execute the new, combined function.
-                    await findAndClickFreeLicenseOption();
-                    
-                    // --- NEW VERIFICATION STEP ---
-                    // After clicking the license, the page might already be in an "owned" state.
-                    // We must check for this state before proceeding.
-                    logBuffer.push('Re-evaluating page state after license selection...');
-                    await new Promise(r => setTimeout(r, 1500)); // A generous wait for the UI to update.
-                    const stateAfterLicenseClick = isItemOwned();
-                    if (stateAfterLicenseClick.owned) {
-                        logBuffer.push(`Acquisition confirmed after license click! (PASS: ${stateAfterLicenseClick.reason})`);
-                        await TaskRunner.advanceDetailTask(taskPayload, true, logBuffer);
-                        return; // Mission accomplished, do not proceed further.
-                    }
-                    logBuffer.push('License selection did not result in ownership. Proceeding to find main button...');
-                }
-
-                // Step 3: Find and click the standard Acquisition Button (Rule 2)
-                // This will run either after the multi-license logic or if it wasn't a multi-license item.
-                const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn => 
-                    [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
-                );
-
-                if (actionButton) {
-                    const originalButtonText = actionButton.textContent;
-                    logBuffer.push(`Found acquisition button (Rule 2 PASS: "${originalButtonText}"). Performing deep click...`);
-                    // Add a slight delay before clicking to ensure button is fully interactive
-                    await new Promise(r => setTimeout(r, 250));
-                    Utils.deepClick(actionButton);
-
-                    // Step 4: Wait for the page state to change to "owned" (wait for Rule 1 to PASS).
-                    await new Promise((resolve, reject) => {
-                        const timeout = 10000;
-                        const interval = setInterval(() => {
-                            const currentState = isItemOwned();
-                            if (currentState.owned) {
-                                logBuffer.push(`Acquisition confirmed! (Rule 1 now PASS: ${currentState.reason})`);
-                                clearInterval(interval);
-                                resolve();
+                            if (actionButton) {
+                                Utils.deepClick(actionButton);
+                                await new Promise((resolve, reject) => {
+                                    const timeout = 25000;
+                                    const interval = setInterval(() => {
+                                        if (isItemOwned().owned) {
+                                            success = true;
+                                            clearInterval(interval);
+                                            resolve();
+                                        }
+                                    }, 500);
+                                    setTimeout(() => {
+                                        clearInterval(interval);
+                                        reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                    }, timeout);
+                                });
+                            } else {
+                                 throw new Error('Could not find a final acquisition button.');
                             }
-                        }, 200);
-                        setTimeout(() => {
-                            clearInterval(interval);
-                            reject(new Error(`Timeout waiting for page to enter an 'owned' state after click.`));
-                        }, timeout);
-                    });
-                    
-                    await TaskRunner.advanceDetailTask(taskPayload, true, logBuffer);
-                    return;
+                        }
+                    }
                 }
-                
-                throw new Error('Could not find any button matching the acquisition keyword sets after all steps.');
-
             } catch (error) {
-                logBuffer.push(`Acquisition FAILED. An unexpected error occurred.`);
-                
-                // --- ENHANCED "BLACK BOX" DIAGNOSTIC CODE ---
-                // No longer checks for a specific message. It runs for ANY error during the process.
-                logBuffer.push('--- BLACK BOX RECORDER ACTIVATED ---');
-                logBuffer.push(`Error Details: Name: ${error.name}, Message: ${error.message}`);
-                if (error.stack) {
-                    logBuffer.push(`Stack Trace: ${error.stack}`);
+                // The main try-catch for the entire acquisition process.
+                if (!success) { // Don't log error if we succeeded (e.g. via API)
+                    logBuffer.push(`Acquisition FAILED. Error: ${error.message}`);
+                    success = false;
                 }
-                logBuffer.push('Dumping all direct children of <body> that are currently visible, as popovers often live here.');
-                
-                const candidates = document.querySelectorAll('body > div');
-                let foundVisibleCandidates = 0;
-                
-                if (candidates.length > 0) {
-                    candidates.forEach((el, index) => {
-                         const style = window.getComputedStyle(el);
-                         // Loosened criteria: also check for elements that just take up space (height > 0)
-                         if (style.display !== 'none' && style.visibility !== 'hidden' && (style.position !== 'static' || el.clientHeight > 0)) {
-                             foundVisibleCandidates++;
-                             const rect = el.getBoundingClientRect();
-                             logBuffer.push(
-                                 `[Visible Candidate #${index}] Tag: ${el.tagName}, ID: ${el.id || 'N/A'}, Class: ${el.className || 'N/A'}, Role: ${el.getAttribute('role') || 'N/A'}, z-index: ${style.zIndex}, Position: ${style.position}, Size: ${Math.round(rect.width)}x${Math.round(rect.height)}, Content: "${el.textContent.substring(0, 100).replace(/\s+/g, ' ')}"`
-                             );
-                         }
-                    });
+            } finally {
+                // --- This is the worker's teardown process ---
+                if (success) {
+                    await Database.markAsDone(currentTask);
+                    logBuffer.push(`✅ Task marked as DONE.`);
+                } else {
+                    await Database.markAsFailed(currentTask);
+                    logBuffer.push(`❌ Task marked as FAILED.`);
                 }
                 
-                if (foundVisibleCandidates === 0) {
-                     logBuffer.push('Diagnostic check found no visible, non-static <div> elements as direct children of <body>. The dropdown may be nested elsewhere or failed to trigger.');
-                }
-                logBuffer.push('--- END BLACK BOX REPORT ---');
-                // --- END DIAGNOSTIC CODE ---
-
-                await TaskRunner.advanceDetailTask(taskPayload, false, logBuffer);
+                await GM_setValue(Config.DB_KEYS.DETAIL_LOG, logBuffer);
+                await GM_setValue(Config.DB_KEYS.WORKER_DONE, { workerId: workerId });
+                await GM_deleteValue(workerId);
+                window.close();
             }
         },
 
-        advanceDetailTask: async (taskPayload, success, logBuffer = []) => {
-            // First, send the final log report back to the main tab.
-            await GM_setValue(Config.DB_KEYS.DETAIL_LOG, logBuffer);
-
-            // Gracefully handle cases where the task payload might be null
-            if (!taskPayload || typeof taskPayload.currentIndex === 'undefined' || !taskPayload.batch) {
-                Utils.logger('error', 'advanceDetailTask called with invalid or null taskPayload. Cannot advance. Closing tab.');
-                window.close();
-                return;
-            }
-
-            const currentTask = taskPayload.batch[taskPayload.currentIndex];
-
-            if (success) {
-                logBuffer.push(`SUCCESS: Item acquired.`);
-                await Database.markAsDone(currentTask);
-            } else {
-                logBuffer.push(`FAILURE: Could not acquire item.`);
-                await Database.markAsFailed(currentTask);
-            }
-
-            // After logging, add the progress message
-            // TaskRunner.addProgressToLog(logBuffer, taskPayload, success ? '成功' : '失败');
-            // BUG FIX: The above line was removed as this function no longer exists.
-            // Progress is now handled entirely on the main page via the TASK listener.
-
-            // BUG FIX: After processing the current item, we MUST re-check if the master task has been cancelled.
-            // The main tab signals a stop by deleting the TASK key. If it's gone, we must abort.
-            const masterTaskStillActive = await GM_getValue(Config.DB_KEYS.TASK);
-            if (!masterTaskStillActive) {
-                Utils.logger('info', 'Execution stopped by main tab. Worker tab will now close.');
-                window.close(); // Halt all further action.
-                return;
-            }
-
-            taskPayload.currentIndex++;
-
-            if (taskPayload.currentIndex >= taskPayload.batch.length) {
-                await GM_deleteValue(Config.DB_KEYS.TASK);
-                window.close();
-            } else {
-                await GM_setValue(Config.DB_KEYS.TASK, taskPayload);
-                window.location.href = taskPayload.batch[taskPayload.currentIndex].url;
-            }
-        },
+        // This function is now obsolete as its logic is handled by the worker's finally block.
+        advanceDetailTask: async () => {},
 
         runHideOrShow: () => {
             State.hiddenThisPageCount = 0;
@@ -1177,7 +1043,7 @@
             copyLogBtn.innerHTML = '📄';
             copyLogBtn.title = Utils.getText('copyLog');
             copyLogBtn.onclick = () => {
-                navigator.clipboard.writeText(State.ui.logPanel.innerText).then(() => {
+                navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
                     const originalIcon = copyLogBtn.innerHTML;
                     copyLogBtn.innerHTML = '✅';
                     setTimeout(() => { copyLogBtn.innerHTML = originalIcon; }, 1500);
@@ -1187,7 +1053,7 @@
             clearLogBtn.className = 'fab-helper-icon-btn';
             clearLogBtn.innerHTML = '🗑️';
             clearLogBtn.title = Utils.getText('clearLog');
-            clearLogBtn.onclick = () => { State.ui.logPanel.innerHTML = ''; };
+            clearLogBtn.onclick = () => { State.UI.logPanel.innerHTML = ''; };
             headerControls.append(copyLogBtn, clearLogBtn);
             header.append(title, headerControls);
 
@@ -1200,15 +1066,15 @@
                 item.innerHTML = `${label} <span id="${id}">0</span>`;
                 return item;
             };
-            State.ui.statusTodo = createStatusItem('fab-status-todo', `📥 ${Utils.getText('todo')}`);
-            State.ui.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
-            State.ui.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
-            statusBar.append(State.ui.statusTodo, State.ui.statusDone, State.ui.statusFailed);
+            State.UI.statusTodo = createStatusItem('fab-status-todo', `📥 ${Utils.getText('todo')}`);
+            State.UI.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
+            State.UI.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
+            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
 
             // -- Log Panel --
-            State.ui.logPanel = document.createElement('div');
-            State.ui.logPanel.id = 'fab-log-panel';
-            State.ui.logPanel.style.cssText = `
+            State.UI.logPanel = document.createElement('div');
+            State.UI.logPanel.id = 'fab-log-panel';
+            State.UI.logPanel.style.cssText = `
   background: rgba(30,30,30,0.85);
   color: #eee;
   font-size: 12px;
@@ -1288,11 +1154,11 @@
             refreshPageBtn.style.background = 'var(--blue)';
             refreshPageBtn.onclick = TaskRunner.refreshVisibleStates;
             // 本页隐藏/显示已拥有
-            State.ui.hideBtn = document.createElement('button');
-            State.ui.hideBtn.innerHTML = '🙈 隐藏已拥有';
-            State.ui.hideBtn.style.background = 'var(--blue)';
-            State.ui.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            basicSection.append(basicTitle, addAllBtn, refreshPageBtn, State.ui.hideBtn);
+            State.UI.hideBtn = document.createElement('button');
+            State.UI.hideBtn.innerHTML = '🙈 隐藏已拥有';
+            State.UI.hideBtn.style.background = 'var(--blue)';
+            State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
+            basicSection.append(basicTitle, addAllBtn, refreshPageBtn, State.UI.hideBtn);
 
             // -- Divider --
             const divider = document.createElement('hr');
@@ -1306,36 +1172,36 @@
             advTitle.className = 'fab-helper-section-title';
             advTitle.textContent = '⚡ 高级功能 (Advanced/API)';
             // 批量侦察
-            State.ui.reconBtn = document.createElement('button');
-            State.ui.reconBtn.innerHTML = '🔍 批量侦察';
-            State.ui.reconBtn.style.background = 'var(--green)';
-            State.ui.reconBtn.onclick = TaskRunner.toggleRecon;
+            State.UI.reconBtn = document.createElement('button');
+            State.UI.reconBtn.innerHTML = '🔍 批量侦察';
+            State.UI.reconBtn.style.background = 'var(--green)';
+            State.UI.reconBtn.onclick = TaskRunner.toggleRecon;
             // 批量领取
-            State.ui.execBtn = document.createElement('button');
-            State.ui.execBtn.innerHTML = '🚀 批量领取';
-            State.ui.execBtn.style.background = 'var(--pink)';
-            State.ui.execBtn.onclick = TaskRunner.toggleExecution;
+            State.UI.execBtn = document.createElement('button');
+            State.UI.execBtn.innerHTML = '�� 批量领取';
+            State.UI.execBtn.style.background = 'var(--pink)';
+            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
             // 批量重试失败
-            State.ui.retryBtn = document.createElement('button');
-            State.ui.retryBtn.innerHTML = '🔁 批量重试失败';
-            State.ui.retryBtn.style.background = 'var(--orange)';
-            State.ui.retryBtn.onclick = TaskRunner.retryFailedTasks;
+            State.UI.retryBtn = document.createElement('button');
+            State.UI.retryBtn.innerHTML = '🔁 批量重试失败';
+            State.UI.retryBtn.style.background = 'var(--orange)';
+            State.UI.retryBtn.onclick = TaskRunner.retryFailedTasks;
             // 批量刷新所有状态
-            State.ui.refreshBtn = document.createElement('button');
-            State.ui.refreshBtn.innerHTML = '🔄 批量刷新所有状态';
-            State.ui.refreshBtn.style.background = 'var(--blue)';
-            State.ui.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
+            State.UI.refreshBtn = document.createElement('button');
+            State.UI.refreshBtn.innerHTML = '🔄 批量刷新所有状态';
+            State.UI.refreshBtn.style.background = 'var(--blue)';
+            State.UI.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
             // 重置侦察进度
-            State.ui.resetReconBtn = document.createElement('button');
-            State.ui.resetReconBtn.innerHTML = '⏮️ 重置侦察进度';
-            State.ui.resetReconBtn.style.background = 'var(--gray)';
-            State.ui.resetReconBtn.onclick = TaskRunner.resetReconProgress;
+            State.UI.resetReconBtn = document.createElement('button');
+            State.UI.resetReconBtn.innerHTML = '⏮️ 重置侦察进度';
+            State.UI.resetReconBtn.style.background = 'var(--gray)';
+            State.UI.resetReconBtn.onclick = TaskRunner.resetReconProgress;
             // 新增：重置所有数据
             const resetDataBtn = document.createElement('button');
             resetDataBtn.innerHTML = '⚠️ 重置所有数据';
             resetDataBtn.style.background = 'var(--pink)'; // Use a "danger" color
             resetDataBtn.onclick = Database.resetAllData;
-            advSection.append(advTitle, State.ui.reconBtn, State.ui.execBtn, State.ui.retryBtn, State.ui.refreshBtn, State.ui.resetReconBtn, resetDataBtn);
+            advSection.append(advTitle, State.UI.reconBtn, State.UI.execBtn, State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
 
             // -- Advanced Wrapper (状态栏+高级区) --
             const advancedWrapper = document.createElement('div');
@@ -1343,9 +1209,9 @@
             advancedWrapper.append(statusBar, divider, advSection);
 
             // -- Assemble UI --
-            container.append(header, State.ui.logPanel, basicSection, advancedWrapper);
+            container.append(header, State.UI.logPanel, basicSection, advancedWrapper);
             document.body.appendChild(container);
-            State.ui.container = container;
+            State.UI.container = container;
 
             // --- Console Commands (Fix using unsafeWindow) ---
             unsafeWindow.FabHelperShowAdvanced = function() {
@@ -1362,47 +1228,47 @@
         },
 
         update: () => {
-            if (!State.ui.container) return;
+            if (!State.UI.container) return;
             
             // Status Bar
-            State.ui.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
-            State.ui.container.querySelector('#fab-status-done').textContent = State.db.done.length;
-            State.ui.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
+            State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
+            State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
+            State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
             
             // Execute Button
-            State.ui.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
-            State.ui.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
+            State.UI.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
+            State.UI.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
             
             // Recon Button
             if (State.isReconning) {
                 const displayPage = Utils.getDisplayPageFromUrl(GM_getValue(Config.DB_KEYS.NEXT_URL, ''));
-                State.ui.reconBtn.innerHTML = `🔍 ${Utils.getText('reconning')} (${displayPage})`;
+                State.UI.reconBtn.innerHTML = `🔍 ${Utils.getText('reconning')} (${displayPage})`;
             } else {
-                State.ui.reconBtn.innerHTML = `🔍 ${Utils.getText('recon')}`;
+                State.UI.reconBtn.innerHTML = `🔍 ${Utils.getText('recon')}`;
             }
-            State.ui.reconBtn.disabled = State.isExecuting;
-            State.ui.reconBtn.style.background = State.isReconning ? 'var(--orange)' : 'var(--green)';
+            State.UI.reconBtn.disabled = State.isExecuting;
+            State.UI.reconBtn.style.background = State.isReconning ? 'var(--orange)' : 'var(--green)';
 
             // Retry Button
             const hasFailedTasks = State.db.failed.length > 0;
-            State.ui.retryBtn.innerHTML = `🔁 ${Utils.getText('retry_failed')} (${State.db.failed.length})`;
-            State.ui.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
-            State.ui.retryBtn.style.background = 'var(--orange)';
+            State.UI.retryBtn.innerHTML = `🔁 ${Utils.getText('retry_failed')} (${State.db.failed.length})`;
+            State.UI.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
+            State.UI.retryBtn.style.background = 'var(--orange)';
             
             // Refresh Button
-            State.ui.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
-            State.ui.refreshBtn.disabled = State.isExecuting || State.isReconning;
-            State.ui.refreshBtn.style.background = 'var(--blue)';
+            State.UI.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
+            State.UI.refreshBtn.disabled = State.isExecuting || State.isReconning;
+            State.UI.refreshBtn.style.background = 'var(--blue)';
 
             // Hide/Show Button
             const hideText = State.hideSaved ? Utils.getText('show') : Utils.getText('hide');
-            State.ui.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
-            State.ui.hideBtn.style.background = 'var(--blue)';
+            State.UI.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
+            State.UI.hideBtn.style.background = 'var(--blue)';
 
             // Reset Recon Button
-            State.ui.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
-            State.ui.resetReconBtn.disabled = State.isExecuting || State.isReconning;
-            State.ui.resetReconBtn.style.background = 'var(--gray)';
+            State.UI.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
+            State.UI.resetReconBtn.disabled = State.isExecuting || State.isReconning;
+            State.UI.resetReconBtn.style.background = 'var(--gray)';
         },
 
         applyOverlay: (card, type = 'owned') => {
@@ -1507,9 +1373,9 @@
 
         // NEW: Immediately reflect saved recon progress in the UI on load.
         const savedNextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
-        if (savedNextUrl && State.ui.reconProgressDisplay) {
+        if (savedNextUrl && State.UI.reconProgressDisplay) {
             const displayPage = Utils.getDisplayPageFromUrl(savedNextUrl);
-            State.ui.reconProgressDisplay.textContent = `Page: ${displayPage}`;
+            State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
             Utils.logger('info', `Found saved recon progress. Ready to resume.`);
         }
 
@@ -1578,7 +1444,7 @@
                 const payload = new_value; // GM listener passes the direct object
                 // Update button with real-time progress
                 const progressText = `(${payload.currentIndex + 1} / ${payload.batch.length})`;
-                State.ui.execBtn.innerHTML = `🛑 ${Utils.getText('stopExecute')} ${progressText}`;
+                State.UI.execBtn.innerHTML = `🛑 ${Utils.getText('stopExecute')} ${progressText}`;
 
                 // Set a new watchdog for the next step.
                 State.watchdogTimer = setTimeout(() => {
@@ -1617,6 +1483,20 @@
         window.addEventListener('beforeunload', () => {
             State.valueChangeListeners.forEach(id => GM_removeValueChangeListener(id));
         });
+
+        // --- Event Listeners ---
+        // This listener handles the completion signal from any worker tab.
+        State.valueChangeListeners.push(
+            GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
+                if (!newValue || !newValue.workerId) return;
+                
+                State.activeWorkers--;
+                Utils.logger('info', `✅ Worker [${newValue.workerId.substring(0,12)}] finished. Active: ${State.activeWorkers}`);
+                
+                // Immediately try to dispatch a new worker.
+                TaskRunner.executeBatch();
+            })
+        );
     }
 
     // --- Script Entry Point ---
