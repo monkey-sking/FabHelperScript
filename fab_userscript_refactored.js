@@ -37,14 +37,11 @@
         UI_CONTAINER_ID: 'fab-helper-container-v8',
         UI_LOG_ID: 'fab-helper-log-v8',
         DB_KEYS: {
-            TODO: 'fab_todoList_v8',
             DONE: 'fab_doneList_v8',
             FAILED: 'fab_failedList_v8', // For items that failed processing
             HIDE: 'fab_hideSaved_v8',
-            TASK: 'fab_currentTask_v8', // Legacy, will be phased out
-            NEXT_URL: 'fab_reconNextUrl_v8', // REPLACES CURSOR
-            DETAIL_LOG: 'fab_detailLog_v8', // For worker tab remote logging
-            WORKER_DONE: 'fab_worker_done_v8', // New key for worker completion status
+            WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
+            // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
             card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
@@ -62,7 +59,9 @@
             // Check for an H2 tag with the specific success text.
             h2Text: ['已保存在我的库中', 'Saved in My Library'], 
             // Check for buttons/links with these texts.
-            buttonTexts: ['在我的库中查看', 'View in My Library']
+            buttonTexts: ['在我的库中查看', 'View in My Library'],
+            // Check for the temporary success popup (snackbar).
+            snackbarText: ['产品已添加至您的库中', 'Product added to your library'],
         },
         ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library']),
 
@@ -80,14 +79,21 @@
         showAdvanced: false,
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
+        lastKnownHref: null, // To detect SPA navigation
         hiddenThisPageCount: 0,
-        totalTasks: 0,
-        completedTasks: 0,
+        totalTasks: 0, // Used for Recon
+        completedTasks: 0, // Used for Recon
+        executionTotalTasks: 0, // For execution progress
+        executionCompletedTasks: 0, // For execution progress
+        executionFailedTasks: 0, // For execution progress
         watchdogTimer: null,
         // UI-related state
         UI: {
             container: null,
             logPanel: null,
+            progressContainer: null, // NEW
+            progressText: null, // NEW
+            progressBarFill: null, // NEW
             progressBar: null,
             statusTodo: null,
             statusDone: null,
@@ -212,6 +218,18 @@
             // Also trigger the standard click for maximum compatibility.
             element.click();
             }, 50); // 50ms delay
+        },
+        cleanup: () => {
+            if (State.watchdogTimer) {
+                clearInterval(State.watchdogTimer);
+                State.watchdogTimer = null;
+            }
+            State.valueChangeListeners.forEach(id => {
+                try {
+                    GM_removeValueChangeListener(id);
+                } catch (e) { /* Ignore errors */ }
+            });
+            State.valueChangeListeners = [];
         }
     };
 
@@ -236,23 +254,24 @@
     // --- 模块五: 数据库交互 (Database Interaction) ---
     const Database = {
         load: async () => {
-            State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
+            // "To-Do" list is now session-only and starts empty on each full page load.
+            State.db.todo = [];
             State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
             State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
             State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-            Utils.logger('info', Utils.getText('log_db_loaded'), `To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
+            Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
-        saveTodo: () => GM_setValue(Config.DB_KEYS.TODO, State.db.todo),
+        // saveTodo is no longer needed as the todo list is not persisted across sessions.
         saveDone: () => GM_setValue(Config.DB_KEYS.DONE, State.db.done),
         saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
 
         resetAllData: async () => {
-            if (window.confirm('您确定要清空所有本地存储的脚本数据（待办、已完成、失败列表）吗？此操作不可逆！')) {
-                await GM_deleteValue(Config.DB_KEYS.TODO);
+            if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败列表）吗？待办列表也会被清空。此操作不可逆！')) {
+                // No need to delete TODO, it's session-based. Just clear the state.
+                State.db.todo = [];
                 await GM_deleteValue(Config.DB_KEYS.DONE);
                 await GM_deleteValue(Config.DB_KEYS.FAILED);
-                State.db.todo = [];
                 State.db.done = [];
                 State.db.failed = [];
                 Utils.logger('info', '所有脚本数据已重置。');
@@ -290,7 +309,7 @@
 
             Utils.logger('info', `Debug: To-Do count after: ${State.db.todo.length}`);
             
-            let changed = State.db.todo.length < initialTodoCount;
+            let changed = false;
 
             // The 'done' list can still use URLs for simplicity, as it's for display/hiding.
             const cleanUrl = task.url.split('?')[0];
@@ -300,7 +319,7 @@
             }
 
             if (changed) {
-                await Promise.all([Database.saveTodo(), Database.saveDone()]);
+                await Database.saveDone();
             }
         },
         markAsFailed: async (task) => {
@@ -321,7 +340,7 @@
             }
 
             if (changed) {
-                await Promise.all([Database.saveTodo(), Database.saveFailed()]);
+                await Database.saveFailed();
             }
         },
     };
@@ -396,6 +415,9 @@
                 }
             Utils.logger('info', '队列中有任务，即将开始执行...');
             State.isExecuting = true;
+            State.executionTotalTasks = State.db.todo.length;
+            State.executionCompletedTasks = 0;
+            State.executionFailedTasks = 0;
             UI.update();
                 TaskRunner.executeBatch();
         },
@@ -404,7 +426,15 @@
         toggleExecution: () => {
             if (State.isExecuting) {
                 State.isExecuting = false;
-                GM_deleteValue(Config.DB_KEYS.TASK); // Stop all workers
+                // This will signal all active workers to stop, but relies on them checking the key.
+                // A more robust stop would involve cleaning up workers directly.
+                GM_deleteValue(Config.DB_KEYS.TASK); 
+                // We also clear the running workers so the watchdog stops.
+                State.runningWorkers = {};
+                State.activeWorkers = 0;
+                State.executionTotalTasks = 0;
+                State.executionCompletedTasks = 0;
+                State.executionFailedTasks = 0;
                 Utils.logger('info', '执行已由用户手动停止。');
             } else {
                 TaskRunner.startExecution();
@@ -550,7 +580,7 @@
             Utils.logger('info', `Re-queuing ${count} failed tasks...`);
             State.db.todo.push(...State.db.failed); // Append failed tasks to the end of the todo list
             State.db.failed = []; // Clear the failed list
-            await Promise.all([Database.saveTodo(), Database.saveFailed()]);
+            await Database.saveFailed();
             Utils.logger('info', `${count} tasks moved from Failed to To-Do list.`);
             UI.update(); // Force immediate UI update
         },
@@ -712,7 +742,8 @@
                     if (newTasks.length > 0) {
                         Utils.logger('info', Utils.getText('log_api_owned_done', { newCount: newTasks.length }));
                         State.db.todo = State.db.todo.concat(newTasks);
-                        await Database.saveTodo();
+                        // No need to save the todo list anymore.
+                        // await Database.saveTodo();
                     } else {
                         Utils.logger('info', "Found unowned items, but none were truly free after price check.");
                     }
@@ -766,16 +797,13 @@
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
                         
-                        // Mark the task as failed
                         Database.markAsFailed(workerInfo.task);
 
-                        // Clean up the stalled worker
                         delete State.runningWorkers[workerId];
                         State.activeWorkers--;
 
                         Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
 
-                        // Trigger the dispatcher to check if it can send a new worker.
                         TaskRunner.executeBatch();
                     }
                 }
@@ -796,19 +824,7 @@
                 UI.update();
                 return;
             }
-
-            // --- TASK TYPE ROUTING ---
-            // Process recon tasks first if they are at the front of the queue.
-            while (State.db.todo.length > 0 && State.db.todo[0].type === 'recon') {
-                const reconTask = State.db.todo.shift(); // Take the recon task
-                await TaskRunner.reconWithApi(reconTask.apiUrl); // Process it sequentially
-            }
-
-            // Start the watchdog if it's not already running and there are workers
-            if (!State.watchdogTimer && State.activeWorkers > 0) {
-                TaskRunner.runWatchdog();
-            }
-
+            
             // --- DISPATCHER FOR DETAIL TASKS ---
             while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0 && State.db.todo[0].type === 'detail') {
                 const task = State.db.todo.shift();
@@ -852,9 +868,7 @@
             let success = false;
 
             try {
-                // This entire block is the acquisition logic, moved from the old sequential version.
-                
-                // --- API-First Ownership Check ---
+                // API-First Ownership Check...
                 try {
                     const csrfToken = Utils.getCookie('fab_csrftoken');
                     if (!csrfToken) throw new Error("CSRF token not found for API check.");
@@ -877,99 +891,99 @@
                     logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
                 }
 
-                // If API check was successful, we can skip the entire UI interaction block.
                 if (!success) {
-                    const isItemOwned = () => {
-                        const criteria = Config.OWNED_SUCCESS_CRITERIA;
-                        const snackbar = document.querySelector('.fabkit-Snackbar-root');
-                        if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
-                        const successHeader = document.querySelector('h2');
-                        if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
-                        const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
-                        const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
-                        if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-                        return { owned: false };
-                    };
+                    try {
+                        const isItemOwned = () => {
+                            const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                            const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+                            if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                            const successHeader = document.querySelector('h2');
+                            if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                            const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                            const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                            if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                            return { owned: false };
+                        };
 
-                    const initialState = isItemOwned();
-                    if (initialState.owned) {
-                        logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
-                        success = true;
-                    } else {
-                        const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
-                        if (licenseButton) {
-                            logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
-                            await new Promise((resolve, reject) => {
-                                const observer = new MutationObserver((mutationsList, obs) => {
-                                    for (const mutation of mutationsList) {
-                                        if (mutation.addedNodes.length > 0) {
-                                            for (const node of mutation.addedNodes) {
-                                                if (node.nodeType !== 1) continue;
-                                                const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                    Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
-                                                );
-                                                if (freeTextElement) {
-                                                    const clickableParent = freeTextElement.closest('[role="option"], button');
-                                                    if (clickableParent) {
-                                                        Utils.deepClick(clickableParent);
-                                                        observer.disconnect();
-                                                        resolve();
-                                                        return;
+                        const initialState = isItemOwned();
+                        if (initialState.owned) {
+                            logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                            success = true;
+                        } else {
+                            const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
+                            if (licenseButton) {
+                                logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                                await new Promise((resolve, reject) => {
+                                    const observer = new MutationObserver((mutationsList, obs) => {
+                                        for (const mutation of mutationsList) {
+                                            if (mutation.addedNodes.length > 0) {
+                                                for (const node of mutation.addedNodes) {
+                                                    if (node.nodeType !== 1) continue;
+                                                    const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                        Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
+                                                    );
+                                                    if (freeTextElement) {
+                                                        const clickableParent = freeTextElement.closest('[role="option"], button');
+                                                        if (clickableParent) {
+                                                            Utils.deepClick(clickableParent);
+                                                            observer.disconnect();
+                                                            resolve();
+                                                            return;
+                                                        }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
-                                });
-                                observer.observe(document.body, { childList: true, subtree: true });
-                                Utils.deepClick(licenseButton); // First click attempt
-                                setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
-                                setTimeout(() => {
-                                    observer.disconnect();
-                                    reject(new Error('Timeout (5s): The "免费" option did not appear.'));
-                                }, 5000);
-                            });
-                            // After license selection, re-check ownership before trying the main button
-                            await new Promise(r => setTimeout(r, 500)); // wait for UI update
-                            if(isItemOwned().owned) success = true;
-                        }
-                        
-                        // If not successful after license check, or if it wasn't a license item
-                        if (!success) {
-                             const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
-                                [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
-                            );
-
-                            if (actionButton) {
-                                Utils.deepClick(actionButton);
-                                await new Promise((resolve, reject) => {
-                                    const timeout = 25000;
-                                    const interval = setInterval(() => {
-                                        if (isItemOwned().owned) {
-                                            success = true;
-                                            clearInterval(interval);
-                                            resolve();
-                                        }
-                                    }, 500);
+                                    });
+                                    observer.observe(document.body, { childList: true, subtree: true });
+                                    Utils.deepClick(licenseButton); // First click attempt
+                                    setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
                                     setTimeout(() => {
-                                        clearInterval(interval);
-                                        reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                                    }, timeout);
+                                        observer.disconnect();
+                                        reject(new Error('Timeout (5s): The "免费" option did not appear.'));
+                                    }, 5000);
                                 });
-                            } else {
-                                 throw new Error('Could not find a final acquisition button.');
+                                // After license selection, re-check ownership before trying the main button
+                                await new Promise(r => setTimeout(r, 500)); // wait for UI update
+                                if(isItemOwned().owned) success = true;
+                            }
+                            
+                            // If not successful after license check, or if it wasn't a license item
+                            if (!success) {
+                                 const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
+                                    [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                                );
+
+                                if (actionButton) {
+                                    Utils.deepClick(actionButton);
+                                    await new Promise((resolve, reject) => {
+                                        const timeout = 25000;
+                                        const interval = setInterval(() => {
+                                            if (isItemOwned().owned) {
+                                                success = true;
+                                                clearInterval(interval);
+                                                resolve();
+                                            }
+                                        }, 500);
+                                        setTimeout(() => {
+                                            clearInterval(interval);
+                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                        }, timeout);
+                                    });
+                                } else {
+                                     throw new Error('Could not find a final acquisition button.');
+                                }
                             }
                         }
+                    } catch (uiError) {
+                         logBuffer.push(`UI interaction failed: ${uiError.message}`);
+                         success = false;
                     }
                 }
             } catch (error) {
-                // The main try-catch for the entire acquisition process.
-                if (!success) { // Don't log error if we succeeded (e.g. via API)
-                    logBuffer.push(`Acquisition FAILED. Error: ${error.message}`);
-                    success = false;
-                }
+                logBuffer.push(`A critical error occurred: ${error.message}`);
+                success = false;
             } finally {
-                // --- This is the worker's teardown process ---
                 if (success) {
                     await Database.markAsDone(currentTask);
                     logBuffer.push(`✅ Task marked as DONE.`);
@@ -978,14 +992,19 @@
                     logBuffer.push(`❌ Task marked as FAILED.`);
                 }
                 
-                await GM_setValue(Config.DB_KEYS.DETAIL_LOG, logBuffer);
-                await GM_setValue(Config.DB_KEYS.WORKER_DONE, { workerId: workerId });
+                // This is the one and only signal the worker sends back.
+                // It contains its ID, its success status, and its full log.
+                await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                    workerId: workerId,
+                    success: success,
+                    logs: logBuffer
+                });
                 await GM_deleteValue(workerId);
                 window.close();
             }
         },
 
-        // This function is now obsolete as its logic is handled by the worker's finally block.
+        // This function is now fully obsolete.
         advanceDetailTask: async () => {},
 
         runHideOrShow: () => {
@@ -1008,6 +1027,25 @@
     // --- 模块八: 用户界面 (User Interface) ---
     const UI = {
         create: () => {
+            // New, more robust rule: A detail page is identified by the presence of a main "acquisition" button,
+            // not by its URL, which can be inconsistent.
+            const acquisitionButton = [...document.querySelectorAll('button')].find(btn =>
+                [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+            );
+            
+            // The "Download" button is another strong signal.
+            const downloadButton = [...document.querySelectorAll('a[href*="/download/"], button')].find(btn =>
+                btn.textContent.includes('下载') || btn.textContent.includes('Download')
+            );
+
+            if (acquisitionButton || downloadButton) {
+                 const urlParams = new URLSearchParams(window.location.search);
+                 if (urlParams.has('workerId')) return;
+
+                Utils.logger('info', "On a detail page (detected by action buttons), skipping UI creation.");
+                return;
+            }
+
             if (document.getElementById(Config.UI_CONTAINER_ID)) return;
 
             // --- Style Injection ---
@@ -1079,6 +1117,30 @@
                 .fab-helper-divider {
                     border: none; border-top: 1px solid var(--border-color); margin: 8px 0;
                 }
+                .fab-helper-progress-container {
+                    display: none; /* Hidden by default */
+                    flex-direction: column;
+                    gap: 4px;
+                    margin-bottom: 8px;
+                }
+                .fab-helper-progress-bar {
+                    width: 100%;
+                    background-color: var(--dark-gray);
+                    border-radius: var(--radius-s);
+                    height: 10px;
+                    overflow: hidden;
+                }
+                .fab-helper-progress-bar-fill {
+                    height: 100%;
+                    width: 0%;
+                    background-color: var(--blue);
+                    transition: width 0.3s ease-in-out;
+                }
+                .fab-helper-progress-text {
+                    font-size: 11px;
+                    color: var(--text-color-secondary);
+                    text-align: center;
+                }
             `;
             const styleSheet = document.createElement("style");
             styleSheet.type = "text/css";
@@ -1126,6 +1188,27 @@
             State.UI.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
             State.UI.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
             statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
+
+            // -- NEW: Progress Bar --
+            const progressContainer = document.createElement('div');
+            progressContainer.className = 'fab-helper-progress-container';
+
+            const progressText = document.createElement('div');
+            progressText.className = 'fab-helper-progress-text';
+            progressText.textContent = 'Progress: (0/0)';
+
+            const progressBar = document.createElement('div');
+            progressBar.className = 'fab-helper-progress-bar';
+            const progressBarFill = document.createElement('div');
+            progressBarFill.className = 'fab-helper-progress-bar-fill';
+            progressBar.appendChild(progressBarFill);
+
+            progressContainer.append(progressText, progressBar);
+
+            // Store references in State.UI
+            State.UI.progressContainer = progressContainer;
+            State.UI.progressText = progressText;
+            State.UI.progressBarFill = progressBarFill;
 
             // -- Log Panel --
             State.UI.logPanel = document.createElement('div');
@@ -1184,7 +1267,7 @@
                     }
                     
                     // 3. If not owned and not in a queue, it's a new, valid task.
-                    const name = card.querySelector('.title-row a')?.textContent.trim() || 'Untitled';
+                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
                     newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
                 });
 
@@ -1192,7 +1275,11 @@
 
                 if (newlyAddedList.length > 0) {
                     State.db.todo.push(...newlyAddedList);
-                    Database.saveTodo();
+                    // FIX: If execution is already running, update the total task count.
+                    if (State.isExecuting) {
+                        State.executionTotalTasks += newlyAddedList.length;
+                        UI.update(); // Immediately update the progress bar denominator
+                    }
                     Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
                 }
                 
@@ -1263,7 +1350,7 @@
             // -- Advanced Wrapper (状态栏+高级区) --
             const advancedWrapper = document.createElement('div');
             advancedWrapper.style.display = 'none'; // 默认隐藏
-            advancedWrapper.append(statusBar, divider, advSection);
+            advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
 
             // -- Assemble UI --
             container.append(header, State.UI.logPanel, basicSection, advancedWrapper);
@@ -1291,6 +1378,19 @@
             State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
             State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
             State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
+            
+            // NEW: Progress Bar
+            if (State.isExecuting && State.executionTotalTasks > 0) {
+                State.UI.progressContainer.style.display = 'flex';
+                const totalProcessed = State.executionCompletedTasks + State.executionFailedTasks;
+                const percentage = (totalProcessed / State.executionTotalTasks) * 100;
+                State.UI.progressBarFill.style.width = `${percentage}%`;
+                State.UI.progressText.innerHTML = `
+                    ✅ ${State.executionCompletedTasks} &nbsp;&nbsp; ❌ ${State.executionFailedTasks} &nbsp;&nbsp; / &nbsp;&nbsp; 📥 ${State.executionTotalTasks}
+                `;
+            } else {
+                State.UI.progressContainer.style.display = 'none';
+            }
             
             // Execute Button
             State.UI.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
@@ -1412,21 +1512,25 @@
         NetworkFilter.init();
         await Database.load();
 
-        // Stricter check to see if this tab is a "worker" tab.
-        // It must be a listings page, have an active task payload, AND its URL must be in the batch.
-        const activeTask = await GM_getValue(Config.DB_KEYS.TASK);
-        if (activeTask && window.location.href.includes('/listings/')) {
-            const currentCleanUrl = window.location.href.split('?')[0];
-            const isLegitWorker = activeTask.batch.some(task => task.url === currentCleanUrl);
-
-            if (isLegitWorker) {
-                TaskRunner.processDetailPage();
-                return; // This tab's only job is to run the detail task.
-            }
+        // The new, correct worker detection logic.
+        // We check if a workerId is present in the URL. If so, it's a worker tab.
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('workerId')) {
+            // This is a worker tab. Its only job is to process the page and then close.
+            TaskRunner.processDetailPage();
+            return; // IMPORTANT: Stop all further script execution for this worker tab.
         }
 
-        // --- Standard page setup ---
+        // --- Standard page setup (runs only for the main, non-worker tab) ---
+        // The UI.create() function now internally checks if it should run,
+        // so we can call it unconditionally here.
         UI.create();
+
+        // The rest of the setup only makes sense if the UI was actually created.
+        if (!State.UI.container) {
+             Utils.logger('info', 'UI container not found, skipping remaining setup for this page.');
+             return;
+        }
 
         // NEW: Immediately reflect saved recon progress in the UI on load.
         const savedNextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
@@ -1479,11 +1583,14 @@
             UI.update();
             UI.applyOverlaysToPage();
         }));
+        // TODO list is now session-based, so listening for its changes across tabs is no longer needed.
+        /*
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TODO, (name, old_value, new_value) => {
             State.db.todo = new_value;
             UI.applyOverlaysToPage();
             UI.update();
         }));
+        */
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.FAILED, (name, old_value, new_value) => {
             State.db.failed = new_value;
             UI.update();
@@ -1525,60 +1632,73 @@
             }
         }));
         // RESTORED LISTENER: For receiving and printing logs from worker tabs.
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.DETAIL_LOG, (name, old_value, new_value) => {
-            if (new_value && Array.isArray(new_value) && new_value.length > 0) {
-                Utils.logger('info', '--- Log Report from Worker Tab ---');
-                new_value.forEach(logMsg => {
+        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
+            if (!newValue || !newValue.workerId) return;
+            const { workerId, success, logs } = newValue;
+
+            // --- Log printing first ---
+            if (logs && Array.isArray(logs)) {
+                Utils.logger('info', `--- Log Report from Worker [${workerId.substring(0,12)}] ---`);
+                logs.forEach(logMsg => {
                     const logType = logMsg.includes('FAIL') ? 'error' : 'info';
                     Utils.logger(logType, logMsg);
                 });
                 Utils.logger('info', '--- End Log Report ---');
-                GM_deleteValue(Config.DB_KEYS.DETAIL_LOG); // Clean up after reading
+            }
+
+            // --- Then, process the result ---
+            if (State.runningWorkers[workerId]) {
+                if (success) {
+                    State.executionCompletedTasks++;
+                } else {
+                    State.executionFailedTasks++;
+                }
+
+                State.activeWorkers--;
+                delete State.runningWorkers[workerId];
+                // This log now makes more sense as it comes AFTER the detailed log report.
+                Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}. Progress: ${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`);
+                
+                // Explicitly update UI to show progress immediately
+                UI.update();
+                
+                TaskRunner.executeBatch();
             }
         }));
         
-        window.addEventListener('beforeunload', () => {
-            State.valueChangeListeners.forEach(id => GM_removeValueChangeListener(id));
-        });
-
-        // --- Event Listeners ---
-        // This listener handles the completion signal from any worker tab.
-        State.valueChangeListeners.push(
-            GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
-                if (!newValue || !newValue.workerId) return;
-                const { workerId } = newValue;
-
-                // Only proceed if the worker was actually registered
-                if (State.runningWorkers[workerId]) {
-                    State.activeWorkers--;
-                    // Unregister from watchdog
-                    delete State.runningWorkers[workerId];
-                    Utils.logger('info', `✅ Worker [${workerId.substring(0,12)}] finished. Active: ${State.activeWorkers}`);
-                    
-                    // Immediately try to dispatch a new worker.
-                    TaskRunner.executeBatch();
-                }
-            })
-        );
+        // The old TASK listener is now obsolete and will be removed.
+        const oldTaskListener = State.valueChangeListeners.find(l => l.key === Config.DB_KEYS.TASK);
+        if (oldTaskListener) {
+            GM_removeValueChangeListener(oldTaskListener.id);
+            State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
+        }
     }
 
     // --- Script Entry Point ---
-    function runWhenReady() {
-        const readyInterval = setInterval(() => {
-            if (document.body && document.querySelector(Config.SELECTORS.rootElement)) {
-                clearInterval(readyInterval);
-                main();
-                // guardian(); // Guardian can be added back later
-            }
-        }, 200);
-        setTimeout(() => {
-            if (!State.isInitialized) {
-                clearInterval(readyInterval);
-                Utils.logger('warn', 'Initialization timed out.');
-            }
-        }, 20000);
-    }
+    // This is the final, robust, SPA-and-infinite-scroll-aware entry point.
+    const entryObserver = new MutationObserver(() => {
+        // We only re-initialize if the URL has actually changed.
+        if (window.location.href !== State.lastKnownHref) {
+            // A short debounce to handle rapid URL changes.
+            setTimeout(() => {
+                if (window.location.href !== State.lastKnownHref) {
+                    State.lastKnownHref = window.location.href;
+                    Utils.cleanup();
+                    main();
+                }
+            }, 250);
+        }
+    });
 
-    runWhenReady();
+    entryObserver.observe(document.body, { childList: true, subtree: true });
+    
+    // Initial run when the script is first injected.
+    State.lastKnownHref = window.location.href;
+    Utils.cleanup = () => {
+        if (State.watchdogTimer) clearInterval(State.watchdogTimer);
+        State.valueChangeListeners.forEach(id => GM_removeValueChangeListener(id));
+        State.valueChangeListeners = [];
+    };
+    main();
 
 })(); 
