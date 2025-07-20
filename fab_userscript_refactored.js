@@ -3,7 +3,7 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
@@ -30,7 +30,7 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v1.0.1]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
@@ -41,6 +41,8 @@
             FAILED: 'fab_failedList_v8', // For items that failed processing
             HIDE: 'fab_hideSaved_v8',
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
+            SAVED_CURSOR: 'fab_saved_cursor_v8', // For Page Patcher
+            PATCH_ENABLED: 'fab_patch_enabled_v8', // For Page Patcher
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -77,6 +79,8 @@
         isReconning: false,
         hideSaved: false,
         showAdvanced: false,
+        isPagePatchingEnabled: false, // For Page Patcher
+        savedCursor: null, // For Page Patcher
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
         lastKnownHref: null, // To detect SPA navigation
@@ -113,6 +117,7 @@
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
         isLogCollapsed: localStorage.getItem('fab_helper_log_collapsed') === 'true' || false, // 日志面板折叠状态
+        networkAnalyzerTimer: null, // For network analyzer heartbeat
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -237,12 +242,15 @@
             });
             State.valueChangeListeners = [];
 
-            // --- NEW: Expanded Cleanup for Hot-Reload ---
-            // 1. Remove UI
-            if (State.UI.container) {
-                State.UI.container.remove();
-                State.UI = {}; // Reset UI state object
+            // --- NEW: Expanded & More Robust Cleanup for Hot-Reload ---
+            // 1. Remove UI - Forcefully find and remove by ID, don't rely on state.
+            const oldContainer = document.getElementById(Config.UI_CONTAINER_ID);
+            if (oldContainer) {
+                oldContainer.remove();
+                Utils.logger('info', 'Old UI container found and removed by ID during cleanup.');
             }
+            State.UI = {}; // Reset UI state object
+
             // 2. Remove Stylesheet
             const styleSheet = document.querySelector('style[data-fab-helper-style]');
             if (styleSheet) styleSheet.remove();
@@ -252,7 +260,34 @@
                 State.mainObserver.disconnect();
                 State.mainObserver = null;
             }
+
+            // Clear the network analyzer heartbeat timer
+            if (State.networkAnalyzerTimer) {
+                clearInterval(State.networkAnalyzerTimer);
+                State.networkAnalyzerTimer = null;
+            }
             
+            // Restore the original XHR function to prevent stacking wrappers on hot-reload
+            if (unsafeWindow.originalXHRSend) {
+                XMLHttpRequest.prototype.send = unsafeWindow.originalXHRSend;
+                delete unsafeWindow.originalXHRSend;
+                Utils.logger('info', 'Original XHR function has been restored.');
+            }
+
+            // Restore the original XHR open function
+            if (unsafeWindow.originalXHROpen) {
+                XMLHttpRequest.prototype.open = unsafeWindow.originalXHROpen;
+                delete unsafeWindow.originalXHROpen;
+                Utils.logger('info', 'Original XHR open function has been restored.');
+            }
+            
+            // NEW: Restore the original fetch function for hot-reload safety
+            if (unsafeWindow.originalFetch) {
+                unsafeWindow.fetch = unsafeWindow.originalFetch;
+                delete unsafeWindow.originalFetch;
+                Utils.logger('info', 'Original fetch function has been restored.');
+            }
+
             // 4. Remove sessionCompleted set to clear session state on reload
             State.sessionCompleted = new Set();
             
@@ -293,6 +328,10 @@
             State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
             State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
             State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
+            // Load Page Patcher settings into state
+            State.isPagePatchingEnabled = await GM_getValue(Config.DB_KEYS.PATCH_ENABLED, false);
+            State.savedCursor = await GM_getValue(Config.DB_KEYS.SAVED_CURSOR, null);
+
             Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
         // saveTodo is no longer needed as the todo list is not persisted across sessions.
@@ -468,45 +507,60 @@
         },
 
         hotReloadScript: async () => {
-            const newScriptCode = prompt('=== 脚本热更新 ===\n\n请在下方粘贴您的最新脚本代码，然后点击"确定"。', '');
-
-            if (!newScriptCode || newScriptCode.trim() === '') {
-                Utils.logger('info', '热更新已取消，因为没有提供代码。');
+            // --- Phase 1: Safety Lock ---
+            if (State.isExecuting || State.isReconning || State.activeWorkers > 0) {
+                alert(`[安全警告]\n\n检测到有任务正在后台运行，此时热更新可能会导致数据丢失或脚本崩溃。\n\n请先点击"停止"按钮，并等待所有任务完成后，再进行热更新操作。`);
+                Utils.logger('warn', 'Hot-reload aborted by safety lock because tasks are running.');
                 return;
             }
 
-            if (!window.confirm('代码已接收。确定要清理旧脚本并执行新代码吗？')) {
-                Utils.logger('info', '用户取消了热更新操作。');
-                return;
-            }
-
-            Utils.logger('info', '开始热更新... 清理旧脚本实例...');
-
-            try {
-                // Full cleanup of the current script instance
-                Utils.cleanup();
-                // We also need to disconnect the entry observer that starts `main`
-                if (unsafeWindow.fabHelperEntryObserver) {
-                    unsafeWindow.fabHelperEntryObserver.disconnect();
-                    delete unsafeWindow.fabHelperEntryObserver;
+            // --- Phase 2: Core Reload Logic ---
+            const executeReload = (newScriptCode) => {
+                if (!newScriptCode || newScriptCode.trim() === '') {
+                    Utils.logger('info', '热更新已取消，因为没有提供代码。');
+                    return;
                 }
-                
-                Utils.logger('info', '清理完成。即将执行新脚本代码...');
-
-                // Using eval in a timeout to break the current execution context
-                setTimeout(() => {
-                    try {
-                        // We are in development, we trust the source.
-                        eval(newScriptCode);
-                    } catch (e) {
-                        console.error('【热更新失败】新脚本执行时发生致命错误:', e);
-                        alert(`热更新失败！新脚本执行时发生错误，请检查控制台日志并刷新页面。\n\n错误信息: ${e.message}`);
+                if (!window.confirm('代码已准备就绪。确定要清理旧脚本并执行新代码吗？')) {
+                    Utils.logger('info', '用户取消了热更新操作。');
+                    return;
+                }
+                Utils.logger('info', '开始热更新... 清理旧脚本实例...');
+                try {
+                    Utils.cleanup();
+                    if (unsafeWindow.fabHelperEntryObserver) {
+                        unsafeWindow.fabHelperEntryObserver.disconnect();
+                        delete unsafeWindow.fabHelperEntryObserver;
                     }
-                }, 0);
+                    Utils.logger('info', '清理完成。即将执行新脚本代码...');
+                    setTimeout(() => {
+                        try {
+                            eval(newScriptCode);
+                        } catch (e) {
+                            console.error('【热更新失败】新脚本执行时发生致命错误:', e);
+                            alert(`热更新失败！新脚本执行时发生错误，请检查控制台日志并刷新页面。\n\n错误信息: ${e.message}`);
+                        }
+                    }, 0);
+                } catch (error) {
+                    Utils.logger('error', '【热更新失败】清理旧脚本时发生错误:', error);
+                    alert(`热更新失败！清理旧脚本时发生错误，请刷新页面。\n\n错误信息: ${error.message}`);
+                }
+            };
 
-            } catch (error) {
-                Utils.logger('error', '【热更新失败】清理旧脚本时发生错误:', error);
-                alert(`热更新失败！清理旧脚本时发生错误，请刷新页面。\n\n错误信息: ${error.message}`);
+            // --- Phase 3: Get Code (Clipboard with Prompt Fallback) ---
+            try {
+                const text = await navigator.clipboard.readText();
+                if (text && text.trim().includes('// ==UserScript==')) {
+                    Utils.logger('info', '成功从剪贴板读取代码。');
+                    executeReload(text);
+                } else {
+                    Utils.logger('info', '剪贴板为空或内容不合法，回退到手动粘贴。');
+                    const newCode = prompt('=== 脚本热更新 ===\n\n读取剪贴板失败或内容无效，请手动粘贴您的最新脚本代码。', '');
+                    executeReload(newCode);
+                }
+            } catch (err) {
+                Utils.logger('error', '读取剪贴板失败 (可能是权限问题)，回退到手动粘贴:', err.name, err.message);
+                const newCode = prompt('=== 脚本热更新 ===\n\n读取剪贴板失败 (可能是权限问题)，请手动粘贴您的最新脚本代码。', '');
+                executeReload(newCode);
             }
         },
 
@@ -1534,11 +1588,51 @@
             
             // 热更新脚本按钮
             const hotReloadBtn = document.createElement('button');
-            hotReloadBtn.innerHTML = '🔥 粘贴代码热更新';
+            hotReloadBtn.innerHTML = '🔥 剪贴板热更新';
             hotReloadBtn.style.background = 'var(--orange)';
             hotReloadBtn.onclick = TaskRunner.hotReloadScript;
 
             basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn, hotReloadBtn);
+
+            // --- NEW: Page Patcher Section ---
+            const pageModSection = document.createElement('div');
+            pageModSection.className = 'fab-helper-btn-section';
+            const modTitle = document.createElement('div');
+            modTitle.className = 'fab-helper-section-title';
+            modTitle.textContent = '🔧 页面魔改 (Page Mod)';
+
+            const patcherRow = document.createElement('div');
+            patcherRow.className = 'fab-helper-row';
+            patcherRow.style.cssText = 'padding: 6px; background: rgba(0,0,0,0.2); border-radius: 8px;';
+            
+            const patcherLabel = document.createElement('label');
+            patcherLabel.textContent = '启用搜索起点修改';
+            patcherLabel.style.cursor = 'pointer';
+            
+            const patcherCheckbox = document.createElement('input');
+            patcherCheckbox.type = 'checkbox';
+            patcherCheckbox.style.cursor = 'pointer';
+            patcherCheckbox.checked = State.isPagePatchingEnabled;
+            patcherCheckbox.onchange = async () => {
+                State.isPagePatchingEnabled = patcherCheckbox.checked;
+                await GM_setValue(Config.DB_KEYS.PATCH_ENABLED, State.isPagePatchingEnabled);
+                Utils.logger('info', `页面起点修改已 ${State.isPagePatchingEnabled ? '启用' : '禁用'}.`);
+            };
+            patcherLabel.prepend(patcherCheckbox);
+
+            const resetCursorBtn = document.createElement('button');
+            resetCursorBtn.innerHTML = '清除起点';
+            resetCursorBtn.style.cssText = 'padding: 4px 8px; font-size: 12px; flex-grow: 0; background: var(--gray);';
+            resetCursorBtn.onclick = async () => {
+                await GM_deleteValue(Config.DB_KEYS.SAVED_CURSOR);
+                State.savedCursor = null;
+                Utils.logger('info', '已清除已保存的页面起点。下次将从头开始加载。');
+                alert('已清除已保存的页面起点。');
+            };
+
+            patcherRow.append(patcherLabel, resetCursorBtn);
+            pageModSection.append(modTitle, patcherRow);
+
 
             const networkAnalysisSection = document.createElement('div');
             networkAnalysisSection.className = 'fab-helper-network-analysis';
@@ -1645,7 +1739,7 @@
             advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
             
             // -- Assemble UI --
-            container.append(header, logHeader, State.UI.logPanel, basicSection, advancedWrapper);
+            container.append(header, logHeader, State.UI.logPanel, basicSection, pageModSection, advancedWrapper);
             document.body.appendChild(container);
             State.UI.container = container;
 
@@ -2036,6 +2130,9 @@
             GM_removeValueChangeListener(oldTaskListener.id);
             State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
         }
+
+        // UI创建后，可以安全地初始化页面补丁了 (因为它依赖于从DB加载到State的数据)
+        PagePatcher.init();
     }
 
     // --- Script Entry Point ---
@@ -2166,8 +2263,73 @@
         init: () => {
              // 监听自定义事件，实时更新UI
             document.addEventListener('fab-network-update', NetworkAnalyzer.updateUI);
+            // 也设置一个定时器，作为"心跳"来保证UI的持续刷新。
+            if (State.networkAnalyzerTimer) clearInterval(State.networkAnalyzerTimer);
+            State.networkAnalyzerTimer = setInterval(NetworkAnalyzer.updateUI, 1000);
             // 初始加载时也更新一次
             NetworkAnalyzer.updateUI();
+        }
+    };
+
+    const PagePatcher = {
+        init: () => {
+            Utils.logger('info', 'Initializing page request patcher for XHR and Fetch.');
+
+            const shouldPatchUrl = (url) => {
+                return (
+                    State.isPagePatchingEnabled &&
+                    typeof url === 'string' &&
+                    url.includes('/i/listings/search') && // It's a search request
+                    !url.includes('cursor=') &&           // And it's an initial request (no cursor yet)
+                    !url.includes('aggregate_on=') &&     // AND it's not a request for UI filters
+                    !url.includes('count=0') &&           // AND it's not a request for UI filters
+                    !url.includes('in=wishlist')          // AND it's not for the wishlist banner check
+                );
+            };
+
+            const getPatchedUrl = (originalUrl) => {
+                if (State.savedCursor) {
+                    const urlObj = new URL(originalUrl, window.location.origin);
+                    urlObj.searchParams.set('cursor', State.savedCursor);
+                    const modifiedUrl = urlObj.href;
+                    Utils.logger('info', `页面补丁: 已将主要内容请求重定向至光标: ${State.savedCursor.substring(0,20)}...`);
+                    return modifiedUrl;
+                }
+                return originalUrl; // Return original if no cursor is saved
+            };
+
+            // --- 1. Patch XMLHttpRequest ---
+            if (!unsafeWindow.originalXHROpen) {
+                unsafeWindow.originalXHROpen = XMLHttpRequest.prototype.open;
+                const originalOpen = unsafeWindow.originalXHROpen;
+                XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                    let modifiedUrl = url;
+                    if (shouldPatchUrl(url)) {
+                        modifiedUrl = getPatchedUrl(url);
+                    }
+                    return originalOpen.apply(this, [method, modifiedUrl, ...args]);
+                };
+            }
+
+            // --- 2. Patch Fetch ---
+            if (!unsafeWindow.originalFetch) {
+                unsafeWindow.originalFetch = unsafeWindow.fetch;
+                const originalFetch = unsafeWindow.originalFetch;
+                unsafeWindow.fetch = function(input, init) {
+                    let modifiedInput = input;
+                    const url = (typeof input === 'string') ? input : input.url;
+
+                    if (shouldPatchUrl(url)) {
+                        const modifiedUrl = getPatchedUrl(url);
+                        if (typeof input === 'string') {
+                            modifiedInput = modifiedUrl;
+                        } else {
+                            modifiedInput = new Request(modifiedUrl, input);
+                        }
+                    }
+                    return originalFetch.call(this, modifiedInput, init);
+                };
+            }
         }
     };
 
