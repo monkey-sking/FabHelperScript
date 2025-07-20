@@ -78,6 +78,8 @@
         db: {},
         isExecuting: false,
         isReconning: false,
+        isCoolingDown: false, // NEW: Global cooldown state
+        wasExecutingBeforeCooldown: false, // NEW: State memory for Phoenix Protocol
         hideSaved: false,
         showAdvanced: false,
         patchHasBeenApplied: false, // For "One-and-Done" Page Patcher
@@ -118,6 +120,7 @@
             peakRpsDisplay: null,
             last429Display: null,
             cumulativeWeightDisplay: null,
+            cooldownStatus: null, // NEW: Cooldown status bar
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -1345,6 +1348,79 @@
             // 更新UI显示
             UI.update();
         },
+
+        // --- NEW: Cooldown UI Logic ---
+        initiateCooldownSequence: async () => {
+            // 1. Memory: Remember current state
+            State.wasExecutingBeforeCooldown = State.isExecuting;
+            State.isCoolingDown = true;
+            if (State.isExecuting) State.isExecuting = false; // Pause execution
+            Utils.logger('error', 'PHOENIX PROTOCOL: Rate limit detected. Initiating cooldown sequence...');
+
+            // 2. Initial Cooldown
+            let countdown = 60;
+            const updateTimer = () => {
+                if (State.UI.cooldownStatus) {
+                    State.UI.cooldownStatus.innerHTML = `服务器速率限制中... 正在冷却，${countdown}秒后尝试恢复。`;
+                }
+                UI.update();
+            };
+            updateTimer();
+            const timerInterval = setInterval(() => {
+                countdown--;
+                updateTimer();
+                if (countdown <= 0) clearInterval(timerInterval);
+            }, 1000);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+
+            // 3. Recovery Verification
+            let isRecovered = false;
+            let retryCount = 0;
+            const MAX_RETRIES = 10; // To prevent infinite loops
+            while (!isRecovered && retryCount < MAX_RETRIES) {
+                retryCount++;
+                Utils.logger('info', `PHOENIX PROTOCOL: Verification attempt #${retryCount}... Sending canary request.`);
+                if (State.UI.cooldownStatus) State.UI.cooldownStatus.innerHTML = `正在发送探针请求以验证服务器状态... (尝试 ${retryCount}/${MAX_RETRIES})`;
+                try {
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    const canaryUrl = 'https://www.fab.com/i/listings/search?count=1';
+                    const response = await API.gmFetch({
+                        method: 'GET',
+                        url: canaryUrl,
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+                    if (response.status === 200) {
+                        isRecovered = true;
+                        Utils.logger('info', 'PHOENIX PROTOCOL: Verification successful! Server is responsive.');
+                    } else {
+                        Utils.logger('warn', `PHOENIX PROTOCOL: Verification failed. Server responded with ${response.status}. Retrying in 30s.`);
+                        countdown = 30;
+                        const retryTimerInterval = setInterval(() => {
+                            countdown--;
+                             if (State.UI.cooldownStatus) State.UI.cooldownStatus.innerHTML = `探针失败，服务器仍有限制。${countdown}秒后再次尝试...`;
+                            if (countdown <= 0) clearInterval(retryTimerInterval);
+                        }, 1000);
+                        await new Promise(resolve => setTimeout(resolve, 30000));
+                    }
+                } catch (e) {
+                     Utils.logger('error', 'PHOENIX PROTOCOL: Canary request failed critically.', e);
+                     await new Promise(resolve => setTimeout(resolve, 30000));
+                }
+            }
+
+            // 4. Resurrection & Resumption
+            State.isCoolingDown = false;
+            Utils.logger('info', 'PHOENIX PROTOCOL: Cooldown sequence complete.');
+            if (isRecovered && State.wasExecutingBeforeCooldown) {
+                Utils.logger('info', 'PHOENIX PROTOCOL: Resuming previously active tasks...');
+                State.isExecuting = true; // Restore state
+                TaskRunner.startExecution();
+            } else if (!isRecovered) {
+                Utils.logger('error', 'PHOENIX PROTOCOL: Max verification retries reached. Server still unresponsive. Aborting auto-resume.');
+            }
+            State.wasExecutingBeforeCooldown = false; // Clear memory
+            UI.update();
+        },
     };
 
 
@@ -1594,6 +1670,7 @@
             // 本页一键领取
             const addAllBtn = document.createElement('button');
             addAllBtn.innerHTML = '✨ 本页智能添加';
+            addAllBtn.id = 'fab-smart-add-btn'; // NEW: Add ID for disabling
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = async () => {
                 Utils.logger('info', 'Starting API-based scan for all items on this page...');
@@ -1769,6 +1846,19 @@
             networkContent.appendChild(clearNetworkLogBtn);
 
             networkAnalysisSection.append(networkTitle, networkContent);
+
+            // NEW: Cooldown status bar
+            const cooldownStatus = document.createElement('div');
+            cooldownStatus.id = 'fab-cooldown-status';
+            cooldownStatus.style.cssText = `
+                display: none; /* Hidden by default */
+                background: var(--orange); color: white; text-align: center;
+                padding: 8px; border-radius: var(--radius-m); font-weight: 500; font-size: 13px;
+                margin-top: 8px;
+            `;
+            networkAnalysisSection.insertAdjacentElement('beforebegin', cooldownStatus);
+            State.UI.cooldownStatus = cooldownStatus;
+
             basicSection.appendChild(networkAnalysisSection);
 
             // -- Advanced Wrapper (状态栏+高级区) --
@@ -1909,6 +1999,32 @@
             State.UI.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
             State.UI.resetReconBtn.disabled = State.isExecuting || State.isReconning;
             State.UI.resetReconBtn.style.background = 'var(--gray)';
+
+            // --- NEW: Cooldown UI Logic ---
+            const buttonsToDisable = [State.UI.execBtn, State.UI.reconBtn, State.UI.retryBtn, State.UI.refreshBtn, document.querySelector('#fab-smart-add-btn')];
+            if (State.isCoolingDown) {
+                buttonsToDisable.forEach(btn => {
+                    if (btn) {
+                        btn.disabled = true;
+                        btn.style.filter = 'grayscale(80%)';
+                        btn.style.cursor = 'not-allowed';
+                    }
+                });
+                if (State.UI.cooldownStatus.style.display !== 'block') {
+                    State.UI.cooldownStatus.style.display = 'block';
+                }
+            } else {
+                buttonsToDisable.forEach(btn => {
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.style.filter = '';
+                        btn.style.cursor = 'pointer';
+                    }
+                });
+                if (State.UI.cooldownStatus.style.display !== 'none') {
+                    State.UI.cooldownStatus.style.display = 'none';
+                }
+            }
         },
 
         applyOverlay: (card, type='owned') => {
@@ -2046,16 +2162,35 @@
                             font-size: 18px; font-weight: 600; z-index: 10000;
                             box-shadow: 0 5px 15px rgba(0,0,0,0.3); text-align: center; line-height: 1.6;
                         `;
-                        errorBox.innerHTML = `
-                            服务器硬性速率限制！<br>
-                            页面加载失败, 返回: "Too many requests"<br><br>
-                            这比普通的429错误更严重。脚本已暂停所有功能。<br>
-                            <b>请等待几分钟后再尝试刷新。</b>
-                        `;
+                        
+                        let countdown = 30;
+                        const updateErrorBox = () => {
+                            errorBox.innerHTML = `
+                                服务器硬性速率限制！<br>
+                                页面加载失败, 返回: "Too many requests"<br><br>
+                                这比普通的429错误更严重。脚本已暂停所有功能。<br>
+                                <b>页面将在 ${countdown} 秒后自动刷新...</b>
+                            `;
+                        };
+                        
+                        updateErrorBox();
                         document.body.innerHTML = ''; // Clear the error JSON
                         document.body.appendChild(errorBox);
-                        Utils.logger('error', 'Hard rate limit detected. Page is a JSON error. Aborting script.');
-                        return; // Abort all further script execution
+
+                        const countdownInterval = setInterval(() => {
+                            countdown--;
+                            updateErrorBox();
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                            }
+                        }, 1000);
+
+                        setTimeout(() => {
+                            window.location.reload();
+                        }, 30000);
+
+                        Utils.logger('error', 'Hard rate limit detected. Page is a JSON error. Initiating auto-refresh in 30s.');
+                        return; // Abort all further script execution for this page load
                     }
                 } catch (e) {
                     // Not a JSON page, proceed as normal.
@@ -2382,6 +2517,11 @@
             document.dispatchEvent(new CustomEvent('fab-network-update'));
 
             if (finalStatus === 429) {
+                // Trigger cooldown ONLY if not already in cooldown, to prevent multiple triggers.
+                if (!State.isCoolingDown) {
+                    TaskRunner.initiateCooldownSequence();
+                }
+
                 const sixtySecondWindow = now - 60000;
                 const recentRequests = NetworkRecorder.log.filter(r => r.timestamp > sixtySecondWindow);
                 const cumulativeWeight = recentRequests.reduce((sum, r) => sum + r.weight, 0);
