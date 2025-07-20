@@ -81,6 +81,7 @@
         showAdvanced: false,
         patchHasBeenApplied: false, // For "One-and-Done" Page Patcher
         isPagePatchingEnabled: false, // For Page Patcher
+        isSmartPursuitEnabled: false, // NEW: For Smart Pursuit Mode
         savedCursor: null, // For Page Patcher
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
@@ -91,6 +92,7 @@
         executionTotalTasks: 0, // For execution progress
         executionCompletedTasks: 0, // For execution progress
         executionFailedTasks: 0, // For execution progress
+        sessionPursuitCompletedCount: 0, // NEW: Counter for Smart Pursuit trigger
         watchdogTimer: null,
         // UI-related state
         UI: {
@@ -625,28 +627,29 @@
         },
 
         refreshVisibleStates: async () => {
+            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
+            await TaskRunner.processPageWithApi({ autoAdd: false, onlyVisible: true });
+        },
+
+        processPageWithApi: async (options = {}) => {
+            const { autoAdd = false, onlyVisible = false } = options;
+            
             const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
             const CARD_SELECTOR = 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root';
             const LINK_SELECTOR = 'a[href*="/listings/"]';
             const CSRF_COOKIE_NAME = 'fab_csrftoken';
-            const CHUNK_SIZE = 8; // NEW: Process in smaller batches to avoid being rate-limited.
-            const DELAY_BETWEEN_CHUNKS = 250; // NEW: 250ms delay between batches.
+            const CHUNK_SIZE = 8;
+            const DELAY_BETWEEN_CHUNKS = 250;
             
-            // Selectors for the part of the card that shows the price/owned status
-            const FREE_STATUS_SELECTOR = '.csZFzinF'; // The container for the "免费" text
-            const OWNED_STATUS_SELECTOR = '.cUUvxo_s'; // The container for the "已保存..." text
+            const FREE_STATUS_SELECTOR = '.csZFzinF'; 
+            const OWNED_STATUS_SELECTOR = '.cUUvxo_s';
 
-            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
-
-            // --- DOM Creation Helpers ---
             const createOwnedElement = () => {
                 const ownedDiv = document.createElement('div');
                 ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
-                
                 const icon = document.createElement('i');
                 icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
                 icon.setAttribute('aria-hidden', 'true');
-                
                 ownedDiv.appendChild(icon);
                 ownedDiv.append('已保存在我的库中');
                 return ownedDiv;
@@ -671,15 +674,15 @@
                 return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
             };
 
-            // --- Main Logic ---
             try {
                 const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
                 if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
 
-                const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport);
+                const allCards = [...document.querySelectorAll(CARD_SELECTOR)];
+                const cardsToProcess = onlyVisible ? allCards.filter(isElementInViewport) : allCards;
+
                 const uidToCardMap = new Map();
-                
-                visibleCards.forEach(card => {
+                cardsToProcess.forEach(card => {
                     const link = card.querySelector(LINK_SELECTOR);
                     if (link) {
                         const match = link.href.match(/listings\/([a-f0-9-]+)/);
@@ -689,85 +692,72 @@
 
                 const uidsToQuery = [...uidToCardMap.keys()];
                 if (uidsToQuery.length === 0) {
-                    Utils.logger('info', '[Fab DOM Refresh] No visible items to check.');
-                    return;
+                    Utils.logger('info', '[API Processor] No items found to process.');
+                    return 0; // Return 0 tasks added
                 }
-                Utils.logger('info', `[Fab DOM Refresh] Found ${uidsToQuery.length} visible items. Querying API in chunks of ${CHUNK_SIZE}...`);
+                Utils.logger('info', `[API Processor] Found ${uidsToQuery.length} items. Querying API in chunks of ${CHUNK_SIZE}...`);
 
                 const allOwnedUids = new Set();
-
-                // NEW: Process UIDs in chunks to be less aggressive.
                 for (let i = 0; i < uidsToQuery.length; i += CHUNK_SIZE) {
                     const chunk = uidsToQuery.slice(i, i + CHUNK_SIZE);
                     const apiUrl = new URL(API_ENDPOINT);
                     chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
-
-                    Utils.logger('info', `[Fab DOM Refresh] Querying chunk ${i / CHUNK_SIZE + 1}...`);
-                    
-                    const response = await fetch(apiUrl.href, {
-                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                    });
-
-                    if (!response.ok) {
-                        Utils.logger('error', `[Fab DOM Refresh] API request for a chunk failed with status: ${response.status}`);
-                        // Optionally, skip this chunk and continue with the next.
-                        continue;
-                    }
-
+                    const response = await fetch(apiUrl.href, { headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' } });
+                    if (!response.ok) { continue; }
                     let data;
-                    try {
-                        data = await response.json();
-                    } catch (jsonError) {
-                        Utils.logger('error', `[Fab DOM Refresh] Failed to parse API response for a chunk.`);
-                        continue;
-                    }
-
+                    try { data = await response.json(); } catch (jsonError) { continue; }
                     data.filter(item => item.acquired).forEach(item => allOwnedUids.add(item.uid));
-
-                    // Add a small delay before the next chunk to be nice to the server.
                     if (i + CHUNK_SIZE < uidsToQuery.length) {
                         await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CHUNKS));
                     }
                 }
                 
-                Utils.logger('info', `[Fab DOM Refresh] API reports a total of ${allOwnedUids.size} owned items across all chunks.`);
-
                 let updatedCount = 0;
+                const newlyAddedTasks = [];
+
                 uidToCardMap.forEach((card, uid) => {
                     const isOwned = allOwnedUids.has(uid);
-                    
                     if (isOwned) {
                         const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
-                        if (freeElement) { // If it currently shows "Free", replace it.
+                        if (freeElement) {
                             freeElement.replaceWith(createOwnedElement());
                             updatedCount++;
                         }
                     } else { // Item is not owned
                         const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
-                        if (ownedElement) { // If it currently shows "Owned", replace it.
+                        if (ownedElement) {
                             ownedElement.replaceWith(createFreeElement());
                             updatedCount++;
+                        }
+                        if (autoAdd) {
+                            const url = `${window.location.origin}/listings/${uid}`;
+                            const cleanUrl = url.split('?')[0];
+                            
+                            // --- NEW: More Robust "Three-Way Check" before adding a task ---
+                            const isAlreadyInTodo = Database.isTodo(cleanUrl);
+                            const isAlreadyInFailed = State.db.failed.some(t => t.url === cleanUrl);
+                            const isAlreadyCompletedThisSession = State.sessionCompleted.has(cleanUrl);
+
+                            if (!isAlreadyInTodo && !isAlreadyInFailed && !isAlreadyCompletedThisSession) {
+                                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                                newlyAddedTasks.push({ name, url: cleanUrl, type: 'detail', uid });
+                            }
                         }
                     }
                 });
 
-                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} card states.`);
+                if (autoAdd && newlyAddedTasks.length > 0) {
+                    State.db.todo.push(...newlyAddedTasks);
+                    Utils.logger('info', `[API Processor] 已通过 API 精确扫描, 自动添加了 ${newlyAddedTasks.length} 个新项目到待办队列。`);
+                }
 
-                // 刷新后自动执行隐藏/显示逻辑，保证 UI 实时同步
-                TaskRunner.runHideOrShow();
+                Utils.logger('info', `[API Processor] Complete. Updated ${updatedCount} card states.`);
+                TaskRunner.runHideOrShow(); // Ensure UI reflects hidden state correctly
+                return newlyAddedTasks.length;
 
             } catch (e) {
-                let userMessage = 'API 刷新失败。';
-                if (e.message.includes('CSRF token not found')) {
-                    userMessage += ' 无法获取 CSRF 令牌。请尝试刷新页面并重新登录。';
-                } else if (e.message.includes('API request failed')) {
-                    userMessage += ` 服务器返回错误: ${e.message.split(': ')[1]}。这可能是临时问题，请稍后重试。`;
-                } else if (e.name === 'TypeError' && e.message.includes('Failed to fetch')) {
-                     userMessage += ' 网络请求失败。请检查您的网络连接。';
-                }
-                
-                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e.message);
-                alert(userMessage);
+                Utils.logger('error', '[API Processor] An error occurred:', e.message);
+                return 0; // Return 0 on error
             }
         },
 
@@ -1602,55 +1592,15 @@
             basicTitle.textContent = '🧩 基础功能 (Basic)';
             // 本页一键领取
             const addAllBtn = document.createElement('button');
-            addAllBtn.innerHTML = '🛒 本页一键领取';
+            addAllBtn.innerHTML = '✨ 本页智能添加';
             addAllBtn.style.background = 'var(--green)';
-            addAllBtn.onclick = () => {
-                const cards = document.querySelectorAll(Config.SELECTORS.card);
-                const newlyAddedList = [];
-                let alreadyInQueueCount = 0;
-                let ownedCount = 0;
-
-                cards.forEach(card => {
-                    const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href.split('?')[0] : null;
-                    if (!url) return;
-
-                    // 首先检查卡片DOM上是否已经显示"已保存"文本（眼见为实）
-                    const cardText = card.textContent || '';
-                    const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
-                    
-                    // 然后检查数据库记录
-                    const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
-                    
-                    if (isOwned) {
-                        ownedCount++;
-                        return;
-                    }
-
-                    const isTodo = Database.isTodo(url);
-                    const isFailed = State.db.failed.some(t => t.url.startsWith(url));
-                    if (isTodo || isFailed) {
-                        alreadyInQueueCount++;
-                        return;
-                    }
-                    
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-                });
-
-                if (newlyAddedList.length > 0) {
-                    State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-                }
-
-                const actionableCount = State.db.todo.length;
-                if (actionableCount > 0) {
-                    if (newlyAddedList.length === 0) {
-                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办队列中。`);
-                    }
+            addAllBtn.onclick = async () => {
+                Utils.logger('info', 'Starting API-based scan for all items on this page...');
+                const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true, onlyVisible: false });
+                if (newTasksCount > 0) {
                     TaskRunner.startExecution();
                 } else {
-                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+                    Utils.logger('info', 'API scan complete. No new unowned items found on this page.');
                 }
             };
             // 启动任务
@@ -1675,7 +1625,28 @@
             hotReloadBtn.style.background = 'var(--orange)';
             hotReloadBtn.onclick = TaskRunner.hotReloadScript;
 
-            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn, hotReloadBtn);
+            // NEW: Smart Pursuit Toggle
+            const pursuitRow = document.createElement('div');
+            pursuitRow.className = 'fab-helper-row';
+            pursuitRow.style.cssText = 'padding: 6px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-top: 8px;';
+            const pursuitLabel = document.createElement('label');
+            pursuitLabel.textContent = '开启智能追击模式';
+            pursuitLabel.style.cursor = 'pointer';
+            const pursuitCheckbox = document.createElement('input');
+            pursuitCheckbox.type = 'checkbox';
+            pursuitCheckbox.style.cursor = 'pointer';
+            pursuitCheckbox.checked = localStorage.getItem('fab_smart_pursuit_enabled') === 'true';
+            State.isSmartPursuitEnabled = pursuitCheckbox.checked;
+            pursuitCheckbox.onchange = () => {
+                State.isSmartPursuitEnabled = pursuitCheckbox.checked;
+                localStorage.setItem('fab_smart_pursuit_enabled', State.isSmartPursuitEnabled);
+                Utils.logger('info', `智能追击模式已 ${State.isSmartPursuitEnabled ? '开启' : '关闭'}.`);
+            };
+            pursuitLabel.prepend(pursuitCheckbox);
+            pursuitRow.appendChild(pursuitLabel);
+
+
+            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn, hotReloadBtn, pursuitRow);
 
             // --- NEW: Page Patcher Section ---
             const pageModSection = document.createElement('div');
@@ -2249,11 +2220,34 @@
                 const task = State.runningWorkers[workerId].task;  // Get the task from runningWorkers
                 if (success) {
                     State.executionCompletedTasks++;
-                    // Phase15: Track successfully completed tasks in the current session
+                    State.sessionPursuitCompletedCount++; // Increment session counter for Smart Pursuit
+                    
                     if (task && task.url) {
-                        State.sessionCompleted.add(task.url.split('?')[0]); // Add the clean URL to sessionCompleted
-                        UI.applyOverlaysToPage(); // Update UI to reflect the new session completion
+                        State.sessionCompleted.add(task.url.split('?')[0]); 
+                        UI.applyOverlaysToPage(); 
                     }
+
+                    // --- Smart Pursuit Trigger ---
+                    const SMART_PURSUIT_THRESHOLD = 5;
+                    if (State.isSmartPursuitEnabled && State.sessionPursuitCompletedCount >= SMART_PURSUIT_THRESHOLD) {
+                        Utils.logger('info', `[智能追击] 已完成 ${State.sessionPursuitCompletedCount} 个任务, 达到阈值! 自动触发新一轮扫描...`);
+                        State.sessionPursuitCompletedCount = 0; // Reset counter for the next cycle
+                        
+                        // Use a small timeout to allow the UI to update before starting the heavy task
+                        setTimeout(async () => {
+                            const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true, onlyVisible: false });
+                            if (newTasksCount > 0) {
+                                // NEW: If execution is running, update the total task count for the progress bar.
+                                if (State.isExecuting) {
+                                    State.executionTotalTasks += newTasksCount;
+                                }
+                                Utils.logger('info', `[智能追击] 扫描完成, ${newTasksCount} 个新任务已添加。执行器将自动处理。`);
+                            } else {
+                                Utils.logger('info', `[智能追击] 扫描完成, 未发现新任务。`);
+                            }
+                        }, 500);
+                    }
+
                 } else {
                     State.executionFailedTasks++;
                 }
