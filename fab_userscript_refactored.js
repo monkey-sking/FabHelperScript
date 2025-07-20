@@ -79,6 +79,7 @@
         isReconning: false,
         hideSaved: false,
         showAdvanced: false,
+        patchHasBeenApplied: false, // For "One-and-Done" Page Patcher
         isPagePatchingEnabled: false, // For Page Patcher
         savedCursor: null, // For Page Patcher
         activeWorkers: 0,
@@ -299,6 +300,9 @@
             } catch (e) {
                 Utils.logger('warn', 'Could not clean up unsafeWindow properties.', e);
             }
+            
+            // NEW: Reset the one-time patch flag on cleanup
+            State.patchHasBeenApplied = false;
         }
     };
 
@@ -309,8 +313,20 @@
                 GM_xmlhttpRequest({
                     anonymous: false, // Default to false to ensure cookies are sent
                     ...options,
-                    onload: (response) => resolve(response),
-                    onerror: (error) => reject(new Error(`GM_xmlhttpRequest error: ${error.statusText || 'Unknown Error'}`)),
+                    onload: (response) => {
+                        // Manually record the successful request for our network analyzer
+                        if (options.url.includes('/i/users/me/listings-states') || options.url.includes('/i/listings/search')) {
+                            NetworkRecorder.recordRequest(options.url, response.status, response.responseText);
+                        }
+                        resolve(response);
+                    },
+                    onerror: (error) => {
+                        // Manually record the failed request for our network analyzer
+                        if (options.url.includes('/i/users/me/listings-states') || options.url.includes('/i/listings/search')) {
+                             NetworkRecorder.recordRequest(options.url, error.status, error.responseText);
+                        }
+                        reject(new Error(`GM_xmlhttpRequest error: ${error.statusText || 'Unknown Error'}`));
+                    },
                     ontimeout: () => reject(new Error('Request timed out.')),
                     onabort: () => reject(new Error('Request aborted.'))
                 });
@@ -613,6 +629,8 @@
             const CARD_SELECTOR = 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root';
             const LINK_SELECTOR = 'a[href*="/listings/"]';
             const CSRF_COOKIE_NAME = 'fab_csrftoken';
+            const CHUNK_SIZE = 8; // NEW: Process in smaller batches to avoid being rate-limited.
+            const DELAY_BETWEEN_CHUNKS = 250; // NEW: 250ms delay between batches.
             
             // Selectors for the part of the card that shows the price/owned status
             const FREE_STATUS_SELECTOR = '.csZFzinF'; // The container for the "免费" text
@@ -674,30 +692,49 @@
                     Utils.logger('info', '[Fab DOM Refresh] No visible items to check.');
                     return;
                 }
-                Utils.logger('info', `[Fab DOM Refresh] Found ${uidsToQuery.length} visible items. Querying API...`);
+                Utils.logger('info', `[Fab DOM Refresh] Found ${uidsToQuery.length} visible items. Querying API in chunks of ${CHUNK_SIZE}...`);
 
-                const apiUrl = new URL(API_ENDPOINT);
-                uidsToQuery.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
+                const allOwnedUids = new Set();
 
-                // Use fetch directly as it's a simple GET request with standard headers.
-                const response = await fetch(apiUrl.href, {
-                    headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
+                // NEW: Process UIDs in chunks to be less aggressive.
+                for (let i = 0; i < uidsToQuery.length; i += CHUNK_SIZE) {
+                    const chunk = uidsToQuery.slice(i, i + CHUNK_SIZE);
+                    const apiUrl = new URL(API_ENDPOINT);
+                    chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
 
-                if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
-                let data;
-                try {
-                    data = await response.json();
-                } catch (jsonError) {
-                    throw new Error('Failed to parse API response as JSON.');
+                    Utils.logger('info', `[Fab DOM Refresh] Querying chunk ${i / CHUNK_SIZE + 1}...`);
+                    
+                    const response = await fetch(apiUrl.href, {
+                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+
+                    if (!response.ok) {
+                        Utils.logger('error', `[Fab DOM Refresh] API request for a chunk failed with status: ${response.status}`);
+                        // Optionally, skip this chunk and continue with the next.
+                        continue;
+                    }
+
+                    let data;
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        Utils.logger('error', `[Fab DOM Refresh] Failed to parse API response for a chunk.`);
+                        continue;
+                    }
+
+                    data.filter(item => item.acquired).forEach(item => allOwnedUids.add(item.uid));
+
+                    // Add a small delay before the next chunk to be nice to the server.
+                    if (i + CHUNK_SIZE < uidsToQuery.length) {
+                        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CHUNKS));
+                    }
                 }
                 
-                const ownedUids = new Set(data.filter(item => item.acquired).map(item => item.uid));
-                Utils.logger('info', `[Fab DOM Refresh] API reports ${ownedUids.size} owned items in this batch.`);
+                Utils.logger('info', `[Fab DOM Refresh] API reports a total of ${allOwnedUids.size} owned items across all chunks.`);
 
                 let updatedCount = 0;
                 uidToCardMap.forEach((card, uid) => {
-                    const isOwned = ownedUids.has(uid);
+                    const isOwned = allOwnedUids.has(uid);
                     
                     if (isOwned) {
                         const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
@@ -801,6 +838,19 @@
                     return;
                 }
                 
+                // --- NEW: Auto-save cursor for Page Patcher ---
+                // After a successful request, save its cursor as the new starting point for the next page load.
+                try {
+                    const currentUrl = new URL(requestUrl);
+                    const currentCursor = currentUrl.searchParams.get('cursor');
+                    if (currentCursor) {
+                        await GM_setValue(Config.DB_KEYS.SAVED_CURSOR, currentCursor);
+                        Utils.logger('info', `[侦察联动] 页面起点已自动更新为: ${currentCursor.substring(0, 20)}...`);
+                    }
+                } catch (e) {
+                    Utils.logger('warn', 'Could not parse current URL to save cursor for patcher.', e);
+                }
+                
                 const searchData = JSON.parse(searchResponse.responseText);
                 const initialResultsCount = searchData.results.length;
                 State.totalTasks += initialResultsCount;
@@ -853,17 +903,38 @@
 
                 // --- Step 2: Ownership Check ---
                 Utils.logger('info', `Step 2: Checking ownership for ${candidates.length} candidates...`);
-                const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                candidates.forEach(item => statesUrl.searchParams.append('listing_ids', item.uid));
-                const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
-                const statesData = JSON.parse(statesResponse.responseText);
+                
+                const allOwnedUids = new Set();
+                const CHUNK_SIZE = 8;
+                const DELAY_BETWEEN_CHUNKS = 250;
+
+                for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
+                    const chunk = candidates.slice(i, i + CHUNK_SIZE);
+                    const chunkUids = chunk.map(item => item.uid);
+                    
+                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                    chunkUids.forEach(uid => statesUrl.searchParams.append('listing_ids', uid));
+
+                    Utils.logger('info', `[Recon] Querying ownership for chunk ${i / CHUNK_SIZE + 1}...`);
+                    const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
+                    
+                    if (statesResponse.status !== 200) {
+                        Utils.logger('warn', `[Recon] Ownership check for a chunk failed with status ${statesResponse.status}. Skipping chunk.`);
+                        continue;
+                    }
+                    
+                    const statesData = JSON.parse(statesResponse.responseText);
+                    statesData.filter(s => s.acquired).forEach(s => allOwnedUids.add(s.uid));
+
+                    if (i + CHUNK_SIZE < candidates.length) {
+                        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CHUNKS));
+                    }
+                }
 
                 // API returns an array, convert it to a Set for efficient lookup.
-                const ownedUids = new Set(statesData.filter(s => s.acquired).map(s => s.uid));
-
                 const notOwnedItems = [];
                 candidates.forEach(item => {
-                    if (!ownedUids.has(item.uid)) {
+                    if (!allOwnedUids.has(item.uid)) {
                         notOwnedItems.push(item);
                     } else {
                         // This item is already owned according to the API, so we increment the owned count.
@@ -1171,6 +1242,18 @@
         advanceDetailTask: async () => {},
 
         runHideOrShow: async () => {
+            // Optimization: Check if there are any unprocessed cards first. If not, exit early.
+            const newCards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
+            if (newCards.length === 0) {
+                // Still update the count in case it was changed elsewhere, but don't re-run logic.
+                const allHiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`);
+                if (State.hiddenThisPageCount !== allHiddenCards.length) {
+                    State.hiddenThisPageCount = allHiddenCards.length;
+                    UI.update();
+                }
+                return;
+            }
+
             // 重置计数
             State.hiddenThisPageCount = 0;
             
@@ -1685,6 +1768,27 @@
             State.UI.last429Display = last429Info;
             networkContent.appendChild(last429Info);
             
+            // NEW: Button to clear the persistent network log
+            const clearNetworkLogBtn = document.createElement('button');
+            clearNetworkLogBtn.innerHTML = '🗑️ 清空网络日志';
+            clearNetworkLogBtn.style.cssText = `
+                grid-column: 1 / -1;
+                background: var(--dark-gray);
+                padding: 6px 10px;
+                font-size: 12px;
+                margin-top: 4px;
+            `;
+            clearNetworkLogBtn.onclick = () => {
+                if (window.confirm('您确定要清空所有已记录的网络日志（RPS, 429事件）吗？此操作不可逆。')) {
+                    NetworkRecorder.log = [];
+                    localStorage.removeItem(NetworkRecorder.DB_KEY);
+                    NetworkAnalyzer.peakRps = 0; // Also reset peak RPS
+                    NetworkAnalyzer.updateUI(); // Force UI to reflect the change
+                    Utils.logger('info', 'Network log has been cleared.');
+                }
+            };
+            networkContent.appendChild(clearNetworkLogBtn);
+
             networkAnalysisSection.append(networkTitle, networkContent);
             basicSection.appendChild(networkAnalysisSection);
 
@@ -1948,6 +2052,38 @@
 
     // --- 模块九: 主程序与初始化 (Main & Initialization) ---
     async function main() {
+        // NEW: "Emergency Brake" system. Detect if the page is a hard-blocked JSON error.
+        if (document.body && document.body.textContent) {
+            const bodyContent = document.body.textContent.trim();
+            if (bodyContent.startsWith('{') && bodyContent.endsWith('}')) {
+                try {
+                    const pageContent = JSON.parse(bodyContent);
+                    if (pageContent.detail && pageContent.detail.toLowerCase().includes('too many requests')) {
+                        const errorBox = document.createElement('div');
+                        errorBox.style.cssText = `
+                            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+                            background: #d93025; color: white; padding: 20px; border-radius: 12px;
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                            font-size: 18px; font-weight: 600; z-index: 10000;
+                            box-shadow: 0 5px 15px rgba(0,0,0,0.3); text-align: center; line-height: 1.6;
+                        `;
+                        errorBox.innerHTML = `
+                            服务器硬性速率限制！<br>
+                            页面加载失败, 返回: "Too many requests"<br><br>
+                            这比普通的429错误更严重。脚本已暂停所有功能。<br>
+                            <b>请等待几分钟后再尝试刷新。</b>
+                        `;
+                        document.body.innerHTML = ''; // Clear the error JSON
+                        document.body.appendChild(errorBox);
+                        Utils.logger('error', 'Hard rate limit detected. Page is a JSON error. Aborting script.');
+                        return; // Abort all further script execution
+                    }
+                } catch (e) {
+                    // Not a JSON page, proceed as normal.
+                }
+            }
+        }
+
         if (State.isInitialized) return;
         State.isInitialized = true;
 
@@ -1996,16 +2132,16 @@
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                     mutation.addedNodes.forEach(node => {
-                        // 我们只关心元素节点
+                        // We only care about element nodes
                         if (node.nodeType === 1) {
-                            // 检查添加的节点本身是否是卡片，并且尚未被处理
+                            // Check if the added node itself is a card and not yet processed
                             if (node.matches(Config.SELECTORS.card) && !node.classList.contains('fab-helper-processed')) {
                                 hasNewCards = true;
                                 newCardsFound.push(node);
                                 UI.setupOwnershipObserver(node);
                             }
                             
-                            // 检查添加的节点是否包含新卡片（例如，添加了一个容器）
+                            // Check if the added node contains new cards (e.g., a container was added)
                             const containedCards = node.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
                             if (containedCards.length > 0) {
                                 hasNewCards = true;
@@ -2019,11 +2155,21 @@
                 }
             }
             
-            // 只有当检测到新卡片时，才更新UI和运行隐藏/显示逻辑
+            // This is the new, robust logic to prevent self-triggering loops.
             if (hasNewCards) {
-                Utils.logger('info', `检测到${newCardsFound.length}个新卡片加载`);
+                // 1. Disconnect the observer so our own DOM changes don't trigger it again.
+                mainObserver.disconnect();
+                Utils.logger('info', `检测到 ${newCardsFound.length} 个新卡片, 暂停监视器进行处理...`);
+                
+                // 2. Run all our DOM-modifying logic.
                 UI.applyOverlaysToPage();
-                TaskRunner.runHideOrShow();
+                
+                // 3. Since runHideOrShow is async, we must wait for it to fully complete.
+                TaskRunner.runHideOrShow().then(() => {
+                    // 4. Once complete, reconnect the observer to watch for new external changes.
+                    Utils.logger('info', `处理完成, 恢复监视器.`);
+                    mainObserver.observe(document.body, { childList: true, subtree: true });
+                });
             }
         });
         
@@ -2168,12 +2314,13 @@
     main();
 
     const NetworkRecorder = {
-        DB_KEY: 'fab_network_log_v1',
-        MAX_RECORDS: 500, // 只保留最近500条记录以防无限增长
+        DB_KEY: 'fab_network_log_v1', // Re-instated for persistence
+        MAX_RECORDS: 500,
         log: [],
+        lastRequestTimestamp: null, // NEW: For calculating request intervals
 
         init: () => {
-            // 从 localStorage 加载历史记录
+            // Re-instated: Load persistent log from localStorage
             const savedLog = localStorage.getItem(NetworkRecorder.DB_KEY);
             if (savedLog) {
                 try {
@@ -2182,47 +2329,116 @@
                     NetworkRecorder.log = [];
                 }
             }
-
-            if (typeof GM_webRequest !== 'function') {
-                Utils.logger('warn', 'Network Recorder is disabled (GM_webRequest not available).');
-                return;
+            
+            NetworkRecorder.installGlobalInterceptor();
+            Utils.logger('info', 'Network flight recorder is active (persistent mode).');
+        },
+        
+        // This interceptor catches requests made by the PAGE itself (e.g., scrolling).
+        installGlobalInterceptor: () => {
+            // --- 1. Patch XMLHttpRequest ---
+            if (!unsafeWindow.originalXHRSend) {
+                unsafeWindow.originalXHRSend = XMLHttpRequest.prototype.send;
+                const originalSend = unsafeWindow.originalXHRSend;
+                XMLHttpRequest.prototype.send = function(...args) {
+                    this.addEventListener('loadend', () => {
+                        // We only care about the two main API endpoints.
+                        if (this.responseURL.includes('/i/users/me/listings-states') || this.responseURL.includes('/i/listings/search')) {
+                           NetworkRecorder.recordRequest(this.responseURL, this.status, this.responseText);
+                        }
+                    });
+                    return originalSend.apply(this, args);
+                };
             }
 
-            GM_webRequest(
-                { url: 'https://www.fab.com/i/users/me/listings-states*', type: 'xmlhttprequest' },
-                (details) => {
-                    // 添加诊断日志，确认监听器是否被触发
-                    console.log('[Fab Helper Debug] NetworkRecorder captured a request:', details);
-
-                    if (details.type === 'error' || !details.response) {
-                        // 网络层面的错误或没有响应体，暂时不记录
-                        return;
+            // --- 2. Patch Fetch ---
+            // Note: This won't catch requests made by GM_xmlhttpRequest, which is exactly what we want
+            // to avoid double-counting.
+            if (!unsafeWindow.originalFetch) {
+                unsafeWindow.originalFetch = unsafeWindow.fetch;
+                const originalFetch = unsafeWindow.originalFetch;
+                unsafeWindow.fetch = async function(input, init) {
+                    const response = await originalFetch(input, init);
+                    const url = (typeof input === 'string') ? input : input.url;
+                    
+                    if (url.includes('/i/users/me/listings-states') || url.includes('/i/listings/search')) {
+                        // We need to clone the response to read its body, as it can only be read once.
+                        response.clone().text().then(text => {
+                            NetworkRecorder.recordRequest(url, response.status, text);
+                        });
                     }
                     
-                    const url = new URL(details.finalUrl || details.url);
-                    const idCount = url.searchParams.getAll('listing_ids').length;
+                    return response;
+                };
+            }
+        },
 
-                    const record = {
-                        timestamp: Date.now(),
-                        url: url.href,
-                        status: details.status,
-                        idCount: idCount
-                    };
-                    
-                    // 添加新记录并保持日志大小
-                    NetworkRecorder.log.push(record);
-                    if (NetworkRecorder.log.length > NetworkRecorder.MAX_RECORDS) {
-                        NetworkRecorder.log.shift(); // 移除最旧的记录
+        recordRequest: (url, status, responseText = '') => {
+            const now = Date.now();
+            
+            // --- NEW: Calculate advanced metrics for analysis ---
+            const interval = NetworkRecorder.lastRequestTimestamp ? now - NetworkRecorder.lastRequestTimestamp : null;
+            const tenSecondWindow = now - 10000;
+            const density = NetworkRecorder.log.filter(r => r.timestamp > tenSecondWindow).length + 1; // +1 to include the current request
+            
+            NetworkRecorder.lastRequestTimestamp = now; // Update for the next interval calculation
+
+            let finalStatus = status;
+            let isSoft429 = false;
+
+            // Check for "soft" 429 where the status is 200 but body contains the error
+            if (url.includes('/i/listings/search') && status === 200) {
+                 try {
+                    if (typeof responseText === 'string' && responseText.includes('Too many requests')) {
+                        const responseJson = JSON.parse(responseText);
+                        if (responseJson.detail) {
+                            isSoft429 = true;
+                            finalStatus = 429; // Treat it as a 429 for logging and UI
+                        }
                     }
+                } catch(e) {/* Can ignore parse errors for non-JSON responses */}
+            }
 
-                    // 保存到 localStorage
-                    localStorage.setItem(NetworkRecorder.DB_KEY, JSON.stringify(NetworkRecorder.log));
-                    
-                    // 触发一个自定义事件，通知UI更新
-                    document.dispatchEvent(new CustomEvent('fab-network-update'));
+            const record = {
+                timestamp: now,
+                url: url,
+                status: finalStatus,
+                weight: url.match(/listing_ids/g)?.length || 0, // More descriptive name than idCount
+                interval: interval,
+                density: density,
+            };
+
+            NetworkRecorder.log.push(record);
+            if (NetworkRecorder.log.length > NetworkRecorder.MAX_RECORDS) {
+                NetworkRecorder.log.shift();
+            }
+            // Re-instated: Save to localStorage on every record for persistence.
+            localStorage.setItem(NetworkRecorder.DB_KEY, JSON.stringify(NetworkRecorder.log));
+            
+            document.dispatchEvent(new CustomEvent('fab-network-update'));
+
+            // Handle side-effects of any 429 error (hard or soft)
+            if (finalStatus === 429) {
+                // --- NEW: Log a detailed "Flight Data Recorder" snapshot upon 429 ---
+                Utils.logger('error', `
+                    ==================== [429 Flight Data Recorder] ====================
+                    [事件]: 服务器速率限制 (Too Many Requests)
+                    [URL]: ${url}
+                    [请求权重]: ${record.weight} 个ID
+                    [距上次请求间隔]: ${interval ? interval + ' ms' : 'N/A'}
+                    [10秒内请求密度]: ${density} 次
+                    ====================================================================
+                `);
+
+                if (isSoft429) {
+                    Utils.logger('error', `[NetworkRecorder] Detected "Too many requests" in SEARCH API response.`);
                 }
-            );
-             Utils.logger('info', 'Network flight recorder is active.');
+                 if (State.isReconning) {
+                    Utils.logger('warn', 'Stopping Recon due to API rate limit error.');
+                    // This will correctly toggle the state and update the UI
+                    TaskRunner.toggleRecon();
+                }
+            }
         }
     };
 
@@ -2240,24 +2456,21 @@
             }
 
             State.UI.rpsDisplay.querySelector('span').textContent = rps;
-            State.UI.peakRpsDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
+            State.UI.peakRDDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
 
-            // 查找最后一个429错误
-            const last429 = [...NetworkRecorder.log].reverse().find(r => r.status === 429);
-            if (last429) {
-                const eventTime = new Date(last429.timestamp).toLocaleTimeString();
-                
-                // 计算当时的RPS
-                const oneSecondBefore = last429.timestamp - 1000;
-                const rpsAt429 = NetworkRecorder.log.filter(r => r.timestamp > oneSecondBefore && r.timestamp <= last429.timestamp).length;
-
-                State.UI.last429Display.innerHTML = `
-                    <b>最近429事件:</b>
-                    <br><b>时间:</b> ${eventTime}
-                    <br><b>当时RPS:</b> ${rpsAt429}
-                    <br><b>ID 数量:</b> ${last429.idCount}
-                    <br><b>URL:</b> <span style="word-break: break-all;">${last429.url.substring(0, 100)}...</span>
-                `;
+            // NEW: Find and display the last 3 429 events for pattern analysis.
+            const lastThree429s = [...NetworkRecorder.log].reverse().filter(r => r.status === 429).slice(0, 3);
+            if (lastThree429s.length > 0) {
+                let listHtml = '<b>最近429事件:</b><ul style="margin: 4px 0 0 16px; padding: 0; list-style-type: square;">';
+                lastThree429s.forEach(event => {
+                    const eventTime = new Date(event.timestamp).toLocaleTimeString();
+                    // Display the rich data captured by the flight recorder
+                    listHtml += `<li style="margin-bottom: 4px;">${eventTime} (密度: ${event.density}, 间隔: ${event.interval}ms, 权重: ${event.weight})</li>`;
+                });
+                listHtml += '</ul>';
+                State.UI.last429Display.innerHTML = listHtml;
+            } else {
+                 State.UI.last429Display.innerHTML = '<b>最近429事件:</b><br>尚无记录';
             }
         },
         init: () => {
@@ -2273,18 +2486,48 @@
 
     const PagePatcher = {
         init: () => {
-            Utils.logger('info', 'Initializing page request patcher for XHR and Fetch.');
+            Utils.logger('info', `[PagePatcher] Initializing...`);
+            Utils.logger('info', `[PagePatcher] > Status: ${State.isPagePatchingEnabled ? 'ENABLED' : 'DISABLED'}`);
+            Utils.logger('info', `[PagePatcher] > Saved Cursor: ${State.savedCursor ? State.savedCursor.substring(0, 30) + '...' : 'Not Found'}`);
+
+            let patchHasBeenApplied = false; // "One-and-Done" flag, local to this init cycle.
 
             const shouldPatchUrl = (url) => {
-                return (
-                    State.isPagePatchingEnabled &&
-                    typeof url === 'string' &&
-                    url.includes('/i/listings/search') && // It's a search request
-                    !url.includes('cursor=') &&           // And it's an initial request (no cursor yet)
-                    !url.includes('aggregate_on=') &&     // AND it's not a request for UI filters
-                    !url.includes('count=0') &&           // AND it's not a request for UI filters
-                    !url.includes('in=wishlist')          // AND it's not for the wishlist banner check
-                );
+                // Gate 0: Basic URL type check
+                if (typeof url !== 'string') return false;
+                
+                // Log every potential candidate that isn't obviously wrong (like a local blob:)
+                if (url.startsWith('http')) {
+                    Utils.logger('info', `[PagePatcher] Checking URL: ${url.substring(0, 120)}`);
+                }
+
+                // Gate 1: "One-and-Done" flag. If we've patched once, we're done.
+                if (patchHasBeenApplied) {
+                    // This log is too spammy, only log when it's a real candidate
+                    if (url.includes('/i/listings/search')) Utils.logger('info', `[PagePatcher] -> SKIPPING: Patch already applied this session.`);
+                    return false;
+                }
+
+                // Gate 2: The feature must be enabled by the user and have a cursor to use.
+                if (!State.isPagePatchingEnabled || !State.savedCursor) {
+                     if (url.includes('/i/listings/search')) Utils.logger('info', `[PagePatcher] -> SKIPPING: Feature disabled or no cursor saved.`);
+                    return false;
+                }
+
+                // Gate 3: Basic URL content check. Must be a search request.
+                if (!url.includes('/i/listings/search')) {
+                    return false;
+                }
+
+                // Gate 4: Exclusion rules. These are requests for UI elements/metadata, not content.
+                if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) {
+                    Utils.logger('info', `[PagePatcher] -> SKIPPING: URL is for UI/metadata (aggregate/count/wishlist).`);
+                    return false;
+                }
+
+                // If it passes all gates, it's the first real content request we've seen this session. Patch it.
+                Utils.logger('info', `[PagePatcher] -> ✅ MATCH! This URL will be patched.`);
+                return true;
             };
 
             const getPatchedUrl = (originalUrl) => {
@@ -2292,10 +2535,42 @@
                     const urlObj = new URL(originalUrl, window.location.origin);
                     urlObj.searchParams.set('cursor', State.savedCursor);
                     const modifiedUrl = urlObj.href;
-                    Utils.logger('info', `页面补丁: 已将主要内容请求重定向至光标: ${State.savedCursor.substring(0,20)}...`);
+                    Utils.logger('info', `[PagePatcher] -> 🚀 PATCHING. Original: ${originalUrl}`);
+                    Utils.logger('info', `[PagePatcher] -> 🚀 PATCHED. New URL: ${modifiedUrl}`);
+                    patchHasBeenApplied = true;
                     return modifiedUrl;
                 }
-                return originalUrl; // Return original if no cursor is saved
+                return originalUrl; // Should not happen due to checks in shouldPatchUrl
+            };
+
+            // --- NEW: Logic to track the last two cursors to save the "previous" page's cursor ---
+            let lastSeenCursor = State.savedCursor;
+            let secondToLastSeenCursor = null;
+
+            const saveLatestCursorFromUrl = (url) => {
+                try {
+                    if (typeof url === 'string' && url.includes('/i/listings/search') && url.includes('cursor=')) {
+                        const urlObj = new URL(url, window.location.origin);
+                        const newCursor = urlObj.searchParams.get('cursor');
+                        
+                        // Check if this is a genuinely new page being loaded
+                        if (newCursor && newCursor !== lastSeenCursor) {
+                            // The cursor for the page we were just on is now the "second to last"
+                            secondToLastSeenCursor = lastSeenCursor;
+                            // The new page's cursor is now the "last seen"
+                            lastSeenCursor = newCursor;
+
+                            // We always save the cursor of the page we were JUST ON, not the one we are loading now.
+                            if (secondToLastSeenCursor) {
+                                State.savedCursor = secondToLastSeenCursor; // Update state immediately
+                                GM_setValue(Config.DB_KEYS.SAVED_CURSOR, secondToLastSeenCursor);
+                                Utils.logger('info', `[PagePatcher] 已自动保存 [上一页] 的起点: ${secondToLastSeenCursor.substring(0, 30)}...`);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    Utils.logger('warn', `[PagePatcher] Error while auto-saving cursor:`, e);
+                }
             };
 
             // --- 1. Patch XMLHttpRequest ---
@@ -2306,6 +2581,9 @@
                     let modifiedUrl = url;
                     if (shouldPatchUrl(url)) {
                         modifiedUrl = getPatchedUrl(url);
+                    } else {
+                        // If we are NOT patching, it might be a normal scroll-load. Auto-save its cursor.
+                        saveLatestCursorFromUrl(url);
                     }
                     return originalOpen.apply(this, [method, modifiedUrl, ...args]);
                 };
@@ -2326,6 +2604,9 @@
                         } else {
                             modifiedInput = new Request(modifiedUrl, input);
                         }
+                    } else {
+                        // If we are NOT patching, it might be a normal scroll-load. Auto-save its cursor.
+                        saveLatestCursorFromUrl(url);
                     }
                     return originalFetch.call(this, modifiedInput, init);
                 };
