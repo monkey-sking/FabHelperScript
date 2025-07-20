@@ -1,117 +1,29 @@
-### **GitHub Issue: Refactor Fab Helper for Performance and Stability**
+# Refactoring and Feature Plan
 
-#### **目标 (Objectives)**
+This document outlines the plan for refactoring the Fab Helper userscript and adding new features.
 
-打造一个性能、稳定性和可靠性俱佳的 Fab Helper 脚本。
-1.  **性能 (Performance):** 实现一个并行处理引擎，让批量领取速度远超手动。
-2.  **稳定 (Stability):** 脚本必须能适应网站的 SPA (单页应用) 和瀑布流特性，在任何情况下都不会中断或崩溃。
-3.  **可靠 (Reliability):** 脚本必须能正确识别、处理和追踪每一个任务的状态，并拥有一个不会被欺骗的健壮的看门狗。
+## Phase 1: Hot Reload Feature
 
-#### **行动清单 (Checklist)**
+### Goal
+Implement a "hot-reloading" feature to allow updating the script's code and functionality in-place, without requiring a full page refresh. This will significantly speed up development and testing.
 
-**第一阶段：回归稳定基线 (Phase 1: Return to a Stable Baseline)**
+### UI Implementation
+-   A new button labeled "🔥 热更新脚本" (Hot-reload Script) will be added to the "Basic Functions" section of the control panel.
 
-*   [x] **1. 回退到可工作的版本:** 用户已将代码恢复到稳定提交 `f5ad8e446e7f...`。
-*   [x] **2. 验证基线功能:** 代码审查完毕。已确认当前版本为功能不完整的顺序模型，存在多个已知`Bug`，但可作为稳定的重构起点。
-*   [x] **3. 实现终极入口点:** 在这个稳定版本上，首先解决 SPA 和瀑布流的初始化问题。实现那个能**区分页面导航和瀑布流加载**的智能 `observer`，确保脚本在任何情况下都能被正确、干净地初始化。**这是所有后续工作的前提。**
+### Technical Implementation
+1.  **Add UI Button**: Create the button and link it to a new `TaskRunner.hotReloadScript` function.
 
-**第二阶段：修复核心功能 `Bug` (Phase 2: Fix Core Functionality Bugs)**
+2.  **Enhance Cleanup Logic**: Create a comprehensive `Utils.cleanup` function that will be responsible for tearing down the currently running script instance. This involves:
+    -   Removing all UI elements (control panel, overlays, styles).
+    -   Disconnecting all `MutationObserver` instances.
+    -   Removing all `GM_addValueChangeListener` listeners.
+    -   Clearing any active timers (`setInterval`).
+    -   Removing any properties added to `unsafeWindow`.
+    -   Removing any document-level event listeners.
 
-*   [x] **4. 修复任务命名问题 (页面抓取):** 修改 `addAllBtn.onclick` 逻辑，在创建任务时，必须从卡片 `DOM` 中正确提取并包含 `name` 属性。
-*   [x] **5. 修复任务命名问题 (API侦察):** 修改 `reconWithApi` 逻辑，在通过 API 创建任务时，必须正确提取并包含 `name` 属性。
-*   [x] **6. 修复 `Snackbar` 检查缺失问题:** 改造 `isItemOwned` 函数，增加对成功提示条 `Snackbar` 的检查，避免不必要的超时。
-*   [x] **7. 修复 `Worker` 内部崩溃问题:** 用 `try...catch` 块包裹 `processDetailPage` 中所有可能出错的 `Promise`（特别是许可证选择），确保任何 `UI` 交互失败都不会导致 `worker` “静默死亡”。
-
-**第三阶段：构建并行处理引擎 (Phase 3: Build Parallel Processing Engine)**
-
-*   [x] **8. 引入并行状态管理:** 在 `Config` 和 `State` 中加入并行处理所需的所有变量 (`MAX_WORKERS`, `activeWorkers`, `runningWorkers`)。
-*   [x] **9. 开发调度中心 (`Dispatcher`):** 将 `executeBatch` 函数重构为一个能管理 `worker pool` (工作池) 的调度中心。
-*   [x] **10. 重构 `Worker` 逻辑:** 改造 `processDetailPage`，让每个 `worker` 成为一个能根据 `workerId` 独立执行任务的单元。
-*   [x] **11. 实现 `Worker` 完成监听器:** 创建 `WORK_DONE` 监听器，让主页面能接收到 `worker` 的完成信号，并触发调度中心派遣新任务。
-*   [x] **12. 实现并行看门狗 (`Watchdog`):** 创建一个全新的、能够监控池中**每一个** `worker` 超时的看门狗，并能自动恢复卡死的任务。
-
-**第四阶段：最终测试 (Phase 4: Final Testing)**
-
-*   [x] **13. 全面功能测试:** 对修复和重构后的所有功能进行最终的、完整的测试。
-
-**第五阶段：功能增强与UX优化 (Phase 5: Feature Enhancement & UX Optimization)**
-
-*   [x] **14. 实现 `Worker` 标签页自动关闭:** `Worker` 在完成任务后（无论成功还是失败），必须能自动关闭自己。
-*   [x] **15. 实现高级进度反馈:** 在 `UI` 中增加一个明确的进度条或者文本，格式为 `(已完成 / 总任务数)`，并实时更新。
-*   [x] **16. 优化“待领取”列表的持久性:** 将“待领取”(`todo` 队列)从永久存储改为会话存储，关闭浏览器后自动清空。`done` 和 `failed` 列表保持永久存储。
-*   [x] **17. 区分不同页面的 `UI` 展示:** 在商品列表页显示完整UI，在商品详情页默认最小化或不显示UI。
-
-**第六阶段：最终调试 (Phase 6: Final Debugging)**
-
-*   [x] **18. 诊断 `Worker` 未完成问题:** 根据最新日志，`Worker` 在被正确派遣后，未能发回完成信号。需要深入 `processDetailPage` 的执行细节，找出导致其卡死的最终原因。 
-
-**第七阶段：最终健壮性修复 (Phase 7: Final Robustness Fixes)**
-
-*   [x] **19. 修复进度条计数Bug:** 当批量执行正在进行时，若通过“本页领取”加入新任务，进度条的“总任务数”分母必须被同步更新，以防止出现 `91/64` 这样的逻辑错误。
-*   [x] **20. 修复日志交叉错乱Bug:** 废除共享的 `DETAIL_LOG` 日志信箱，将每个 `worker` 的日志直接打包进其唯一的 `WORKER_DONE` 完成信号中，保证日志的原子性和顺序性，彻底解决日志张冠李戴的问题。
-*   [x] **21. 修复详情页UI显示Bug:** 放弃使用脆弱的 `URL` 判断页面类型，改为通过检测页面是否存在“添加到我的库”或“下载”等**核心功能按钮**来识别详情页，确保UI只在列表页显示。
-*   [x] **22. 还原“一键领取”的本质:** 根据用户最终反馈，废除“添加/执行”分离的两步操作，恢复“本页一键领取”的原始核心功能：点击后立刻开始领取本页所有可领取项目。并移除多余的“启动任务”按钮，让交互回归简单、直观。
-*   [x] **23. 修复核心功能区默认隐藏Bug:** 包含“批量领取”按钮在内的“高级功能”区域，因历史原因被默认隐藏，导致用户无法启动任务。现改为默认显示，确保核心工作流的完整性和可用性。
-*   [x] **24. 纠正UI布局:** 根据用户反馈，将“启动任务”按钮从“高级功能”区移动到“基础功能”区，使其成为核心可见功能。同时恢复“高级功能”区的默认隐藏状态，在保证核心流程易用性的前提下，维持UI设计的简洁性。
-*   [x] **25. 终极修复进度条计数Bug:** 重写 `startExecution` 逻辑，使其能智能区分“首次执行”和“中途添加任务”两种情况。在执行中途添加新任务时，只更新总任务数，而不重置或干扰当前执行流程，从根本上解决进度条计数在边界条件下会出错的终极Bug。
-
-**第八阶段：终极架构重构 - 以服务器为唯一真实来源 (Phase 8: Final Architecture Overhaul - Server as the Single Source of Truth)**
-
-*   [x] **26. 状态管理核心重构 - 以服务器为准:**
-    *   [x] 废除所有基于本地 `done` 列表的所属权判断逻辑。
-    *   [x] 改造 `addAllBtn.onclick` 流程：在添加任务前，必须先通过静默 `API` 请求获取本页所有可见商品的**真实**所属权状态。
-    *   [x] 使用 `API` 返回的“铁证”作为唯一标准，来决定哪些商品需要加入待办队列，以及如何渲染卡片覆盖图标。
-*   [x] **27. 用户流程核心重构 - 回归直观:**
-    *   [x] 恢复 `[本页一键领取]` 的单一入口功能。
-    *   [x] 在执行期间，将 `[本页一键领取]` 按钮禁用并显示为 `[执行中...]`。
-    *   [x] 在执行期间，动态地在旁边创建一个独立的、红色的 `[停止]` 按钮。
-    *   [x] 任务结束或被停止后，`[停止]` 按钮消失，`[本页一键领取]` 按钮恢复原状。
-
-**第九阶段：最终交付前调试 (Phase 9: Pre-release Debugging)**
-
-*   [x] **28. 修复API响应数据结构错误:** 修复了因错误假设服务器API返回数据结构而导致的 `TypeError: statesData.filter is not a function` 致命错误。确保脚本能正确解析 `{ "results": [...] }` 格式的对象，而不是直接处理数组。
-
-**第十阶段：最终发布前修复 (Phase 10: Pre-release Hotfix)**
-
-*   [x] **29. 修复API请求超限错误:** 彻底重构所有权核对逻辑，引入“批处理/分块”机制。将对大量商品的请求，自动拆分为符合服务器每次最多24个的API限制的多个小请求，并轮询完成。从根本上解决因一次性请求过多而被服务器拒绝，从而导致脚本崩溃的终极`Bug`。
-
-**第十一阶段：终极架构 - “倾听者”模式 (Phase 11: The Ultimate Architecture - The "Listener" Model)**
-
-*   [x] **30. 废除主动API请求:** 彻底删除 `addAllBtn.onclick` 中所有手动发起 `API` 请求（包括批处理）的逻辑。脚本不再主动向服务器询问。
-*   [x] **31. 实现API响应监听器:** 使用 `GM_webRequest` 创建一个后台“监听器”，精准拦截页面自身发起的 `.../listings-states` API 请求，并将其响应（即最真实的商品所属权数据）直接捕获到脚本的内部状态中。
-*   [x] **32. 改造核心判断逻辑:** 修改 `addAllBtn.onclick`，使其不再发起任何网络请求，而是直接使用从“监听器”捕获到的、100%准确的实时数据来进行判断和任务添加。这从根本上实现了零延迟、零冗余和绝对可靠的状态管理。
-
-**第十二阶段：终极混合动力架构 (Phase 12: The Final Hybrid Power Architecture)**
-
-*   [ ] **33. 保留并优化“监听器” (节能模式):** `GM_webRequest` 监听器依然作为后台主力，持续用页面自身行为产生的“免费”情报填充状态缓存。
-*   [ ] **34. 重构并集成“主动请求” (性能模式):** 将之前开发的、成熟的“批处理API请求”逻辑，封装成一个可被随时调用的函数。
-*   [ ] **35. 实现“混合动力”调度核心:** 改造 `addAllBtn.onclick`，使其成为一个智能调度器：
-    *   [ ] **优先使用缓存:** 点击时，首先检查“状态缓存”是否已包含当前所有可见商品的信息。如果是，则直接使用这份零延迟的缓存数据。
-    *   [ ] **在需要时主动出击:** 如果缓存不完整（例如，用户点击过快），则立刻调用“主动请求”函数去服务器获取最准确的数据，并将结果更新到缓存中。
-    *   [ ] **统一数据源:** 保证所有后续操作都以最终更新后的“状态缓存”为唯一真实来源，彻底解决所有已知时序问题。
-
-**第十三阶段：终极架构回归 - "眼见为实" (Phase 13: The Final Architecture - "What You See Is What You Get")**
-
-*   [x] **36. 彻底移除所有API状态管理:**
-    *   [x] 删除 `ServerTruth` 模块。
-    *   [x] 删除 `GM_webRequest` 状态监听器。
-    *   [x] 删除 `apiStateCache` 状态缓存。
-*   [x] **37. 核心逻辑回归DOM:**
-    *   [x] 改造 `addAllBtn.onclick`，使其判断商品是否已拥有的**唯一标准**，是检查卡片 `DOM` 中是否**已存在"已保存在我的库中"**或类似文本。
-    *   [x] "眼见为实"，所见即所得。不再进行任何后台`API`的请求或监听，100%信任页面自身渲染出的结果。
-*   [x] **38. 实现"耐心观察者"模式:**
-    *   [x] 为每个新出现的商品卡片设置专门的 `MutationObserver`，监听其文本变化。
-    *   [x] 当检测到"已保存在我的库中"或"Saved in My Library"文本出现时，立即更新数据库和UI状态。
-    *   [x] 观察者完成任务后自动断开连接，防止内存泄漏。
-    *   [x] 设置10秒超时自动断开，确保资源管理。
-*   [x] **39. 清理并简化代码:** 移除所有因之前复杂架构而产生的、现已无用的代码，确保最终脚本的纯粹和高效。 
-
-**第十四阶段：核心功能回归与最终修复 (Phase 14: Core Functionality Regression Fix & Finalization)**
-
-*   [ ] **40. 在隐藏功能开启的情况下，新出现的“已保存在我的库中”的卡片没有隐藏
-
-*   [ ] **41. 认认真真地检查代码
-**第十五阶段：基于稳定版的最终特性重构 (Phase 15)**
-[x] 44. 实现"基于会话的 ✅ 标记" (State.sessionCompleted + 修改 UI.applyOverlay)
-[x] 45. 实现"'眼见为实'的 DOM 优先逻辑" (setupOwnershipObserver + 精简 runHideOrShow)
-[x] 46. 实现"日志区域收缩/展开功能" (增加折叠按钮、状态记忆和平滑动画)
+3.  **Implement Hot Reload Function (`TaskRunner.hotReloadScript`)**:
+    -   This function will be triggered by the new button.
+    -   It will first ask for user confirmation.
+    -   It will fetch the latest script content from the URL specified in the `@downloadURL` metadata field. We'll add a fallback or a development URL for local testing.
+    -   Upon successful fetch, it will call the `Utils.cleanup` function.
+    -   Finally, it will execute the new script code using `eval()`, effectively replacing the old script with the new one. A `try...catch` block will be used to handle potential errors during execution of the new script.

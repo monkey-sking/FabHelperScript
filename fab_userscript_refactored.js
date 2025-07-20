@@ -236,6 +236,34 @@
                 } catch (e) { /* Ignore errors */ }
             });
             State.valueChangeListeners = [];
+
+            // --- NEW: Expanded Cleanup for Hot-Reload ---
+            // 1. Remove UI
+            if (State.UI.container) {
+                State.UI.container.remove();
+                State.UI = {}; // Reset UI state object
+            }
+            // 2. Remove Stylesheet
+            const styleSheet = document.querySelector('style[data-fab-helper-style]');
+            if (styleSheet) styleSheet.remove();
+
+            // 3. Disconnect main observer
+            if (State.mainObserver) {
+                State.mainObserver.disconnect();
+                State.mainObserver = null;
+            }
+            
+            // 4. Remove sessionCompleted set to clear session state on reload
+            State.sessionCompleted = new Set();
+            
+            // 5. Clean up window properties
+            try {
+                delete unsafeWindow.FabHelperShowAdvanced;
+                delete unsafeWindow.FabHelperHideAdvanced;
+                delete unsafeWindow.FabHelperResetData;
+            } catch (e) {
+                Utils.logger('warn', 'Could not clean up unsafeWindow properties.', e);
+            }
         }
     };
 
@@ -437,6 +465,49 @@
             State.executionFailedTasks = 0;
             UI.update();
             TaskRunner.executeBatch();
+        },
+
+        hotReloadScript: async () => {
+            const newScriptCode = prompt('=== 脚本热更新 ===\n\n请在下方粘贴您的最新脚本代码，然后点击"确定"。', '');
+
+            if (!newScriptCode || newScriptCode.trim() === '') {
+                Utils.logger('info', '热更新已取消，因为没有提供代码。');
+                return;
+            }
+
+            if (!window.confirm('代码已接收。确定要清理旧脚本并执行新代码吗？')) {
+                Utils.logger('info', '用户取消了热更新操作。');
+                return;
+            }
+
+            Utils.logger('info', '开始热更新... 清理旧脚本实例...');
+
+            try {
+                // Full cleanup of the current script instance
+                Utils.cleanup();
+                // We also need to disconnect the entry observer that starts `main`
+                if (unsafeWindow.fabHelperEntryObserver) {
+                    unsafeWindow.fabHelperEntryObserver.disconnect();
+                    delete unsafeWindow.fabHelperEntryObserver;
+                }
+                
+                Utils.logger('info', '清理完成。即将执行新脚本代码...');
+
+                // Using eval in a timeout to break the current execution context
+                setTimeout(() => {
+                    try {
+                        // We are in development, we trust the source.
+                        eval(newScriptCode);
+                    } catch (e) {
+                        console.error('【热更新失败】新脚本执行时发生致命错误:', e);
+                        alert(`热更新失败！新脚本执行时发生错误，请检查控制台日志并刷新页面。\n\n错误信息: ${e.message}`);
+                    }
+                }, 0);
+
+            } catch (error) {
+                Utils.logger('error', '【热更新失败】清理旧脚本时发生错误:', error);
+                alert(`热更新失败！清理旧脚本时发生错误，请刷新页面。\n\n错误信息: ${error.message}`);
+            }
         },
 
         // This function is for the main UI button to toggle start/stop.
@@ -1278,6 +1349,7 @@
             const styleSheet = document.createElement("style");
             styleSheet.type = "text/css";
             styleSheet.innerText = styles;
+            styleSheet.setAttribute('data-fab-helper-style', 'true');
             document.head.appendChild(styleSheet);
 
             const container = document.createElement('div');
@@ -1459,7 +1531,14 @@
             State.UI.hideBtn.innerHTML = '🙈 隐藏已拥有';
             State.UI.hideBtn.style.background = 'var(--blue)';
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn);
+            
+            // 热更新脚本按钮
+            const hotReloadBtn = document.createElement('button');
+            hotReloadBtn.innerHTML = '🔥 粘贴代码热更新';
+            hotReloadBtn.style.background = 'var(--orange)';
+            hotReloadBtn.onclick = TaskRunner.hotReloadScript;
+
+            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn, hotReloadBtn);
 
             const networkAnalysisSection = document.createElement('div');
             networkAnalysisSection.className = 'fab-helper-network-analysis';
@@ -1977,8 +2056,13 @@
 
     entryObserver.observe(document.body, { childList: true, subtree: true });
     
+    // Store the observer on a globally accessible object so we can disconnect it during hot-reload
+    unsafeWindow.fabHelperEntryObserver = entryObserver;
+    entryObserver.observe(document.body, { childList: true, subtree: true });
+    
     // Initial run when the script is first injected.
     State.lastKnownHref = window.location.href;
+    // The initial cleanup function is minimal. `main` will define a more comprehensive one.
     Utils.cleanup = () => {
         if (State.watchdogTimer) clearInterval(State.watchdogTimer);
         State.valueChangeListeners.forEach(id => GM_removeValueChangeListener(id));
