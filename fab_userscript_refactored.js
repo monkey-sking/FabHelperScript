@@ -43,6 +43,7 @@
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             SAVED_CURSOR: 'fab_saved_cursor_v8', // For Page Patcher
             PATCH_ENABLED: 'fab_patch_enabled_v8', // For Page Patcher
+            PEAK_RPS: 'fab_peak_rps_v8', // NEW: For persisting peak RPS
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -116,6 +117,7 @@
             rpsDisplay: null,
             peakRpsDisplay: null,
             last429Display: null,
+            cumulativeWeightDisplay: null,
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -1233,8 +1235,8 @@
 
         runHideOrShow: async () => {
             // Optimization: Check if there are any unprocessed cards first. If not, exit early.
-            const newCards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
-            if (newCards.length === 0) {
+            const cards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
+            if (cards.length === 0) {
                 // Still update the count in case it was changed elsewhere, but don't re-run logic.
                 const allHiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`);
                 if (State.hiddenThisPageCount !== allHiddenCards.length) {
@@ -1248,7 +1250,6 @@
             State.hiddenThisPageCount = 0;
             
             // 获取所有尚未处理的卡片
-            const cards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
             const cardsArray = Array.from(cards);
             
             // 如果没有新卡片需要处理，直接更新UI并返回
@@ -1724,6 +1725,12 @@
             State.UI.peakRpsDisplay = createMetricDisplay('fab-peak-rps-display', '峰值RPS', '0');
             networkContent.append(State.UI.rpsDisplay, State.UI.peakRpsDisplay);
 
+            // NEW: Cumulative Weight Display
+            const cumulativeWeightDisplay = createMetricDisplay('fab-cumulative-weight', 'ID查询数 (60s)', '0');
+            cumulativeWeightDisplay.style.gridColumn = '1 / -1';
+            networkContent.appendChild(cumulativeWeightDisplay);
+            State.UI.cumulativeWeightDisplay = cumulativeWeightDisplay;
+
             const last429Info = document.createElement('div');
             last429Info.id = 'fab-last-429-info';
             last429Info.style.cssText = `
@@ -1754,6 +1761,7 @@
                     NetworkRecorder.log = [];
                     localStorage.removeItem(NetworkRecorder.DB_KEY);
                     NetworkAnalyzer.peakRps = 0; // Also reset peak RPS
+                    GM_deleteValue(Config.DB_KEYS.PEAK_RPS); // NEW: And clear the persisted value
                     NetworkAnalyzer.updateUI(); // Force UI to reflect the change
                     Utils.logger('info', 'Network log has been cleared.');
                 }
@@ -2332,50 +2340,53 @@
         recordRequest: (url, status, responseText = '') => {
             const now = Date.now();
             
-            // --- NEW: Calculate advanced metrics for analysis ---
             const interval = NetworkRecorder.lastRequestTimestamp ? now - NetworkRecorder.lastRequestTimestamp : null;
             const tenSecondWindow = now - 10000;
-            const density = NetworkRecorder.log.filter(r => r.timestamp > tenSecondWindow).length + 1; // +1 to include the current request
+            const density = NetworkRecorder.log.filter(r => r.timestamp > tenSecondWindow).length + 1;
             
-            NetworkRecorder.lastRequestTimestamp = now; // Update for the next interval calculation
+            NetworkRecorder.lastRequestTimestamp = now;
 
             let finalStatus = status;
             let isSoft429 = false;
 
-            // Check for "soft" 429 where the status is 200 but body contains the error
             if (url.includes('/i/listings/search') && status === 200) {
                  try {
                     if (typeof responseText === 'string' && responseText.includes('Too many requests')) {
                         const responseJson = JSON.parse(responseText);
                         if (responseJson.detail) {
                             isSoft429 = true;
-                            finalStatus = 429; // Treat it as a 429 for logging and UI
+                            finalStatus = 429;
                         }
                     }
                 } catch(e) {/* Can ignore parse errors for non-JSON responses */}
             }
+            
+            const weight = url.match(/listing_ids/g)?.length || (url.includes('/i/listings/search') ? 24 : 0); // Search requests have an implicit weight
 
             const record = {
                 timestamp: now,
                 url: url,
                 status: finalStatus,
-                weight: url.match(/listing_ids/g)?.length || 0, // More descriptive name than idCount
+                weight: weight,
                 interval: interval,
                 density: density,
+                cumulativeWeight: null // This will be calculated and added only for 429 events
             };
 
             NetworkRecorder.log.push(record);
             if (NetworkRecorder.log.length > NetworkRecorder.MAX_RECORDS) {
                 NetworkRecorder.log.shift();
             }
-            // Re-instated: Save to localStorage on every record for persistence.
             localStorage.setItem(NetworkRecorder.DB_KEY, JSON.stringify(NetworkRecorder.log));
             
             document.dispatchEvent(new CustomEvent('fab-network-update'));
 
-            // Handle side-effects of any 429 error (hard or soft)
             if (finalStatus === 429) {
-                // --- NEW: Log a detailed "Flight Data Recorder" snapshot upon 429 ---
+                const sixtySecondWindow = now - 60000;
+                const recentRequests = NetworkRecorder.log.filter(r => r.timestamp > sixtySecondWindow);
+                const cumulativeWeight = recentRequests.reduce((sum, r) => sum + r.weight, 0);
+                record.cumulativeWeight = cumulativeWeight; // Add it to the record for UI display
+
                 Utils.logger('error', `
                     ==================== [429 Flight Data Recorder] ====================
                     [事件]: 服务器速率限制 (Too Many Requests)
@@ -2383,6 +2394,7 @@
                     [请求权重]: ${record.weight} 个ID
                     [距上次请求间隔]: ${interval ? interval + ' ms' : 'N/A'}
                     [10秒内请求密度]: ${density} 次
+                    [60秒内累计ID查询数]: ${cumulativeWeight}
                     ====================================================================
                 `);
 
@@ -2391,7 +2403,6 @@
                 }
                  if (State.isReconning) {
                     Utils.logger('warn', 'Stopping Recon due to API rate limit error.');
-                    // This will correctly toggle the state and update the UI
                     TaskRunner.toggleRecon();
                 }
             }
@@ -2409,19 +2420,27 @@
 
             if (rps > NetworkAnalyzer.peakRps) {
                 NetworkAnalyzer.peakRps = rps;
+                // NEW: Persist the new peak RPS
+                GM_setValue(Config.DB_KEYS.PEAK_RPS, NetworkAnalyzer.peakRps);
             }
 
             State.UI.rpsDisplay.querySelector('span').textContent = rps;
             State.UI.peakRpsDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
 
-            // NEW: Find and display the last 3 429 events for pattern analysis.
+            // NEW: Calculate and display cumulative weight
+            const sixtySecondWindow = now - 60000;
+            const recentRequests = NetworkRecorder.log.filter(r => r.timestamp > sixtySecondWindow);
+            const cumulativeWeight = recentRequests.reduce((sum, r) => sum + r.weight, 0);
+            if (State.UI.cumulativeWeightDisplay) {
+                State.UI.cumulativeWeightDisplay.querySelector('span').textContent = cumulativeWeight;
+            }
+
             const lastThree429s = [...NetworkRecorder.log].reverse().filter(r => r.status === 429).slice(0, 3);
             if (lastThree429s.length > 0) {
                 let listHtml = '<b>最近429事件:</b><ul style="margin: 4px 0 0 16px; padding: 0; list-style-type: square;">';
                 lastThree429s.forEach(event => {
                     const eventTime = new Date(event.timestamp).toLocaleTimeString();
-                    // Display the rich data captured by the flight recorder
-                    listHtml += `<li style="margin-bottom: 4px;">${eventTime} (密度: ${event.density}, 间隔: ${event.interval}ms, 权重: ${event.weight})</li>`;
+                    listHtml += `<li style="margin-bottom: 4px;">${eventTime} (累计ID: ${event.cumulativeWeight || 'N/A'}, 密度: ${event.density})</li>`;
                 });
                 listHtml += '</ul>';
                 State.UI.last429Display.innerHTML = listHtml;
@@ -2429,13 +2448,17 @@
                  State.UI.last429Display.innerHTML = '<b>最近429事件:</b><br>尚无记录';
             }
         },
-        init: () => {
-             // 监听自定义事件，实时更新UI
+        init: async () => {
+            // NEW: Load persistent peak RPS value on initialization
+            NetworkAnalyzer.peakRps = await GM_getValue(Config.DB_KEYS.PEAK_RPS, 0);
+
+            // 监听自定义事件，实时更新UI
             document.addEventListener('fab-network-update', NetworkAnalyzer.updateUI);
             // 也设置一个定时器，作为"心跳"来保证UI的持续刷新。
             if (State.networkAnalyzerTimer) clearInterval(State.networkAnalyzerTimer);
             State.networkAnalyzerTimer = setInterval(NetworkAnalyzer.updateUI, 1000);
-            // 初始加载时也更新一次
+            
+            // Initial load: Force UI to update with data loaded from persistence
             NetworkAnalyzer.updateUI();
         }
     };
