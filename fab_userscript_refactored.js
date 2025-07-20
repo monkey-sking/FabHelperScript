@@ -2330,47 +2330,9 @@
                 }
             }
             
-            NetworkRecorder.installGlobalInterceptor();
-            Utils.logger('info', 'Network flight recorder is active (persistent mode).');
-        },
-        
-        // This interceptor catches requests made by the PAGE itself (e.g., scrolling).
-        installGlobalInterceptor: () => {
-            // --- 1. Patch XMLHttpRequest ---
-            if (!unsafeWindow.originalXHRSend) {
-                unsafeWindow.originalXHRSend = XMLHttpRequest.prototype.send;
-                const originalSend = unsafeWindow.originalXHRSend;
-                XMLHttpRequest.prototype.send = function(...args) {
-                    this.addEventListener('loadend', () => {
-                        // We only care about the two main API endpoints.
-                        if (this.responseURL.includes('/i/users/me/listings-states') || this.responseURL.includes('/i/listings/search')) {
-                           NetworkRecorder.recordRequest(this.responseURL, this.status, this.responseText);
-                        }
-                    });
-                    return originalSend.apply(this, args);
-                };
-            }
-
-            // --- 2. Patch Fetch ---
-            // Note: This won't catch requests made by GM_xmlhttpRequest, which is exactly what we want
-            // to avoid double-counting.
-            if (!unsafeWindow.originalFetch) {
-                unsafeWindow.originalFetch = unsafeWindow.fetch;
-                const originalFetch = unsafeWindow.originalFetch;
-                unsafeWindow.fetch = async function(input, init) {
-                    const response = await originalFetch(input, init);
-                    const url = (typeof input === 'string') ? input : input.url;
-                    
-                    if (url.includes('/i/users/me/listings-states') || url.includes('/i/listings/search')) {
-                        // We need to clone the response to read its body, as it can only be read once.
-                        response.clone().text().then(text => {
-                            NetworkRecorder.recordRequest(url, response.status, text);
-                        });
-                    }
-                    
-                    return response;
-                };
-            }
+            // The global interceptor is now handled by PagePatcher to avoid conflicts.
+            // NetworkRecorder is now a purely passive service.
+            Utils.logger('info', 'Network flight recorder is active (passive mode).');
         },
 
         recordRequest: (url, status, responseText = '') => {
@@ -2456,7 +2418,7 @@
             }
 
             State.UI.rpsDisplay.querySelector('span').textContent = rps;
-            State.UI.peakRDDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
+            State.UI.peakRpsDisplay.querySelector('span').textContent = NetworkAnalyzer.peakRps;
 
             // NEW: Find and display the last 3 429 events for pattern analysis.
             const lastThree429s = [...NetworkRecorder.log].reverse().filter(r => r.status === 429).slice(0, 3);
@@ -2498,7 +2460,8 @@
                 
                 // Log every potential candidate that isn't obviously wrong (like a local blob:)
                 if (url.startsWith('http')) {
-                    Utils.logger('info', `[PagePatcher] Checking URL: ${url.substring(0, 120)}`);
+                    // This log is too spammy, let's only log real candidates
+                    // Utils.logger('info', `[PagePatcher] Checking URL: ${url.substring(0, 120)}`);
                 }
 
                 // Gate 1: "One-and-Done" flag. If we've patched once, we're done.
@@ -2542,8 +2505,7 @@
                 }
                 return originalUrl; // Should not happen due to checks in shouldPatchUrl
             };
-
-            // --- NEW: Logic to track the last two cursors to save the "previous" page's cursor ---
+            
             let lastSeenCursor = State.savedCursor;
             let secondToLastSeenCursor = null;
 
@@ -2553,16 +2515,12 @@
                         const urlObj = new URL(url, window.location.origin);
                         const newCursor = urlObj.searchParams.get('cursor');
                         
-                        // Check if this is a genuinely new page being loaded
                         if (newCursor && newCursor !== lastSeenCursor) {
-                            // The cursor for the page we were just on is now the "second to last"
                             secondToLastSeenCursor = lastSeenCursor;
-                            // The new page's cursor is now the "last seen"
                             lastSeenCursor = newCursor;
 
-                            // We always save the cursor of the page we were JUST ON, not the one we are loading now.
                             if (secondToLastSeenCursor) {
-                                State.savedCursor = secondToLastSeenCursor; // Update state immediately
+                                State.savedCursor = secondToLastSeenCursor;
                                 GM_setValue(Config.DB_KEYS.SAVED_CURSOR, secondToLastSeenCursor);
                                 Utils.logger('info', `[PagePatcher] 已自动保存 [上一页] 的起点: ${secondToLastSeenCursor.substring(0, 30)}...`);
                             }
@@ -2573,7 +2531,9 @@
                 }
             };
 
-            // --- 1. Patch XMLHttpRequest ---
+            // --- UNIFIED GLOBAL INTERCEPTOR ---
+
+            // 1. Patch XMLHttpRequest
             if (!unsafeWindow.originalXHROpen) {
                 unsafeWindow.originalXHROpen = XMLHttpRequest.prototype.open;
                 const originalOpen = unsafeWindow.originalXHROpen;
@@ -2582,33 +2542,56 @@
                     if (shouldPatchUrl(url)) {
                         modifiedUrl = getPatchedUrl(url);
                     } else {
-                        // If we are NOT patching, it might be a normal scroll-load. Auto-save its cursor.
                         saveLatestCursorFromUrl(url);
                     }
                     return originalOpen.apply(this, [method, modifiedUrl, ...args]);
                 };
             }
+            if (!unsafeWindow.originalXHRSend) {
+                unsafeWindow.originalXHRSend = XMLHttpRequest.prototype.send;
+                const originalSend = unsafeWindow.originalXHRSend;
+                XMLHttpRequest.prototype.send = function(...args) {
+                    this.addEventListener('loadend', () => {
+                        if (this.responseURL && (this.responseURL.includes('/i/users/me/listings-states') || this.responseURL.includes('/i/listings/search'))) {
+                           NetworkRecorder.recordRequest(this.responseURL, this.status, this.responseText);
+                        }
+                    });
+                    return originalSend.apply(this, args);
+                };
+            }
 
-            // --- 2. Patch Fetch ---
+            // 2. Patch Fetch
             if (!unsafeWindow.originalFetch) {
                 unsafeWindow.originalFetch = unsafeWindow.fetch;
                 const originalFetch = unsafeWindow.originalFetch;
-                unsafeWindow.fetch = function(input, init) {
+                unsafeWindow.fetch = async function(input, init) {
+                    // --- PagePatcher Logic (Modify request before sending) ---
                     let modifiedInput = input;
-                    const url = (typeof input === 'string') ? input : input.url;
+                    const url = (typeof input === 'string') ? input : (input ? input.url : '');
 
                     if (shouldPatchUrl(url)) {
                         const modifiedUrl = getPatchedUrl(url);
                         if (typeof input === 'string') {
                             modifiedInput = modifiedUrl;
-                        } else {
+                        } else if (input) {
                             modifiedInput = new Request(modifiedUrl, input);
                         }
                     } else {
-                        // If we are NOT patching, it might be a normal scroll-load. Auto-save its cursor.
                         saveLatestCursorFromUrl(url);
                     }
-                    return originalFetch.call(this, modifiedInput, init);
+
+                    // --- Make the actual request ---
+                    const response = await originalFetch.call(this, modifiedInput, init);
+
+                    // --- NetworkRecorder Logic (Record response after receiving) ---
+                    const finalUrl = (typeof modifiedInput === 'string') ? modifiedInput : (modifiedInput ? modifiedInput.url : '');
+                    if (finalUrl && (finalUrl.includes('/i/users/me/listings-states') || finalUrl.includes('/i/listings/search'))) {
+                        response.clone().text().then(text => {
+                            NetworkRecorder.recordRequest(finalUrl, response.status, text);
+                        });
+                    }
+                    
+                    return response;
                 };
             }
         }
