@@ -3,26 +3,21 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      1.4.0
+// @version      1.4.3
 // @description  A heavily refactored and stabilized version for automating asset acquisition from Fab.com.
 // @description:en A heavily refactored and stabilized version for automating asset acquisition from Fab.com.
-// @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI和健壮的错误处理机制。
-// @author       gpt-4 & user & Gemini
+// @author       Runking
 // @match        https://www.fab.com/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_addValueChangeListener
-// @grant        GM_removeValueChangeListener
 // @grant        GM_xmlhttpRequest
-// @grant        GM_webRequest
 // @grant        GM_openInTab
+// @grant        GM_addStyle
 // @grant        unsafeWindow
-// @grant        window.close
 // @connect      api.fab.com
-// @connect      www.fab.com
-// @downloadURL  https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.user.js
-// @updateURL    https://update.greasyfork.org/scripts/541307/Fab%20%E9%9A%90%E8%97%8F%E5%B7%B2%E4%BF%9D%E5%AD%98%E9%A1%B9%E7%9B%AE.meta.js
+// @require      https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js
 // ==/UserScript==
 
 (function () {
@@ -30,7 +25,7 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v1.4.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v1.4.3]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
@@ -103,7 +98,7 @@
         executionTotalTasks: 0,
         executionCompletedTasks: 0, // For execution progress
         executionFailedTasks: 0, // For execution progress
-        sessionPursuitCompletedCount: 0, // NEW: Counter for Smart Pursuit trigger
+        sessionPursuitCompletedCount: 0, // OBSOLETE: This will be removed.
         watchdogTimer: null,
         // UI-related state
         UI: {
@@ -141,6 +136,21 @@
         lastOKTimestamp: null, // NEW
         last429Timestamp: null, // NEW
         statusMonitorTimer: null, // NEW
+    };
+
+    // --- NEW v1.4.2: Asynchronous Lock for Race Condition Prevention ---
+    const Lock = {
+        isLocked: false,
+        async acquire() {
+            if (!this.isLocked) {
+                this.isLocked = true;
+                return true;
+            }
+            return false;
+        },
+        release() {
+            this.isLocked = false;
+        }
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -648,46 +658,31 @@
                 // This is the most likely failure point. We MUST know if the worker is being tracked.
                 if (State.runningWorkers[workerId]) {
                     delete State.runningWorkers[workerId];
+                    const prev = State.activeWorkers;
                     State.activeWorkers--;
-                    Utils.logger('debug', `[Listener] Worker ${workerId.substring(0, 4)} was tracked. Active workers now: ${State.activeWorkers}`);
+                    Utils.logger('debug', `[Listener] Decrementing active workers from ${prev} to ${State.activeWorkers}`);
                 } else {
-                    Utils.logger('error', `[Listener] CRITICAL: Received report from UNTRACKED worker: ${workerId}. The 'activeWorkers' count will NOT be decremented. This is the likely cause of the stall.`);
-                    // As a fallback, we decrement the counter anyway if it's above zero,
-                    // to prevent a permanent stall, although this indicates a state mismatch.
+                    Utils.logger('error', `[Listener] CRITICAL: Received report from UNTRACKED worker: ${workerId}.`);
                     if (State.activeWorkers > 0) {
+                        const prev = State.activeWorkers;
                         State.activeWorkers--;
-                         Utils.logger('warn', `[Listener] Fallback activated. Decrementing active workers to ${State.activeWorkers} to prevent stall.`);
+                        Utils.logger('warn', `[Listener] Fallback activated. Decrementing active workers from ${prev} to ${State.activeWorkers}`);
                     }
                 }
 
                 if (success) {
                     State.executionCompletedTasks++;
-                    State.sessionPursuitCompletedCount++; // Increment session counter for Smart Pursuit
-
-                    // Auto-hide the completed item if the feature is enabled
-                    if (State.hideSaved) {
-                        runHideOrShow();
-                    }
-
                 } else {
                     State.executionFailedTasks++;
                 }
 
-                // Check if Smart Pursuit should trigger a new scan
-                if (State.isSmartPursuitEnabled && State.sessionPursuitCompletedCount >= Config.SMART_PURSUIT_THRESHOLD) {
-                    if (StatusManager.isThrottled()) {
-                        Utils.logger('warn', '[节流] 服务器节流中，"智能追击"自动扫描已跳过。');
-                    } else {
-                        Utils.logger('info', `[智能追击] 已完成 ${State.sessionPursuitCompletedCount} 个任务, 达到阈值! 自动触发新一轮扫描...`);
-                        TaskRunner.processPageWithApi({ autoAdd: true });
-                    }
-                    State.sessionPursuitCompletedCount = 0; // Reset counter regardless
-                }
+                // --- THE CRITICAL FIX (v1.4.1) ---
+                // After every single worker report, IMMEDIATELY call executeBatch.
+                // This creates the continuous, non-stalling processing loop.
+                // The logic to check for completion, trigger smart pursuit, or stop
+                // is now entirely contained within executeBatch.
+                TaskRunner.executeBatch();
 
-                // If execution is still active, try to dispatch more tasks.
-                if (State.isExecuting) {
-                    TaskRunner.executeBatch();
-                }
                 UI.update(); // Update UI with progress
             });
             State.valueChangeListeners.push(Config.DB_KEYS.WORKER_DONE); // Keep track for cleanup
@@ -907,11 +902,21 @@
         },
 
         processPageWithApi: async (options = {}) => {
-            if (State.isScanning) {
-                Utils.logger('warn', '扫描已在进行中，本次触发已忽略。');
-                return 0;
-            }
+            const { isInitialScan = false } = options;
+
+            // CRITICAL FIX v1.4.3: REMOVED the internal isScanning check.
+            // This check was causing a race condition where the function would immediately
+            // exit because the flag was set by the caller (executeBatch) just before
+            // this function was called. The caller is now solely responsible for
+            // managing the scanning state and lock.
+            // if (State.isScanning && !isInitialScan) { // OLD, BUGGY CODE
+            //     Utils.logger('warn', '扫描已在进行中，本次触发已忽略。');
+            //     return Promise.resolve({ newTasks: [] });
+            // }
+
+            Utils.logger('info', '开始扫描新宝贝...');
             State.isScanning = true;
+            UI.update();
 
             try {
                 const {
@@ -1251,6 +1256,7 @@
                         Database.markAsFailed(workerInfo.task);
 
                         delete State.runningWorkers[workerId];
+                        const prev = State.activeWorkers;
                         State.activeWorkers--;
 
                         Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
@@ -1261,18 +1267,17 @@
             }, 5000); // Check every 5 seconds
         },
 
-        // --- EXECUTION CORE (REWRITTEN v1.4.1) ---
+        // --- EXECUTION CORE (REWRITTEN v1.4.2) ---
         executeBatch: async () => {
-            // Safety check: if execution was stopped, do nothing.
-            if (!State.isExecuting) {
-                return;
-            }
+            if (!State.isExecuting) return;
 
             // --- I. DISPATCH PHASE ---
-            // This loop is the heart of the dispatcher. It fills any empty worker slots.
             while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
-                const task = State.db.todo.shift();
+                const prev = State.activeWorkers;
                 State.activeWorkers++;
+                Utils.logger('debug', `[Dispatch] Incrementing active workers from ${prev} to ${State.activeWorkers}`);
+
+                const task = State.db.todo.shift();
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
 
@@ -1285,39 +1290,41 @@
                 workerUrl.searchParams.set('workerId', workerId);
                 GM_openInTab(workerUrl.href, { active: false, setParent: true });
             }
-            UI.update(); // Update UI after dispatching
+            UI.update();
 
             // --- II. COMPLETION & NEXT-STEP PHASE ---
-            // This check runs AFTER every dispatch attempt.
-            // If the queue is empty AND all workers have finished, we decide what to do next.
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                 if (State.isSmartPursuitEnabled && !State.isScanning) {
-                     Utils.logger('info', '[智能追击] 队列已空，自动扫描新任务...');
-                     State.isScanning = true; // Set lock
-                     UI.update();
+                 if (State.isSmartPursuitEnabled) {
+                     // ATOMIC OPERATION: Acquire lock before scanning.
+                     if (await Lock.acquire()) {
+                         Utils.logger('info', '[智能追击] 队列已空，获得扫描锁，开始扫描新任务...');
+                         State.isScanning = true;
+                         UI.update();
 
-                     TaskRunner.processPageWithApi({ autoAdd: true }).then(newTasksCount => {
-                         State.isScanning = false; // Release lock
-                         if (newTasksCount > 0) {
-                             Utils.logger('info', `[智能追击] 发现 ${newTasksCount} 个新任务，继续执行。`);
-                             // The key to the continuous loop after a pursuit scan.
-                             TaskRunner.executeBatch();
-                         } else {
-                             Utils.logger('info', '[智能追击] 未发现新任务，执行周期结束。');
+                         try {
+                             const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true });
+                             if (newTasksCount > 0) {
+                                 Utils.logger('info', `[智能追击] 发现 ${newTasksCount} 个新任务，继续执行。`);
+                                 TaskRunner.executeBatch();
+                             } else {
+                                 Utils.logger('info', '[智能追击] 未发现新任务，执行周期结束。');
+                                 TaskRunner.stopExecution();
+                             }
+                         } catch (error) {
+                             Utils.logger('error', '[智能追击] 扫描时发生错误:', error);
                              TaskRunner.stopExecution();
+                         } finally {
+                             State.isScanning = false;
+                             Lock.release(); // ALWAYS release the lock.
+                             UI.update();
                          }
-                     }).catch(error => {
-                         State.isScanning = false; // Ensure lock is released
-                         Utils.logger('error', '[智能追击] 扫描时发生错误:', error);
-                         TaskRunner.stopExecution();
-                     });
-                 } else if (!State.isSmartPursuitEnabled && !State.isScanning) {
-                     // Smart pursuit is off, and not scanning, so we are truly done.
+                     } else {
+                         Utils.logger('info', '[智能追击] 扫描锁已被占用，本次触发已安全忽略。');
+                     }
+                 } else if (!State.isSmartPursuitEnabled) {
                      Utils.logger('info', '✅ 🎉 所有任务已完成，且智能追击已关闭。执行结束。');
                      TaskRunner.stopExecution();
                  }
-                 // If a scan is already in progress, we do nothing. The next call will happen
-                 // when that scan completes and calls executeBatch.
             }
         },
 
