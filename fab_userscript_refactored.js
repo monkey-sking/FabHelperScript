@@ -61,7 +61,7 @@
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
         OWNED_SUCCESS_CRITERIA: {
             // Check for an H2 tag with the specific success text.
-            h2Text: ['已保存在我的库中', 'Saved in My Library'], 
+            h2Text: ['已保存在我的库中', 'Saved in My Library'],
             // Check for buttons/links with these texts.
             buttonTexts: ['在我的库中查看', 'View in My Library'],
             // Check for the temporary success popup (snackbar).
@@ -86,7 +86,7 @@
         showAdvanced: false,
         patchHasBeenApplied: false, // For "One-and-Done" Page Patcher
         isPagePatchingEnabled: false, // For Page Patcher
-        isSmartPursuitEnabled: false, // NEW: For Smart Pursuit Mode
+        isSmartPursuitEnabled: localStorage.getItem('fab_smart_pursuit_enabled') === 'true', // FIX: Initialize from localStorage
         savedCursor: null, // For Page Patcher
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
@@ -204,7 +204,7 @@
                 const urlParams = new URLSearchParams(new URL(url).search);
                 const cursor = urlParams.get('cursor');
                 if (!cursor) return '1';
-                
+
                 // Try to decode offset-based cursors for a nice page number display.
                 if (cursor.startsWith('bz')) {
                     const decoded = atob(cursor);
@@ -238,12 +238,12 @@
             const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
 
             Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
-                
+
                 // Add pointerdown for modern frameworks
                 const pointerDownEvent = new PointerEvent('pointerdown', { view: pageWindow, bubbles: true, cancelable: true });
             const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
             const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
-                
+
                 element.dispatchEvent(pointerDownEvent);
             element.dispatchEvent(mouseDownEvent);
             element.dispatchEvent(mouseUpEvent);
@@ -287,7 +287,7 @@
                 clearInterval(State.networkAnalyzerTimer);
                 State.networkAnalyzerTimer = null;
             }
-            
+
             // Restore the original XHR function to prevent stacking wrappers on hot-reload
             if (unsafeWindow.originalXHRSend) {
                 XMLHttpRequest.prototype.send = unsafeWindow.originalXHRSend;
@@ -301,7 +301,7 @@
                 delete unsafeWindow.originalXHROpen;
                 Utils.logger('info', 'Original XHR open function has been restored.');
             }
-            
+
             // NEW: Restore the original fetch function for hot-reload safety
             if (unsafeWindow.originalFetch) {
                 unsafeWindow.fetch = unsafeWindow.originalFetch;
@@ -311,7 +311,7 @@
 
             // 4. Remove sessionCompleted set to clear session state on reload
             State.sessionCompleted = new Set();
-            
+
             // 5. Clean up window properties
             try {
                 delete unsafeWindow.FabHelperShowAdvanced;
@@ -320,7 +320,7 @@
             } catch (e) {
                 Utils.logger('warn', 'Could not clean up unsafeWindow properties.', e);
             }
-            
+
             // NEW: Reset the one-time patch flag on cleanup
             State.patchHasBeenApplied = false;
         }
@@ -459,7 +459,7 @@
             }
 
             Utils.logger('info', `Debug: To-Do count after: ${State.db.todo.length}`);
-            
+
             let changed = false;
 
             // The 'done' list can still use URLs for simplicity, as it's for display/hiding.
@@ -556,16 +556,22 @@
                 if (success) {
                     State.executionCompletedTasks++;
                     State.sessionPursuitCompletedCount++; // Increment session counter for Smart Pursuit
+
+                    // Auto-hide the completed item if the feature is enabled
+                    if (State.hideSaved) {
+                        TaskRunner.refreshVisibleStates(); // This forces a full UI re-evaluation and hide
+                    }
+
                 } else {
                     State.executionFailedTasks++;
                 }
-                
+
                 // Check if Smart Pursuit should trigger a new scan
                 if (State.isSmartPursuitEnabled && State.sessionPursuitCompletedCount >= Config.SMART_PURSUIT_THRESHOLD) {
                     Utils.logger('info', `[智能追击] 已完成 ${State.sessionPursuitCompletedCount} 个任务, 达到阈值! 自动触发新一轮扫描...`);
                     State.sessionPursuitCompletedCount = 0; // Reset counter for the next cycle
                     // Run a silent, non-blocking scan in the background
-                    TaskRunner.processPageWithApi({ autoAdd: true }); 
+                    TaskRunner.processPageWithApi({ autoAdd: true });
                 }
 
                 // If execution is still active, try to dispatch more tasks.
@@ -689,7 +695,7 @@
                 State.isExecuting = false;
                 // This will signal all active workers to stop, but relies on them checking the key.
                 // A more robust stop would involve cleaning up workers directly.
-                GM_deleteValue(Config.DB_KEYS.TASK); 
+                GM_deleteValue(Config.DB_KEYS.TASK);
                 // We also clear the running workers so the watchdog stops.
                 State.runningWorkers = {};
                 State.activeWorkers = 0;
@@ -774,7 +780,7 @@
                             icon.setAttribute('aria-hidden', 'true');
                             ownedBadge.appendChild(icon);
                             ownedBadge.appendChild(document.createTextNode('已保存在我的库中'));
-                            
+
                             textContainer.lastElementChild.replaceWith(ownedBadge);
                             updatedCount++;
                         }
@@ -840,12 +846,15 @@
                     const url = link.href.split('?')[0];
                     const listingId = url.split('/listings/')[1];
 
+                    // NEW: Check if the task is already being processed by a worker
+                    const isBeingProcessed = Object.values(State.runningWorkers).some(worker => worker.task.url === url);
+
                     // NEW: Check the card's text content for any "owned" keywords.
                     const cardText = card.textContent || '';
                     const isNativelyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
 
-                    // Add to list ONLY IF it has an ID, is not in Done/To-Do lists, AND is not natively marked as owned.
-                    if (listingId && !Database.isDone(url) && !Database.isTodo(url) && !isNativelyOwned) {
+                    // Add to list ONLY IF it has an ID, is not in Done/To-Do/In-Progress lists, AND is not natively marked as owned.
+                    if (listingId && !Database.isDone(url) && !Database.isTodo(url) && !isNativelyOwned && !isBeingProcessed) {
                         const titleElement = card.querySelector('a[href*="/listings/"] > div');
                         const name = titleElement ? titleElement.textContent.trim() : 'Unknown Task';
                         const task = {
@@ -894,7 +903,7 @@
             if (!State.isReconning) return;
 
             let searchResponse = null;
-            
+
             // If no URL is provided, start from the beginning.
             const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=-relevance&page_size=24`;
 
@@ -923,7 +932,7 @@
                 if (State.UI.reconProgressDisplay) {
                     State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
                 }
-                
+
                 Utils.logger('info', "Step 1: " + Utils.getText('log_api_request', {
                     page: displayPage,
                     scanned: State.totalTasks,
@@ -934,14 +943,14 @@
                 if (searchResponse.finalUrl && new URL(searchResponse.finalUrl).pathname !== new URL(requestUrl).pathname) {
                     Utils.logger('warn', `Request was redirected, which may indicate a login issue. Final URL: ${searchResponse.finalUrl}`);
                 }
-                
+
                 if (searchResponse.status === 429) {
                     Utils.logger('error', Utils.getText('log_429_error'));
                     await new Promise(r => setTimeout(r, 15000));
                     TaskRunner.reconWithApi(requestUrl); // Retry with the same URL
                     return;
                 }
-                
+
                 // --- NEW: Auto-save cursor for Page Patcher ---
                 // After a successful request, save its cursor as the new starting point for the next page load.
                 try {
@@ -954,7 +963,7 @@
                 } catch (e) {
                     Utils.logger('warn', 'Could not parse current URL to save cursor for patcher.', e);
                 }
-                
+
                 const searchData = JSON.parse(searchResponse.responseText);
                 const initialResultsCount = searchData.results.length;
                 State.totalTasks += initialResultsCount;
@@ -1007,7 +1016,7 @@
 
                 // --- Step 2: Ownership Check ---
                 Utils.logger('info', `Step 2: Checking ownership for ${candidates.length} candidates...`);
-                
+
                 const allOwnedUids = new Set();
                 const CHUNK_SIZE = 8;
                 const DELAY_BETWEEN_CHUNKS = 250;
@@ -1015,18 +1024,18 @@
                 for (let i = 0; i < candidates.length; i += CHUNK_SIZE) {
                     const chunk = candidates.slice(i, i + CHUNK_SIZE);
                     const chunkUids = chunk.map(item => item.uid);
-                    
+
                     const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
                     chunkUids.forEach(uid => statesUrl.searchParams.append('listing_ids', uid));
 
                     Utils.logger('info', `[Recon] Querying ownership for chunk ${i / CHUNK_SIZE + 1}...`);
                     const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
-                    
+
                     if (statesResponse.status !== 200) {
                         Utils.logger('warn', `[Recon] Ownership check for a chunk failed with status ${statesResponse.status}. Skipping chunk.`);
                         continue;
                     }
-                    
+
                     const statesData = JSON.parse(statesResponse.responseText);
                     statesData.filter(s => s.acquired).forEach(s => allOwnedUids.add(s.uid));
 
@@ -1102,7 +1111,7 @@
 
             } catch (error) {
                 Utils.logger('error', Utils.getText('log_recon_error'), error.message);
-                
+
                 if (error instanceof SyntaxError && searchResponse?.responseText.trim().startsWith('<')) {
                     const responseSample = searchResponse.responseText.replace(/</g, '&lt;').substring(0, 500);
                     Utils.logger('error', "侦察失败：API没有返回有效数据，可能您已退出登录或网站正在维护。请尝试刷新页面或重新登录。");
@@ -1134,7 +1143,7 @@
                     const workerInfo = State.runningWorkers[workerId];
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
-                        
+
                         Database.markAsFailed(workerInfo.task);
 
                         delete State.runningWorkers[workerId];
@@ -1162,18 +1171,18 @@
                 UI.update();
                 return;
             }
-            
+
             // --- DISPATCHER FOR DETAIL TASKS ---
             while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0 && State.db.todo[0].type === 'detail') {
                 const task = State.db.todo.shift();
                 State.activeWorkers++;
-                
+
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                
+
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
 
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
-                
+
                 await GM_setValue(workerId, { task });
 
                 const workerUrl = new URL(task.url);
@@ -1285,7 +1294,7 @@
                                 await new Promise(r => setTimeout(r, 500)); // wait for UI update
                                 if(isItemOwned().owned) success = true;
                             }
-                            
+
                             // If not successful after license check, or if it wasn't a license item
                             if (!success) {
                                  const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
@@ -1329,7 +1338,7 @@
                     await Database.markAsFailed(currentTask);
                     logBuffer.push(`❌ Task marked as FAILED.`);
                 }
-                
+
                 // This is the one and only signal the worker sends back.
                 // It contains its ID, its success status, and its full log.
                 await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
@@ -1360,10 +1369,10 @@
 
             // 重置计数
             State.hiddenThisPageCount = 0;
-            
+
             // 获取所有尚未处理的卡片
             const cardsArray = Array.from(cards);
-            
+
             // 如果没有新卡片需要处理，直接更新UI并返回
             if (cardsArray.length === 0) {
                 // 仍然需要更新UI以防计数在其他地方被改变
@@ -1372,25 +1381,25 @@
                 UI.update();
                 return;
             }
-            
+
             // 预处理：找出所有需要隐藏的卡片
             const cardsToHide = [];
             const cardsToShow = [];
-            
+
             for (const card of cardsArray) {
                 const text = card.textContent || '';
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 if (!link) continue;
-                
+
                 const url = link.href.split('?')[0];
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
                 const isSessionCompleted = State.sessionCompleted.has(url);
-                
+
                 // 确保将已保存但未记录的项目添加到会话完成集合
                 if (isNativelySaved && !isSessionCompleted) {
                     State.sessionCompleted.add(url);
                 }
-                
+
                 // 分类卡片
                 if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
                     cardsToHide.push(card);
@@ -1398,27 +1407,27 @@
                     cardsToShow.push({card, isOwned: isNativelySaved || isSessionCompleted});
                 }
             }
-            
+
             // 更新隐藏计数
             State.hiddenThisPageCount = cardsToHide.length;
             Utils.logger('info', `需要隐藏的卡片总数: ${cardsToHide.length}`);
-            
+
             // 处理需要隐藏的卡片
             if (cardsToHide.length > 100) {
                 // 对于大量卡片，只对最后100个添加延迟
                 const directHideCards = cardsToHide.slice(0, cardsToHide.length - 100);
                 const delayHideCards = cardsToHide.slice(cardsToHide.length - 100);
-                
+
                 // 直接隐藏大部分卡片
                 directHideCards.forEach(card => {
                     card.style.display = 'none';
                 });
-                
+
                 // 对最后100个卡片添加延迟
                 for (let i = 0; i < delayHideCards.length; i++) {
                     delayHideCards[i].style.display = 'none';
                     delayHideCards[i].classList.add('fab-helper-processed'); // 标记为已处理
-                    
+
                     // 添加小延迟
                     if (i < delayHideCards.length - 1) {
                         const delay = Math.floor(Math.random() * 50) + 20; // 更短的延迟(20-70ms)
@@ -1430,7 +1439,7 @@
                 for (let i = 0; i < cardsToHide.length; i++) {
                     cardsToHide[i].style.display = 'none';
                     cardsToHide[i].classList.add('fab-helper-processed'); // 标记为已处理
-                    
+
                     // 添加小延迟
                     if (i < cardsToHide.length - 1) {
                         const delay = Math.floor(Math.random() * 100) + 50; // 50-150ms延迟
@@ -1438,11 +1447,11 @@
                     }
                 }
             }
-            
+
             // 处理需要显示的卡片
             cardsToShow.forEach(({card, isOwned}) => {
                 card.style.display = '';
-                
+
                 // 确保已拥有的项目在UI上有正确的标记
                 if (isOwned) {
                     UI.applyOverlay(card, 'owned');
@@ -1453,7 +1462,7 @@
                 }
                 card.classList.add('fab-helper-processed'); // 标记为已处理
             });
-            
+
             // 更新UI显示
             UI.update();
         },
@@ -1541,7 +1550,7 @@
             const acquisitionButton = [...document.querySelectorAll('button')].find(btn =>
                 [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
             );
-            
+
             // The "Download" button is another strong signal.
             const downloadButton = [...document.querySelectorAll('a[href*="/download/"], button')].find(btn =>
                 btn.textContent.includes('下载') || btn.textContent.includes('Download')
@@ -1681,7 +1690,7 @@
                     100% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0); }
                 }
                 .fab-helper-pulse { animation: fab-pulse 2s infinite; }
-                
+
                 .fab-helper-status-bar {
                     display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; /* Increased gap */
                 }
@@ -1819,7 +1828,7 @@
             secondaryActions.style.display = 'grid';
             secondaryActions.style.gridTemplateColumns = '1fr 1fr';
             secondaryActions.style.gap = '10px';
-            
+
             State.UI.refreshBtn = document.createElement('button');
             State.UI.refreshBtn.className = 'fab-helper-button secondary';
             State.UI.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
@@ -1852,8 +1861,8 @@
                 row.append(label);
                 return row;
             };
-            
-            const pursuitToggle = createToggle('执行时自动发现新任务', 'fab_smart_pursuit_enabled', localStorage.getItem('fab_smart_pursuit_enabled') === 'true', checked => {
+
+            const pursuitToggle = createToggle('执行时自动发现新任务', 'fab_smart_pursuit_enabled', State.isSmartPursuitEnabled, checked => {
                  State.isSmartPursuitEnabled = checked;
                  localStorage.setItem('fab_smart_pursuit_enabled', checked);
                  Utils.logger('info', `智能追击模式已 ${checked ? '开启' : '关闭'}.`);
@@ -1883,7 +1892,7 @@
             // --- Populate Debug Tab ---
             const debugSection = document.createElement('div');
             debugSection.className = 'fab-helper-section';
-            
+
             // Log Panel
             const logSection = document.createElement('div');
             const logHeader = document.createElement('div');
@@ -1918,7 +1927,7 @@
             clearNetworkBtn.style.padding = '2px 8px'; clearNetworkBtn.style.fontSize = '12px';
             clearNetworkBtn.onclick = () => { NetworkRecorder.log = []; localStorage.removeItem(NetworkRecorder.DB_KEY); NetworkAnalyzer.peakRps = 0; GM_deleteValue(Config.DB_KEYS.PEAK_RPS); NetworkAnalyzer.updateUI(); };
             networkHeader.append(clearNetworkBtn);
-            
+
             const networkContent = document.createElement('div');
             networkContent.style.cssText = 'display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;';
             const createMetricDisplay = (id, label, value) => {
@@ -1931,11 +1940,11 @@
             State.UI.rpsDisplay = createMetricDisplay('fab-rps-display', '实时RPS', '0');
             State.UI.peakRpsDisplay = createMetricDisplay('fab-peak-rps-display', '峰值RPS', '0');
             State.UI.cumulativeWeightDisplay = createMetricDisplay('fab-cumulative-weight', 'ID查询数(60s)', '0');
-            
+
             State.UI.last429Display = document.createElement('div');
             State.UI.last429Display.innerHTML = '<b>最近429事件:</b><br>尚无记录';
             State.UI.last429Display.style.cssText = 'grid-column: 1 / -1; font-size: 11px; color: var(--text-color-secondary); background: var(--bg-color-dark); padding: 8px; border-radius: var(--radius-m); margin-top: 4px;';
-            
+
             networkContent.append(State.UI.rpsDisplay, State.UI.peakRpsDisplay, State.UI.cumulativeWeightDisplay);
             networkSection.append(networkHeader, networkContent, State.UI.last429Display);
 
@@ -1962,7 +1971,7 @@
 
             debugSection.append(logSection, networkSection, dangerSection);
             debugTab.append(debugSection);
-            
+
             // Assemble UI
             container.append(controlTab, settingsTab, debugTab);
             document.body.appendChild(container);
@@ -1976,7 +1985,7 @@
 
         update: () => {
             if (!State.UI.container) return;
-            
+
             // Status Bar
             State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
             State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
@@ -1992,7 +2001,7 @@
             } else {
                 State.UI.progressContainer.style.display = 'none';
             }
-            
+
             // Execute Button
             if (State.isExecuting) {
                 State.UI.execBtn.innerHTML = `🛑 停止挂机`;
@@ -2045,7 +2054,7 @@
             if (!url) return;
             const overlay = document.createElement('div'); overlay.className='fab-helper-overlay-v8';
             const styles={position:'absolute',top:'0',left:'0',width:'100%',height:'100%',background:'rgba(25,25,25,0.6)',zIndex:'10',display:'flex',justifyContent:'center',alignItems:'center',fontSize:'24px',fontWeight:'bold',backdropFilter:'blur(2px)',borderRadius:'inherit'};
-            
+
             // 改进基于会话的标记显示逻辑
             if (type==='owned' || State.sessionCompleted.has(url)) {
                 styles.color='#4caf50';  // 绿色
@@ -2056,7 +2065,7 @@
                 overlay.innerHTML='⏳';   // 等待标记
             }
             else return;
-            
+
             Object.assign(overlay.style,styles);
             const thumb=card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
             if (thumb) {if(getComputedStyle(thumb).position==='static')thumb.style.position='relative';thumb.appendChild(overlay);}
@@ -2082,10 +2091,10 @@
         toggleLogPanel: () => {
             // 切换折叠状态
             State.isLogCollapsed = !State.isLogCollapsed;
-            
+
             // 保存状态到localStorage
             localStorage.setItem('fab_helper_log_collapsed', State.isLogCollapsed);
-            
+
             // 找到切换按钮并更新图标和提示
             const logHeader = State.UI.logPanel.previousSibling;
             const toggleBtn = logHeader.querySelector('.fab-helper-icon-btn');
@@ -2093,7 +2102,7 @@
                 toggleBtn.innerHTML = State.isLogCollapsed ? '📂' : '📁';
                 toggleBtn.title = State.isLogCollapsed ? '展开日志' : '收起日志';
             }
-            
+
             // 更新日志面板高度和滚动行为
             State.UI.logPanel.style.height = State.isLogCollapsed ? '42px' : '200px';
             State.UI.logPanel.style.overflowY = State.isLogCollapsed ? 'hidden' : 'auto';
@@ -2104,12 +2113,12 @@
             const link = card.querySelector(Config.SELECTORS.cardLink);
             if (!link) return;
             const url = link.href.split('?')[0];
-            
+
             // 初始检查 - 如果卡片已经被标记为拥有，则隐藏它
             const initialCheck = () => {
                 const text = card.textContent || '';
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                
+
                 if (State.hideSaved && isNativelySaved) {
                     card.style.display = 'none';
                     // 这里也不应该直接修改计数，runHideOrShow 会统一处理
@@ -2117,19 +2126,19 @@
                 }
                 return false; // 卡片未被隐藏
             };
-            
+
             // 进行初始检查，但无论结果如何，都继续设置观察器
             initialCheck();
-            
+
             const obs = new MutationObserver((mutations) => {
                 // 检查文本变化，判断是否商品已被拥有
                 const text = card.textContent || '';
                 const isNowSaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                
+
                 if (isNowSaved) {
                     // 如果检测到"已保存"文本，将该 URL 添加到会话完成集合中
                     State.sessionCompleted.add(url);
-                    
+
                     // 更新 UI 显示（隐藏卡片或应用覆盖层）
                     if (State.hideSaved) {
                         card.style.display = 'none';
@@ -2138,15 +2147,15 @@
                     } else {
                         UI.applyOverlay(card, 'owned');
                     }
-                    
+
                     // 断开观察器连接，不再需要监听
                     obs.disconnect();
                 }
             });
-            
+
             // 监听卡片的文本变化，无论卡片当前是否被隐藏
             obs.observe(card, {childList: true, subtree: true, characterData: true});
-            
+
             // 设置超时，确保不会无限期监听
             setTimeout(() => obs.disconnect(), 15000);
         },
@@ -2170,7 +2179,7 @@
                             font-size: 18px; font-weight: 600; z-index: 10000;
                             box-shadow: 0 5px 15px rgba(0,0,0,0.3); text-align: center; line-height: 1.6;
                         `;
-                        
+
                         let countdown = 30;
                         const updateErrorBox = () => {
                             errorBox.innerHTML = `
@@ -2180,7 +2189,7 @@
                                 <b>页面将在 ${countdown} 秒后自动刷新...</b>
                             `;
                         };
-                        
+
                         updateErrorBox();
                         document.body.innerHTML = ''; // Clear the error JSON
                         document.body.appendChild(errorBox);
@@ -2210,7 +2219,7 @@
         State.isInitialized = true;
 
         Utils.detectLanguage();
-        
+
         // 这些模块不依赖UI，可以先初始化
         NetworkFilter.init();
         await Database.load();
@@ -2218,7 +2227,7 @@
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('workerId')) {
             TaskRunner.processDetailPage();
-            return; 
+            return;
         }
 
         // 必须先创建UI
@@ -2250,7 +2259,7 @@
         const mainObserver = new MutationObserver((mutations) => {
             let hasNewCards = false;
             let newCardsFound = [];
-            
+
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
                     mutation.addedNodes.forEach(node => {
@@ -2262,7 +2271,7 @@
                                 newCardsFound.push(node);
                                 UI.setupOwnershipObserver(node);
                             }
-                            
+
                             // Check if the added node contains new cards (e.g., a container was added)
                             const containedCards = node.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
                             if (containedCards.length > 0) {
@@ -2276,16 +2285,16 @@
                     });
                 }
             }
-            
+
             // This is the new, robust logic to prevent self-triggering loops.
             if (hasNewCards) {
                 // 1. Disconnect the observer so our own DOM changes don't trigger it again.
                 mainObserver.disconnect();
                 Utils.logger('info', `检测到 ${newCardsFound.length} 个新卡片, 暂停监视器进行处理...`);
-                
+
                 // 2. Run all our DOM-modifying logic.
                 UI.applyOverlaysToPage();
-                
+
                 // 3. Since runHideOrShow is async, we must wait for it to fully complete.
                 TaskRunner.runHideOrShow().then(() => {
                     // 4. Once complete, reconnect the observer to watch for new external changes.
@@ -2294,7 +2303,7 @@
                 });
             }
         });
-        
+
         mainObserver.observe(document.body, { childList: true, subtree: true });
 
         // Listen for changes from other tabs
@@ -2372,10 +2381,10 @@
                 if (success) {
                     State.executionCompletedTasks++;
                     State.sessionPursuitCompletedCount++; // Increment session counter for Smart Pursuit
-                    
+
                     if (task && task.url) {
-                        State.sessionCompleted.add(task.url.split('?')[0]); 
-                        UI.applyOverlaysToPage(); 
+                        State.sessionCompleted.add(task.url.split('?')[0]);
+                        UI.applyOverlaysToPage();
                     }
 
                     // --- Smart Pursuit Trigger ---
@@ -2383,7 +2392,7 @@
                     if (State.isSmartPursuitEnabled && State.sessionPursuitCompletedCount >= SMART_PURSUIT_THRESHOLD) {
                         Utils.logger('info', `[智能追击] 已完成 ${State.sessionPursuitCompletedCount} 个任务, 达到阈值! 自动触发新一轮扫描...`);
                         State.sessionPursuitCompletedCount = 0; // Reset counter for the next cycle
-                        
+
                         // Use a small timeout to allow the UI to update before starting the heavy task
                         setTimeout(async () => {
                             const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true, onlyVisible: false });
@@ -2407,14 +2416,14 @@
                 delete State.runningWorkers[workerId];
                 // This log now makes more sense as it comes AFTER the detailed log report.
                 Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}. Progress: ${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`);
-                
+
                 // Explicitly update UI to show progress immediately
                 UI.update();
-                
+
                 TaskRunner.executeBatch();
             }
         }));
-        
+
         // The old TASK listener is now obsolete and will be removed.
         const oldTaskListener = State.valueChangeListeners.find(l => l.key === Config.DB_KEYS.TASK);
         if (oldTaskListener) {
@@ -2443,11 +2452,11 @@
     });
 
     entryObserver.observe(document.body, { childList: true, subtree: true });
-    
+
     // Store the observer on a globally accessible object so we can disconnect it during hot-reload
     unsafeWindow.fabHelperEntryObserver = entryObserver;
     entryObserver.observe(document.body, { childList: true, subtree: true });
-    
+
     // Initial run when the script is first injected.
     State.lastKnownHref = window.location.href;
     // The initial cleanup function is minimal. `main` will define a more comprehensive one.
@@ -2474,7 +2483,7 @@
                     NetworkRecorder.log = [];
                 }
             }
-            
+
             // The global interceptor is now handled by PagePatcher to avoid conflicts.
             // NetworkRecorder is now a purely passive service.
             Utils.logger('info', 'Network flight recorder is active (passive mode).');
@@ -2482,11 +2491,11 @@
 
         recordRequest: (url, status, responseText = '') => {
             const now = Date.now();
-            
+
             const interval = NetworkRecorder.lastRequestTimestamp ? now - NetworkRecorder.lastRequestTimestamp : null;
             const tenSecondWindow = now - 10000;
             const density = NetworkRecorder.log.filter(r => r.timestamp > tenSecondWindow).length + 1;
-            
+
             NetworkRecorder.lastRequestTimestamp = now;
 
             let finalStatus = status;
@@ -2503,7 +2512,7 @@
                     }
                 } catch(e) {/* Can ignore parse errors for non-JSON responses */}
             }
-            
+
             const weight = url.match(/listing_ids/g)?.length || (url.includes('/i/listings/search') ? 24 : 0); // Search requests have an implicit weight
 
             const record = {
@@ -2521,7 +2530,7 @@
                 NetworkRecorder.log.shift();
             }
             localStorage.setItem(NetworkRecorder.DB_KEY, JSON.stringify(NetworkRecorder.log));
-            
+
             document.dispatchEvent(new CustomEvent('fab-network-update'));
 
             if (finalStatus === 429) {
@@ -2605,7 +2614,7 @@
             // 也设置一个定时器，作为"心跳"来保证UI的持续刷新。
             if (State.networkAnalyzerTimer) clearInterval(State.networkAnalyzerTimer);
             State.networkAnalyzerTimer = setInterval(NetworkAnalyzer.updateUI, 1000);
-            
+
             // Initial load: Force UI to update with data loaded from persistence
             NetworkAnalyzer.updateUI();
         }
@@ -2622,7 +2631,7 @@
             const shouldPatchUrl = (url) => {
                 // Gate 0: Basic URL type check
                 if (typeof url !== 'string') return false;
-                
+
                 // Log every potential candidate that isn't obviously wrong (like a local blob:)
                 if (url.startsWith('http')) {
                     // This log is too spammy, let's only log real candidates
@@ -2670,7 +2679,7 @@
                 }
                 return originalUrl; // Should not happen due to checks in shouldPatchUrl
             };
-            
+
             let lastSeenCursor = State.savedCursor;
             let secondToLastSeenCursor = null;
 
@@ -2679,7 +2688,7 @@
                     if (typeof url === 'string' && url.includes('/i/listings/search') && url.includes('cursor=')) {
                         const urlObj = new URL(url, window.location.origin);
                         const newCursor = urlObj.searchParams.get('cursor');
-                        
+
                         if (newCursor && newCursor !== lastSeenCursor) {
                             secondToLastSeenCursor = lastSeenCursor;
                             lastSeenCursor = newCursor;
@@ -2755,11 +2764,11 @@
                             NetworkRecorder.recordRequest(finalUrl, response.status, text);
                         });
                     }
-                    
+
                     return response;
                 };
             }
         }
     };
 
-})(); 
+})();
