@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.1.1
+// @version      3.2.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -127,6 +127,7 @@
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
         isLogCollapsed: localStorage.getItem('fab_helper_log_collapsed') === 'true' || false, // 日志面板折叠状态
+        hasRunDomPart: false,
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -2311,6 +2312,9 @@
 
     // 将所有依赖 DOM 的操作移到这里
     async function runDomDependentPart() {
+        if (State.hasRunDomPart) return;
+        State.hasRunDomPart = true;
+
         // The new, correct worker detection logic.
         // We check if a workerId is present in the URL. If so, it's a worker tab.
         const urlParams = new URLSearchParams(window.location.search);
@@ -2561,30 +2565,65 @@
                 UI.update();
             }
         }, 1000); // Refresh every second
+
+        setupGlobalListeners();
+        UI.create();
+        UI.update();
+        TaskRunner.runHideOrShow();
+
+        if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
+            Utils.logger('info', '[Auto-Resume] Page loaded in rate-limited state. Initiating recovery probe...');
+            TaskRunner.runRecoveryProbe();
+        }
+
+        // --- REGRESSION FIX: Re-implement the core MutationObserver ---
+        // This observer watches for new cards being added to the DOM by infinite scroll.
+        const observer = new MutationObserver((mutationsList) => {
+            let newCardsAdded = false;
+            for (const mutation of mutationsList) {
+                if (mutation.type === 'childList') {
+                    for (const node of mutation.addedNodes) {
+                        // Check if the added node is an element and if it's a card or contains a card.
+                        if (node.nodeType === 1 && (node.matches(Config.SELECTORS.card) || node.querySelector(Config.SELECTORS.card))) {
+                            newCardsAdded = true;
+                            break;
+                        }
+                    }
+                }
+                if (newCardsAdded) break;
+            }
+
+            if (newCardsAdded) {
+                Utils.logger('info', '[Observer] Detected new content from infinite scroll.');
+                // Always run the hide/show logic if the preference is set.
+                if (State.hideSaved) {
+                    TaskRunner.runHideOrShow();
+                }
+                // Only scan and add if the setting is enabled.
+                if (State.autoAddOnScroll) {
+                    const cards = document.querySelectorAll(Config.SELECTORS.card);
+                    TaskRunner.scanAndAddTasks(cards);
+                }
+            }
+        });
+
+        // Start observing the container that holds all the cards.
+        // Use a more generic selector to catch different page layouts.
+        try {
+            const mainContentContainer = await Utils.waitForElement('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container');
+             if (mainContentContainer) {
+                observer.observe(mainContentContainer, { childList: true, subtree: true });
+                Utils.logger('info', '✅ Core page observer is now active.');
+            } else {
+                Utils.logger('error', 'Could not find main content container to observe. Auto-add and auto-hide on scroll may not work.');
+            }
+        } catch(e) {
+             Utils.logger('error', 'Failed to start observer:', e.message);
+        }
     }
 
-    // --- Script Entry Point ---
-    // This is the final, robust, SPA-and-infinite-scroll-aware entry point.
-    // DEPRECATED SPA navigation handler, main() is now the entry point.
-    /*
-    const entryObserver = new MutationObserver(() => {
-        // We only re-initialize if the URL has actually changed.
-        if (window.location.href !== State.lastKnownHref) {
-            // A short debounce to handle rapid URL changes.
-            setTimeout(() => {
-                if (window.location.href !== State.lastKnownHref) {
-                    State.lastKnownHref = window.location.href;
-                    Utils.cleanup();
-                    main();
-                }
-            }, 250);
-        }
-    });
 
-    entryObserver.observe(document.body, { childList: true, subtree: true });
-    */
-
-    // Initial run when the script is first injected.
+    // This is the initial entry point. We wait for the DOM to be ready before doing anything complex.
     main();
 
 })();
