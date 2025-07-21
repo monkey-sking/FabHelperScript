@@ -3,12 +3,13 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.4
 // @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
 // @author       gpt-4 & user & Gemini
 // @match        https://www.fab.com/*
+// @run-at       document-start
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
@@ -42,7 +43,7 @@
             HIDE: 'fab_hideSaved_v8',
             AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
             REMEMBER_POS: 'fab_rememberPos_v8',
-            LAST_POS_URL: 'fab_lastPosition_v8',
+            LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             // All other keys are either session-based or for main-tab persistence.
         },
@@ -82,6 +83,7 @@
         autoAddOnScroll: false, // New state for the setting
         rememberScrollPosition: false, // New state for scroll position
         isTogglingSetting: false, // Debounce flag for settings toggles
+        savedCursor: null, // Holds the loaded cursor for hijacking
         showAdvanced: false,
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
@@ -364,93 +366,41 @@
     // --- 模块六: 网络请求过滤器 (Network Filter) ---
     const NetworkFilter = {
         init: () => {
-            if (typeof GM_webRequest === 'undefined') {
-                Utils.logger('warn', 'Network features disabled (GM_webRequest API not found).');
+            if (typeof GM_addValueChangeListener === 'undefined' || !State.rememberScrollPosition) {
+                 Utils.logger('info', '网络过滤器未激活 (功能关闭或API不可用)。');
                 return;
             }
+             Utils.logger('info', '网络过滤器初始化，用于保存浏览位置...');
 
-            Utils.logger('info', 'Initializing network filters...');
-
-            // Rule 1: Block non-essential resources for faster loading
-            try {
-                GM_webRequest(
-                    { selector: '*://*.fab.com/*', action: 'cancel' },
-                    (info, message, details) => {
-                        const resourceTypesToBlock = new Set(['image', 'media', 'font']);
-                        if (resourceTypesToBlock.has(details.type)) {
-                            return { cancel: true };
+            // 使用 GM_xmlhttpRequest 替代 fetch/XHR 补丁来监听网络请求
+            // 这是一种更可靠且非侵入性的方式
+            const originalXhr = GM_xmlhttpRequest;
+            unsafeWindow.GM_xmlhttpRequest = function(details) {
+                if (typeof details.url === 'string' && details.url.includes('/i/listings/search')) {
+                    const originalOnload = details.onload;
+                    details.onload = function(response) {
+                        if (response.status === 200) {
+                            try {
+                                const responseJson = JSON.parse(response.responseText);
+                                const nextUrl = responseJson.next;
+                                if (nextUrl) {
+                                    GM_setValue(Config.DB_KEYS.LAST_CURSOR, nextUrl);
+                                    Utils.logger('info', `[位置保存] 已保存下一页 URL: ${nextUrl.substring(0, 100)}...`);
+                                } else {
+                                    GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                                    Utils.logger('info', '[位置保存] 已到达列表末尾，清除位置。');
+                                }
+                            } catch (e) { /* 静默失败 */ }
                         }
-                    }
-                );
-            } catch (e) {
-                Utils.logger('error', 'Failed to initialize resource blocking filter:', e.message);
-            }
-
-            // Rule 2: Intercept search API to save cursor
-            try {
-                GM_webRequest({
-                    url: "https://www.fab.com/i/listings/search*",
-                    onload: function(response) {
-                        if (!State.rememberScrollPosition) return;
-                        Utils.logger('info', `[位置] 成功捕获 search API 请求！`);
-
-                        try {
-                            // The finalUrl is the *actual* URL used for the request, which represents the current page.
-                            const currentPositionUrl = response.finalUrl;
-                            if (currentPositionUrl) {
-                                GM_setValue(Config.DB_KEYS.LAST_POS_URL, currentPositionUrl);
-                                Utils.logger('info', `[位置] 已保存当前页URL: ${currentPositionUrl.substring(0, 100)}...`);
-                            }
-
-                            // We still need to check the response to see if we've reached the end.
-                            const responseJson = JSON.parse(response.responseText);
-                            if (!responseJson.next) {
-                                GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
-                                Utils.logger('info', '[位置] 已到达列表末尾，清除已保存的位置。');
-                            }
-                        } catch (e) {
-                            Utils.logger('error', '[位置] 解析API响应失败:', e.message);
+                        if (originalOnload) {
+                            originalOnload(response);
                         }
-                    }
-                });
-            } catch (e) {
-                Utils.logger('error', 'Failed to initialize cursor saving filter:', e.message);
-            }
-        }
-    };
-
-    const MonkeyPatcher = {
-        init: () => {
-            if (!State.rememberScrollPosition) return;
-            Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
-
-            const originalSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.send = function(...args) {
-                this.addEventListener('readystatechange', () => {
-                    if (this.readyState === 4 && this.responseURL.includes('/i/listings/search')) {
-                        Utils.logger('info', `[补丁] 捕获 search API 响应！`);
-                        try {
-                            const currentPositionUrl = this.responseURL;
-                            if (currentPositionUrl) {
-                                GM_setValue(Config.DB_KEYS.LAST_POS_URL, currentPositionUrl);
-                                Utils.logger('info', `[补丁] 已保存当前页URL: ${currentPositionUrl.substring(0, 100)}...`);
-                            }
-
-                            const responseJson = JSON.parse(this.responseText);
-                            if (!responseJson.next) {
-                                GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
-                                Utils.logger('info', '[补丁] 已到达列表末尾，清除已保存的位置。');
-                            }
-                        } catch (e) {
-                            Utils.logger('error', '[补丁] 解析API响应失败:', e.message);
-                        }
-                    }
-                });
-                return originalSend.apply(this, args);
+                    };
+                }
+                return originalXhr(details);
             };
         }
     };
-
 
     // --- 模块七: 任务运行器与事件处理 (Task Runner & Event Handlers) ---
     const TaskRunner = {
@@ -596,7 +546,7 @@
             Utils.logger('info', `记住瀑布流浏览位置功能已 ${State.rememberScrollPosition ? '开启' : '关闭'}.`);
 
             if (!State.rememberScrollPosition) {
-                await GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
+                await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
                 Utils.logger('info', '已清除已保存的浏览位置。');
             }
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
@@ -1776,30 +1726,51 @@
 
         Utils.detectLanguage();
         await Database.load();
-        
-        // --- Restore Position Logic (runs before anything else) ---
-        Utils.logger('info', '[位置] 检查是否需要恢复位置...');
+
+        // --- 位置恢复逻辑 ---
         if (State.rememberScrollPosition) {
-            Utils.logger('info', `[位置] 功能已开启。正在读取已保存的URL...`);
-            const savedUrl = await GM_getValue(Config.DB_KEYS.LAST_POS_URL);
-            Utils.logger('info', `[位置] 读取到URL: ${savedUrl || '无'}`);
-            // Check if we have a saved URL and if the current page is a "base" page (no cursor)
-            if (savedUrl && !window.location.search.includes('cursor=')) {
-                Utils.logger('info', '[位置] 条件满足，正在跳转...');
-                window.location.href = savedUrl;
-                return; // Stop further execution to allow the page to redirect.
-            } else {
-                 Utils.logger('info', '[位置] 条件不满足 (可能无已存URL，或当前已在带cursor的页面)，跳过跳转。');
+            const savedUrl = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
+            const currentUrl = window.location.href;
+
+            // 如果有保存的URL，且当前URL不包含cursor（防止刷新循环）
+            if (savedUrl && !currentUrl.includes('cursor=')) {
+                Utils.logger('info', `[位置恢复] 发现已保存的位置: ${savedUrl.substring(0, 150)}...`);
+                Utils.logger('info', `[位置恢复] 正在重载页面以应用...`);
+                // 直接用保存的URL替换当前页面，服务器会返回对应cursor的内容
+                window.location.replace(savedUrl);
+                // 脚本将在这个重定向的页面上重新执行，但因为URL已包含cursor，不会再次进入此逻辑。
+                return; // 终止当前脚本的后续执行
             }
-        } else {
-            Utils.logger('info', '[位置] 功能未开启，跳过。');
+             Utils.logger('info', `[位置恢复] 无需恢复位置 (已在目标位置或无保存点)。`);
         }
 
-        // Apply Monkey Patch if needed, it runs independently.
-        MonkeyPatcher.init();
-        // Initialize the network filter as early as possible.
+        // --- 后续初始化 ---
+        // 由于脚本在 document-start 运行，UI 相关的操作必须等待 DOM 加载完成
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', runDomDependentPart);
+        } else {
+            runDomDependentPart();
+        }
+
+        // 只有在功能开启时才应用补丁
+        // MonkeyPatcher.init(); // 已废弃
+
+        // 初始化网络过滤器，现在只负责保存位置
         NetworkFilter.init();
 
+        // Load the saved cursor into state before any other script logic
+        if (State.rememberScrollPosition) {
+            // 读取保存的纯净 cursor 字符串
+            State.savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
+            Utils.logger('info', `[位置] 读取到已保存的cursor: ${State.savedCursor || '无'}`);
+
+            // 只有在功能开启时才应用补丁
+            MonkeyPatcher.init();
+        }
+    }
+
+    // 将所有依赖 DOM 的操作移到这里
+    function runDomDependentPart() {
         // The new, correct worker detection logic.
         // We check if a workerId is present in the URL. If so, it's a worker tab.
         const urlParams = new URLSearchParams(window.location.search);
@@ -1818,14 +1789,6 @@
         if (!State.UI.container) {
              Utils.logger('info', 'UI container not found, skipping remaining setup for this page.');
              return;
-        }
-
-        // NEW: Immediately reflect saved recon progress in the UI on load.
-        const savedNextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
-        if (savedNextUrl && State.UI.reconProgressDisplay) {
-            const displayPage = Utils.getDisplayPageFromUrl(savedNextUrl);
-            State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
-            Utils.logger('info', `Found saved recon progress. Ready to resume.`);
         }
 
         UI.applyOverlaysToPage();
@@ -1860,14 +1823,14 @@
 
                     if (newCardNodes.length > 0) {
                         // Always run visual updates for new cards
-                        UI.applyOverlaysToPage();
-                        TaskRunner.runHideOrShow();
+                                UI.applyOverlaysToPage();
+                                TaskRunner.runHideOrShow();
 
                         // Conditionally scan for tasks if auto-add is on
                         if (State.isExecuting && State.autoAddOnScroll) {
                             TaskRunner.scanAndAddTasks(newCardNodes);
+                            }
                         }
-                    }
                 }
             }
         });
@@ -1949,9 +1912,11 @@
             State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
         }
     }
-
+    
     // --- Script Entry Point ---
     // This is the final, robust, SPA-and-infinite-scroll-aware entry point.
+    // DEPRECATED SPA navigation handler, main() is now the entry point.
+    /*
     const entryObserver = new MutationObserver(() => {
         // We only re-initialize if the URL has actually changed.
         if (window.location.href !== State.lastKnownHref) {
@@ -1967,14 +1932,9 @@
     });
 
     entryObserver.observe(document.body, { childList: true, subtree: true });
+    */
 
     // Initial run when the script is first injected.
-    State.lastKnownHref = window.location.href;
-    Utils.cleanup = () => {
-        if (State.watchdogTimer) clearInterval(State.watchdogTimer);
-        State.valueChangeListeners.forEach(id => GM_removeValueChangeListener(id));
-        State.valueChangeListeners = [];
-    };
     main();
 
 })();
