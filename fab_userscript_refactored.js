@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.3.0
+// @version      2.3.2
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1371,6 +1371,10 @@
                     font-size: 14px;
                     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
                 }
+                /* FINAL FIX: Apply a robust box model to all elements within the container */
+                #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
+                    box-sizing: border-box;
+                }
                 .fab-helper-tabs {
                     display: flex;
                     border-bottom: 1px solid var(--border-color);
@@ -1399,10 +1403,11 @@
                     padding: 12px;
                 }
                 .fab-helper-status-bar {
-                    display: flex; /* FIX: Change from grid to flex for wrapping */
-                    flex-wrap: wrap; /* FIX: Allow items to wrap to a new line */
+                    display: flex;
+                    flex-wrap: wrap;
                     gap: 6px;
-                    margin-bottom: 12px;
+                    /* REMOVED: No longer needed at the bottom of the log */
+                    /* margin-bottom: 12px; */
                 }
                 .fab-helper-status-item {
                     background: var(--dark-gray);
@@ -1417,7 +1422,7 @@
                     gap: 2px;
                     min-width: 0;
                     flex-grow: 1;
-                    /* FINAL FIX: Use a precise formula to calculate the basis */
+                    /* This formula is now correct thanks to box-sizing: border-box */
                     flex-basis: calc((100% - 12px) / 3); /* (100% width - 2*6px gap) / 3 columns */
                 }
                 .fab-helper-status-label {
@@ -1483,8 +1488,9 @@
                 }
                 .fab-log-container {
                     padding: 0 12px 12px 12px;
-                    border-top: 1px solid var(--border-color);
-                    margin-top: 12px;
+                    /* FIX: Swapped border and margin from top to bottom */
+                    border-bottom: 1px solid var(--border-color);
+                    margin-bottom: 12px;
                 }
                 .fab-log-header {
                     display: flex;
@@ -1655,9 +1661,8 @@
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
 
             actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
-            dashboardContent.append(statusBar, State.UI.execBtn, actionButtons);
-
-            // --- Log Panel (moved to Dashboard) ---
+            
+            // --- Log Panel (created before other elements to be appended first) ---
             const logContainer = document.createElement('div');
             logContainer.className = 'fab-log-container';
 
@@ -1691,7 +1696,9 @@
             State.UI.logPanel.id = Config.UI_LOG_ID;
             
             logContainer.append(logHeader, State.UI.logPanel);
-            dashboardContent.appendChild(logContainer); // Append log to dashboard
+            
+            // Reorder elements for the new layout: Log first, then status, then buttons
+            dashboardContent.append(logContainer, statusBar, State.UI.execBtn, actionButtons);
 
             container.appendChild(dashboardContent);
 
