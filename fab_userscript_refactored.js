@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.5.0
+// @version      2.6.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -41,6 +41,7 @@
             REMEMBER_POS: 'fab_rememberPos_v8',
             LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
+            APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -82,6 +83,12 @@
         rememberScrollPosition: false, // New state for scroll position
         isTogglingSetting: false, // Debounce flag for settings toggles
         savedCursor: null, // Holds the loaded cursor for hijacking
+        // --- NEW: State for 429 monitoring ---
+        appStatus: 'NORMAL', // 'NORMAL' or 'RATE_LIMITED'
+        rateLimitStartTime: null,
+        normalStartTime: Date.now(),
+        successfulSearchCount: 0,
+        // --- End New State ---
         showAdvanced: false,
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
@@ -294,6 +301,15 @@
             State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
             State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
             State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
+
+            const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+            if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
+                State.appStatus = 'RATE_LIMITED';
+                State.rateLimitStartTime = persistedStatus.startTime;
+                const previousDuration = ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2);
+                Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
+            }
+
             Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
         // saveTodo is no longer needed as the todo list is not persisted across sessions.
@@ -428,6 +444,38 @@
             Utils.logger('info', '[PagePatcher] Network interceptors applied.');
         },
 
+        handleSearchResponse(request) {
+            if (request.status === 429) {
+                if (State.appStatus === 'NORMAL') {
+                    const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+                    Utils.logger('error', `🚨 RATE LIMIT DETECTED! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
+                    
+                    State.appStatus = 'RATE_LIMITED';
+                    State.rateLimitStartTime = Date.now();
+                    
+                    GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime }).then(() => {
+                        Utils.logger('info', 'Refreshing page to try and clear rate limit...');
+                        setTimeout(() => location.reload(), 1500); // 1.5s delay before reload
+                    });
+                }
+            } else if (request.status >= 200 && request.status < 300) {
+                if (State.appStatus === 'RATE_LIMITED') {
+                    const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+                    Utils.logger('info', `✅ Rate limit appears to be lifted. The 429 period lasted ${rateLimitDuration}s.`);
+
+                    State.appStatus = 'NORMAL';
+                    State.rateLimitStartTime = null;
+                    State.normalStartTime = Date.now();
+                    State.successfulSearchCount = 0;
+                    GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+                }
+                
+                if (State.appStatus === 'NORMAL') {
+                    State.successfulSearchCount++;
+                }
+            }
+        },
+
         isDebounceableSearch(url) {
             return typeof url === 'string' && url.includes('/i/listings/search') && !url.includes('aggregate_on=') && !url.includes('count=0');
         },
@@ -479,6 +527,20 @@
         applyPatches() {
             const self = this;
             const originalXhrOpen = XMLHttpRequest.prototype.open;
+            const originalXhrSend = XMLHttpRequest.prototype.send;
+
+            const listenerAwareSend = function(...args) {
+                const request = this;
+                if (self.isDebounceableSearch(request._url)) {
+                    const onLoad = () => {
+                        request.removeEventListener("load", onLoad);
+                        self.handleSearchResponse(request);
+                    };
+                    request.addEventListener("load", onLoad);
+                }
+                return originalXhrSend.apply(request, args);
+            };
+            
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
                 let modifiedUrl = url;
                 // Priority 1: Handle the "remember position" patch, which should not be debounced.
@@ -499,11 +561,11 @@
                 return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
             };
 
-            const originalXhrSend = XMLHttpRequest.prototype.send;
             XMLHttpRequest.prototype.send = function(...args) {
                 // If this is not a request we need to debounce, send it immediately.
                 if (!this._isDebouncedSearch) {
-                    return originalXhrSend.apply(this, args);
+                    // Still use the wrapper to catch responses for non-debounced search requests
+                    return listenerAwareSend.apply(this, args);
                 }
 
                 Utils.logger('info', `[PagePatcher] 🚦 Intercepted scroll request. Debouncing...`);
@@ -522,7 +584,7 @@
                 // Set a timer to send the latest request after a period of inactivity.
                 self._debounceXhrTimer = setTimeout(() => {
                     Utils.logger('info', `[PagePatcher] ▶️ Sending latest scroll request: ${this._url}`);
-                    originalXhrSend.apply(self._pendingXhr, args);
+                    listenerAwareSend.apply(self._pendingXhr, args);
                     self._pendingXhr = null; // Clear after sending
                 }, 350); // 350ms debounce window
             };
