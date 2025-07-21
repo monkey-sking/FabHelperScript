@@ -3,7 +3,7 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      2.0.0
 // @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
@@ -30,16 +30,19 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v1.0.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v2.0.0]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 3, // Maximum number of concurrent worker tabs
-        UI_CONTAINER_ID: 'fab-helper-container-v8',
-        UI_LOG_ID: 'fab-helper-log-v8',
+        UI_CONTAINER_ID: 'fab-helper-container-v2',
+        UI_LOG_ID: 'fab-helper-log-v2',
         DB_KEYS: {
             DONE: 'fab_doneList_v8',
             FAILED: 'fab_failedList_v8', // For items that failed processing
             HIDE: 'fab_hideSaved_v8',
+            AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
+            REMEMBER_POS: 'fab_rememberPos_v8',
+            LAST_POS_URL: 'fab_lastPosition_v8',
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             // All other keys are either session-based or for main-tab persistence.
         },
@@ -51,8 +54,8 @@
             successBanner: 'div[class*="Toast-root"]'
         },
         TEXTS: {
-            en: { hide: 'Hide', show: 'Show', recon: 'Recon', reconning: 'Reconning...', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', added: 'Added', failed: 'Failed', todo: 'To-Do', clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!', refresh: 'Refresh State', resetRecon: 'Reset Recon', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_recon_start: 'Starting scan for new items...', log_recon_end: 'Scan complete!', log_task_added: 'Found new item:', log_api_request: 'Requesting page data (Page: %page%). Scanned: %scanned%, Owned: %owned%...', log_api_owned_check: 'Checking ownership for %count% items...', log_api_owned_done: 'Ownership check complete. Found %newCount% new items.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_429_error: 'Request limit hit! Taking a 15s break...', log_recon_error: 'An error occurred during recon cycle:', goto_page_label: 'Page:', goto_page_btn: 'Go', retry_failed: 'Retry Failed' },
-            zh: { hide: '隐藏', show: '显示', recon: '侦察', reconning: '侦察中...', execute: '启动任务', executing: '执行中...', stopExecute: '停止', added: '已添加', failed: '失败', todo: '待办', clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!', refresh: '刷新状态', resetRecon: '重置进度', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '"待办"清单是空的。', log_recon_start: '开始扫描新宝贝...', log_recon_end: '扫描完成！', log_task_added: '发现一个新宝贝:', log_api_request: '正在请求页面数据 (页码: %page%)。已扫描: %scanned%，已拥有: %owned%...', log_api_owned_check: '正在批量验证 %count% 个项目的所有权...', log_api_owned_done: '所有权验证完毕，发现 %newCount% 个全新项目！', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', log_recon_error: '侦察周期中发生严重错误：', goto_page_label: '页码:', goto_page_btn: '跳转', retry_failed: '重试失败' }
+            en: { hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_429_error: 'Request limit hit! Taking a 15s break...', goto_page_label: 'Page:', goto_page_btn: 'Go', tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug' },
+            zh: { hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止', added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '"待办"清单是空的。', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', goto_page_label: '页码:', goto_page_btn: '跳转', tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试' }
         },
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
         OWNED_SUCCESS_CRITERIA: {
@@ -76,6 +79,9 @@
         isExecuting: false,
         isReconning: false,
         hideSaved: false,
+        autoAddOnScroll: false, // New state for the setting
+        rememberScrollPosition: false, // New state for scroll position
+        isTogglingSetting: false, // Debounce flag for settings toggles
         showAdvanced: false,
         activeWorkers: 0,
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
@@ -91,20 +97,19 @@
         UI: {
             container: null,
             logPanel: null,
-            progressContainer: null, // NEW
-            progressText: null, // NEW
-            progressBarFill: null, // NEW
+            tabs: {}, // For tab buttons
+            tabContents: {}, // For tab content panels
+            progressContainer: null,
+            progressText: null,
+            progressBarFill: null,
             progressBar: null,
             statusTodo: null,
             statusDone: null,
             statusFailed: null,
+            statusHidden: null,
             execBtn: null,
             hideBtn: null,
-            reconBtn: null,
-            retryBtn: null,
-            refreshBtn: null,
-            resetReconBtn: null,
-            reconProgressDisplay: null,
+            syncBtn: null,
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -261,12 +266,16 @@
             State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
             State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
             State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
+            State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
+            State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
             Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
         // saveTodo is no longer needed as the todo list is not persisted across sessions.
         saveDone: () => GM_setValue(Config.DB_KEYS.DONE, State.db.done),
         saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
+        saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
+        saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
 
         resetAllData: async () => {
             if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败列表）吗？待办列表也会被清空。此操作不可逆！')) {
@@ -285,6 +294,11 @@
         isDone: (url) => {
             if (!url) return false;
             return State.db.done.includes(url.split('?')[0]);
+        },
+        isFailed: (url) => {
+            if (!url) return false;
+            const cleanUrl = url.split('?')[0];
+            return State.db.failed.some(task => task.url === cleanUrl);
         },
         isTodo: (url) => {
              if (!url) return false;
@@ -350,37 +364,90 @@
     // --- 模块六: 网络请求过滤器 (Network Filter) ---
     const NetworkFilter = {
         init: () => {
-            // This feature requires Tampermonkey v4.12+ or a manager supporting GM_webRequest.
             if (typeof GM_webRequest === 'undefined') {
-                Utils.logger('warn', 'Resource blocking is disabled (GM_webRequest API not found).');
+                Utils.logger('warn', 'Network features disabled (GM_webRequest API not found).');
                 return;
             }
 
-            Utils.logger('info', 'Initializing domain-specific network filter for fab.com.');
+            Utils.logger('info', 'Initializing network filters...');
 
-            const resourceTypesToBlock = new Set(['image', 'media', 'font']);
-
+            // Rule 1: Block non-essential resources for faster loading
             try {
                 GM_webRequest(
-                    [
-                        // Rule #6: This selector is now domain-specific. It will only match requests
-                        // to fab.com and its subdomains (like www.fab.com, cdn.fab.com, etc.).
-                        { selector: '*://*.fab.com/*', action: 'cancel' }
-                    ],
+                    { selector: '*://*.fab.com/*', action: 'cancel' },
                     (info, message, details) => {
-                        // Because the selector already filtered by domain, we only need to check the type.
+                        const resourceTypesToBlock = new Set(['image', 'media', 'font']);
                         if (resourceTypesToBlock.has(details.type)) {
-                            // Add logging for transparency, so the user knows the filter is working.
-                            Utils.logger('info', `Blocking resource [${details.type}]: ${details.url}`);
-                            // Cancel the request if its type is in our block set.
                             return { cancel: true };
                         }
-                        // For any other request type to fab.com (like 'script', 'xhr'), we do nothing.
                     }
                 );
             } catch (e) {
-                 Utils.logger('error', 'Failed to initialize GM_webRequest filter:', e.message);
+                Utils.logger('error', 'Failed to initialize resource blocking filter:', e.message);
             }
+
+            // Rule 2: Intercept search API to save cursor
+            try {
+                GM_webRequest({
+                    url: "https://www.fab.com/i/listings/search*",
+                    onload: function(response) {
+                        if (!State.rememberScrollPosition) return;
+                        Utils.logger('info', `[位置] 成功捕获 search API 请求！`);
+
+                        try {
+                            // The finalUrl is the *actual* URL used for the request, which represents the current page.
+                            const currentPositionUrl = response.finalUrl;
+                            if (currentPositionUrl) {
+                                GM_setValue(Config.DB_KEYS.LAST_POS_URL, currentPositionUrl);
+                                Utils.logger('info', `[位置] 已保存当前页URL: ${currentPositionUrl.substring(0, 100)}...`);
+                            }
+
+                            // We still need to check the response to see if we've reached the end.
+                            const responseJson = JSON.parse(response.responseText);
+                            if (!responseJson.next) {
+                                GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
+                                Utils.logger('info', '[位置] 已到达列表末尾，清除已保存的位置。');
+                            }
+                        } catch (e) {
+                            Utils.logger('error', '[位置] 解析API响应失败:', e.message);
+                        }
+                    }
+                });
+            } catch (e) {
+                Utils.logger('error', 'Failed to initialize cursor saving filter:', e.message);
+            }
+        }
+    };
+
+    const MonkeyPatcher = {
+        init: () => {
+            if (!State.rememberScrollPosition) return;
+            Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
+
+            const originalSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.send = function(...args) {
+                this.addEventListener('readystatechange', () => {
+                    if (this.readyState === 4 && this.responseURL.includes('/i/listings/search')) {
+                        Utils.logger('info', `[补丁] 捕获 search API 响应！`);
+                        try {
+                            const currentPositionUrl = this.responseURL;
+                            if (currentPositionUrl) {
+                                GM_setValue(Config.DB_KEYS.LAST_POS_URL, currentPositionUrl);
+                                Utils.logger('info', `[补丁] 已保存当前页URL: ${currentPositionUrl.substring(0, 100)}...`);
+                            }
+
+                            const responseJson = JSON.parse(this.responseText);
+                            if (!responseJson.next) {
+                                GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
+                                Utils.logger('info', '[补丁] 已到达列表末尾，清除已保存的位置。');
+                            }
+                        } catch (e) {
+                            Utils.logger('error', '[补丁] 解析API响应失败:', e.message);
+                        }
+                    }
+                });
+                return originalSend.apply(this, args);
+            };
         }
     };
 
@@ -388,24 +455,69 @@
     // --- 模块七: 任务运行器与事件处理 (Task Runner & Event Handlers) ---
     const TaskRunner = {
         // --- Toggles ---
-        toggleRecon: async () => {
-            State.isReconning = !State.isReconning;
-            UI.update();
-            if (State.isReconning) {
-                State.totalTasks = 0;
-                State.completedTasks = 0;
-                Utils.logger('info', Utils.getText('log_recon_start'));
-                const nextUrl = await GM_getValue(Config.DB_KEYS.NEXT_URL, null);
-                if (nextUrl) {
-                    Utils.logger('info', `Resuming recon from saved URL.`);
-                }
-                TaskRunner.reconWithApi(nextUrl);
+        // This is the new main execution function, triggered by the "一键开刷" button.
+        toggleExecution: () => {
+            if (State.isExecuting) {
+                // If it's running, stop it.
+                State.isExecuting = false;
+                State.runningWorkers = {};
+                State.activeWorkers = 0;
+                State.executionTotalTasks = 0;
+                State.executionCompletedTasks = 0;
+                State.executionFailedTasks = 0;
+                Utils.logger('info', '执行已由用户手动停止。');
             } else {
-                Utils.logger('info', 'Reconnaissance stopped by user.');
+                // If it's not running, scan the current page and start.
+                const cards = document.querySelectorAll(Config.SELECTORS.card);
+                const newlyAddedList = [];
+                let alreadyInQueueCount = 0;
+                let ownedCount = 0;
+
+                cards.forEach(card => {
+                    const link = card.querySelector(Config.SELECTORS.cardLink);
+                    const url = link ? link.href.split('?')[0] : null;
+                    if (!url) return;
+
+                    // Check if visibly owned, in the DB, or completed this session
+                    const cardText = card.textContent || '';
+                    const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+                    const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
+                    if (isOwned) {
+                        ownedCount++;
+                        return;
+                    }
+
+                    // Check if already in todo or failed lists
+                    const isTodo = Database.isTodo(url);
+                    const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
+                    if (isTodo || isFailed) {
+                        alreadyInQueueCount++;
+                        return;
+                    }
+
+                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                });
+
+                if (newlyAddedList.length > 0) {
+                    State.db.todo.push(...newlyAddedList);
+                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+                }
+
+                const actionableCount = State.db.todo.length;
+                if (actionableCount > 0) {
+                    if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
+                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
+                    }
+                    TaskRunner.startExecution();
+                } else {
+                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+                }
             }
+            UI.update();
         },
-        // This is now the dedicated function for starting the execution loop.
-        // It ensures the main page never navigates away.
+
+        // This function starts the execution loop without scanning.
         startExecution: () => {
             // Case 1: Execution is already running. We just need to update the total task count.
             if (State.isExecuting) {
@@ -423,7 +535,7 @@
 
             // Case 2: Starting a new execution from an idle state.
             if (State.db.todo.length === 0) {
-                Utils.logger('info', '"待办"清单是空的，无需启动。');
+                Utils.logger('info', Utils.getText('log_exec_no_tasks'));
                 return;
             }
             Utils.logger('info', `队列中有 ${State.db.todo.length} 个任务，即将开始执行...`);
@@ -436,6 +548,8 @@
         },
 
         // This function is for the main UI button to toggle start/stop.
+        // OBSOLETE - merged into toggleExecution
+        /*
         toggleExecution: () => {
             if (State.isExecuting) {
                 State.isExecuting = false;
@@ -454,10 +568,38 @@
             }
             UI.update();
         },
+        */
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
             await Database.saveHidePref();
             TaskRunner.runHideOrShow();
+        },
+
+        toggleAutoAdd: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.autoAddOnScroll = !State.autoAddOnScroll;
+            await Database.saveAutoAddPref();
+            Utils.logger('info', `无限滚动自动添加任务已 ${State.autoAddOnScroll ? '开启' : '关闭'}.`);
+            // No need to call UI.update() as the visual state is handled by the component itself.
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+
+        toggleRememberPosition: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.rememberScrollPosition = !State.rememberScrollPosition;
+            await Database.saveRememberPosPref();
+            Utils.logger('info', `记住瀑布流浏览位置功能已 ${State.rememberScrollPosition ? '开启' : '关闭'}.`);
+
+            if (!State.rememberScrollPosition) {
+                await GM_deleteValue(Config.DB_KEYS.LAST_POS_URL);
+                Utils.logger('info', '已清除已保存的浏览位置。');
+            }
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
 
         resetReconProgress: async () => {
@@ -1030,12 +1172,11 @@
 
                 // 检查是否由网站原生标记为已保存
                 const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-
-                // 检查是否在本次会话中已经完成
-                const isSessionCompleted = State.sessionCompleted.has(url);
+                const isFailed = Database.isFailed(url);
+                const isDone = Database.isDone(url);
 
                 // 如果设置为隐藏已保存项目，并且项目是已保存的或在本次会话中完成的
-                if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
+                if (State.hideSaved && (isNativelySaved || isDone || isFailed)) {
                     card.style.display = 'none';
                     State.hiddenThisPageCount++;
                 } else {
@@ -1043,6 +1184,48 @@
                 }
             });
             UI.update();
+        },
+
+        scanAndAddTasks: (cards) => {
+            const newlyAddedList = [];
+            let alreadyInQueueCount = 0;
+            let ownedCount = 0;
+
+            cards.forEach(card => {
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                const url = link ? link.href.split('?')[0] : null;
+                if (!url) return;
+
+                // Check if visibly owned, in the DB, or completed this session
+                const cardText = card.textContent || '';
+                const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+                const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
+                if (isOwned) {
+                    ownedCount++;
+                    return;
+                }
+
+                // Check if already in todo or failed lists
+                const isTodo = Database.isTodo(url);
+                const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
+                if (isTodo || isFailed) {
+                    alreadyInQueueCount++;
+                    return;
+                }
+
+                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+            });
+
+            if (newlyAddedList.length > 0) {
+                State.db.todo.push(...newlyAddedList);
+                Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
+                // If execution is running, we need to update the total task count
+                if (State.isExecuting) {
+                    State.executionTotalTasks += newlyAddedList.length;
+                    UI.update();
+                }
+            }
         },
     };
 
@@ -1074,15 +1257,16 @@
             // --- Style Injection ---
             const styles = `
                 :root {
-                    --bg-color: rgba(28, 28, 30, 0.7);
-                    --border-color: rgba(255, 255, 255, 0.1);
+                    --bg-color: rgba(28, 28, 30, 0.9);
+                    --border-color: rgba(255, 255, 255, 0.15);
                     --text-color-primary: #f5f5f7;
                     --text-color-secondary: #a0a0a5;
-                    --radius-l: 16px;
-                    --radius-m: 10px;
-                    --radius-s: 8px;
+                    --radius-l: 12px;
+                    --radius-m: 8px;
+                    --radius-s: 6px;
                     --blue: #007aff; --pink: #ff2d55; --green: #34c759;
-                    --orange: #ff9500; --gray: #8e8e93; --dark-gray: #555;
+                    --orange: #ff9500; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                    --blue-bg: rgba(0, 122, 255, 0.2);
                 }
                 #${Config.UI_CONTAINER_ID} {
                     position: fixed;
@@ -1090,87 +1274,192 @@
                     right: 20px;
                     z-index: 9999;
                     background: var(--bg-color);
-                    backdrop-filter: blur(12px) saturate(1.5);
+                    backdrop-filter: blur(15px) saturate(1.8);
+                    -webkit-backdrop-filter: blur(15px) saturate(1.8);
                     border: 1px solid var(--border-color);
                     border-radius: var(--radius-l);
                     color: var(--text-color-primary);
                     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 12px;
-                    padding: 12px;
                     width: 300px;
                     font-size: 14px;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
                 }
-                .fab-helper-header, .fab-helper-row {
+                .fab-helper-tabs {
                     display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    gap: 8px;
+                    border-bottom: 1px solid var(--border-color);
                 }
-                .fab-helper-header h2 {
-                    font-size: 16px; font-weight: 600; margin: 0;
+                .fab-helper-tabs button {
+                    flex: 1;
+                    padding: 10px 0;
+                    font-size: 14px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    background: transparent;
+                    border: none;
+                    color: var(--text-color-secondary);
+                    transition: color 0.2s, border-bottom 0.2s;
+                    border-bottom: 2px solid transparent;
                 }
-                .fab-helper-icon-btn {
-                    background: transparent; border: none; color: var(--text-color-secondary);
-                    cursor: pointer; padding: 4px; font-size: 18px; line-height: 1;
+                .fab-helper-tabs button.active {
+                    color: var(--text-color-primary);
+                    border-bottom: 2px solid var(--blue);
+                }
+                .fab-helper-tab-content {
+                    padding: 12px;
                 }
                 .fab-helper-status-bar {
-                    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+                    display: grid;
+                    grid-template-columns: repeat(4, 1fr);
+                    gap: 8px;
+                    margin-bottom: 12px;
                 }
                 .fab-helper-status-item {
-                    background: rgba(255, 255, 255, 0.1); padding: 6px;
-                    border-radius: var(--radius-s); font-size: 11px; text-align: center;
+                    background: var(--dark-gray);
+                    padding: 8px;
+                    border-radius: var(--radius-m);
+                    font-size: 11px;
+                    text-align: center;
                     color: var(--text-color-secondary);
                 }
                 .fab-helper-status-item span {
-                    display: block; font-size: 16px; font-weight: 600; color: #fff;
+                    display: block;
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: #fff;
+                    margin-top: 2px;
                 }
-                #${Config.UI_CONTAINER_ID} button {
-                    border: none; border-radius: var(--radius-m); padding: 10px 14px;
-                    font-size: 14px; font-weight: 500; cursor: pointer;
-                    transition: all 0.2s; color: #fff; flex-grow: 1;
+                .fab-helper-execute-btn {
+                    width: 100%;
+                    border: none;
+                    border-radius: var(--radius-m);
+                    padding: 12px 14px;
+                    font-size: 16px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                    color: #fff;
+                    background: var(--blue);
+                    margin-bottom: 12px;
                 }
-                .fab-helper-btn-section {
-                    display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;
+                .fab-helper-execute-btn.executing {
+                    background: var(--pink);
                 }
-                .fab-helper-section-title {
-                    font-size: 13px; color: var(--text-color-secondary); font-weight: 600; margin: 8px 0 4px 0; letter-spacing: 1px;
+                .fab-helper-actions {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 8px;
                 }
-                .fab-helper-divider {
-                    border: none; border-top: 1px solid var(--border-color); margin: 8px 0;
+                .fab-helper-actions button {
+                    background: var(--dark-gray);
+                    border: none;
+                    border-radius: var(--radius-m);
+                    color: var(--text-color-primary);
+                    padding: 8px;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                }
+                .fab-helper-actions button:hover {
+                    background: #4a4a4c;
+                }
+                .fab-log-container {
+                    padding: 0 12px 12px 12px;
+                    border-top: 1px solid var(--border-color);
+                    margin-top: 12px;
+                }
+                .fab-log-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 8px;
+                    margin-top: 8px;
+                }
+                .fab-log-header span {
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--text-color-secondary);
+                }
+                .fab-log-controls button {
+                    background: transparent;
+                    border: none;
+                    color: var(--text-color-secondary);
+                    cursor: pointer;
+                    padding: 4px;
+                    font-size: 18px;
+                    line-height: 1;
+                }
+                #${Config.UI_LOG_ID} {
+                    background: rgba(10,10,10,0.85);
+                    color: #ddd;
+                    font-size: 11px;
+                    line-height: 1.4;
+                    padding: 8px;
+                    border-radius: var(--radius-m);
+                    max-height: 150px;
+                    overflow-y: auto;
+                    min-height: 50px;
+                    display: flex;
+                    flex-direction: column-reverse;
+                    box-shadow: inset 0 1px 4px rgba(0,0,0,0.2);
                 }
                 @keyframes fab-pulse {
-                    0% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0.7); }
-                    70% { box-shadow: 0 0 0 10px rgba(255, 45, 85, 0); }
-                    100% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0); }
+                    0% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.7); }
+                    70% { box-shadow: 0 0 0 10px rgba(0, 122, 255, 0); }
+                    100% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0); }
                 }
                 .fab-helper-pulse {
                     animation: fab-pulse 2s infinite;
                 }
-                .fab-helper-progress-container {
-                    display: none; /* Hidden by default */
-                    flex-direction: column;
-                    gap: 4px;
-                    margin-bottom: 8px;
+                .fab-setting-row {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 10px 0;
+                    border-bottom: 1px solid var(--border-color);
                 }
-                .fab-helper-progress-bar {
-                    width: 100%;
+                .fab-setting-row:last-child {
+                    border-bottom: none;
+                }
+                .fab-setting-label {
+                    font-size: 14px;
+                }
+                .fab-toggle-switch {
+                    position: relative;
+                    display: inline-block;
+                    width: 44px;
+                    height: 24px;
+                }
+                .fab-toggle-switch input {
+                    opacity: 0;
+                    width: 0;
+                    height: 0;
+                }
+                .fab-toggle-slider {
+                    position: absolute;
+                    cursor: pointer;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
                     background-color: var(--dark-gray);
-                    border-radius: var(--radius-s);
-                    height: 10px;
-                    overflow: hidden;
+                    transition: .4s;
+                    border-radius: 24px;
                 }
-                .fab-helper-progress-bar-fill {
-                    height: 100%;
-                    width: 0%;
+                .fab-toggle-slider:before {
+                    position: absolute;
+                    content: "";
+                    height: 20px;
+                    width: 20px;
+                    left: 2px;
+                    bottom: 2px;
+                    background-color: white;
+                    transition: .4s;
+                    border-radius: 50%;
+                }
+                input:checked + .fab-toggle-slider {
                     background-color: var(--blue);
-                    transition: width 0.3s ease-in-out;
                 }
-                .fab-helper-progress-text {
-                    font-size: 11px;
-                    color: var(--text-color-secondary);
-                    text-align: center;
+                input:checked + .fab-toggle-slider:before {
+                    transform: translateX(20px);
                 }
             `;
             const styleSheet = document.createElement("style");
@@ -1180,252 +1469,165 @@
 
             const container = document.createElement('div');
             container.id = Config.UI_CONTAINER_ID;
+            State.UI.container = container;
 
-            // -- Header --
-            const header = document.createElement('div');
-            header.className = 'fab-helper-header';
-            const title = document.createElement('h2');
-            title.textContent = `Fab Helper ${Config.SCRIPT_NAME.match(/v(\d+\.\d+\.\d+)/)[1]}`;
-            const headerControls = document.createElement('div');
+            // --- Tab Controls ---
+            const tabContainer = document.createElement('div');
+            tabContainer.className = 'fab-helper-tabs';
+            const tabs = ['dashboard', 'settings', 'debug'];
+            tabs.forEach(tabName => {
+                const btn = document.createElement('button');
+                btn.textContent = Utils.getText(`tab_${tabName}`);
+                btn.onclick = () => UI.switchTab(tabName);
+                tabContainer.appendChild(btn);
+                State.UI.tabs[tabName] = btn;
+            });
+
+            container.appendChild(tabContainer);
+
+            // --- Dashboard Tab ---
+            const dashboardContent = document.createElement('div');
+            dashboardContent.className = 'fab-helper-tab-content';
+            State.UI.tabContents.dashboard = dashboardContent;
+
+            const statusBar = document.createElement('div');
+            statusBar.className = 'fab-helper-status-bar';
+
+            const createStatusItem = (id, label, icon) => {
+                const item = document.createElement('div');
+                item.className = 'fab-helper-status-item';
+                item.innerHTML = `${icon} ${label}<span id="${id}">0</span>`;
+                return item;
+            };
+            State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
+            State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅');
+            State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌');
+            State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
+            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusHidden);
+
+            State.UI.execBtn = document.createElement('button');
+            State.UI.execBtn.className = 'fab-helper-execute-btn';
+            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
+
+            const actionButtons = document.createElement('div');
+            actionButtons.className = 'fab-helper-actions';
+
+            State.UI.syncBtn = document.createElement('button');
+            State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
+            State.UI.syncBtn.onclick = TaskRunner.refreshVisibleStates;
+
+            State.UI.hideBtn = document.createElement('button');
+            State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
+
+            actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
+            dashboardContent.append(statusBar, State.UI.execBtn, actionButtons);
+            
+            // --- Log Panel (moved to Dashboard) ---
+            const logContainer = document.createElement('div');
+            logContainer.className = 'fab-log-container';
+
+            const logHeader = document.createElement('div');
+            logHeader.className = 'fab-log-header';
+            const logTitle = document.createElement('span');
+            logTitle.textContent = '📝 操作日志';
+            const logControls = document.createElement('div');
+            logControls.className = 'fab-log-controls';
+            
             const copyLogBtn = document.createElement('button');
-            copyLogBtn.className = 'fab-helper-icon-btn';
             copyLogBtn.innerHTML = '📄';
             copyLogBtn.title = Utils.getText('copyLog');
             copyLogBtn.onclick = () => {
                 navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
-                    const originalIcon = copyLogBtn.innerHTML;
-                    copyLogBtn.innerHTML = '✅';
-                    setTimeout(() => { copyLogBtn.innerHTML = originalIcon; }, 1500);
+                    const originalText = copyLogBtn.textContent;
+                    copyLogBtn.textContent = '✅';
+                    setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
                 }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
             };
+
             const clearLogBtn = document.createElement('button');
-            clearLogBtn.className = 'fab-helper-icon-btn';
             clearLogBtn.innerHTML = '🗑️';
             clearLogBtn.title = Utils.getText('clearLog');
             clearLogBtn.onclick = () => { State.UI.logPanel.innerHTML = ''; };
-            headerControls.append(copyLogBtn, clearLogBtn);
-            header.append(title, headerControls);
 
-            // -- Status Bar --
-            const statusBar = document.createElement('div');
-            statusBar.className = 'fab-helper-status-bar';
-            const createStatusItem = (id, label) => {
-                const item = document.createElement('div');
-                item.className = 'fab-helper-status-item';
-                item.innerHTML = `${label} <span id="${id}">0</span>`;
-                return item;
-            };
-            State.UI.statusTodo = createStatusItem('fab-status-todo', `📥 ${Utils.getText('todo')}`);
-            State.UI.statusDone = createStatusItem('fab-status-done', `✅ ${Utils.getText('added')}`);
-            State.UI.statusFailed = createStatusItem('fab-status-failed', `❌ ${Utils.getText('failed')}`);
-            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
-
-            // -- NEW: Progress Bar --
-            const progressContainer = document.createElement('div');
-            progressContainer.className = 'fab-helper-progress-container';
-
-            const progressText = document.createElement('div');
-            progressText.className = 'fab-helper-progress-text';
-            progressText.textContent = 'Progress: (0/0)';
-
-            const progressBar = document.createElement('div');
-            progressBar.className = 'fab-helper-progress-bar';
-            const progressBarFill = document.createElement('div');
-            progressBarFill.className = 'fab-helper-progress-bar-fill';
-            progressBar.appendChild(progressBarFill);
-
-            progressContainer.append(progressText, progressBar);
-
-            // Store references in State.UI
-            State.UI.progressContainer = progressContainer;
-            State.UI.progressText = progressText;
-            State.UI.progressBarFill = progressBarFill;
-
-            // -- Log Panel --
-            // 创建日志面板标题行
-            const logHeader = document.createElement('div');
-            logHeader.className = 'fab-helper-header';
-
-            const logTitle = document.createElement('span');
-            logTitle.textContent = '📝 操作日志';
-            logTitle.style.fontWeight = '500';
-
-            const toggleLogBtn = document.createElement('button');
-            toggleLogBtn.className = 'fab-helper-icon-btn';
-            toggleLogBtn.innerHTML = State.isLogCollapsed ? '📂' : '📁';
-            toggleLogBtn.title = State.isLogCollapsed ? '展开日志' : '收起日志';
-            toggleLogBtn.onclick = () => UI.toggleLogPanel();
-
-            logHeader.append(logTitle, toggleLogBtn);
-
-            // 创建日志内容面板
+            logControls.append(copyLogBtn, clearLogBtn);
+            logHeader.append(logTitle, logControls);
+            
             State.UI.logPanel = document.createElement('div');
-            State.UI.logPanel.id = 'fab-log-panel';
-            State.UI.logPanel.style.cssText = `
-  background: rgba(30,30,30,0.85);
-  color: #eee;
-  font-size: 12px;
-  line-height: 1.5;
-  padding: 8px 6px 8px 8px;
-  border-radius: 8px;
-  margin: 4px 0;
-  max-height: 40vh;
-  overflow-y: auto;
-  min-height: 40px;
-  height: ${State.isLogCollapsed ? '42px' : '200px'};
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  display: flex;
-  flex-direction: column-reverse;
-  transition: height 0.3s ease;
-`;
-            // 如果日志面板处于折叠状态，设置overflow为hidden
-            if (State.isLogCollapsed) {
-                State.UI.logPanel.style.overflowY = 'hidden';
-            }
+            State.UI.logPanel.id = Config.UI_LOG_ID;
+            
+            logContainer.append(logHeader, State.UI.logPanel);
+            dashboardContent.appendChild(logContainer); // Append log to dashboard
 
-            // -- Basic Section --
-            const basicSection = document.createElement('div');
-            basicSection.className = 'fab-helper-btn-section';
-            const basicTitle = document.createElement('div');
-            basicTitle.className = 'fab-helper-section-title';
-            basicTitle.textContent = '🧩 基础功能 (Basic)';
-            // 本页一键领取
-            const addAllBtn = document.createElement('button');
-            addAllBtn.innerHTML = '🛒 本页一键领取';
-            addAllBtn.style.background = 'var(--green)';
-            addAllBtn.onclick = () => {
-                const cards = document.querySelectorAll(Config.SELECTORS.card);
-                const newlyAddedList = [];
-                let alreadyInQueueCount = 0;
-                let ownedCount = 0;
+            container.appendChild(dashboardContent);
 
-                cards.forEach(card => {
-                    const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href.split('?')[0] : null;
-                    if (!url) return;
+            // --- Settings Tab ---
+            const settingsContent = document.createElement('div');
+            settingsContent.className = 'fab-helper-tab-content';
+            
+            const createSettingRow = (labelText, stateKey) => {
+                const row = document.createElement('div');
+                row.className = 'fab-setting-row';
 
-                    // 首先检查卡片DOM上是否已经显示"已保存"文本（眼见为实）
-                    const cardText = card.textContent || '';
-                    const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+                const label = document.createElement('span');
+                label.className = 'fab-setting-label';
+                label.textContent = labelText;
 
-                    // 然后检查数据库记录
-                    const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
+                const switchContainer = document.createElement('label');
+                switchContainer.className = 'fab-toggle-switch';
+                
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = State[stateKey];
+                input.onchange = (e) => {
+                    // Stop the event from doing anything weird, just in case.
+                    e.stopPropagation();
+                    e.preventDefault();
 
-                    if (isOwned) {
-                        ownedCount++;
-                        return;
+                    if(stateKey === 'autoAddOnScroll') {
+                        TaskRunner.toggleAutoAdd();
+                    } else if (stateKey === 'rememberScrollPosition') {
+                        TaskRunner.toggleRememberPosition();
                     }
+                    // Manually sync the visual state of the checkbox since we prevented default action
+                    e.target.checked = State[stateKey];
+                };
 
-                    const isTodo = Database.isTodo(url);
-                    const isFailed = State.db.failed.some(t => t.url.startsWith(url));
-                    if (isTodo || isFailed) {
-                        alreadyInQueueCount++;
-                        return;
-                    }
+                const slider = document.createElement('span');
+                slider.className = 'fab-toggle-slider';
 
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-                });
-
-                if (newlyAddedList.length > 0) {
-                    State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-                }
-
-                const actionableCount = State.db.todo.length;
-                if (actionableCount > 0) {
-                    if (newlyAddedList.length === 0) {
-                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办队列中。`);
-                    }
-                    TaskRunner.startExecution();
-                } else {
-                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
-                }
+                switchContainer.append(input, slider);
+                row.append(label, switchContainer);
+                return { row, input };
             };
-            // 启动任务
-            State.UI.execBtn = document.createElement('button');
-            State.UI.execBtn.innerHTML = '🚀 启动任务';
-            State.UI.execBtn.style.background = 'var(--pink)';
-            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
-            // 本页刷新状态
-            const refreshPageBtn = document.createElement('button');
-            refreshPageBtn.innerHTML = '🔄 本页刷新状态';
-            refreshPageBtn.style.background = 'var(--blue)';
-            refreshPageBtn.onclick = TaskRunner.refreshVisibleStates;
-            // 本页隐藏/显示已拥有
-            State.UI.hideBtn = document.createElement('button');
-            State.UI.hideBtn.innerHTML = '🙈 隐藏已拥有';
-            State.UI.hideBtn.style.background = 'var(--blue)';
-            State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
-            basicSection.append(basicTitle, addAllBtn, State.UI.execBtn, refreshPageBtn, State.UI.hideBtn);
 
-            // -- Divider --
-            const divider = document.createElement('hr');
-            divider.className = 'fab-helper-divider';
+            const autoAddSetting = createSettingRow('无限滚动时自动添加任务', 'autoAddOnScroll');
+            settingsContent.appendChild(autoAddSetting.row);
+            
+            const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
+            settingsContent.appendChild(rememberPosSetting.row);
 
-            // -- Advanced Section --
-            const advSection = document.createElement('div');
-            advSection.className = 'fab-helper-btn-section';
-            advSection.style.display = '';
-            const advTitle = document.createElement('div');
-            advTitle.className = 'fab-helper-section-title';
-            advTitle.textContent = '⚡ 高级功能 (Advanced/API)';
-            // 批量侦察
-            State.UI.reconBtn = document.createElement('button');
-            State.UI.reconBtn.innerHTML = '🔍 批量侦察';
-            State.UI.reconBtn.style.background = 'var(--green)';
-            State.UI.reconBtn.onclick = TaskRunner.toggleRecon;
-            // 批量领取
-            // State.UI.execBtn = document.createElement('button');
-            // State.UI.execBtn.innerHTML = '🚀 批量领取';
-            // State.UI.execBtn.style.background = 'var(--pink)';
-            // State.UI.execBtn.onclick = TaskRunner.toggleExecution;
-            // 批量重试失败
-            State.UI.retryBtn = document.createElement('button');
-            State.UI.retryBtn.innerHTML = '🔁 批量重试失败';
-            State.UI.retryBtn.style.background = 'var(--orange)';
-            State.UI.retryBtn.onclick = TaskRunner.retryFailedTasks;
-            // 批量刷新所有状态
-            State.UI.refreshBtn = document.createElement('button');
-            State.UI.refreshBtn.innerHTML = '🔄 批量刷新所有状态';
-            State.UI.refreshBtn.style.background = 'var(--blue)';
-            State.UI.refreshBtn.onclick = TaskRunner.refreshVisibleStates;
-            // 重置侦察进度
-            State.UI.resetReconBtn = document.createElement('button');
-            State.UI.resetReconBtn.innerHTML = '⏮️ 重置侦察进度';
-            State.UI.resetReconBtn.style.background = 'var(--gray)';
-            State.UI.resetReconBtn.onclick = TaskRunner.resetReconProgress;
-            // 新增：重置所有数据
-            const resetDataBtn = document.createElement('button');
-            resetDataBtn.innerHTML = '⚠️ 重置所有数据';
-            resetDataBtn.style.background = 'var(--pink)'; // Use a "danger" color
-            resetDataBtn.onclick = Database.resetAllData;
-            advSection.append(advTitle, State.UI.reconBtn, /* State.UI.execBtn, */ State.UI.retryBtn, State.UI.refreshBtn, State.UI.resetReconBtn, resetDataBtn);
+            State.UI.tabContents.settings = settingsContent;
+            container.appendChild(settingsContent);
 
-            // -- Advanced Wrapper (状态栏+高级区) --
-            const advancedWrapper = document.createElement('div');
-            // Restore to hidden by default.
-            advancedWrapper.style.display = 'none';
-            advancedWrapper.append(statusBar, State.UI.progressContainer, divider, advSection);
+            // --- Debug Tab (Log Panel) ---
+            const debugContent = document.createElement('div');
+            debugContent.className = 'fab-helper-tab-content';
+            debugContent.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary); padding: 20px;">此标签页用于未来的高级调试功能。</p>';
+            State.UI.tabContents.debug = debugContent;
+            container.appendChild(debugContent);
 
-            // -- Assemble UI --
-            container.append(header, logHeader, State.UI.logPanel, basicSection, advancedWrapper);
             document.body.appendChild(container);
-            State.UI.container = container;
 
-            // --- Console Commands (Fix using unsafeWindow) ---
-            // These commands are now less critical but kept for power users.
-            unsafeWindow.FabHelperShowAdvanced = function() {
-                advancedWrapper.style.display = '';
-                console.log('Fab Helper Advanced UI is now visible.');
-            };
-            unsafeWindow.FabHelperHideAdvanced = function() {
-                advancedWrapper.style.display = 'none';
-                console.log('Fab Helper Advanced UI is now hidden.');
-            };
-            unsafeWindow.FabHelperResetData = Database.resetAllData;
-
+            UI.switchTab('dashboard'); // Set initial tab
             UI.update();
+        },
+
+        switchTab: (tabNameToActivate) => {
+            for (const tabName in State.UI.tabs) {
+                const isActive = tabName === tabNameToActivate;
+                State.UI.tabs[tabName].classList.toggle('active', isActive);
+                State.UI.tabContents[tabName].style.display = isActive ? 'block' : 'none';
+            }
         },
 
         update: () => {
@@ -1435,58 +1637,28 @@
             State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
             State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
             State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
+            State.UI.container.querySelector('#fab-status-hidden').textContent = State.hiddenThisPageCount;
 
             // NEW: Progress Bar
-            if (State.isExecuting && State.executionTotalTasks > 0) {
-                State.UI.progressContainer.style.display = 'flex';
-                const totalProcessed = State.executionCompletedTasks + State.executionFailedTasks;
-                const percentage = (totalProcessed / State.executionTotalTasks) * 100;
-                State.UI.progressBarFill.style.width = `${percentage}%`;
-                State.UI.progressText.innerHTML = `
-                    ✅ ${State.executionCompletedTasks} &nbsp;&nbsp; ❌ ${State.executionFailedTasks} &nbsp;&nbsp; / &nbsp;&nbsp; 📥 ${State.executionTotalTasks}
-                `;
-            } else {
-                State.UI.progressContainer.style.display = 'none';
-            }
+            // This is removed for the new UI, can be re-added later if needed.
 
             // Execute Button
-            State.UI.execBtn.innerHTML = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `🚀 ${Utils.getText('execute')}`;
-            State.UI.execBtn.style.background = State.isExecuting ? 'var(--pink)' : 'var(--pink)';
+            const execText = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `+ ${Utils.getText('execute')}`;
+            State.UI.execBtn.innerHTML = execText;
+            State.UI.execBtn.classList.toggle('executing', State.isExecuting);
             State.UI.execBtn.classList.remove('fab-helper-pulse');
             if (!State.isExecuting && State.db.todo.length > 0) {
                 State.UI.execBtn.classList.add('fab-helper-pulse');
             }
 
-            // Recon Button
-            if (State.isReconning) {
-                const displayPage = Utils.getDisplayPageFromUrl(GM_getValue(Config.DB_KEYS.NEXT_URL, ''));
-                State.UI.reconBtn.innerHTML = `🔍 ${Utils.getText('reconning')} (${displayPage})`;
-            } else {
-                State.UI.reconBtn.innerHTML = `🔍 ${Utils.getText('recon')}`;
-            }
-            State.UI.reconBtn.disabled = State.isExecuting;
-            State.UI.reconBtn.style.background = State.isReconning ? 'var(--orange)' : 'var(--green)';
+            // Sync Button
+            State.UI.syncBtn.disabled = State.isExecuting;
 
-            // Retry Button
-            const hasFailedTasks = State.db.failed.length > 0;
-            State.UI.retryBtn.innerHTML = `🔁 ${Utils.getText('retry_failed')} (${State.db.failed.length})`;
-            State.UI.retryBtn.disabled = !hasFailedTasks || State.isExecuting;
-            State.UI.retryBtn.style.background = 'var(--orange)';
-
-            // Refresh Button
-            State.UI.refreshBtn.innerHTML = `🔄 ${Utils.getText('refresh')}`;
-            State.UI.refreshBtn.disabled = State.isExecuting || State.isReconning;
-            State.UI.refreshBtn.style.background = 'var(--blue)';
 
             // Hide/Show Button
-            const hideText = State.hideSaved ? Utils.getText('show') : Utils.getText('hide');
-            State.UI.hideBtn.innerHTML = `${State.hideSaved ? '👀' : '🙈'} ${hideText} (${State.hiddenThisPageCount})`;
-            State.UI.hideBtn.style.background = 'var(--blue)';
+            const hideText = State.hideSaved ? `👀 ${Utils.getText('show')}` : `🙈 ${Utils.getText('hide')}`;
+            State.UI.hideBtn.innerHTML = hideText;
 
-            // Reset Recon Button
-            State.UI.resetReconBtn.innerHTML = `⏮️ ${Utils.getText('resetRecon')}`;
-            State.UI.resetReconBtn.disabled = State.isExecuting || State.isReconning;
-            State.UI.resetReconBtn.style.background = 'var(--gray)';
         },
 
         applyOverlay: (card, type='owned') => {
@@ -1501,13 +1673,17 @@
             const styles={position:'absolute',top:'0',left:'0',width:'100%',height:'100%',background:'rgba(25,25,25,0.6)',zIndex:'10',display:'flex',justifyContent:'center',alignItems:'center',fontSize:'24px',fontWeight:'bold',backdropFilter:'blur(2px)',borderRadius:'inherit'};
 
             // 改进基于会话的标记显示逻辑
-            if (type==='owned' || State.sessionCompleted.has(url)) {
+            if (type === 'owned' || State.sessionCompleted.has(url)) {
                 styles.color='#4caf50';  // 绿色
                 overlay.innerHTML='✅';   // 勾选标记
             }
-            else if (type==='queued' && Database.isTodo(url)) {
+            else if (type === 'queued' && Database.isTodo(url)) {
                 styles.color='#ff9800';  // 橙色
                 overlay.innerHTML='⏳';   // 等待标记
+            }
+            else if (type === 'failed') {
+                styles.color='#f44336'; // 红色
+                overlay.innerHTML='❌';  // 失败标记
             }
             else return;
 
@@ -1526,31 +1702,30 @@
                 if (!link) return;
                 const url=link.href.split('?')[0];
                 const isNativelyOwned=[...Config.SAVED_TEXT_SET].some(s=>card.textContent.includes(s));
-                if (isNativelyOwned) {const ex=card.querySelector('.fab-helper-overlay-v8'); if(ex)ex.remove(); return;}
-                if (State.sessionCompleted.has(url)) UI.applyOverlay(card,'owned');
-                else if (Database.isTodo(url)) UI.applyOverlay(card,'queued');
-                else {const ex=card.querySelector('.fab-helper-overlay-v8'); if(ex)ex.remove();}
+                const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
+
+                // 如果原生就显示已拥有，确保移除我们的覆盖层
+                if (isNativelyOwned) {
+                    if(existingOverlay) existingOverlay.remove();
+                    return;
+                }
+
+                // 根据状态应用不同的覆盖层
+                if (State.sessionCompleted.has(url) || Database.isDone(url)) {
+                    UI.applyOverlay(card, 'owned');
+                } else if (Database.isTodo(url)) {
+                    UI.applyOverlay(card, 'queued');
+                } else if (Database.isFailed(url)) {
+                    UI.applyOverlay(card, 'failed');
+                } else {
+                    // 如果没有任何状态，确保移除覆盖层
+                    if(existingOverlay) existingOverlay.remove();
+                }
             });
         },
 
         toggleLogPanel: () => {
-            // 切换折叠状态
-            State.isLogCollapsed = !State.isLogCollapsed;
-
-            // 保存状态到localStorage
-            localStorage.setItem('fab_helper_log_collapsed', State.isLogCollapsed);
-
-            // 找到切换按钮并更新图标和提示
-            const logHeader = State.UI.logPanel.previousSibling;
-            const toggleBtn = logHeader.querySelector('.fab-helper-icon-btn');
-            if (toggleBtn) {
-                toggleBtn.innerHTML = State.isLogCollapsed ? '📂' : '📁';
-                toggleBtn.title = State.isLogCollapsed ? '展开日志' : '收起日志';
-            }
-
-            // 更新日志面板高度和滚动行为
-            State.UI.logPanel.style.height = State.isLogCollapsed ? '42px' : '200px';
-            State.UI.logPanel.style.overflowY = State.isLogCollapsed ? 'hidden' : 'auto';
+            // This is now handled by tab switching, so this function is obsolete.
         },
 
         setupOwnershipObserver: (card) => {
@@ -1600,9 +1775,30 @@
         State.isInitialized = true;
 
         Utils.detectLanguage();
-        // Initialize the network filter as early as possible, per Rule #6.
-        NetworkFilter.init();
         await Database.load();
+        
+        // --- Restore Position Logic (runs before anything else) ---
+        Utils.logger('info', '[位置] 检查是否需要恢复位置...');
+        if (State.rememberScrollPosition) {
+            Utils.logger('info', `[位置] 功能已开启。正在读取已保存的URL...`);
+            const savedUrl = await GM_getValue(Config.DB_KEYS.LAST_POS_URL);
+            Utils.logger('info', `[位置] 读取到URL: ${savedUrl || '无'}`);
+            // Check if we have a saved URL and if the current page is a "base" page (no cursor)
+            if (savedUrl && !window.location.search.includes('cursor=')) {
+                Utils.logger('info', '[位置] 条件满足，正在跳转...');
+                window.location.href = savedUrl;
+                return; // Stop further execution to allow the page to redirect.
+            } else {
+                 Utils.logger('info', '[位置] 条件不满足 (可能无已存URL，或当前已在带cursor的页面)，跳过跳转。');
+            }
+        } else {
+            Utils.logger('info', '[位置] 功能未开启，跳过。');
+        }
+
+        // Apply Monkey Patch if needed, it runs independently.
+        MonkeyPatcher.init();
+        // Initialize the network filter as early as possible.
+        NetworkFilter.init();
 
         // The new, correct worker detection logic.
         // We check if a workerId is present in the URL. If so, it's a worker tab.
@@ -1641,25 +1837,37 @@
         const mainObserver = new MutationObserver((mutations) => {
             for (const mutation of mutations) {
                 if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    let newCardNodes = [];
                     mutation.addedNodes.forEach(node => {
                         // We only care about element nodes
                         if (node.nodeType === 1) {
                             // Check if the added node itself is a card
                             if (node.matches(Config.SELECTORS.card)) {
                                 UI.setupOwnershipObserver(node);
-                                UI.applyOverlaysToPage();
-                                TaskRunner.runHideOrShow();
+                                newCardNodes.push(node);
                             }
 
                             // Check if the added node contains new cards (e.g., a container was added)
-                            const newCards = node.querySelectorAll(Config.SELECTORS.card);
-                            if (newCards.length > 0) {
-                                newCards.forEach(c => UI.setupOwnershipObserver(c));
-                                UI.applyOverlaysToPage();
-                                TaskRunner.runHideOrShow();
+                            const newCardsInside = node.querySelectorAll(Config.SELECTORS.card);
+                            if (newCardsInside.length > 0) {
+                                newCardsInside.forEach(c => {
+                                    UI.setupOwnershipObserver(c);
+                                    newCardNodes.push(c);
+                                });
                             }
                         }
                     });
+
+                    if (newCardNodes.length > 0) {
+                        // Always run visual updates for new cards
+                        UI.applyOverlaysToPage();
+                        TaskRunner.runHideOrShow();
+
+                        // Conditionally scan for tasks if auto-add is on
+                        if (State.isExecuting && State.autoAddOnScroll) {
+                            TaskRunner.scanAndAddTasks(newCardNodes);
+                        }
+                    }
                 }
             }
         });
@@ -1671,6 +1879,7 @@
             State.db.done = new_value;
             UI.update();
             UI.applyOverlaysToPage();
+            TaskRunner.runHideOrShow();
         }));
         // TODO list is now session-based, so listening for its changes across tabs is no longer needed.
         /*
@@ -1683,43 +1892,12 @@
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.FAILED, (name, old_value, new_value) => {
             State.db.failed = new_value;
             UI.update();
+            UI.applyOverlaysToPage();
+            TaskRunner.runHideOrShow();
         }));
-        // NEW LISTENER: This now exclusively handles the execution flow continuation.
-        // It triggers when a worker tab finishes its batch and deletes the TASK key.
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TASK, (name, old_value, new_value) => {
-            if (!State.isExecuting) return;
+        // This listener is obsolete as the API-driven recon is removed.
+        // State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TASK, ...));
 
-            // Any activity from the worker (update or deletion) means it's alive. Clear the current watchdog.
-            if (State.watchdogTimer) clearTimeout(State.watchdogTimer);
-            State.watchdogTimer = null; // Clear the timer ID
-
-            if (new_value) { // This is a "heartbeat" from the worker (task was updated).
-                const payload = new_value; // GM listener passes the direct object
-                // Update button with real-time progress
-                const progressText = `(${payload.currentIndex + 1} / ${payload.batch.length})`;
-                State.UI.execBtn.innerHTML = `🛑 ${Utils.getText('stopExecute')} ${progressText}`;
-
-                // Set a new watchdog for the next step.
-                State.watchdogTimer = setTimeout(() => {
-                    Utils.logger('error', 'Watchdog: Worker tab seems to have stalled. Resetting executor state.');
-                    State.isExecuting = false;
-                    GM_deleteValue(Config.DB_KEYS.TASK); // Prevent a zombie worker from resuming later.
-                    UI.update(); // Reset button text to default.
-                }, 30000); // 30-second timeout for the next action.
-
-            } else { // Batch is complete (new_value is null).
-                Utils.logger('info', 'Batch completed. Checking for more tasks...');
-                // The main UI button will be reset to its default state by UI.update() if we stop.
-                if (State.db.todo.length > 0) {
-                    Utils.logger('info', `Found ${State.db.todo.length} more tasks. Starting next batch in 1 second.`);
-                    setTimeout(TaskRunner.executeBatch, 1000); // This will set its own watchdog via the listener.
-                } else {
-                    Utils.logger('info', 'All tasks are completed. Execution stopped.');
-                    State.isExecuting = false;
-                    UI.update();
-                }
-            }
-        }));
         // RESTORED LISTENER: For receiving and printing logs from worker tabs.
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
             if (!newValue || !newValue.workerId) return;
@@ -1743,7 +1921,6 @@
                     // Phase15: Track successfully completed tasks in the current session
                     if (task && task.url) {
                         State.sessionCompleted.add(task.url.split('?')[0]); // Add the clean URL to sessionCompleted
-                        UI.applyOverlaysToPage(); // Update UI to reflect the new session completion
                     }
                 } else {
                     State.executionFailedTasks++;
@@ -1752,10 +1929,14 @@
                 State.activeWorkers--;
                 delete State.runningWorkers[workerId];
                 // This log now makes more sense as it comes AFTER the detailed log report.
-                Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}. Progress: ${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`);
+                Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}.`);
 
                 // Explicitly update UI to show progress immediately
                 UI.update();
+                // We must update overlays and hide/show logic after a worker finishes
+                UI.applyOverlaysToPage();
+                TaskRunner.runHideOrShow();
+
 
                 TaskRunner.executeBatch();
             }
