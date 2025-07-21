@@ -505,6 +505,11 @@
             };
 
             cards.forEach(card => {
+                // 正确的修复：直接检查元素的 display 样式。如果它是 'none'，就意味着它被隐藏了，应该跳过。
+                if (card.style.display === 'none') {
+                    return;
+                }
+
                 if (!isCardSettled(card)) {
                     skippedCount++;
                     return; // Skip unsettled cards
