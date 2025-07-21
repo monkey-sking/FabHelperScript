@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0.9
+// @version      3.1.1
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -2316,8 +2316,13 @@
         const checkIsErrorPage = (title, text) => {
             const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
             const isCloudflareBody = text.includes('DDoS protection by Cloudflare');
-            const isJsonError = text.length < 100 && text.includes('"detail"') && text.includes('"Too many requests"');
-            return isCloudflareTitle || isCloudflareBody || isJsonError;
+
+            // FINAL, ROBUST HEURISTIC: Check for the ABSENCE of the main React app container
+            // and the PRESENCE of the error message. This is the most reliable fingerprint.
+            const isMissingAppRoot = !document.getElementById('root');
+            const hasErrorText = text.includes('Too many requests');
+            
+            return isCloudflareTitle || isCloudflareBody || (isMissingAppRoot && hasErrorText);
         };
 
         const pageTitle = document.title || '';
@@ -2369,14 +2374,16 @@
             if (State.appStatus !== 'RATE_LIMITED') {
                 State.appStatus = 'RATE_LIMITED';
                 State.rateLimitStartTime = Date.now();
+                UI.update(); // CRITICAL FIX: Update the UI to show the new state BEFORE stopping execution.
                 // Persist this state so the next load knows what's happening.
                 GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime })
                     .then(enterRateLimitedState);
             } else {
+                UI.update(); // Also update if we're already in the state, just to be safe.
                 // We are already in the state, just trigger the action.
                 enterRateLimitedState();
             }
-            // IMPORTANT: Stop all further script execution for this page, but AFTER UI is created.
+            // IMPORTANT: Stop all further script execution for this page.
             return; 
         }
 
