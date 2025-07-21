@@ -564,6 +564,7 @@
             const self = this;
             const originalXhrOpen = XMLHttpRequest.prototype.open;
             const originalXhrSend = XMLHttpRequest.prototype.send;
+            const DEBOUNCE_DELAY_MS = 350; // Centralize debounce delay
 
             const listenerAwareSend = function(...args) {
                 const request = this;
@@ -605,12 +606,13 @@
                     return listenerAwareSend.apply(this, args);
                 }
 
-                Utils.logger('info', `[PagePatcher] 🚦 Intercepted scroll request. Debouncing...`);
+                // NEW: Use [Debounce] tag for clarity
+                Utils.logger('info', `[Debounce] 🚦 Intercepted scroll request. Applying ${DEBOUNCE_DELAY_MS}ms delay...`);
 
                 // If there's a previously pending request, abort it.
                 if (self._pendingXhr) {
                     self._pendingXhr.abort();
-                    Utils.logger('info', `[PagePatcher] 🗑️ Discarded previous pending request.`);
+                    Utils.logger('info', `[Debounce] 🗑️ Discarded previous pending request.`);
                 }
                 // Clear any existing timer.
                 clearTimeout(self._debounceXhrTimer);
@@ -620,10 +622,10 @@
 
                 // Set a timer to send the latest request after a period of inactivity.
                 self._debounceXhrTimer = setTimeout(() => {
-                    Utils.logger('info', `[PagePatcher] ▶️ Sending latest scroll request: ${this._url}`);
+                    Utils.logger('info', `[Debounce] ▶️ Sending latest scroll request: ${this._url}`);
                     listenerAwareSend.apply(self._pendingXhr, args);
                     self._pendingXhr = null; // Clear after sending
-                }, 350); // 350ms debounce window
+                }, DEBOUNCE_DELAY_MS);
             };
 
             const originalFetch = window.fetch;
