@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.2
+// @version      2.2.3
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1386,6 +1386,10 @@
                     color: var(--text-color-secondary);
                     transition: color 0.2s, border-bottom 0.2s;
                     border-bottom: 2px solid transparent;
+                    /* --- FIX: Center align tab text --- */
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
                 }
                 .fab-helper-tabs button.active {
                     color: var(--text-color-primary);
@@ -1438,6 +1442,11 @@
                     color: #fff;
                     background: var(--blue);
                     margin-bottom: 12px;
+                    /* --- FIX: Center align button content --- */
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 8px; /* Add space between icon and text */
                 }
                 .fab-helper-execute-btn.executing {
                     background: var(--pink);
