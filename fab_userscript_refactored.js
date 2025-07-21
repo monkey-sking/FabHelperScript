@@ -1254,51 +1254,45 @@
         executeBatch: async () => {
             if (!State.isExecuting) return;
 
-            // NEW LOGIC: Proactive Smart Pursuit - triggers when the queue is running low.
-            if (State.isSmartPursuitEnabled && State.db.todo.length <= Config.SMART_PURSUIT_THRESHOLD) {
-                // This check prevents rapid-fire scans if the queue stays low or other conditions are not met.
-                if (!State.isScanning && !StatusManager.isThrottled() && !StatusManager.isUnstable()) {
-                    Utils.logger('info', `[智能追击] 待办任务剩余 ${State.db.todo.length} 个, 达到阈值! 自动触发新一轮扫描...`);
-                    // No await, run in background to not block the dispatcher. The isScanning flag prevents overlaps.
-                    TaskRunner.processPageWithApi({ autoAdd: true });
-                }
-            }
-
-            // Stop condition for the entire execution process
-            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                Utils.logger('info', '✅ 🎉 All tasks have been completed!');
-                State.isExecuting = false;
-                StatusManager.setStatus('IDLE');
-                if (State.watchdogTimer) {
-                    clearInterval(State.watchdogTimer);
-                    State.watchdogTimer = null;
-                }
-                UI.update();
-                return;
-            }
-
-            // --- DISPATCHER FOR DETAIL TASKS ---
-            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0 && State.db.todo[0].type === 'detail') {
+            // --- DISPATCHER LOGIC ---
+            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
                 const task = State.db.todo.shift();
                 State.activeWorkers++;
-
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
-
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
-
-                await GM_setValue(workerId, { task });
+                
+                // Use a unique key for each worker's payload
+                const payloadKey = `payload_${workerId}`;
+                await GM_setValue(payloadKey, { task });
 
                 const workerUrl = new URL(task.url);
                 workerUrl.searchParams.set('workerId', workerId);
                 GM_openInTab(workerUrl.href, { active: false, setParent: true });
-
-                if (!State.watchdogTimer) {
-                    TaskRunner.runWatchdog();
-                }
             }
-            UI.update();
+
+            // --- COMPLETION & SMART PURSUIT LOGIC (REFACTORED v1.3.0) ---
+            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                 if (State.isSmartPursuitEnabled && !State.isScanning) {
+                     Utils.logger('info', '[智能追击] 当前队列已完成，自动扫描新任务...');
+                     // Use a flag to prevent multiple scans if workers finish closely together
+                     State.isScanning = true;
+                     TaskRunner.processPageWithApi({ autoAdd: true }).then(newTasksCount => {
+                         State.isScanning = false; // Release lock
+                         if (newTasksCount > 0) {
+                             Utils.logger('info', `[智能追击] 发现 ${newTasksCount} 个新任务，继续执行。`);
+                             TaskRunner.executeBatch(); // Re-call to process the new tasks
+                         } else {
+                             Utils.logger('info', '[智能追击] 未发现新任务，执行结束。');
+                             TaskRunner.stopExecution(); // All done for real.
+                         }
+                     });
+                 } else {
+                     // Smart pursuit is off, or a scan is already in progress, so we are truly done.
+                     Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                     TaskRunner.stopExecution();
+                 }
+            }
         },
 
         processDetailPage: async () => {
@@ -1306,72 +1300,120 @@
             const workerId = urlParams.get('workerId');
             if (!workerId) return;
 
-            const payload = await GM_getValue(workerId);
+            const payloadKey = `payload_${workerId}`;
+            const payload = await GM_getValue(payloadKey);
+            await GM_deleteValue(payloadKey); // Clean up payload immediately
+
             if (!payload || !payload.task) {
+                // Stray worker, close immediately.
                 window.close();
                 return;
             }
 
             const currentTask = payload.task;
-            const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+            const logBuffer = [`[Worker ${workerId.substring(0, 4)}] Started: ${currentTask.name}`];
             let success = false;
+            let errorType = null;
 
-            // CORRECTED STRUCTURE
+            // --- Full UI Interaction Logic (Restored from Git History & Adapted for Worker Model) ---
+            const isItemOwned = () => {
+                const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                const successHeader = document.querySelector('h2');
+                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) {
+                    return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                }
+                const ownedButton = [...document.querySelectorAll('button, a.fabkit-Button-root')].find(btn =>
+                    criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword))
+                );
+                if (ownedButton) {
+                    return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                }
+                return { owned: false };
+            };
+
             try {
-                // Fail fast if globally throttled
-                if (await StatusManager.isThrottled(true)) { // Pass true to check persisted state
-                    logBuffer.push(`[节流] 检测到服务器节流状态，任务自动中止以待后续重试。`);
-                    throw new Error("Aborted due to throttling.");
+                // Step 1: Initial Check. If already owned, report success and exit.
+                const initialState = isItemOwned();
+                if (initialState.owned) {
+                    logBuffer.push(`Already owned on page load (Reason: ${initialState.reason}).`);
+                    success = true;
+                    throw new Error("ALREADY_OWNED"); // Use error for control flow to reach finally block
                 }
 
-                // API-First Ownership Check
-                const ownershipResponse = await API.gmFetch({
-                    method: 'GET',
-                    url: `https://www.fab.com/i/users/me/listings-states?listing_ids=${currentTask.uid}`,
-                    headers: {
-                        'x-csrftoken': Utils.getCookie('fab_csrftoken'),
-                        'x-requested-with': 'XMLHttpRequest'
+                // Step 2: Handle Multi-License Items
+                const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
+                if (licenseButton) {
+                    logBuffer.push(`Multi-license item detected. Clicking '选择许可'.`);
+                    Utils.deepClick(licenseButton);
+                    await new Promise(r => setTimeout(r, 500)); // Wait for dropdown
+
+                    const listbox = await Utils.waitForElement('div[role="listbox"]');
+                    const freeOption = [...listbox.querySelectorAll('[role="option"]')].find(el => el.textContent.includes('免费'));
+
+                    if (freeOption) {
+                        logBuffer.push(`Found and clicking '免费' license option.`);
+                        Utils.deepClick(freeOption);
+                        await new Promise(r => setTimeout(r, 500)); // Wait for UI to update
+                    } else {
+                        throw new Error('Could not find a "免费" license option in the dropdown.');
                     }
-                });
-
-                if (ownershipResponse.status === 429) {
-                    throw new Error("Worker failed due to 429 response during ownership check.");
                 }
 
-                const statesData = JSON.parse(ownershipResponse.responseText);
-                const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
+                // Step 3: Find and click the standard 'Add to my library' button
+                const actionButton = [...document.querySelectorAll('button')].find(btn =>
+                    [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.trim() === keyword)
+                );
 
-                if (isOwned) {
-                    logBuffer.push(`API check confirms item is already owned.`);
+                if (actionButton) {
+                    logBuffer.push(`Found acquisition button: "${actionButton.textContent}". Clicking.`);
+                    await Utils.waitForButtonEnabled(actionButton);
+                    Utils.deepClick(actionButton);
+
+                    // Step 4: Wait for the page state to change to "owned"
+                    await new Promise((resolve, reject) => {
+                        const timeout = 10000;
+                        const interval = setInterval(() => {
+                            const currentState = isItemOwned();
+                            if (currentState.owned) {
+                                logBuffer.push(`Acquisition confirmed by UI change (Reason: ${currentState.reason}).`);
+                                clearInterval(interval);
+                                resolve();
+                            }
+                        }, 200);
+                        setTimeout(() => {
+                            clearInterval(interval);
+                            reject(new Error(`Timeout waiting for page to enter an 'owned' state after click.`));
+                        }, timeout);
+                    });
                     success = true;
                 } else {
-                    logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
-                    // ... The entire UI interaction logic from your file goes here ...
-                    // This part is complex and assumed to be correct in your restored file.
-                    // For brevity, it is represented as a placeholder comment.
-                    // Placeholder for the extensive UI interaction (isItemOwned, licenseButton, actionButton etc.)
-                    success = true; // Assume success for this placeholder
+                    // If after all checks, no button is found, it's a failure.
+                    throw new Error('Could not find any actionable acquisition button.');
                 }
+
             } catch (error) {
-                logBuffer.push(`A critical error occurred in worker: ${error.message}`);
-                success = false;
+                if (error.message !== "ALREADY_OWNED") {
+                    logBuffer.push(`Acquisition FAILED: ${error.message}`);
+                    success = false;
+                    errorType = 'WORKER_UI_FAILURE';
+                }
             } finally {
-                // Reporting back to main tab
                 if (success) {
                     logBuffer.push(`✅ Task reported as DONE.`);
-                } else {
+                } else if (errorType) { // Only log failure if it wasn't an "already owned" case
                     logBuffer.push(`❌ Task reported as FAILED.`);
                 }
-                await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-                    workerId, success, logs: logBuffer, task: currentTask
+                const reportKey = `${Config.DB_KEYS.WORKER_DONE}_${workerId}`;
+                await GM_setValue(reportKey, {
+                    workerId, success, logs: logBuffer, task: currentTask, errorType
                 });
-                await GM_deleteValue(workerId);
                 window.close();
             }
         },
 
-        // This function is now fully obsolete.
-        advanceDetailTask: async () => {},
+        advanceDetailTask: async (batchId, taskPayload, success, logBuffer = []) => {
+            // This function is now obsolete in the worker-per-task model
+        },
 
         runHideOrShow: async () => {
             // Optimization: Check if there are any unprocessed cards first. If not, exit early.

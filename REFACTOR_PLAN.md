@@ -1,29 +1,46 @@
-# Refactoring and Feature Plan
+# Fab Helper 最终重构计划 (v1.2.0)
 
-This document outlines the plan for refactoring the Fab Helper userscript and adding new features.
+基于与用户的多轮沟通和日志分析，我们发现 `v1.1.x` 版本存在多个相互关联的、导致脚本不稳定的核心BUG。本次重构旨在一次性、一劳永逸地解决所有已知问题，实现一个真正健壮、高效、可信赖的脚本。
 
-## Phase 1: Hot Reload Feature
+---
 
-### Goal
-Implement a "hot-reloading" feature to allow updating the script's code and functionality in-place, without requiring a full page refresh. This will significantly speed up development and testing.
+### **待办事项清单 (Actionable To-Do List)**
 
-### UI Implementation
--   A new button labeled "🔥 热更新脚本" (Hot-reload Script) will be added to the "Basic Functions" section of the control panel.
+#### **1. 修复致命的 `TypeError` 崩溃错误**
 
-### Technical Implementation
-1.  **Add UI Button**: Create the button and link it to a new `TaskRunner.hotReloadScript` function.
+*   **问题**: 在“同步状态” (`refreshVisibleStates`) 功能中，API 返回非数组格式的数据时，调用 `.forEach` 方法导致脚本崩溃。
+*   **根本原因**: 缺乏对API返回数据类型的安全检查。
+*   **修复方案**: 在 `API.checkOwnership` 和 `TaskRunner.refreshVisibleStates` 中，对 `statesData` 使用 `Array.isArray()` 进行强制检查，确保后续操作的安全性。
 
-2.  **Enhance Cleanup Logic**: Create a comprehensive `Utils.cleanup` function that will be responsible for tearing down the currently running script instance. This involves:
-    -   Removing all UI elements (control panel, overlays, styles).
-    -   Disconnecting all `MutationObserver` instances.
-    -   Removing all `GM_addValueChangeListener` listeners.
-    -   Clearing any active timers (`setInterval`).
-    -   Removing any properties added to `unsafeWindow`.
-    -   Removing any document-level event listeners.
+#### **2. 修复“入库5个后卡死”的核心逻辑缺陷**
 
-3.  **Implement Hot Reload Function (`TaskRunner.hotReloadScript`)**:
-    -   This function will be triggered by the new button.
-    -   It will first ask for user confirmation.
-    -   It will fetch the latest script content from the URL specified in the `@downloadURL` metadata field. We'll add a fallback or a development URL for local testing.
-    -   Upon successful fetch, it will call the `Utils.cleanup` function.
-    -   Finally, it will execute the new script code using `eval()`, effectively replacing the old script with the new one. A `try...catch` block will be used to handle potential errors during execution of the new script.
+*   **问题**: 脚本在处理完第一批 (5个) Worker后，因待办队列暂时为空而错误地终止整个执行流程。
+*   **根本原因**: “智能追击” (`Smart Pursuit`) 的触发时机错误，与任务调度 (`executeBatch`) 形成了逻辑冲突和竞态条件。
+*   **修复方案**:
+    1.  **重构 `executeBatch`**: 调整其内部逻辑。它现在必须**优先**从 `State.db.todo` 队列中补充Worker。
+    2.  **调整“智能追击”**: 只有在**尝试补充Worker后，发现待办队列为空**的情况下，才触发“智能追击”作为最后的补充手段。
+    3.  **理清监听器职责**: `GM_addValueChangeListener` 的回调函数将只负责状态更新和调用 `executeBatch`，不再包含任何“智能追击”逻辑，避免优先级混淆。
+
+#### **3. 实现真正的“429自动刷新恢复”机制**
+
+*   **问题**: 用户指出，对抗429的唯一有效方法是刷新页面，而非等待。
+*   **根本原因**: 之前的恢复策略不符合目标网站的实际情况。
+*   **修复方案**:
+    1.  重写 `StatusManager` 中的 `enterThrottledState` 函数。
+    2.  当检测到 `429` 状态时，脚本将不再无限期等待或重试，而是在记录状态后，执行 `location.reload()` 强制刷新页面。
+
+#### **4. 实现用户真正需要的“分段计时”状态监视器**
+
+*   **问题**: 当前的状态监视器只能累计总时长，无法展示“正常/429”交替出现的历史过程。
+*   **根本原因**: 对用户需求的理解不够深入，功能设计过于简单。
+*   **修复方案**:
+    1.  **引入状态历史记录**: 在 `State` 中创建一个 `statusHistoryLog` 数组，用于存储每一次状态变更的详细信息（`{ status, startTime, endTime, duration }`）。
+    2.  **重构 `StatusMonitor`**:
+        *   当 `StatusManager` 切换状态时，`StatusMonitor` 会记录下旧状态的结束时间和持续时长，并生成一条历史记录，存入 `statusHistoryLog`。
+        *   所有历史记录都将通过 `GM_setValue` 持久化保存。
+    3.  **创建新的UI面板**: 在“调试”选项卡下，创建一个名为“**状态历史 (Status History)**”的全新可滚动面板，用于清晰地、逐条展示所有状态切换的历史记录。
+    4.  原有的“状态监视器”将只显示**当前**状态和**当前状态的持续时长**，作为实时概览。
+
+---
+
+这次重构将是决定性的。所有修改将围绕以上四点展开，确保最终交付的 `v1.2.0` 版本彻底解决所有已知痛点。
