@@ -431,26 +431,22 @@
 
         async init() {
             try {
-                let cursor = localStorage.getItem(Config.DB_KEYS.LAST_CURSOR);
-                if (!cursor && typeof GM_getValue === 'function') {
-                    cursor = await new Promise(resolve => {
-                        if (GM_getValue.length === 2) {
-                            GM_getValue(Config.DB_KEYS.LAST_CURSOR, null).then(resolve);
-                        } else {
-                            resolve(GM_getValue(Config.DB_KEYS.LAST_CURSOR));
-                        }
-                    });
-                }
+                // NEW: Use the unified Config key
+                const cursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
+
                 if (cursor) {
                     State.savedCursor = cursor;
                     this._lastSeenCursor = cursor;
-                    Utils.logger('info', `[PagePatcher] Initial cursor restored: ${cursor.substring(0,30)}...`);
+                    // NEW: More descriptive log
+                    Utils.logger('info', `[Cursor] Initialized. Loaded saved cursor: ${cursor.substring(0, 30)}...`);
+                } else {
+                    Utils.logger('info', `[Cursor] Initialized. No saved cursor found.`);
                 }
             } catch (e) {
-                 Utils.logger('warn', '[PagePatcher] Failed to restore cursor state:', e);
+                 Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
             }
             this.applyPatches();
-            Utils.logger('info', '[PagePatcher] Network interceptors applied.');
+            Utils.logger('info', '[Cursor] Network interceptors applied.');
         },
 
         async handleSearchResponse(request) {
@@ -532,8 +528,10 @@
                 const urlObj = new URL(originalUrl, window.location.origin);
                 urlObj.searchParams.set('cursor', State.savedCursor);
                 const modifiedUrl = urlObj.pathname + urlObj.search;
-                Utils.logger('info', `[PagePatcher] -> 🚀 PATCHED. New URL: ${modifiedUrl}`);
-                this._patchHasBeenApplied = true;
+                // NEW: Logging for injection
+                Utils.logger('info', `[Cursor] Injecting cursor. Original: ${originalUrl}`);
+                Utils.logger('info', `[Cursor] Patched URL: ${modifiedUrl}`);
+                this._patchHasBeenApplied = true; // This should be set here
                 return modifiedUrl;
             }
             return originalUrl;
@@ -554,10 +552,11 @@
                     // Persist the new cursor for the next page load.
                     GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
                     
-                    Utils.logger('info', `[PagePatcher] ✅ New restore point saved: ${newCursor.substring(0, 30)}...`);
+                    // NEW: Logging for saving
+                    Utils.logger('info', `[Cursor] New restore point saved: ${newCursor.substring(0, 30)}...`);
                 }
             } catch (e) {
-                Utils.logger('warn', `[PagePatcher] Error while saving cursor:`, e);
+                Utils.logger('warn', `[Cursor] Error while saving cursor:`, e);
             }
         },
 
@@ -2165,6 +2164,16 @@
             const hideText = State.hideSaved ? `👀 ${Utils.getText('show')}` : `🙈 ${Utils.getText('hide')}`;
             State.UI.hideBtn.innerHTML = hideText;
 
+            // Update the numbers on the UI elements
+            const updateCounts = () => {
+                const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length;
+                // Utils.logger('debug', `[UI Update] Counts -> To-Do: ${State.db.todo.length}, Visible: ${visibleCount}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
+
+                if (State.UI.statusTodo) State.UI.statusTodo.querySelector('.fab-helper-status-count').textContent = State.db.todo.length;
+                if (State.UI.statusDone) State.UI.statusDone.querySelector('.fab-helper-status-count').textContent = State.db.done.length;
+                if (State.UI.statusFailed) State.UI.statusFailed.querySelector('.fab-helper-status-count').textContent = State.db.failed.length;
+            };
+            updateCounts();
         },
 
         applyOverlay: (card, type='owned') => {
