@@ -484,20 +484,29 @@
             };
 
             // --- 补丁 #1: XMLHttpRequest ---
+            // 标记是否已注入（每次刷新只注入一次）
+            let fabCursorInjected = false;
+
             Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
             const originalXhrOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
                 let modifiedUrl = url;
-                if (typeof url === 'string' && url.includes('/i/listings/search') && method.toUpperCase() === 'GET') {
-                    const originalUrl = url;
-                    modifiedUrl = getModifiedUrl(url);
-                    if (modifiedUrl !== originalUrl) {
-                        Utils.logger('info', `[补丁-XHR] open() 劫持成功: 原始URL: ${originalUrl} -> 新URL: ${modifiedUrl}`);
-                    } else {
-                        Utils.logger('info', `[补丁-XHR] open() 未劫持: ${originalUrl}`);
+                if (
+                    typeof url === 'string' &&
+                    url.includes('/i/listings/search') &&
+                    method.toUpperCase() === 'GET' &&
+                    !fabCursorInjected
+                ) {
+                    const savedCursor = localStorage.getItem('fab_lastCursor') || (typeof GM_getValue === 'function' ? GM_getValue(Config.DB_KEYS.LAST_CURSOR) : null);
+                    if (savedCursor && !url.includes('cursor=')) {
+                        const u = new URL(url, window.location.origin);
+                        u.searchParams.set('cursor', savedCursor);
+                        modifiedUrl = u.pathname + u.search;
+                        fabCursorInjected = true;
+                        Utils.logger('info', `[补丁-XHR] 首次请求已注入cursor: ${savedCursor}`);
                     }
                 }
-                this._url = modifiedUrl; // 存储修改后(或原始)的URL供后续使用
+                this._url = modifiedUrl;
                 return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
             };
 
@@ -506,9 +515,29 @@
                 const xhr = this;
                 const originalOnReadyStateChange = xhr.onreadystatechange;
                 xhr.onreadystatechange = function() {
-                    if (xhr.readyState === 4 && xhr.status === 200 && typeof xhr._url === 'string' && xhr._url.includes('/i/listings/search')) {
+                    if (
+                        xhr.readyState === 4 &&
+                        xhr.status === 200 &&
+                        typeof xhr._url === 'string' &&
+                        xhr._url.includes('/i/listings/search')
+                    ) {
                         Utils.logger('info', `[补丁-XHR] onreadystatechange 捕获: ${xhr._url}`);
-                        saveNextUrlFromResponse(xhr.responseText);
+                        // 只保存 cursors.next 字段
+                        try {
+                            const responseJson = JSON.parse(xhr.responseText);
+                            const cursorValue = responseJson.cursors && responseJson.cursors.next;
+                            if (cursorValue) {
+                                localStorage.setItem('fab_lastCursor', cursorValue);
+                                if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
+                                Utils.logger('info', `[补丁-保存] 已保存下一页 cursor: ${cursorValue}`);
+                            } else {
+                                localStorage.removeItem('fab_lastCursor');
+                                if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                                Utils.logger('info', '[补丁-保存] 已到达末尾，清除已保存位置');
+                            }
+                        } catch (e) {
+                            Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
+                        }
                     }
                     if (originalOnReadyStateChange) {
                         return originalOnReadyStateChange.apply(this, arguments);
@@ -523,33 +552,47 @@
             window.fetch = function(input, init) {
                 let url = (typeof input === 'string') ? input : input.url;
                 let modifiedInput = input;
-
-                if (url.includes('/i/listings/search')) {
-                    const originalUrl = url;
-                    const modifiedUrl = getModifiedUrl(url);
-                    if (modifiedUrl !== originalUrl) {
-                        Utils.logger('info', `[补丁-Fetch] fetch() 劫持成功: 原始URL: ${originalUrl} -> 新URL: ${modifiedUrl}`);
+                if (
+                    url.includes('/i/listings/search') &&
+                    !fabCursorInjected
+                ) {
+                    const savedCursor = localStorage.getItem('fab_lastCursor') || (typeof GM_getValue === 'function' ? GM_getValue(Config.DB_KEYS.LAST_CURSOR) : null);
+                    if (savedCursor && !url.includes('cursor=')) {
+                        const u = new URL(url, window.location.origin);
+                        u.searchParams.set('cursor', savedCursor);
+                        url = u.pathname + u.search;
                         if (typeof input === 'string') {
-                            modifiedInput = modifiedUrl;
+                            modifiedInput = url;
                         } else {
-                            // Request 对象是不可变的, 必须创建一个新的
-                            modifiedInput = new Request(modifiedUrl, input);
+                            modifiedInput = new Request(url, input);
                         }
-                    } else {
-                        Utils.logger('info', `[补丁-Fetch] fetch() 未劫持: ${originalUrl}`);
+                        fabCursorInjected = true;
+                        Utils.logger('info', `[补丁-Fetch] 首次请求已注入cursor: ${savedCursor}`);
                     }
                 }
-                
                 return originalFetch.apply(this, [modifiedInput, init]).then(response => {
                     if (response.ok && response.url.includes('/i/listings/search')) {
                         Utils.logger('info', `[补丁-Fetch] Response 捕获: ${response.url}`);
-                        // 克隆响应体，因为他只能被读取一次
-                        const responseClone = response.clone();
-                        responseClone.text().then(text => {
-                            saveNextUrlFromResponse(text);
+                        // 只保存 cursors.next 字段
+                        response.clone().text().then(text => {
+                            try {
+                                const responseJson = JSON.parse(text);
+                                const cursorValue = responseJson.cursors && responseJson.cursors.next;
+                                if (cursorValue) {
+                                    localStorage.setItem('fab_lastCursor', cursorValue);
+                                    if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
+                                    Utils.logger('info', `[补丁-保存] 已保存下一页 cursor: ${cursorValue}`);
+                                } else {
+                                    localStorage.removeItem('fab_lastCursor');
+                                    if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                                    Utils.logger('info', '[补丁-保存] 已到达末尾，清除已保存位置');
+                                }
+                            } catch (e) {
+                                Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
+                            }
                         });
                     }
-                    return response; // 将原始响应返回给调用者
+                    return response;
                 });
             };
         }
