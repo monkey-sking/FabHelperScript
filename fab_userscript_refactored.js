@@ -1,13 +1,9 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
-// @name:en      Fab API-Driven Helper
-// @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      2.0.6
-// @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
-// @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
-// @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
-// @author       gpt-4 & user & Gemini
+// @version      2.1.0
+// @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
+// @author       Your Name
 // @match        https://www.fab.com/*
 // @run-at       document-start
 // @grant        GM_setValue
