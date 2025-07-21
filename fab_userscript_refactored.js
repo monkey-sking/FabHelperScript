@@ -1649,6 +1649,15 @@
             State.UI.tabContents.debug = debugContent;
             container.appendChild(debugContent);
 
+            try {
+                const versionDisplay = document.createElement('div');
+                versionDisplay.textContent = `v${GM_info.script.version}`;
+                versionDisplay.style.cssText = 'position: absolute; bottom: 5px; right: 8px; font-size: 10px; color: var(--text-color-secondary); opacity: 0.6;';
+                container.appendChild(versionDisplay);
+            } catch (e) {
+                // GM_info might not be available in all environments
+            }
+
             document.body.appendChild(container);
 
             UI.switchTab('dashboard'); // Set initial tab
