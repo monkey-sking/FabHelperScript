@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.3
+// @version      2.2.4
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1456,24 +1456,22 @@
                     gap: 8px;
                 }
                 .fab-helper-actions button {
-                    flex: 1;
-                    min-width: 0; /* Crucial for forcing equal width */
+                    flex: 1; /* RESTORED: Distribute space equally */
+                    min-width: 0; /* ADDED BACK: Crucial for flex shrinking */
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 5px; /* Slightly reduced gap */
+                    gap: 5px;
                     background: var(--dark-gray);
                     border: none;
                     border-radius: var(--radius-m);
                     color: var(--text-color-primary);
-                    padding: 8px; /* Balanced padding */
+                    padding: 8px 6px; /* CRITICAL FIX: Reduced horizontal padding */
                     cursor: pointer;
                     transition: background-color 0.2s;
-                    white-space: nowrap; /* Prevent wrapping */
-                    font-size: 13.5px; /* Fine-tuned font size */
-                    font-weight: normal; /* Revert to normal weight */
-                    overflow: hidden;
-                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                    font-size: 13.5px;
+                    font-weight: normal;
                 }
                 .fab-helper-actions button:hover {
                     background: #4a4a4c;
