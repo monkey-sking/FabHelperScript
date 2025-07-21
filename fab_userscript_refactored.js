@@ -3,9 +3,9 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
-// @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI and robust error handling.
-// @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI and robust error handling.
+// @version      1.4.0
+// @description  A heavily refactored and stabilized version for automating asset acquisition from Fab.com.
+// @description:en A heavily refactored and stabilized version for automating asset acquisition from Fab.com.
 // @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI和健壮的错误处理机制。
 // @author       gpt-4 & user & Gemini
 // @match        https://www.fab.com/*
@@ -30,7 +30,7 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v1.1.0]',
+        SCRIPT_NAME: '[Fab API-Driven Helper v1.4.0]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
@@ -602,10 +602,27 @@
         // --- Initialization ---
         init: () => {
             // This is the single listener on the main tab that reacts to workers finishing.
+            // It listens on ONE specific key. All workers report to this same key.
             GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue, remote) => {
-                if (!newValue || !newValue.workerId || !newValue.task) return; // FIX: Ensure task is present
+                // --- DIAGNOSTIC PROBE ---
+                // Log every event this listener receives, BEFORE any filtering.
+                Utils.logger('debug', `[Listener Probe] Received event for key "${key}"`, { hasNewValue: !!newValue, isRemote: remote });
 
-                const { workerId, success, logs, task } = newValue; // FIX: Get task from payload
+                // We only care about new values being set. The `!remote` check was removed as it was suspected to be faulty.
+                if (!newValue) return;
+
+                // IMPORTANT: Immediately delete the value to act like a queue,
+                // making it ready for the next worker to report.
+                await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
+
+                const { workerId, success, logs, task, errorType } = newValue;
+
+                // It's possible we receive a report for a worker we don't know about
+                // (e.g., after a script hot-reload). We should still process it.
+                if (!task) {
+                    Utils.logger('warn', 'Received a worker report with no task data. Ignoring.');
+                    return;
+                }
 
                 // Log the report from the worker
                 Utils.logger('info', '--- Log Report from Worker [%s] ---', workerId.substring(0, 12));
@@ -617,12 +634,17 @@
                 if (success) {
                     await Database.markAsDone(task);
                 } else {
-                    await Database.markAsFailed(task);
+                    // Only mark as failed if it was a real failure, not an "already owned" case.
+                    if (errorType) {
+                        await Database.markAsFailed(task);
+                    }
                 }
 
-                // Clean up worker state
-                delete State.runningWorkers[workerId];
-                State.activeWorkers--;
+                // Clean up worker state only if we are tracking it
+                if (State.runningWorkers[workerId]) {
+                    delete State.runningWorkers[workerId];
+                    State.activeWorkers--;
+                }
 
                 if (success) {
                     State.executionCompletedTasks++;
@@ -1403,10 +1425,15 @@
                 } else if (errorType) { // Only log failure if it wasn't an "already owned" case
                     logBuffer.push(`❌ Task reported as FAILED.`);
                 }
-                const reportKey = `${Config.DB_KEYS.WORKER_DONE}_${workerId}`;
-                await GM_setValue(reportKey, {
+                // ALL workers now report to the *exact same* key.
+                await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
                     workerId, success, logs: logBuffer, task: currentTask, errorType
                 });
+
+                // --- CRITICAL FIX ---
+                // Add a small delay to ensure GM_setValue has time to propagate before the tab closes.
+                await new Promise(resolve => setTimeout(resolve, 250));
+
                 window.close();
             }
         },
