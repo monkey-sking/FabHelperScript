@@ -1370,18 +1370,26 @@
                     background: var(--pink);
                 }
                 .fab-helper-actions {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
+                    display: flex;
                     gap: 8px;
                 }
                 .fab-helper-actions button {
+                    flex: 1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
                     background: var(--dark-gray);
                     border: none;
                     border-radius: var(--radius-m);
                     color: var(--text-color-primary);
-                    padding: 8px;
+                    padding: 8px 4px;
                     cursor: pointer;
                     transition: background-color 0.2s;
+                    white-space: nowrap;
+                    font-size: 13px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
                 .fab-helper-actions button:hover {
                     background: #4a4a4c;
