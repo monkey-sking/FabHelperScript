@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0.4
+// @version      3.0.7
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -422,7 +422,8 @@
     const PagePatcher = {
         _patchHasBeenApplied: false,
         _lastSeenCursor: null,
-        _secondToLastSeenCursor: null,
+        // REMOVED: This state variable was the source of the bug.
+        // _secondToLastSeenCursor: null,
 
         // --- NEW: State for request debouncing ---
         _debounceXhrTimer: null,
@@ -539,21 +540,21 @@
         },
 
         saveLatestCursorFromUrl(url) {
+            // REWRITTEN: A simpler, more robust implementation.
             try {
                 if (typeof url !== 'string' || !url.includes('/i/listings/search') || !url.includes('cursor=')) return;
                 const urlObj = new URL(url, window.location.origin);
                 const newCursor = urlObj.searchParams.get('cursor');
+
+                // If we have a new, valid cursor that's different from the last one we processed...
                 if (newCursor && newCursor !== this._lastSeenCursor) {
-                    this._secondToLastSeenCursor = this._lastSeenCursor;
                     this._lastSeenCursor = newCursor;
-                    if (this._secondToLastSeenCursor) {
-                        State.savedCursor = this._secondToLastSeenCursor;
-                        localStorage.setItem(Config.DB_KEYS.LAST_CURSOR, this._secondToLastSeenCursor);
-                        if (typeof GM_setValue === 'function') {
-                            GM_setValue(Config.DB_KEYS.LAST_CURSOR, this._secondToLastSeenCursor);
-                        }
-                        Utils.logger('info', `[PagePatcher] Saved restore point (previous page cursor): ${this._secondToLastSeenCursor.substring(0, 30)}...`);
-                    }
+                    State.savedCursor = newCursor; // Update state immediately
+
+                    // Persist the new cursor for the next page load.
+                    GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
+                    
+                    Utils.logger('info', `[PagePatcher] ✅ New restore point saved: ${newCursor.substring(0, 30)}...`);
                 }
             } catch (e) {
                 Utils.logger('warn', `[PagePatcher] Error while saving cursor:`, e);
@@ -2288,8 +2289,9 @@
         const isCloudflareTitle = pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required');
         const isCloudflareBody = bodyText.includes('DDoS protection by Cloudflare');
 
-        // Heuristic 2: API-style JSON error rendered as the main document.
-        const isJsonError = bodyText.startsWith('{') && bodyText.endsWith('}') && bodyText.includes('Too many requests');
+        // FINAL HEURISTIC: A robust "fingerprint" check for API-style errors.
+        // It checks for a very short page content combined with the specific error message keys.
+        const isJsonError = bodyText.length < 100 && bodyText.includes('"detail"') && bodyText.includes('"Too many requests"');
 
         if (isCloudflareTitle || isCloudflareBody || isJsonError) {
             Utils.logger('error', '🚨 Initial page load resulted in a 429 block page.');
