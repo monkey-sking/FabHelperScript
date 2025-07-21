@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.7
+// @version      2.2.8
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1638,7 +1638,7 @@
                 }
             };
             State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
-            statusBar.append(State.UI.statusVisible, State.UI.statusTodo, State.UI.statusFailed, State.UI.statusDone, State.UI.statusHidden);
+            statusBar.append(State.UI.statusTodo, State.UI.statusFailed, State.UI.statusDone, State.UI.statusVisible, State.UI.statusHidden);
 
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
