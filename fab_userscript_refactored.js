@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6.3
+// @version      2.6.4
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -467,10 +467,15 @@
                     State.appStatus = 'RATE_LIMITED';
                     State.rateLimitStartTime = Date.now();
                     
-                    GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime }).then(() => {
+                    await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
+
+                    // NEW LOGIC: Only reload if the task queue is empty.
+                    if (State.db.todo.length === 0) {
                         Utils.logger('info', 'Refreshing page to try and clear rate limit...');
-                        setTimeout(() => location.reload(), 1500); // 1.5s delay before reload
-                    });
+                        setTimeout(() => location.reload(), 1500);
+                    } else {
+                        Utils.logger('warn', `Rate limit detected, but tasks are running. Page refresh is deferred until the queue is empty.`);
+                    }
                 }
             } else if (request.status >= 200 && request.status < 300) {
                 if (State.appStatus === 'RATE_LIMITED') {
@@ -1222,6 +1227,14 @@
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
                 }
+                
+                // NEW LOGIC: Check if we need to refresh now that the queue is empty.
+                if (State.appStatus === 'RATE_LIMITED') {
+                    Utils.logger('info', 'Task queue is empty. Refreshing page now to clear the rate limit...');
+                    setTimeout(() => location.reload(), 1500); // Give logs time to be read
+                    return; // Stop further updates as we are reloading.
+                }
+
                 UI.update();
                 return;
             }
