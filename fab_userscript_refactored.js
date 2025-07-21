@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6.1
+// @version      2.6.2
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1959,8 +1959,39 @@
             const list = State.UI.debugContent;
             list.innerHTML = ''; // Clear previous entries
 
+            // --- NEW: Render the CURRENT, LIVE status at the top ---
+            const createCurrentStatusItem = () => {
+                const item = document.createElement('div');
+                item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border-color); font-size: 12px; background: rgba(255,255,255,0.05);';
+
+                const typeLabel = document.createElement('span');
+                const details = document.createElement('span');
+                details.style.color = 'var(--text-color-secondary)';
+
+                if (State.appStatus === 'NORMAL') {
+                    const duration = ((Date.now() - State.normalStartTime) / 1000);
+                    typeLabel.innerHTML = `✅ 正常运行...`;
+                    typeLabel.style.color = 'var(--green)';
+                    details.innerHTML = `持续 <strong>${duration.toFixed(1)}s</strong>, 请求 <strong>${State.successfulSearchCount}</strong> 次`;
+                } else { // RATE_LIMITED
+                    const duration = ((Date.now() - State.rateLimitStartTime) / 1000);
+                    typeLabel.innerHTML = `🚨 限速时期...`;
+                    typeLabel.style.color = 'var(--orange)';
+                    details.innerHTML = `持续 <strong>${duration.toFixed(1)}s</strong>`;
+                }
+                
+                item.append(typeLabel, details);
+                return item;
+            };
+            list.appendChild(createCurrentStatusItem());
+
+
             if (State.statusHistory.length === 0) {
-                list.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary); padding: 20px;">暂无历史记录。</p>';
+                // Keep the current status item, but add a note if history is empty
+                const noHistory = document.createElement('p');
+                noHistory.textContent = '暂无历史记录。';
+                noHistory.style.cssText = 'text-align: center; color: var(--text-color-secondary); padding: 20px; margin: 0;';
+                list.appendChild(noHistory);
                 return;
             }
 
@@ -2001,8 +2032,8 @@
         update: () => {
             if (!State.UI.container) return;
 
-            // REMOVED: updateDebugTab is now only called when the history actually changes.
-            // UI.updateDebugTab();
+            // Always update the debug tab first, as it's now a live dashboard
+            UI.updateDebugTab();
 
             // Status Bar
             const visibleCards = document.querySelectorAll(Config.SELECTORS.card);
@@ -2322,6 +2353,14 @@
             GM_removeValueChangeListener(oldTaskListener.id);
             State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
         }
+
+        // --- NEW: Add a timer to periodically refresh the UI for live data ---
+        setInterval(() => {
+            // Only refresh if the UI exists and the debug tab is visible, for performance.
+            if (State.UI.container && State.UI.tabContents.debug && State.UI.tabContents.debug.style.display !== 'none') {
+                UI.update();
+            }
+        }, 1000); // Refresh every second
     }
 
     // --- Script Entry Point ---
