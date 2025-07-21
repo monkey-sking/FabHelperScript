@@ -29,72 +29,6 @@
 (function () {
     'use strict';
 
-    // --- 页面级 cursor 恢复逻辑（最优先，document-start）---
-    // --- cursor patch/restore 兼容旧版 ---
-    let patchHasBeenApplied = false;
-    let lastSeenCursor = null;
-    let secondToLastSeenCursor = null;
-
-    // 初始化时恢复 savedCursor
-    (async function restoreSavedCursor() {
-        try {
-            const cursor = typeof GM_getValue === 'function'
-                ? (GM_getValue.length === 2
-                    ? await GM_getValue('fab_lastCursor', null)
-                    : GM_getValue('fab_lastCursor'))
-                : localStorage.getItem('fab_lastCursor');
-            if (cursor) {
-                State.savedCursor = cursor;
-                Utils.logger('info', '[PagePatcher] 读取到已保存的 cursor:', cursor);
-            }
-        } catch (e) {
-            Utils.logger('warn', '[PagePatcher] 恢复 cursor 失败:', e);
-        }
-    })();
-
-    function shouldPatchUrl(url) {
-        if (typeof url !== 'string') return false;
-        if (patchHasBeenApplied) return false;
-        if (!State.rememberScrollPosition || !State.savedCursor) return false;
-        if (!url.includes('/i/listings/search')) return false;
-        if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
-        return true;
-    }
-
-    function getPatchedUrl(originalUrl) {
-        if (State.savedCursor) {
-            const urlObj = new URL(originalUrl, window.location.origin);
-            urlObj.searchParams.set('cursor', State.savedCursor);
-            const modifiedUrl = urlObj.pathname + urlObj.search;
-            Utils.logger('info', `[PagePatcher] -> 🚀 PATCHING. Original: ${originalUrl}`);
-            Utils.logger('info', `[PagePatcher] -> 🚀 PATCHED. New URL: ${modifiedUrl}`);
-            patchHasBeenApplied = true;
-            return modifiedUrl;
-        }
-        return originalUrl;
-    }
-
-    function saveLatestCursorFromUrl(url) {
-        try {
-            if (typeof url === 'string' && url.includes('/i/listings/search') && url.includes('cursor=')) {
-                const urlObj = new URL(url, window.location.origin);
-                const newCursor = urlObj.searchParams.get('cursor');
-                if (newCursor && newCursor !== lastSeenCursor) {
-                    secondToLastSeenCursor = lastSeenCursor;
-                    lastSeenCursor = newCursor;
-                    if (secondToLastSeenCursor) {
-                        State.savedCursor = secondToLastSeenCursor;
-                        localStorage.setItem('fab_lastCursor', secondToLastSeenCursor);
-                        if (typeof GM_setValue === 'function') GM_setValue('fab_lastCursor', secondToLastSeenCursor);
-                        Utils.logger('info', `[PagePatcher] 已自动保存 [上一页] 的起点: ${secondToLastSeenCursor.substring(0, 30)}...`);
-                    }
-                }
-            }
-        } catch (e) {
-            Utils.logger('warn', `[PagePatcher] Error while auto-saving cursor:`, e);
-        }
-    }
-
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
         SCRIPT_NAME: '[Fab API-Driven Helper v2.0.0]',
@@ -433,165 +367,109 @@
     const NetworkFilter = {
         init: () => {
             // 此模块的功能已完全被 MonkeyPatcher 取代，以确保在 document-start 时能立即生效。
-            Utils.logger('info', '网络过滤器(NetworkFilter)模块已弃用，功能由补丁程序(MonkeyPatcher)处理。');
+            Utils.logger('info', '网络过滤器(NetworkFilter)模块已弃用，功能由补丁程序(PagePatcher)处理。');
         }
     };
 
-    const MonkeyPatcher = {
-        init: () => {
-            Utils.logger('info', '[补丁] 初始化 MonkeyPatcher...');
-            if (!State.rememberScrollPosition) {
-                Utils.logger('info', '[补丁] 记住位置功能未开启，MonkeyPatcher 不生效');
-                return;
-            }
+    const PagePatcher = {
+        _patchHasBeenApplied: false,
+        _lastSeenCursor: null,
+        _secondToLastSeenCursor: null,
 
-            // --- 共享的核心逻辑 ---
-            const saveNextUrlFromResponse = (responseText) => {
-                try {
-                    const responseJson = JSON.parse(responseText);
-                    const nextUrl = responseJson.next;
-                    if (nextUrl) {
-                        // 从下一个API URL中只提取cursor的值
-                        const cursorValue = new URL(nextUrl).searchParams.get('cursor');
-                        if (cursorValue) {
-                            GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
-                            Utils.logger('info', `[补丁-保存] 已成功保存下一页的 cursor: ${cursorValue}`);
+        async init() {
+            try {
+                let cursor = localStorage.getItem(Config.DB_KEYS.LAST_CURSOR);
+                if (!cursor && typeof GM_getValue === 'function') {
+                    cursor = await new Promise(resolve => {
+                        if (GM_getValue.length === 2) {
+                            GM_getValue(Config.DB_KEYS.LAST_CURSOR, null).then(resolve);
                         } else {
-                            Utils.logger('warn', `[补丁-保存] 在 'next' URL 中未找到 cursor: ${nextUrl}`);
+                            resolve(GM_getValue(Config.DB_KEYS.LAST_CURSOR));
                         }
-                    } else {
-                        GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                        Utils.logger('info', '[补丁-保存] 已到达列表末尾，清除已保存的位置。');
-                    }
+                    });
+                }
+                if (cursor) {
+                    State.savedCursor = cursor;
+                    this._lastSeenCursor = cursor;
+                    Utils.logger('info', `[PagePatcher] Initial cursor restored: ${cursor.substring(0,30)}...`);
+                }
             } catch (e) {
-                    Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
-                }
-            };
+                 Utils.logger('warn', '[PagePatcher] Failed to restore cursor state:', e);
+            }
+            this.applyPatches();
+            Utils.logger('info', '[PagePatcher] Network interceptors applied.');
+        },
 
-            const getModifiedUrl = (originalUrl) => {
-                // 定义主内容加载请求的特征，用于精确打击
-                const isMainContentRequest =
-                    originalUrl.includes('is_free=1') &&
-                    !originalUrl.includes('aggregate_on') &&
-                    !originalUrl.includes('in=wishlist');
+        shouldPatchUrl(url) {
+            if (typeof url !== 'string') return false;
+            if (this._patchHasBeenApplied) return false;
+            if (!State.rememberScrollPosition || !State.savedCursor) return false;
+            if (!url.includes('/i/listings/search')) return false;
+            if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
+            Utils.logger('info', `[PagePatcher] -> ✅ MATCH! URL will be patched: ${url}`);
+            return true;
+        },
 
-                if (!State.rememberScrollPosition) {
-                    Utils.logger('info', `[补丁-劫持] 跳过：功能未开启`);
-                    return originalUrl;
-                }
-                if (!State.savedCursor) {
-                    Utils.logger('info', `[补丁-劫持] 跳过：无已保存cursor`);
-                    return originalUrl;
-                }
-                if (!isMainContentRequest) {
-                    Utils.logger('info', `[补丁-劫持] 跳过：非主内容请求: ${originalUrl}`);
-                    return originalUrl;
-                }
-                if (originalUrl.includes('cursor=')) {
-                    Utils.logger('info', `[补丁-劫持] 跳过：已包含cursor: ${originalUrl}`);
-                    return originalUrl;
-                }
-
-                Utils.logger('info', `[补丁-劫持] 命中主内容初始请求: ${originalUrl}`);
-                // 注入cursor参数
-                const fullUrl = new URL(originalUrl, window.location.origin);
-                fullUrl.searchParams.set('cursor', State.savedCursor);
-                const modifiedUrl = fullUrl.pathname + fullUrl.search;
-                Utils.logger('info', `[补丁-劫持] 注入cursor后URL: ${modifiedUrl}`);
+        getPatchedUrl(originalUrl) {
+            if (State.savedCursor) {
+                const urlObj = new URL(originalUrl, window.location.origin);
+                urlObj.searchParams.set('cursor', State.savedCursor);
+                const modifiedUrl = urlObj.pathname + urlObj.search;
+                Utils.logger('info', `[PagePatcher] -> 🚀 PATCHED. New URL: ${modifiedUrl}`);
+                this._patchHasBeenApplied = true;
                 return modifiedUrl;
-            };
+            }
+            return originalUrl;
+        },
 
-            // --- 补丁 #1: XMLHttpRequest ---
-            // 标记是否已注入（每次刷新只注入一次）
-            let fabCursorInjected = false;
+        saveLatestCursorFromUrl(url) {
+            try {
+                if (typeof url !== 'string' || !url.includes('/i/listings/search') || !url.includes('cursor=')) return;
+                const urlObj = new URL(url, window.location.origin);
+                const newCursor = urlObj.searchParams.get('cursor');
+                if (newCursor && newCursor !== this._lastSeenCursor) {
+                    this._secondToLastSeenCursor = this._lastSeenCursor;
+                    this._lastSeenCursor = newCursor;
+                    if (this._secondToLastSeenCursor) {
+                        State.savedCursor = this._secondToLastSeenCursor;
+                        localStorage.setItem(Config.DB_KEYS.LAST_CURSOR, this._secondToLastSeenCursor);
+                        if (typeof GM_setValue === 'function') {
+                            GM_setValue(Config.DB_KEYS.LAST_CURSOR, this._secondToLastSeenCursor);
+                        }
+                        Utils.logger('info', `[PagePatcher] Saved restore point (previous page cursor): ${this._secondToLastSeenCursor.substring(0, 30)}...`);
+                    }
+                }
+            } catch (e) {
+                Utils.logger('warn', `[PagePatcher] Error while saving cursor:`, e);
+            }
+        },
 
-            Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
+        applyPatches() {
+            const self = this;
             const originalXhrOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
-                // 只处理 /i/listings/search
-                if (typeof url === 'string' && url.includes('/i/listings/search')) {
-                    const u = new URL(url, window.location.origin);
-                    const currentCursor = u.searchParams.get('cursor');
-                    if (currentCursor) {
-                        localStorage.setItem('fab_lastCursor', currentCursor);
-                        if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, currentCursor);
-                        Utils.logger('info', `[补丁-保存] 已保存当前页 cursor: ${currentCursor}`);
-                    } else {
-                        // 如果没有 cursor，说明是第一页
-                        localStorage.removeItem('fab_lastCursor');
-                        if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                        Utils.logger('info', '[补丁-保存] 当前为第一页，清除已保存位置');
-                    }
-                }
                 let modifiedUrl = url;
-                if (
-                    typeof url === 'string' &&
-                    url.includes('/i/listings/search') &&
-                    method.toUpperCase() === 'GET' &&
-                    !fabCursorInjected
-                ) {
-                    const savedCursor = localStorage.getItem('fab_lastCursor') || (typeof GM_getValue === 'function' ? GM_getValue(Config.DB_KEYS.LAST_CURSOR) : null);
-                    if (savedCursor && !url.includes('cursor=')) {
-                        const u = new URL(url, window.location.origin);
-                        u.searchParams.set('cursor', savedCursor);
-                        modifiedUrl = u.pathname + u.search;
-                        fabCursorInjected = true;
-                        Utils.logger('info', `[补丁-XHR] 首次请求已注入cursor: ${savedCursor}`);
-                    }
+                if (self.shouldPatchUrl(url)) {
+                    modifiedUrl = self.getPatchedUrl(url);
+                } else {
+                    self.saveLatestCursorFromUrl(url);
                 }
                 this._url = modifiedUrl;
                 return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
             };
-
-            const originalXhrSend = XMLHttpRequest.prototype.send;
-            XMLHttpRequest.prototype.send = function(...args) {
-                const xhr = this;
-                const originalOnReadyStateChange = xhr.onreadystatechange;
-                xhr.onreadystatechange = function() {
-                    if (originalOnReadyStateChange) {
-                        return originalOnReadyStateChange.apply(this, arguments);
-                    }
-                };
-                return originalXhrSend.apply(this, args);
-            };
-
-            // --- 补丁 #2: Fetch API ---
-            Utils.logger('info', '[补丁] 正在为 Fetch API 打补丁...');
             const originalFetch = window.fetch;
             window.fetch = function(input, init) {
                 let url = (typeof input === 'string') ? input : input.url;
-                // 只处理 /i/listings/search
-                if (url.includes('/i/listings/search')) {
-                    const u = new URL(url, window.location.origin);
-                    const currentCursor = u.searchParams.get('cursor');
-                    if (currentCursor) {
-                        localStorage.setItem('fab_lastCursor', currentCursor);
-                        if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, currentCursor);
-                        Utils.logger('info', `[补丁-保存] 已保存当前页 cursor: ${currentCursor}`);
-                    } else {
-                        localStorage.removeItem('fab_lastCursor');
-                        if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                        Utils.logger('info', '[补丁-保存] 当前为第一页，清除已保存位置');
-                    }
-                }
                 let modifiedInput = input;
-                if (
-                    url.includes('/i/listings/search') &&
-                    !fabCursorInjected
-                ) {
-                    const savedCursor = localStorage.getItem('fab_lastCursor') || (typeof GM_getValue === 'function' ? GM_getValue(Config.DB_KEYS.LAST_CURSOR) : null);
-                    if (savedCursor && !url.includes('cursor=')) {
-                        const u = new URL(url, window.location.origin);
-                        u.searchParams.set('cursor', savedCursor);
-                        url = u.pathname + u.search;
-                        if (typeof input === 'string') {
-                            modifiedInput = url;
-                        } else {
-                            modifiedInput = new Request(url, input);
-                        }
-                        fabCursorInjected = true;
-                        Utils.logger('info', `[补丁-Fetch] 首次请求已注入cursor: ${savedCursor}`);
+                if (self.shouldPatchUrl(url)) {
+                    const modifiedUrl = self.getPatchedUrl(url);
+                    if (typeof input === 'string') {
+                        modifiedInput = modifiedUrl;
+                    } else {
+                        modifiedInput = new Request(modifiedUrl, input);
                     }
+                } else {
+                    self.saveLatestCursorFromUrl(url);
                 }
                 return originalFetch.apply(this, [modifiedInput, init]);
             };
@@ -1922,15 +1800,14 @@
         State.isInitialized = true;
 
         Utils.detectLanguage();
-        await Database.load(); // 先加载所有 State.xxx
+        await Database.load(); // 先加载所有 State.xxx, 包括 rememberScrollPosition
 
+        // 确保在DOM加载前、脚本最开始阶段初始化Patcher
         if (State.rememberScrollPosition) {
-            State.savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
-            Utils.logger('info', `[位置] 读取到已保存的cursor: ${State.savedCursor || '无'}`);
+            await PagePatcher.init();
+        } else {
+            Utils.logger('info', '[PagePatcher] Disabled by user setting.');
         }
-
-        // 现在再初始化补丁，保证能正确判断 State.rememberScrollPosition
-        MonkeyPatcher.init();
 
         // 由于脚本在 document-start 运行，UI 相关的操作必须等待 DOM 加载完成
         if (document.readyState === 'loading') {
