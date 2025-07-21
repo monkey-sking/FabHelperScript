@@ -1668,6 +1668,12 @@
             const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
             settingsContent.appendChild(rememberPosSetting.row);
 
+            const resetButton = document.createElement('button');
+            resetButton.textContent = '🗑️ 清空所有存档';
+            resetButton.style.cssText = 'width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;';
+            resetButton.onclick = Database.resetAllData;
+            settingsContent.appendChild(resetButton);
+
             State.UI.tabContents.settings = settingsContent;
             container.appendChild(settingsContent);
 
