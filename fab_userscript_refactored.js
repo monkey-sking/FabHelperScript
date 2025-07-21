@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.1.0
+// @version      2.1.1
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -759,6 +759,28 @@
                 Utils.logger('info', `[Fab DOM Refresh] API reports ${ownedUids.size} owned items in this batch.`);
 
                 let updatedCount = 0;
+                let dbUpdated = false;
+                const langPath = State.lang === 'zh' ? '/zh-cn' : '';
+
+                // 新增逻辑：检查已拥有的商品是否在失败列表中，如果是，则更新数据库
+                if (ownedUids.size > 0) {
+                    const initialFailedCount = State.db.failed.length;
+                    // Filter out items that are now confirmed as owned
+                    State.db.failed = State.db.failed.filter(failedTask => !ownedUids.has(failedTask.uid));
+
+                    if (State.db.failed.length < initialFailedCount) {
+                        dbUpdated = true;
+                        // Add the now-owned items to the done list
+                        ownedUids.forEach(uid => {
+                            const url = `${window.location.origin}${langPath}/listings/${uid}`;
+                            if (!Database.isDone(url)) {
+                                State.db.done.push(url);
+                            }
+                        });
+                        Utils.logger('info', `[Fab DB Sync] 从"失败"列表中清除了 ${initialFailedCount - State.db.failed.length} 个已手动完成的商品。`);
+                    }
+                }
+
                 uidToCardMap.forEach((card, uid) => {
                     const isOwned = ownedUids.has(uid);
 
@@ -776,6 +798,11 @@
                         }
                     }
                 });
+
+                if (dbUpdated) {
+                    await Database.saveFailed();
+                    await Database.saveDone();
+                }
 
                 Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} card states.`);
 
@@ -1577,6 +1604,20 @@
             State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
             State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅');
             State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌');
+            State.UI.statusFailed.style.cursor = 'pointer';
+            State.UI.statusFailed.title = '点击打开所有失败的项目';
+            State.UI.statusFailed.onclick = () => {
+                if (State.db.failed.length === 0) {
+                    Utils.logger('info', '失败列表为空，无需操作。');
+                    return;
+                }
+                if (window.confirm(`您确定要在新标签页中打开 ${State.db.failed.length} 个失败的项目吗？`)) {
+                    Utils.logger('info', `正在打开 ${State.db.failed.length} 个失败项目...`);
+                    State.db.failed.forEach(task => {
+                        GM_openInTab(task.url, { active: false });
+                    });
+                }
+            };
             State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
             statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusHidden);
 
