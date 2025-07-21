@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
+// @version      3.0.2
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -586,6 +586,7 @@
                 }
                 // Priority 2: Tag all other infinite scroll requests to be debounced.
                 else if (self.isDebounceableSearch(url)) {
+                    self.saveLatestCursorFromUrl(url); // FIX: Ensure we save the cursor before debouncing.
                     this._isDebouncedSearch = true;
                 }
                 // Priority 3: All other requests just save the cursor.
@@ -1281,16 +1282,7 @@
                     State.watchdogTimer = null;
                 }
                 
-                // Check if we need to refresh now that the queue is empty, for both manual and auto modes.
-                if (State.appStatus === 'RATE_LIMITED') {
-                    const recoveryMsg = State.autoResumeAfter429 ? 'Starting auto-recovery...' : 'You may now manually refresh.';
-                    Utils.logger('info', `Task queue is empty. ${recoveryMsg}`);
-                    if (State.autoResumeAfter429) {
-                         setTimeout(() => location.reload(), 1500);
-                         return; // Stop further updates as we are reloading.
-                    }
-                }
-
+                // REMOVED: This logic is now handled more reliably in the WORKER_DONE listener.
                 UI.update();
                 return;
             }
@@ -2421,7 +2413,14 @@
             delete State.runningWorkers[workerId];
             Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}.`);
 
-            // 4. Update UI and dispatch next batch
+            // 4. NEW: Reliable check for deferred refresh RIGHT AFTER state changes.
+            if (State.db.todo.length === 0 && State.activeWorkers === 0 && State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
+                Utils.logger('info', 'Task queue emptied during rate limit. Initiating recovery refresh...');
+                setTimeout(() => location.reload(), 1500);
+                return; // Stop processing further, as the page is reloading.
+            }
+
+            // 5. Update UI and dispatch next batch
             UI.update();
             TaskRunner.runHideOrShow();
             TaskRunner.executeBatch();
@@ -2436,8 +2435,8 @@
 
         // --- NEW: Add a timer to periodically refresh the UI for live data ---
         setInterval(() => {
-            // Only refresh if the UI exists and the debug tab is visible, for performance.
-            if (State.UI.container && State.UI.tabContents.debug && State.UI.tabContents.debug.style.display !== 'none') {
+            // FIX: Refresh if the UI exists, to keep timers updated regardless of active tab.
+            if (State.UI.container) {
                 UI.update();
             }
         }, 1000); // Refresh every second
