@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6.4
+// @version      3.0.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -43,6 +43,7 @@
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
             STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
+            AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -90,6 +91,7 @@
         normalStartTime: Date.now(),
         successfulSearchCount: 0,
         statusHistory: [], // Holds the history of NORMAL/RATE_LIMITED periods
+        autoResumeAfter429: false, // The new setting for the feature
         // --- End New State ---
         showAdvanced: false,
         activeWorkers: 0,
@@ -304,6 +306,7 @@
             State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
             State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
             State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
+            State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
 
             const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
             if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
@@ -322,6 +325,7 @@
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
         saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
         saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
+        saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
 
         resetAllData: async () => {
             if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败列表）吗？待办列表也会被清空。此操作不可逆！')) {
@@ -469,12 +473,16 @@
                     
                     await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
 
-                    // NEW LOGIC: Only reload if the task queue is empty.
-                    if (State.db.todo.length === 0) {
-                        Utils.logger('info', 'Refreshing page to try and clear rate limit...');
-                        setTimeout(() => location.reload(), 1500);
+                    // NEW LOGIC: Check if we should start the auto-recovery process.
+                    if (State.autoResumeAfter429) {
+                        if (State.db.todo.length === 0) {
+                            Utils.logger('info', 'Auto-recovery enabled. Refreshing page to begin recovery cycle...');
+                            setTimeout(() => location.reload(), 1500);
+                        } else {
+                            Utils.logger('warn', `Auto-recovery enabled, but tasks are running. Page refresh is deferred until the queue is empty.`);
+                        }
                     } else {
-                        Utils.logger('warn', `Rate limit detected, but tasks are running. Page refresh is deferred until the queue is empty.`);
+                        Utils.logger('info', 'Rate limit detected. Enable auto-recovery in Settings to handle this automatically.');
                     }
                 }
             } else if (request.status >= 200 && request.status < 300) {
@@ -817,6 +825,17 @@
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
 
+        toggleAutoResume: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.autoResumeAfter429 = !State.autoResumeAfter429;
+            await Database.saveAutoResumePref();
+            Utils.logger('info', `429后自动恢复功能已 ${State.autoResumeAfter429 ? '开启' : '关闭'}.`);
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+
         toggleRememberPosition: async () => {
             if (State.isTogglingSetting) return;
             State.isTogglingSetting = true;
@@ -832,8 +851,42 @@
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
 
+        runRecoveryProbe: async () => {
+            const randomDelay = Math.floor(Math.random() * (30000 - 15000 + 1) + 15000); // 15-30 seconds
+            Utils.logger('info', `[Auto-Recovery] In recovery mode. Probing connection in ${(randomDelay / 1000).toFixed(1)} seconds...`);
+
+            setTimeout(async () => {
+                Utils.logger('info', `[Auto-Recovery] Probing connection...`);
+                try {
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    if (!csrfToken) throw new Error("CSRF token not found for probe.");
+                    // Use a lightweight, known-good endpoint for the probe
+                    const probeResponse = await API.gmFetch({
+                        method: 'GET',
+                        url: 'https://www.fab.com/i/users/context',
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+
+                    if (probeResponse.status === 429) {
+                        throw new Error("Probe failed with 429. Still rate-limited.");
+                    } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
+                        // SUCCESS!
+                        // Manually create a fake request object to reuse the recovery logic in handleSearchResponse
+                        await PagePatcher.handleSearchResponse({ status: 200 });
+                        Utils.logger('info', `[Auto-Recovery] ✅ Connection restored! Auto-resuming operations...`);
+                        TaskRunner.toggleExecution(); // Auto-start the process!
+                    } else {
+                        throw new Error(`Probe failed with unexpected status: ${probeResponse.status}`);
+                    }
+                } catch (e) {
+                    Utils.logger('error', `[Auto-Recovery] ❌ ${e.message}. Scheduling next refresh...`);
+                    setTimeout(() => location.reload(), 2000); // Wait 2s before next refresh
+                }
+            }, randomDelay);
+        },
+
         resetReconProgress: async () => {
-            if (State.isReconning) {
+            if (State.isReconquening) {
                 Utils.logger('warn', 'Cannot reset progress while recon is active.');
                 return;
             }
@@ -1228,11 +1281,14 @@
                     State.watchdogTimer = null;
                 }
                 
-                // NEW LOGIC: Check if we need to refresh now that the queue is empty.
+                // Check if we need to refresh now that the queue is empty, for both manual and auto modes.
                 if (State.appStatus === 'RATE_LIMITED') {
-                    Utils.logger('info', 'Task queue is empty. Refreshing page now to clear the rate limit...');
-                    setTimeout(() => location.reload(), 1500); // Give logs time to be read
-                    return; // Stop further updates as we are reloading.
+                    const recoveryMsg = State.autoResumeAfter429 ? 'Starting auto-recovery...' : 'You may now manually refresh.';
+                    Utils.logger('info', `Task queue is empty. ${recoveryMsg}`);
+                    if (State.autoResumeAfter429) {
+                         setTimeout(() => location.reload(), 1500);
+                         return; // Stop further updates as we are reloading.
+                    }
                 }
 
                 UI.update();
@@ -1891,6 +1947,8 @@
                         TaskRunner.toggleAutoAdd();
                     } else if (stateKey === 'rememberScrollPosition') {
                         TaskRunner.toggleRememberPosition();
+                    } else if (stateKey === 'autoResumeAfter429') {
+                        TaskRunner.toggleAutoResume();
                     }
                     // Manually sync the visual state of the checkbox since we prevented default action
                     e.target.checked = State[stateKey];
@@ -1909,6 +1967,9 @@
             
             const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
             settingsContent.appendChild(rememberPosSetting.row);
+
+            const autoResumeSetting = createSettingRow('429后自动恢复并继续', 'autoResumeAfter429');
+            settingsContent.appendChild(autoResumeSetting.row);
 
             const resetButton = document.createElement('button');
             resetButton.textContent = '🗑️ 清空所有存档';
@@ -2222,6 +2283,12 @@
             // This is a worker tab. Its only job is to process the page and then close.
             TaskRunner.processDetailPage();
             return; // IMPORTANT: Stop all further script execution for this worker tab.
+        }
+
+        // --- Auto-Recovery Check ---
+        // This runs after DB load and before any UI is created.
+        if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
+            TaskRunner.runRecoveryProbe();
         }
 
         // --- Standard page setup (runs only for the main, non-worker tab) ---
