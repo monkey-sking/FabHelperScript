@@ -185,6 +185,16 @@
                 }, timeout);
             });
         },
+        isElementInViewport: (el) => {
+            if (!el) return false;
+            const rect = el.getBoundingClientRect();
+            return (
+                rect.top >= 0 &&
+                rect.left >= 0 &&
+                rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+                rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+            );
+        },
         // This function is now for UI display purposes only.
         getDisplayPageFromUrl: (url) => {
             if (!url) return '1';
@@ -633,8 +643,73 @@
         },
 
         refreshVisibleStates: async () => {
-            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
-            await TaskRunner.processPageWithApi({ autoAdd: false, onlyVisible: true });
+            Utils.logger('info', '[状态同步] 已触发。正在通过API获取可见项目的最新状态...');
+
+            const cardSelector = Config.SELECTORS.card;
+            const linkSelector = Config.SELECTORS.cardLink;
+
+            const cards = Array.from(document.querySelectorAll(cardSelector)).filter(card => Utils.isElementInViewport(card));
+            if (cards.length === 0) {
+                Utils.logger('info', '在可视区域内没有发现可刷新的项目。');
+                return;
+            }
+
+            const listingIds = cards.map(card => {
+                const link = card.querySelector(linkSelector);
+                return link ? link.href.split('/listings/')[1]?.split('?')[0] : null;
+            }).filter(id => id);
+
+            if (listingIds.length === 0) {
+                Utils.logger('warn', '无法从可见卡片中提取任何有效的项目ID。');
+                return;
+            }
+
+            try {
+                Utils.logger('info', `正在通过API查询 ${listingIds.length} 个项目的最新所有权...`);
+                const ownedMap = await API.checkOwnership(listingIds);
+
+                let updatedCount = 0;
+                cards.forEach(card => {
+                    const link = card.querySelector(linkSelector);
+                    if (!link) return;
+                    const listingId = link.href.split('/listings/')[1]?.split('?')[0];
+                    const cardText = card.textContent || '';
+                    const isNativelyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+
+                    // If API says owned, but the card does not natively show it...
+                    if (listingId && ownedMap[listingId] && !isNativelyOwned) {
+                        // Find the container of the text elements.
+                        const textContainer = card.querySelector('a[href*="/listings/"]').closest('div.fabkit-Stack--column');
+                        if (textContainer && textContainer.lastElementChild) {
+                            // The last element is likely the price or action button. Replace it.
+                            const ownedBadge = document.createElement('div');
+                            ownedBadge.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1';
+                            const icon = document.createElement('i');
+                            icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
+                            icon.setAttribute('aria-hidden', 'true');
+                            ownedBadge.appendChild(icon);
+                            ownedBadge.appendChild(document.createTextNode('已保存在我的库中'));
+                            
+                            textContainer.lastElementChild.replaceWith(ownedBadge);
+                            updatedCount++;
+                        }
+                    }
+                });
+
+                if (updatedCount > 0) {
+                    Utils.logger('info', `状态同步完成。${updatedCount} 个卡片的UI已更新为"已拥有"状态。`);
+                    // Force re-evaluation by the hide/show logic.
+                    document.querySelectorAll('.fab-helper-processed').forEach(card => {
+                        card.classList.remove('fab-helper-processed');
+                    });
+                    TaskRunner.runHideOrShow();
+                } else {
+                    Utils.logger('info', '状态同步完成。未发现本地UI与服务器状态的差异。');
+                }
+
+            } catch (error) {
+                Utils.logger('error', 'API状态同步期间发生错误:', error);
+            }
         },
 
         processPageWithApi: async (options = {}) => {
@@ -669,47 +744,43 @@
                     }
                 }
 
-                const listingIds = cards.map(card => {
-                    const link = card.querySelector(linkSelector);
-                    return link ? link.href.split('/listings/')[1]?.split('?')[0] : null;
-                }).filter(id => id);
+                // API check is now removed. We scan against the local state only.
+                Utils.logger('info', `[本地扫描] 正在检查 ${cards.length} 个可见项目...`);
 
-                if (listingIds.length === 0) {
-                    Utils.logger('info', '无法从卡片中提取任何有效的项目ID。');
-                    return 0;
-                }
-
-                Utils.logger('info', Utils.getText('log_api_owned_check', {
-                    count: listingIds.length
-                }));
-
-                const ownedMap = await Api.checkOwnership(listingIds);
                 const newItems = [];
-
                 cards.forEach(card => {
                     const link = card.querySelector(linkSelector);
                     if (!link) return;
 
-                    const url = link.href;
-                    const listingId = url.split('/listings/')[1]?.split('?')[0];
+                    const url = link.href.split('?')[0];
+                    const listingId = url.split('/listings/')[1];
 
-                    if (listingId && !ownedMap[listingId] && !DB.isDone(url)) {
-                        newItems.push({
-                            url,
-                            id: listingId
-                        });
-                        Utils.logger('log', Utils.getText('log_task_added'), url);
+                    // NEW: Check the card's text content for any "owned" keywords.
+                    const cardText = card.textContent || '';
+                    const isNativelyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
+
+                    // Add to list ONLY IF it has an ID, is not in Done/To-Do lists, AND is not natively marked as owned.
+                    if (listingId && !Database.isDone(url) && !Database.isTodo(url) && !isNativelyOwned) {
+                        const titleElement = card.querySelector('a[href*="/listings/"] > div');
+                        const name = titleElement ? titleElement.textContent.trim() : 'Unknown Task';
+                        const task = {
+                            name: name,
+                            url: url,
+                            type: 'detail',
+                            uid: listingId
+                        };
+                        newItems.push(task);
+                        Utils.logger('log', Utils.getText('log_task_added'), name);
                     }
                 });
 
                 if (autoAdd && newItems.length > 0) {
-                    await DB.addTasks(newItems.map(item => item.url));
-                    UI.updateStatus();
+                    State.db.todo.push(...newItems);
+                    Utils.logger('info', `已将 ${newItems.length} 个新任务添加到待办队列。`);
+                    UI.update(); // Immediately update UI to reflect new to-do count
                 }
 
-                Utils.logger('info', Utils.getText('log_api_owned_done', {
-                    newCount: newItems.length
-                }));
+                Utils.logger('info', `本地扫描完成。发现 ${newItems.length} 个新项目。`);
                 return newItems.length;
             } catch (error) {
                 Utils.logger('error', Utils.getText('log_recon_error'), error);
@@ -1627,7 +1698,7 @@
             addAllBtn.style.background = 'var(--green)';
             addAllBtn.onclick = async () => {
                 Utils.logger('info', 'Starting API-based scan for all items on this page...');
-                const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true, onlyVisible: false });
+                const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true });
                 if (newTasksCount > 0) {
                     TaskRunner.startExecution();
                 } else {
