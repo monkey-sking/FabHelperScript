@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6.2
+// @version      2.6.3
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -30,7 +30,7 @@
         SCRIPT_NAME: '[Fab API-Driven Helper v2.0.0]',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 3, // Maximum number of concurrent worker tabs
+        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
         UI_CONTAINER_ID: 'fab-helper-container-v2',
         UI_LOG_ID: 'fab-helper-log-v2',
         DB_KEYS: {
