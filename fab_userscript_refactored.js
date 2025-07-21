@@ -52,7 +52,9 @@
             cardLink: 'a[href*="/listings/"]',
             addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"]',
             rootElement: '#root',
-            successBanner: 'div[class*="Toast-root"]'
+            successBanner: 'div[class*="Toast-root"]',
+            freeStatus: '.csZFzinF',
+            ownedStatus: '.cUUvxo_s'
         },
         TEXTS: {
             en: { hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_429_error: 'Request limit hit! Taking a 15s break...', goto_page_label: 'Page:', goto_page_btn: 'Go', tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug' },
@@ -491,53 +493,67 @@
                 State.executionCompletedTasks = 0;
                 State.executionFailedTasks = 0;
                 Utils.logger('info', '执行已由用户手动停止。');
-            } else {
-                // If it's not running, scan the current page and start.
-                const cards = document.querySelectorAll(Config.SELECTORS.card);
-                const newlyAddedList = [];
-                let alreadyInQueueCount = 0;
-                let ownedCount = 0;
-
-                cards.forEach(card => {
-                    const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href.split('?')[0] : null;
-                    if (!url) return;
-
-                    // Check if visibly owned, in the DB, or completed this session
-                    const cardText = card.textContent || '';
-                    const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
-                    const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
-                    if (isOwned) {
-                        ownedCount++;
-                        return;
-                    }
-
-                    // Check if already in todo or failed lists
-                    const isTodo = Database.isTodo(url);
-                    const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
-                    if (isTodo || isFailed) {
-                        alreadyInQueueCount++;
-                        return;
-                    }
-
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-                });
-
-                if (newlyAddedList.length > 0) {
-                    State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-                }
-
-                const actionableCount = State.db.todo.length;
-                if (actionableCount > 0) {
-                    if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
-                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
-                }
-                    TaskRunner.startExecution();
-            } else {
-                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+                UI.update();
+                return;
             }
+
+            Utils.logger('info', '正在扫描已加载完成的商品...');
+            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            const newlyAddedList = [];
+            let alreadyInQueueCount = 0;
+            let ownedCount = 0;
+            let skippedCount = 0;
+
+            const isCardSettled = (card) => {
+                return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+            };
+
+            cards.forEach(card => {
+                if (!isCardSettled(card)) {
+                    skippedCount++;
+                    return; // Skip unsettled cards
+                }
+
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                const url = link ? link.href.split('?')[0] : null;
+                if (!url) return;
+
+                const isVisiblyOwned = card.querySelector(Config.SELECTORS.ownedStatus) !== null;
+                const isDoneInDb = Database.isDone(url) || State.sessionCompleted.has(url);
+
+                if (isVisiblyOwned || isDoneInDb) {
+                    ownedCount++;
+                    return;
+                }
+
+                const isTodo = Database.isTodo(url);
+                const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
+                if (isTodo || isFailed) {
+                    alreadyInQueueCount++;
+                    return;
+                }
+
+                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+            });
+
+            if (skippedCount > 0) {
+                Utils.logger('info', `已跳过 ${skippedCount} 个状态未加载的商品。`);
+            }
+
+            if (newlyAddedList.length > 0) {
+                State.db.todo.push(...newlyAddedList);
+                Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+            }
+
+            const actionableCount = State.db.todo.length;
+            if (actionableCount > 0) {
+                if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
+                     Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
+                }
+                TaskRunner.startExecution();
+            } else {
+                 Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
             }
             UI.update();
         },
@@ -646,8 +662,8 @@
             const CSRF_COOKIE_NAME = 'fab_csrftoken';
 
             // Selectors for the part of the card that shows the price/owned status
-            const FREE_STATUS_SELECTOR = '.csZFzinF'; // The container for the "免费" text
-            const OWNED_STATUS_SELECTOR = '.cUUvxo_s'; // The container for the "已保存..." text
+            const FREE_STATUS_SELECTOR = Config.SELECTORS.freeStatus;
+            const OWNED_STATUS_SELECTOR = Config.SELECTORS.ownedStatus;
 
             Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
 
