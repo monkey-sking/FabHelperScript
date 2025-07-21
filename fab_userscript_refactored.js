@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.4.1
+// @version      2.5.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -400,6 +400,10 @@
         _lastSeenCursor: null,
         _secondToLastSeenCursor: null,
 
+        // --- NEW: State for request debouncing ---
+        _debounceXhrTimer: null,
+        _pendingXhr: null,
+
         async init() {
             try {
                 let cursor = localStorage.getItem(Config.DB_KEYS.LAST_CURSOR);
@@ -422,6 +426,10 @@
             }
             this.applyPatches();
             Utils.logger('info', '[PagePatcher] Network interceptors applied.');
+        },
+
+        isDebounceableSearch(url) {
+            return typeof url === 'string' && url.includes('/i/listings/search') && !url.includes('aggregate_on=') && !url.includes('count=0');
         },
 
         shouldPatchUrl(url) {
@@ -473,14 +481,52 @@
             const originalXhrOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
                 let modifiedUrl = url;
+                // Priority 1: Handle the "remember position" patch, which should not be debounced.
                 if (self.shouldPatchUrl(url)) {
                     modifiedUrl = self.getPatchedUrl(url);
-                } else {
+                    this._isDebouncedSearch = false; // Explicitly mark it as NOT debounced
+                }
+                // Priority 2: Tag all other infinite scroll requests to be debounced.
+                else if (self.isDebounceableSearch(url)) {
+                    this._isDebouncedSearch = true;
+                }
+                // Priority 3: All other requests just save the cursor.
+                else {
                     self.saveLatestCursorFromUrl(url);
                 }
                 this._url = modifiedUrl;
+                // We still call the original open, but the send will be intercepted.
                 return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
             };
+
+            const originalXhrSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.send = function(...args) {
+                // If this is not a request we need to debounce, send it immediately.
+                if (!this._isDebouncedSearch) {
+                    return originalXhrSend.apply(this, args);
+                }
+
+                Utils.logger('info', `[PagePatcher] 🚦 Intercepted scroll request. Debouncing...`);
+
+                // If there's a previously pending request, abort it.
+                if (self._pendingXhr) {
+                    self._pendingXhr.abort();
+                    Utils.logger('info', `[PagePatcher] 🗑️ Discarded previous pending request.`);
+                }
+                // Clear any existing timer.
+                clearTimeout(self._debounceXhrTimer);
+
+                // Store the current request as the latest one.
+                self._pendingXhr = this;
+
+                // Set a timer to send the latest request after a period of inactivity.
+                self._debounceXhrTimer = setTimeout(() => {
+                    Utils.logger('info', `[PagePatcher] ▶️ Sending latest scroll request: ${this._url}`);
+                    originalXhrSend.apply(self._pendingXhr, args);
+                    self._pendingXhr = null; // Clear after sending
+                }, 350); // 350ms debounce window
+            };
+
             const originalFetch = window.fetch;
             window.fetch = function(input, init) {
                 let url = (typeof input === 'string') ? input : input.url;
