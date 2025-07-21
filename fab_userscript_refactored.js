@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.1
+// @version      2.2.2
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -239,6 +239,31 @@
             });
             State.valueChangeListeners = [];
         }
+    };
+
+    // --- DOM Creation Helpers (moved outside for broader scope) ---
+    const createOwnedElement = () => {
+        const ownedDiv = document.createElement('div');
+        ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
+        const icon = document.createElement('i');
+        icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
+        icon.setAttribute('aria-hidden', 'true');
+        ownedDiv.appendChild(icon);
+        ownedDiv.append('已保存在我的库中');
+        return ownedDiv;
+    };
+
+    const createFreeElement = () => {
+        const freeContainer = document.createElement('div');
+        freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
+        const innerStack = document.createElement('div');
+        innerStack.className = 'fabkit-Stack-root fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 J9vFXlBh';
+        const freeText = document.createElement('div');
+        freeText.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-primary fabkit-Text--sm fabkit-Text--regular';
+        freeText.textContent = '免费';
+        innerStack.appendChild(freeText);
+        freeContainer.appendChild(innerStack);
+        return freeContainer;
     };
 
     // --- 模块四: 异步网络请求 (Promisified GM_xmlhttpRequest) ---
@@ -679,42 +704,7 @@
 
         refreshVisibleStates: async () => {
             const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
-            const CARD_SELECTOR = 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root';
-            const LINK_SELECTOR = 'a[href*="/listings/"]';
-            const CSRF_COOKIE_NAME = 'fab_csrftoken';
-
-            // Selectors for the part of the card that shows the price/owned status
-            const FREE_STATUS_SELECTOR = Config.SELECTORS.freeStatus;
-            const OWNED_STATUS_SELECTOR = Config.SELECTORS.ownedStatus;
-
-            Utils.logger('info', '[Fab DOM Refresh] Starting for VISIBLE items...');
-
-            // --- DOM Creation Helpers ---
-            const createOwnedElement = () => {
-                const ownedDiv = document.createElement('div');
-                ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
-
-                const icon = document.createElement('i');
-                icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
-                icon.setAttribute('aria-hidden', 'true');
-
-                ownedDiv.appendChild(icon);
-                ownedDiv.append('已保存在我的库中');
-                return ownedDiv;
-            };
-
-            const createFreeElement = () => {
-                const freeContainer = document.createElement('div');
-                freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
-                const innerStack = document.createElement('div');
-                innerStack.className = 'fabkit-Stack-root fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 J9vFXlBh';
-                const freeText = document.createElement('div');
-                freeText.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-primary fabkit-Text--sm fabkit-Text--regular';
-                freeText.textContent = '免费';
-                innerStack.appendChild(freeText);
-                freeContainer.appendChild(innerStack);
-                return freeContainer;
-            };
+            const API_CHUNK_SIZE = 24; // Server-side limit
 
             const isElementInViewport = (el) => {
                 if (!el) return false;
@@ -722,67 +712,63 @@
                 return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
             };
 
-            // --- Main Logic ---
             try {
-                const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
+                const csrfToken = Utils.getCookie('fab_csrftoken');
                 if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
 
-                // 收集可见卡片的 UID
-                const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport);
-                const uidToCardMap = new Map();
-                const uidsFromVisibleCards = new Set();
-                visibleCards.forEach(card => {
-                    const link = card.querySelector(LINK_SELECTOR);
-                    if (link) {
-                        const match = link.href.match(/listings\/([a-f0-9-]+)/);
-                        if (match && match[1]) {
-                            uidToCardMap.set(match[1], card);
-                            uidsFromVisibleCards.add(match[1]);
-                        }
-                    }
-                });
+                // Step 1: Gather all unique UIDs to check
+                const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)]
+                    .filter(isElementInViewport)
+                    .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
+                    .filter(Boolean));
 
-                // 收集失败列表中的 UID
                 const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
+                const allUidsToCheck = Array.from(new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
 
-                // 合并所有需要查询的 UID，并去重
-                const uidsToQuery = new Set([...uidsFromVisibleCards, ...uidsFromFailedList]);
-
-                if (uidsToQuery.size === 0) {
+                if (allUidsToCheck.length === 0) {
                     Utils.logger('info', '[Fab DOM Refresh] 没有可见或失败的项目需要检查。');
                     return;
                 }
-                Utils.logger('info', `[Fab DOM Refresh] 正在检查 ${uidsFromVisibleCards.size} 个可见项目和 ${uidsFromFailedList.size} 个失败项目的状态...`);
+                Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${allUidsToCheck.length} 个项目（可见+失败）的状态...`);
 
-                const apiUrl = new URL(API_ENDPOINT);
-                for (const uid of uidsToQuery) {
-                    apiUrl.searchParams.append('listing_ids', uid);
+                // Step 2: Process UIDs in chunks
+                const ownedUids = new Set();
+                for (let i = 0; i < allUidsToCheck.length; i += API_CHUNK_SIZE) {
+                    const chunk = allUidsToCheck.slice(i, i + API_CHUNK_SIZE);
+                    const apiUrl = new URL(API_ENDPOINT);
+                    chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
+
+                    Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${Math.floor(i / API_CHUNK_SIZE) + 1}... (${chunk.length}个项目)`);
+
+                    const response = await fetch(apiUrl.href, {
+                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+
+                    if (!response.ok) {
+                         Utils.logger('warn', `批次处理失败，状态码: ${response.status}。将跳过此批次。`);
+                         continue; // Skip to next chunk
+                    }
+
+                    const data = await response.json();
+                    data.filter(item => item.acquired).forEach(item => ownedUids.add(item.uid));
+
+                    // Add a small delay between chunks to be safe
+                    if (allUidsToCheck.length > i + API_CHUNK_SIZE) {
+                       await new Promise(r => setTimeout(r, 250));
+                    }
                 }
 
-                // Use fetch directly as it's a simple GET request with standard headers.
-                const response = await fetch(apiUrl.href, {
-                    headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
+                Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${ownedUids.size} 个已拥有的项目。`);
 
-                if (!response.ok) throw new Error(`API request failed with status: ${response.status}`);
-                const data = await response.json();
-
-                const ownedUids = new Set(data.filter(item => item.acquired).map(item => item.uid));
-                Utils.logger('info', `[Fab DOM Refresh] API reports ${ownedUids.size} owned items in this batch.`);
-
-                let updatedCount = 0;
+                // Step 3: Update database based on all results
                 let dbUpdated = false;
                 const langPath = State.lang === 'zh' ? '/zh-cn' : '';
-
-                // 新增逻辑：检查已拥有的商品是否在失败列表中，如果是，则更新数据库
                 if (ownedUids.size > 0) {
                     const initialFailedCount = State.db.failed.length;
-                    // Filter out items that are now confirmed as owned
                     State.db.failed = State.db.failed.filter(failedTask => !ownedUids.has(failedTask.uid));
 
                     if (State.db.failed.length < initialFailedCount) {
                         dbUpdated = true;
-                        // Add the now-owned items to the done list
                         ownedUids.forEach(uid => {
                             const url = `${window.location.origin}${langPath}/listings/${uid}`;
                             if (!Database.isDone(url)) {
@@ -793,18 +779,27 @@
                     }
                 }
 
+                // Step 4: Update UI for visible cards
+                const uidToCardMap = new Map([...document.querySelectorAll(Config.SELECTORS.card)]
+                     .filter(isElementInViewport)
+                     .map(card => {
+                         const uid = card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1];
+                         return uid ? [uid, card] : null;
+                     }).filter(Boolean));
+
+                let updatedCount = 0;
                 uidToCardMap.forEach((card, uid) => {
                     const isOwned = ownedUids.has(uid);
 
                     if (isOwned) {
-                        const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
-                        if (freeElement) { // If it currently shows "Free", replace it.
+                        const freeElement = card.querySelector(Config.SELECTORS.freeStatus);
+                        if (freeElement) {
                             freeElement.replaceWith(createOwnedElement());
                             updatedCount++;
                         }
-                    } else { // Item is not owned
-                        const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
-                        if (ownedElement) { // If it currently shows "Owned", replace it.
+                    } else {
+                        const ownedElement = card.querySelector(Config.SELECTORS.ownedStatus);
+                        if (ownedElement) {
                             ownedElement.replaceWith(createFreeElement());
                             updatedCount++;
                         }
@@ -816,9 +811,8 @@
                     await Database.saveDone();
                 }
 
-                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} card states.`);
+                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} visible card states.`);
 
-                // 刷新后自动执行隐藏/显示逻辑，保证 UI 实时同步
                 TaskRunner.runHideOrShow();
 
             } catch (e) {
