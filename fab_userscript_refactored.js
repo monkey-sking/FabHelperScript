@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.6.0
+// @version      2.6.1
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -42,6 +42,7 @@
             LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
+            STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -88,6 +89,7 @@
         rateLimitStartTime: null,
         normalStartTime: Date.now(),
         successfulSearchCount: 0,
+        statusHistory: [], // Holds the history of NORMAL/RATE_LIMITED periods
         // --- End New State ---
         showAdvanced: false,
         activeWorkers: 0,
@@ -118,6 +120,7 @@
             hideBtn: null,
             syncBtn: null,
             statusVisible: null,
+            debugContent: null,
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -309,6 +312,7 @@
                 const previousDuration = ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2);
                 Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
             }
+            State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
 
             Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
@@ -444,10 +448,20 @@
             Utils.logger('info', '[PagePatcher] Network interceptors applied.');
         },
 
-        handleSearchResponse(request) {
+        async handleSearchResponse(request) {
             if (request.status === 429) {
                 if (State.appStatus === 'NORMAL') {
                     const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+                    const logEntry = {
+                        type: 'NORMAL',
+                        duration: parseFloat(normalDuration),
+                        requests: State.successfulSearchCount,
+                        endTime: new Date().toISOString()
+                    };
+                    State.statusHistory.push(logEntry);
+                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                    UI.updateDebugTab();
+
                     Utils.logger('error', `🚨 RATE LIMIT DETECTED! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
                     
                     State.appStatus = 'RATE_LIMITED';
@@ -461,6 +475,15 @@
             } else if (request.status >= 200 && request.status < 300) {
                 if (State.appStatus === 'RATE_LIMITED') {
                     const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+                    const logEntry = {
+                        type: 'RATE_LIMITED',
+                        duration: parseFloat(rateLimitDuration),
+                        endTime: new Date().toISOString()
+                    };
+                    State.statusHistory.push(logEntry);
+                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                    UI.updateDebugTab();
+
                     Utils.logger('info', `✅ Rate limit appears to be lifted. The 429 period lasted ${rateLimitDuration}s.`);
 
                     State.appStatus = 'NORMAL';
@@ -1886,7 +1909,33 @@
             // --- Debug Tab (Log Panel) ---
             const debugContent = document.createElement('div');
             debugContent.className = 'fab-helper-tab-content';
-            debugContent.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary); padding: 20px;">此标签页用于未来的高级调试功能。</p>';
+            
+            const debugHeader = document.createElement('div');
+            debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+            const debugTitle = document.createElement('h4');
+            debugTitle.textContent = '状态周期历史记录';
+            debugTitle.style.margin = '0';
+
+            const clearHistoryBtn = document.createElement('button');
+            clearHistoryBtn.textContent = '清空历史';
+            clearHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
+            clearHistoryBtn.onclick = async () => {
+                if (window.confirm('您确定要清空所有状态历史记录吗？')) {
+                    State.statusHistory = [];
+                    await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
+                    UI.updateDebugTab();
+                    Utils.logger('info', '状态历史记录已清空。');
+                }
+            };
+            
+            debugHeader.append(debugTitle, clearHistoryBtn);
+
+            const historyListContainer = document.createElement('div');
+            historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto;';
+            State.UI.debugContent = historyListContainer;
+
+            debugContent.append(debugHeader, historyListContainer);
             State.UI.tabContents.debug = debugContent;
             container.appendChild(debugContent);
 
@@ -1905,6 +1954,42 @@
             UI.update();
         },
 
+        updateDebugTab: () => {
+            if (!State.UI.debugContent) return;
+            const list = State.UI.debugContent;
+            list.innerHTML = ''; // Clear previous entries
+
+            if (State.statusHistory.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: var(--text-color-secondary); padding: 20px;">暂无历史记录。</p>';
+                return;
+            }
+
+            [...State.statusHistory].reverse().forEach(entry => {
+                const item = document.createElement('div');
+                item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border-color); font-size: 12px;';
+
+                const typeLabel = document.createElement('span');
+                if (entry.type === 'NORMAL') {
+                    typeLabel.innerHTML = `✅ 正常运行`;
+                    typeLabel.style.color = 'var(--green)';
+                } else {
+                    typeLabel.innerHTML = `🚨 限速时期`;
+                    typeLabel.style.color = 'var(--orange)';
+                }
+
+                const details = document.createElement('span');
+                let detailText = `持续 <strong>${entry.duration.toFixed(2)}s</strong>`;
+                if (entry.requests !== undefined) {
+                    detailText += `, 请求 <strong>${entry.requests}</strong> 次`;
+                }
+                details.innerHTML = detailText;
+                details.style.color = 'var(--text-color-secondary)';
+                
+                item.append(typeLabel, details);
+                list.appendChild(item);
+            });
+        },
+
         switchTab: (tabNameToActivate) => {
             for (const tabName in State.UI.tabs) {
                 const isActive = tabName === tabNameToActivate;
@@ -1915,6 +2000,9 @@
 
         update: () => {
             if (!State.UI.container) return;
+
+            // REMOVED: updateDebugTab is now only called when the history actually changes.
+            // UI.updateDebugTab();
 
             // Status Bar
             const visibleCards = document.querySelectorAll(Config.SELECTORS.card);
