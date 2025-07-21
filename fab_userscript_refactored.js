@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.5
+// @version      2.2.7
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1399,14 +1399,14 @@
                     padding: 12px;
                 }
                 .fab-helper-status-bar {
-                    display: grid;
-                    grid-template-columns: repeat(5, 1fr);
-                    gap: 6px; /* FIX: Reduced gap to create more space */
+                    display: flex; /* FIX: Change from grid to flex for wrapping */
+                    flex-wrap: wrap; /* FIX: Allow items to wrap to a new line */
+                    gap: 6px;
                     margin-bottom: 12px;
                 }
                 .fab-helper-status-item {
                     background: var(--dark-gray);
-                    padding: 8px 6px; /* FIX: Reduced horizontal padding */
+                    padding: 8px 6px;
                     border-radius: var(--radius-m);
                     font-size: 12px;
                     color: var(--text-color-secondary);
@@ -1415,7 +1415,10 @@
                     justify-content: center;
                     align-items: center;
                     gap: 2px;
-                    min-width: 0; /* FIX: Allow grid item to shrink below its content size */
+                    min-width: 0;
+                    /* FIX: Set flex-basis to create a 3-column primary layout */
+                    flex-grow: 1;
+                    flex-basis: calc(33.333% - 4px); /* (100% / 3) - gap adjustment */
                 }
                 .fab-helper-status-label {
                     display: flex;
@@ -1423,10 +1426,7 @@
                     justify-content: center;
                     gap: 4px;
                     white-space: nowrap;
-                    /* FIX: Gracefully handle overflow if text is still too long */
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    width: 100%; /* Ensure label uses full width for ellipsis to work */
+                    /* REMOVED: No longer needed with a wrapping layout */
                 }
                 .fab-helper-status-item span {
                     display: block;
@@ -1638,7 +1638,7 @@
                 }
             };
             State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
-            statusBar.append(State.UI.statusVisible, State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusHidden);
+            statusBar.append(State.UI.statusVisible, State.UI.statusTodo, State.UI.statusFailed, State.UI.statusDone, State.UI.statusHidden);
 
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
