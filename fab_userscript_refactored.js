@@ -153,7 +153,8 @@
                 const logEntry = document.createElement('div');
                 logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px;';
                 const timestamp = new Date().toLocaleTimeString();
-                logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${args.join(' ')}`;
+                // DIAGNOSTIC UPGRADE: Properly stringify objects for detailed logging.
+                logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ')}`;
                 State.UI.logPanel.prepend(logEntry);
                 while (State.UI.logPanel.children.length > 100) {
                     State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
@@ -633,6 +634,9 @@
                 // The main tab is now responsible for updating the database.
                 if (success) {
                     await Database.markAsDone(task);
+                    // CRITICAL FIX: After a task is marked as done, immediately
+                    // call runHideOrShow to update the UI (apply overlays or hide).
+                    TaskRunner.runHideOrShow();
                 } else {
                     // Only mark as failed if it was a real failure, not an "already owned" case.
                     if (errorType) {
@@ -640,10 +644,20 @@
                     }
                 }
 
-                // Clean up worker state only if we are tracking it
+                // --- DIAGNOSTIC PROBE & CRITICAL FIX ---
+                // This is the most likely failure point. We MUST know if the worker is being tracked.
                 if (State.runningWorkers[workerId]) {
                     delete State.runningWorkers[workerId];
                     State.activeWorkers--;
+                    Utils.logger('debug', `[Listener] Worker ${workerId.substring(0, 4)} was tracked. Active workers now: ${State.activeWorkers}`);
+                } else {
+                    Utils.logger('error', `[Listener] CRITICAL: Received report from UNTRACKED worker: ${workerId}. The 'activeWorkers' count will NOT be decremented. This is the likely cause of the stall.`);
+                    // As a fallback, we decrement the counter anyway if it's above zero,
+                    // to prevent a permanent stall, although this indicates a state mismatch.
+                    if (State.activeWorkers > 0) {
+                        State.activeWorkers--;
+                         Utils.logger('warn', `[Listener] Fallback activated. Decrementing active workers to ${State.activeWorkers} to prevent stall.`);
+                    }
                 }
 
                 if (success) {
@@ -703,39 +717,29 @@
         // This is now the dedicated function for starting the execution loop.
         // It ensures the main page never navigates away.
         startExecution: () => {
-            // Case 1: Execution is already running. We just need to update the total task count.
             if (State.isExecuting) {
-                const newTotal = State.db.todo.length;
-                if (newTotal > State.executionTotalTasks) {
-                    Utils.logger('info', `任务执行中，新任务已添加。总任务数更新为: ${newTotal}`);
-                    State.executionTotalTasks = newTotal;
-                    UI.update(); // Update the UI to reflect the new total.
-                } else {
-                    Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
+                Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
+                if (State.db.todo.length > State.executionTotalTasks) {
+                    State.executionTotalTasks = State.db.todo.length;
                 }
-                // IMPORTANT: Do not start a new execution loop. The current one will pick up the new tasks.
                 return;
             }
-
-            // Case 2: Starting a new execution from an idle state.
             if (State.db.todo.length === 0) {
                 Utils.logger('info', '"待办"清单是空的，无需启动。');
                 return;
             }
-
             if (StatusManager.isThrottled() || StatusManager.isUnstable()) {
                 Utils.logger('warn', `[状态异常] 任务执行被阻止。当前状态: ${State.scriptStatus}`);
                 return;
             }
-
             Utils.logger('info', `队列中有 ${State.db.todo.length} 个任务，即将开始执行...`);
             State.isExecuting = true;
-            StatusManager.setStatus('ACTIVE'); // Set status to active
+            StatusManager.setStatus('ACTIVE');
             State.executionTotalTasks = State.db.todo.length;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
-            UI.update();
             TaskRunner.executeBatch();
+            UI.update();
         },
 
         hotReloadScript: async () => {
@@ -796,26 +800,9 @@
             }
         },
 
-        // This function is for the main UI button to toggle start/stop.
-        toggleExecution: () => {
-            if (State.isExecuting) {
-                State.isExecuting = false;
-                StatusManager.setStatus('IDLE'); // Set status to idle
-                // This will signal all active workers to stop, but relies on them checking the key.
-                // A more robust stop would involve cleaning up workers directly.
-                GM_deleteValue(Config.DB_KEYS.TASK);
-                // We also clear the running workers so the watchdog stops.
-                State.runningWorkers = {};
-                State.activeWorkers = 0;
-                State.executionTotalTasks = 0;
-                State.executionCompletedTasks = 0;
-                State.executionFailedTasks = 0;
-                Utils.logger('info', '执行已由用户手动停止。');
-            } else {
-                TaskRunner.startExecution();
-            }
-            UI.update();
-        },
+        // This function is now obsolete and replaced by start/stopExecution.
+        toggleExecution: undefined,
+
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
             await Database.saveHidePref();
@@ -1242,6 +1229,7 @@
         },
 
         // This is the watchdog timer that patrols for stalled workers.
+        // It's kept as a safety net but should be less critical with the new logic.
         runWatchdog: () => {
             if (State.watchdogTimer) clearInterval(State.watchdogTimer); // Clear any existing timer
 
@@ -1273,18 +1261,23 @@
             }, 5000); // Check every 5 seconds
         },
 
+        // --- EXECUTION CORE (REWRITTEN v1.4.1) ---
         executeBatch: async () => {
-            if (!State.isExecuting) return;
+            // Safety check: if execution was stopped, do nothing.
+            if (!State.isExecuting) {
+                return;
+            }
 
-            // --- DISPATCHER LOGIC ---
+            // --- I. DISPATCH PHASE ---
+            // This loop is the heart of the dispatcher. It fills any empty worker slots.
             while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
                 const task = State.db.todo.shift();
                 State.activeWorkers++;
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
+
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
-                
-                // Use a unique key for each worker's payload
+
                 const payloadKey = `payload_${workerId}`;
                 await GM_setValue(payloadKey, { task });
 
@@ -1292,28 +1285,39 @@
                 workerUrl.searchParams.set('workerId', workerId);
                 GM_openInTab(workerUrl.href, { active: false, setParent: true });
             }
+            UI.update(); // Update UI after dispatching
 
-            // --- COMPLETION & SMART PURSUIT LOGIC (REFACTORED v1.3.0) ---
+            // --- II. COMPLETION & NEXT-STEP PHASE ---
+            // This check runs AFTER every dispatch attempt.
+            // If the queue is empty AND all workers have finished, we decide what to do next.
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
                  if (State.isSmartPursuitEnabled && !State.isScanning) {
-                     Utils.logger('info', '[智能追击] 当前队列已完成，自动扫描新任务...');
-                     // Use a flag to prevent multiple scans if workers finish closely together
-                     State.isScanning = true;
+                     Utils.logger('info', '[智能追击] 队列已空，自动扫描新任务...');
+                     State.isScanning = true; // Set lock
+                     UI.update();
+
                      TaskRunner.processPageWithApi({ autoAdd: true }).then(newTasksCount => {
                          State.isScanning = false; // Release lock
                          if (newTasksCount > 0) {
                              Utils.logger('info', `[智能追击] 发现 ${newTasksCount} 个新任务，继续执行。`);
-                             TaskRunner.executeBatch(); // Re-call to process the new tasks
+                             // The key to the continuous loop after a pursuit scan.
+                             TaskRunner.executeBatch();
                          } else {
-                             Utils.logger('info', '[智能追击] 未发现新任务，执行结束。');
-                             TaskRunner.stopExecution(); // All done for real.
+                             Utils.logger('info', '[智能追击] 未发现新任务，执行周期结束。');
+                             TaskRunner.stopExecution();
                          }
+                     }).catch(error => {
+                         State.isScanning = false; // Ensure lock is released
+                         Utils.logger('error', '[智能追击] 扫描时发生错误:', error);
+                         TaskRunner.stopExecution();
                      });
-                 } else {
-                     // Smart pursuit is off, or a scan is already in progress, so we are truly done.
-                     Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                 } else if (!State.isSmartPursuitEnabled && !State.isScanning) {
+                     // Smart pursuit is off, and not scanning, so we are truly done.
+                     Utils.logger('info', '✅ 🎉 所有任务已完成，且智能追击已关闭。执行结束。');
                      TaskRunner.stopExecution();
                  }
+                 // If a scan is already in progress, we do nothing. The next call will happen
+                 // when that scan completes and calls executeBatch.
             }
         },
 
@@ -1443,143 +1447,66 @@
         },
 
         runHideOrShow: async () => {
-            // Optimization: Check if there are any unprocessed cards first. If not, exit early.
-            const cards = document.querySelectorAll(`${Config.SELECTORS.card}:not(.fab-helper-processed)`);
-            if (cards.length === 0) {
-                // Still update the count in case it was changed elsewhere, but don't re-run logic.
-                const allHiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`);
-                if (State.hiddenThisPageCount !== allHiddenCards.length) {
-                    State.hiddenThisPageCount = allHiddenCards.length;
-                    UI.update();
-                }
-                return;
-            }
+            // This function now handles both hiding and applying overlays.
+            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            let hiddenCount = 0;
 
-            // 重置计数
-            State.hiddenThisPageCount = 0;
-
-            // 获取所有尚未处理的卡片
-            const cardsArray = Array.from(cards);
-
-            // 如果没有新卡片需要处理，直接更新UI并返回
-            if (cardsArray.length === 0) {
-                // 仍然需要更新UI以防计数在其他地方被改变
-                const allHiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`);
-                State.hiddenThisPageCount = allHiddenCards.length;
-                UI.update();
-                return;
-            }
-
-            // 预处理：找出所有需要隐藏的卡片
-            const cardsToHide = [];
-            const cardsToShow = [];
-
-            for (const card of cardsArray) {
-                const text = card.textContent || '';
+            for (const card of cards) {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 if (!link) continue;
 
                 const url = link.href.split('?')[0];
-                const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                const isSessionCompleted = State.sessionCompleted.has(url);
+                const isDone = Database.isDone(url);
+                const isNativelyOwned = [...Config.SAVED_TEXT_SET].some(s => (card.textContent || '').includes(s));
+                const isOwned = isDone || isNativelyOwned;
 
-                // 确保将已保存但未记录的项目添加到会话完成集合
-                if (isNativelySaved && !isSessionCompleted) {
-                    State.sessionCompleted.add(url);
-                }
-
-                // 分类卡片
-                if (State.hideSaved && (isNativelySaved || isSessionCompleted)) {
-                    cardsToHide.push(card);
-                } else {
-                    cardsToShow.push({card, isOwned: isNativelySaved || isSessionCompleted});
-                }
-            }
-
-            // 更新隐藏计数
-            State.hiddenThisPageCount = cardsToHide.length;
-            Utils.logger('info', `需要隐藏的卡片总数: ${cardsToHide.length}`);
-
-            // 处理需要隐藏的卡片
-            if (cardsToHide.length > 100) {
-                // 对于大量卡片，只对最后100个添加延迟
-                const directHideCards = cardsToHide.slice(0, cardsToHide.length - 100);
-                const delayHideCards = cardsToHide.slice(cardsToHide.length - 100);
-
-                // 直接隐藏大部分卡片
-                directHideCards.forEach(card => {
-                    card.style.display = 'none';
-                });
-
-                // 对最后100个卡片添加延迟
-                for (let i = 0; i < delayHideCards.length; i++) {
-                    delayHideCards[i].style.display = 'none';
-                    delayHideCards[i].classList.add('fab-helper-processed'); // 标记为已处理
-
-                    // 添加小延迟
-                    if (i < delayHideCards.length - 1) {
-                        const delay = Math.floor(Math.random() * 50) + 20; // 更短的延迟(20-70ms)
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            } else {
-                // 对于少量卡片，全部添加延迟
-                for (let i = 0; i < cardsToHide.length; i++) {
-                    cardsToHide[i].style.display = 'none';
-                    cardsToHide[i].classList.add('fab-helper-processed'); // 标记为已处理
-
-                    // 添加小延迟
-                    if (i < cardsToHide.length - 1) {
-                        const delay = Math.floor(Math.random() * 100) + 50; // 50-150ms延迟
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                    }
-                }
-            }
-
-            // 处理需要显示的卡片
-            cardsToShow.forEach(({card, isOwned}) => {
-                card.style.display = '';
-
-                // 确保已拥有的项目在UI上有正确的标记
                 if (isOwned) {
-                    UI.applyOverlay(card, 'owned');
+                    if (State.hideSaved) {
+                        card.style.display = 'none';
+                        hiddenCount++;
+                    } else {
+                        card.style.display = ''; // Ensure it's visible
+                        UI.applyOverlay(card, 'owned');
+                    }
                 } else {
-                    // 移除任何现有的覆盖层
-                    const existing = card.querySelector('.fab-helper-overlay-v8');
-                    if (existing) existing.remove();
+                    // If not owned, ensure it's visible and has no overlay
+                    card.style.display = '';
+                    const overlay = card.querySelector('.fab-helper-overlay-v8');
+                    if (overlay) overlay.remove();
                 }
-                card.classList.add('fab-helper-processed'); // 标记为已处理
-            });
-
-            // 更新UI显示
-            UI.update();
+            }
+            State.hiddenThisPageCount = hiddenCount;
+            UI.update(); // Update the counter in the main UI
         },
 
         // --- NEW: Cooldown UI Logic ---
         // This entire function is now obsolete and replaced by StatusManager
         initiateCooldownSequence: async () => {},
+
+        // NEW: Centralized Stop Execution Logic
+        stopExecution: () => {
+            if (!State.isExecuting && State.scriptStatus === 'IDLE') return; // Already stopped
+
+            Utils.logger('info', '执行已停止。');
+            State.isExecuting = false;
+            StatusManager.setStatus('IDLE');
+            State.runningWorkers = {}; // Clear any tracked workers
+            // We don't reset activeWorkers here, as a final report might still come in.
+            // The new logic is robust enough to handle this.
+            State.executionTotalTasks = 0;
+            State.executionCompletedTasks = 0;
+            State.executionFailedTasks = 0;
+            UI.update();
+        }
     };
 
 
     // --- 模块八: 用户界面 (User Interface) ---
     const UI = {
         create: () => {
-            // New, more robust rule: A detail page is identified by the presence of a main "acquisition" button,
-            // not by its URL, which can be inconsistent.
-            const acquisitionButton = [...document.querySelectorAll('button')].find(btn =>
-                [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
-            );
-
-            // The "Download" button is another strong signal.
-            const downloadButton = [...document.querySelectorAll('a[href*="/download/"], button')].find(btn =>
-                btn.textContent.includes('下载') || btn.textContent.includes('Download')
-            );
-
-            if (acquisitionButton || downloadButton) {
-                 const urlParams = new URLSearchParams(window.location.search);
-                 if (urlParams.has('workerId')) return;
-
-                Utils.logger('info', "On a detail page (detected by action buttons), skipping UI creation.");
+            // Do not create the main UI on worker tabs.
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('workerId')) {
                 return;
             }
 
@@ -1822,25 +1749,8 @@
             // Combined "Add & Execute" Button
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-button primary';
-            State.UI.execBtn.innerHTML = `✨ ${Utils.getText('execute')}`;
-            State.UI.execBtn.onclick = async () => {
-                 if (State.isExecuting) {
-                    TaskRunner.toggleExecution(); // This will just stop
-                } else {
-                    // Smart execution: scan if queue is empty, then start.
-                    if (State.db.todo.length === 0) {
-                        Utils.logger('info', '待办队列为空，自动执行页面扫描...');
-                        const newTasksCount = await TaskRunner.processPageWithApi({ autoAdd: true });
-                         if (newTasksCount > 0) {
-                            TaskRunner.startExecution();
-                        } else {
-                            Utils.logger('info', '扫描完成，未发现新任务可执行。');
-                        }
-                    } else {
-                         TaskRunner.startExecution();
-                    }
-                }
-            };
+            // The initial text and onclick will be set by the first UI.update() call.
+            // This avoids duplicating logic here.
 
             // Secondary Buttons
             const secondaryActions = document.createElement('div');
@@ -2032,32 +1942,59 @@
             }
 
             // Execute Button
-            const isUnhealthy = StatusManager.isThrottled() || StatusManager.isUnstable();
-            if (State.isExecuting) {
-                State.UI.execBtn.innerHTML = `🛑 停止挂机`;
-                State.UI.execBtn.className = 'fab-helper-button danger';
-                State.UI.execBtn.disabled = false;
-            } else {
-                 if (State.db.todo.length > 0) {
-                    State.UI.execBtn.innerHTML = `🚀 继续任务 (${State.db.todo.length})`;
-                    State.UI.execBtn.className = 'fab-helper-button primary fab-helper-pulse';
+            if (State.UI.execBtn) {
+                const isUnhealthy = StatusManager.isThrottled() || StatusManager.isUnstable();
+                State.UI.execBtn.disabled = isUnhealthy || State.isScanning;
+
+                if (State.isExecuting) {
+                    State.UI.execBtn.innerHTML = `🛑 停止挂机`;
+                    State.UI.execBtn.className = 'fab-helper-button danger';
+                    State.UI.execBtn.onclick = TaskRunner.stopExecution;
                 } else {
-                    State.UI.execBtn.innerHTML = `✨ ${Utils.getText('execute')}`;
                     State.UI.execBtn.className = 'fab-helper-button primary';
+                    if (State.db.todo.length > 0) {
+                        State.UI.execBtn.innerHTML = `🚀 继续任务 (${State.db.todo.length})`;
+                    } else if (State.isScanning) {
+                        State.UI.execBtn.innerHTML = `🔎 扫描中...`;
+                    }
+                    else {
+                        State.UI.execBtn.innerHTML = `✨ ${Utils.getText('execute')}`;
+                    }
+
+                    // Centralized onclick handler for the "start" state
+                    State.UI.execBtn.onclick = async () => {
+                        if (State.db.todo.length === 0) {
+                            Utils.logger('info', '待办队列为空，开始扫描页面...');
+                            await TaskRunner.processPageWithApi({ autoAdd: true });
+                            // startExecution will be called implicitly if tasks are found and added.
+                            // The main loop will then pick them up.
+                        }
+                        // This single function now handles all start cases.
+                        TaskRunner.startExecution();
+                    };
+
+                    if (State.db.todo.length > 0 && !isUnhealthy && !State.isScanning) {
+                         State.UI.execBtn.classList.add('fab-helper-pulse');
+                    } else {
+                         State.UI.execBtn.classList.remove('fab-helper-pulse');
+                    }
                 }
-                State.UI.execBtn.disabled = isUnhealthy;
             }
 
             // Other buttons
-            State.UI.refreshBtn.disabled = State.isExecuting || isUnhealthy;
-            State.UI.hideBtn.innerHTML = `🙈 ${State.hideSaved ? '显示' : '隐藏'}已得`;
-            State.UI.hideBtn.disabled = isUnhealthy;
+            if (State.UI.refreshBtn) {
+                State.UI.refreshBtn.disabled = State.isExecuting || StatusManager.isThrottled() || StatusManager.isUnstable() || State.isScanning;
+            }
+            if (State.UI.hideBtn) {
+                State.UI.hideBtn.innerHTML = `🙈 ${State.hideSaved ? '显示' : '隐藏'}已得`;
+                State.UI.hideBtn.disabled = StatusManager.isThrottled() || StatusManager.isUnstable();
+            }
 
             // Add visual cues for disabled state
             [State.UI.execBtn, State.UI.refreshBtn, State.UI.hideBtn].forEach(btn => {
                 if (btn) {
                     btn.style.cursor = btn.disabled ? 'not-allowed' : 'pointer';
-                    btn.style.opacity = btn.disabled ? 0.5 : 1;
+                    btn.style.opacity = btn.disabled ? 0.6 : 1;
                 }
             });
 
@@ -2087,35 +2024,52 @@
             }
         },
 
-        applyOverlay: (card, type='owned') => {
-            const existing = card.querySelector('.fab-helper-overlay-v8');
-            if (existing) existing.remove();
-            const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
-            if (isNativelyOwned) return;
-            const link = card.querySelector(Config.SELECTORS.cardLink);
-            const url = link && link.href.split('?')[0];
-            if (!url) return;
-            const overlay = document.createElement('div'); overlay.className='fab-helper-overlay-v8';
-            const styles={position:'absolute',top:'0',left:'0',width:'100%',height:'100%',background:'rgba(25,25,25,0.6)',zIndex:'10',display:'flex',justifyContent:'center',alignItems:'center',fontSize:'24px',fontWeight:'bold',backdropFilter:'blur(2px)',borderRadius:'inherit'};
-
-            // 改进基于会话的标记显示逻辑
-            if (type==='owned' || State.sessionCompleted.has(url)) {
-                styles.color='#4caf50';  // 绿色
-                overlay.innerHTML='✅';   // 勾选标记
+        applyOverlay: (card, status) => {
+            if (!card) return;
+            let overlay = card.querySelector('.fab-helper-overlay-v8');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.className = 'fab-helper-overlay-v8';
+                overlay.style.cssText = `
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background: rgba(28, 28, 30, 0.7);
+                    z-index: 10;
+                    display: flex; justify-content: center; align-items: center;
+                    font-size: 48px;
+                    font-weight: bold;
+                    backdrop-filter: blur(4px);
+                    border-radius: inherit;
+                    color: white;
+                    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+                    transition: opacity 0.3s;
+                    opacity: 0;
+                `;
+                // Append to the card's root, assuming it's a stacking context
+                card.style.position = 'relative';
+                card.appendChild(overlay);
+                // Trigger fade-in
+                setTimeout(() => { overlay.style.opacity = '1'; }, 10);
             }
-            else if (type==='queued' && Database.isTodo(url)) {
-                styles.color='#ff9800';  // 橙色
-                overlay.innerHTML='⏳';   // 等待标记
-            }
-            else return;
 
-            Object.assign(overlay.style,styles);
-            const thumb=card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
-            if (thumb) {if(getComputedStyle(thumb).position==='static')thumb.style.position='relative';thumb.appendChild(overlay);}
+            let icon = '';
+            switch (status) {
+                case 'owned':
+                    icon = '✅';
+                    break;
+                case 'failed':
+                    icon = '❌';
+                    break;
+                case 'pending':
+                    icon = '⏳';
+                    break;
+                default:
+                    icon = '…';
+            }
+            overlay.innerHTML = icon;
         },
 
         removeAllOverlays: () => {
-            document.querySelectorAll('.fab-helper-overlay-v8').forEach(overlay => overlay.remove());
+            document.querySelectorAll('.fab-helper-overlay-v8').forEach(o => o.remove());
         },
 
         applyOverlaysToPage: () => {

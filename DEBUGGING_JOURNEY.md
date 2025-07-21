@@ -1,66 +1,157 @@
-# 脚本调试与逻辑分析日志
+# Debugging Journey: Fab Helper Script v1.4.0
 
-本文档记录了对`Fab API-Driven Helper`脚本进行的一系列调试、分析与修复过程，旨在阐明脚本的核心逻辑、曾出现的严重问题以及最终采用的正确解决方案。
+This document chronicles the extensive and challenging process of debugging the Fab Helper userscript, specifically addressing a persistent issue where the script stalls after processing an initial batch of 5 tasks.
 
-## 核心结论
+## 1. Initial Problem Report
 
-经过深入的分析和修复，脚本的核心功能已达到稳定、高效且安全的状态。所有导致API滥用、速率限制（429错误）、程序崩溃和逻辑矛盾的根本性问题都已被修复。
+The user reported that the script, intended to process a queue of tasks concurrently using up to 5 worker tabs, would successfully dispatch the first 5 workers, but would fail to dispatch any further tasks after the initial batch completed. The "To-Do" list in the UI would still show remaining tasks, but the script would remain idle.
 
-## 关键问题分析与最终解决方案
+## 2. The Long Road of Failed Hypotheses
 
-### 1. 根本问题：网站的“数据水合”与脚本的“竞争条件”
+The debugging process was marked by a series of incorrect assumptions and failed fixes. This journey is documented here to provide a clear record of what was attempted and why it failed, ultimately leading to the correct diagnosis.
 
-这是所有问题的根源，也是最后才被完全理解的核心机制。
+### Hypothesis #1: Worker UI Interaction Failure
 
-*   **网站工作方式**:
-    1.  **初始状态 (待水合)**: 页面加载时，服务器首先返回一个包含基础信息（标题、图片）但**没有真实“入库状态”**的卡片骨架。此时，“入库状态”区域显示的是价格或“添加”按钮等占位符。
-    2.  **水合过程**: 页面的原生JavaScript在后台发起API请求，查询这些卡片的真实所有权状态。
-    3.  **最终状态 (已水合)**: API请求返回后，原生JavaScript会动态修改DOM，将占位符区域替换成正确的状态，即“✅ 已保存在我的库中”或明确的“免费”/“添加到我的库”按钮。
+**- Observation:** The script was stalling, and no success/failure updates were being registered. The user noted that for some items, a "paid" popup would appear.
+**- Theory:** The worker tabs were clicking the wrong button (e.g., "Add to Cart" instead of "Add to my library"), causing them to get stuck waiting for a success indicator that would never appear. This would prevent them from ever reporting back to the main tab.
+**- Action Taken:** The `processDetailPage` function was rewritten multiple times to use increasingly specific methods for finding the correct button, culminating in a version that searched for a button by its exact text content (`Config.ACQUISITION_TEXT_SET`).
+**- Result: FAILURE.** The issue persisted. While the button-clicking logic was made more robust, it was not the root cause of the stall.
 
-*   **脚本的错误**:
-    脚本的运行速度过快，在页面的“水合过程”完成之前，就对卡片进行了判断。它看到了占位符（比如价格），便错误地认为该商品“未拥有”，从而导致了一系列逻辑错误。
+### Hypothesis #2: Faulty Inter-Tab Communication Protocol
 
-### 2. 功能逻辑的最终形态
+**- Observation:** Even with robust UI interaction, the main "brain" tab did not seem to be receiving completion reports from the worker tabs.
+**- Theory:** There was a fundamental flaw in the `GM_addValueChangeListener` communication channel. Several sub-theories were explored:
+    1.  **Unique Report Keys:** I theorized that multiple workers reporting to the same key (`fab_worker_done_v8`) might be causing a race condition where reports were overwritten. I changed the logic to use a unique report key for each worker and a `key.startsWith()` check in the listener. This was a critical error, as `GM_addValueChangeListener` **does not support wildcard listeners**.
+    2.  **The `remote` Flag:** I suspected the `remote` flag in the listener's callback was behaving unreliably, causing the brain to ignore legitimate reports from workers.
+**- Action Taken:** I first implemented the faulty unique key system, which made things worse. I then reverted to a single, shared report key and added diagnostic probes to log the raw data received by the listener, including the `remote` flag. I also removed the check for the `remote` flag as a "just-in-case" fix.
+**- Result: FAILURE.** The diagnostic probes provided invaluable information. They showed that the brain **was** receiving reports, the `remote` flag was working correctly, and the reports were being processed. However, the script still stalled. This definitively proved that the communication channel itself was not the problem.
 
-为了适应网站的“水合”机制，脚本的两个核心功能最终被修改为以下形态：
+### Hypothesis #3: Cached Script Execution
 
-#### **【本页智能添加】(Smart Add)**
+**- Observation:** A user-provided log file showed the script identifying itself as `v1.1.0`, while all recent edits were being made to a file versioned as `v1.3.0` and later `v1.4.0`.
+**- Theory:** The browser's userscript manager (Tampermonkey) was aggressively caching an old version of the script. None of the recent fixes were actually being executed.
+**- Action Taken:** The script's `@version` header and internal `SCRIPT_NAME` constant were forcefully bumped to `v1.4.0` to invalidate the cache. A small delay was also added before `window.close()` in the worker as a secondary safety measure.
+**- Result: PARTIAL SUCCESS, BUT ULTIMATE FAILURE.** This was a genuine and serious issue. Forcing the version update ensured the user was running the latest code. The logs immediately reflected this, and our diagnostic probes started appearing. However, the core issue of stalling after 5 tasks remained, proving that while the caching was a real problem, it was masking a deeper, more fundamental bug.
 
-此功能的最终目标是：**在零API请求的情况下，快速、安全地将未拥有的商品加入待办队列。**
+### Hypothesis #4: UI Refresh Logic Disconnected
 
-*   **最终逻辑**:
-    1.  只扫描屏幕上**可见的**卡片。
-    2.  对每一张可见卡片，执行严格的**三层本地检验**：
-        *   **检验一**: 是否已存在于**永久的`doneList`数据库**中？（记录由本脚本成功入库的商品）
-        *   **检验二**: 是否已存在于**当前的`todo`待办列表**中？（防止重复添加）
-        *   **检验三**: 卡片的文本内容中，是否**已包含“已保存在我的库中”**等关键字？（这是为了等待并尊重网站自身的“水合”结果）
-    3.  只有**同时通过**以上三层检验的商品，才会被视为真正的、新的待办任务。
+**- Observation:** The user reported that even when tasks were completing, the UI on the main page (checkmarks on cards, hiding, counter updates) was not refreshing.
+**- Theory:** The logic connecting a successful task report to a UI refresh was missing.
+**- Action Taken:** A call to `TaskRunner.runHideOrShow()` was added inside the listener, immediately after `Database.markAsDone()`. The `runHideOrShow` function itself was also rewritten to be more robust.
+**- Result: PARTIAL SUCCESS, BUT ULTIMATE FAILURE.** This was another legitimate bug. Adding the refresh call correctly fixed the UI feedback loop. However, it did not fix the underlying stall.
 
-*   **优点**: 零API请求，速度极快，且通过等待“水合”后的文本状态，完美解决了“竞争条件”问题。
+## 3. The Final Diagnosis (Revealed by the Logs)
 
-#### **【本页状态刷新】(Refresh Page State)**
+The diagnostic probes from our last attempt finally provided the "smoking gun." The user's final log file showed the following critical sequence:
 
-此功能的最终目标是：**当用户需要时，强制用服务器的真实状态来更新当前页面的视觉显示，解决信息不同步问题。**
+1.  `[Listener] ... Active workers now: 4`
+2.  `[Listener] ... Active workers now: 3`
+3.  `[Listener] ... Active workers now: 2`
+4.  `[Listener] ... Active workers now: 1`
+5.  `[Listener] ... Active workers now: 0`
+6.  `[智能追击] ... 自动触发新一轮扫描...`
+7.  The scan finds new items and adds them to the `todo` queue.
+8.  **The script stalls.**
 
-*   **最终逻辑**:
-    1.  获取屏幕上所有**可见的**卡片。
-    2.  **发起一次API请求**，向服务器查询这些卡片最权威的所有权状态。
-    3.  对于服务器返回的、确认“已拥有”但页面UI未更新的卡片，执行**直接DOM操作**：
-        *   找到卡片上显示价格或“添加”按钮的区域。
-        *   **将其完整替换成一个与网站原生一模一样的、包含绿色对勾图标和“已保存在我的库中”文字的`div`元素。**
-    4.  完成DOM操作后，再触发一次隐藏逻辑，让被更新的卡片能够被正确隐藏。
+The probes proved that `State.activeWorkers` **was being correctly decremented back to 0**. This invalidated my final hypothesis that the counter was stuck.
 
-*   **优点**:
-    *   作为“手动水合”工具，为用户提供了强制同步数据的主动权。
-    *   **不污染任何本地数据库**。它的所有操作都是为了即时更新视觉，不存储任何状态，只将页面的DOM作为唯一的状态源。
+The true, undeniable root cause lies in the **Task Dispatcher (`executeBatch`)** and its interaction with the **Smart Pursuit (`智能追击`)** logic.
 
-### 3. 已修复的其他主要BUG
+Here is the flawed logic in `executeBatch`:
 
-在整个调试过程中，我们还修复了以下问题：
+```javascript
+// This is the ONLY place where new workers are created.
+while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
+    // ... dispatch logic ...
+}
 
-*   **429速率限制循环**: 通过延长“凤凰协议”的重试间隔至65秒解决。
-*   **程序崩溃**: 修复了 `Api` vs `API` 的拼写错误 (`ReferenceError`) 和 `isElementInViewport` 函数的缺失 (`TypeError`)。
-*   **任务名错误**: 通过使用精准的结构化CSS选择器 (`a[href*="/listings/"] > div`)，解决了任务名显示为“Unknown Task”的问题。
+// This logic runs AFTER the while loop is finished.
+if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+     if (State.isSmartPursuitEnabled && !State.isScanning) {
+         
+         // This is an ASYNCHRONOUS operation.
+         TaskRunner.processPageWithApi({ autoAdd: true }).then(newTasksCount => {
+             if (newTasksCount > 0) {
+                 // *** THE FATAL FLAW ***
+                 // By the time this runs, the parent executeBatch function
+                 // has already finished. This re-call starts a new context,
+                 // but nothing ever calls executeBatch again if this second
+                 // batch finishes.
+                 TaskRunner.executeBatch();
+             } else {
+                 TaskRunner.stopExecution(); 
+             }
+         });
+     } // ...
+}
+```
 
----
-这份日志记录了我们共同努力的成果。脚本从一个问题缠身的状态，最终演变成了一个逻辑严密、稳定高效的工具。 
+**The Fatal Flaw Explained:**
+
+1.  The script starts. `executeBatch` is called. The `while` loop dispatches 5 workers. `activeWorkers` becomes 5. The function's `while` loop ends. The `if` condition is not met. The function effectively goes to sleep, waiting for the listener to do its job.
+2.  The 5 workers finish one by one. The listener correctly decrements `activeWorkers` from 5 down to 0.
+3.  When the last worker reports and `activeWorkers` becomes 0, the listener **does not re-call `executeBatch`**.
+4.  Instead, the **Smart Pursuit logic inside the original `executeBatch` call** is what gets triggered. It starts its *asynchronous* scan, finds new tasks, and calls `executeBatch` again.
+5.  This second call to `executeBatch` correctly dispatches a new batch of workers.
+6.  **BUT**, there is no mechanism to continue this loop. The logic is not a continuous "check-and-dispatch" loop. It's a one-shot `if` statement at the end of a function that has already run. When this second batch of workers completes, `activeWorkers` will go to 0, but the `if` condition that triggers Smart Pursuit will not be re-evaluated, because the listener never calls `executeBatch`.
+
+The entire control flow is flawed. The dispatcher and the task completion listener are not correctly linked to form a continuous processing loop.
+
+## 4. The Path to a True Solution
+
+The fix is not a small tweak, but a fundamental change to the control flow. The `executeBatch` function needs to be redesigned to be the single source of truth for dispatching, and the listener's only job should be to decrement the counter and then immediately ask `executeBatch` to check if more work can be done.
+
+**Proposed Correct Logic:**
+
+```javascript
+// In TaskRunner.init (The Listener)
+GM_addValueChangeListener(..., async (..., newValue, ...) => {
+    // ... (process the report, mark as done)
+    
+    if (State.runningWorkers[workerId]) {
+        delete State.runningWorkers[workerId];
+        State.activeWorkers--;
+    }
+
+    // *** THE CRITICAL CHANGE ***
+    // After every single worker finishes, immediately ask the dispatcher
+    // to check its work. This creates the continuous loop.
+    TaskRunner.executeBatch(); 
+});
+
+
+// In TaskRunner.executeBatch
+const TaskRunner = {
+    executeBatch: async () => {
+        if (!State.isExecuting) return;
+
+        // 1. Dispatch new workers if there is capacity and tasks are available.
+        while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0) {
+            // ... dispatch logic ...
+        }
+
+        // 2. Check for completion and trigger Smart Pursuit if necessary.
+        // This check will now run every time a worker finishes and calls executeBatch.
+        if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+             if (State.isSmartPursuitEnabled && !State.isScanning) {
+                 // Asynchronous, but that's okay. The next call to executeBatch
+                 // will happen inside the .then() block.
+                 TaskRunner.processPageWithApi({ autoAdd: true }).then(newTasksCount => {
+                     if (newTasksCount > 0) {
+                         // The loop continues.
+                         TaskRunner.executeBatch();
+                     } else {
+                         // The loop terminates.
+                         TaskRunner.stopExecution(); 
+                     }
+                 });
+             } else if (!State.isScanning && !State.isSmartPursuitEnabled) {
+                // If pursuit is off and we are out of tasks/workers, we are truly done.
+                TaskRunner.stopExecution();
+             }
+        }
+    }
+}
+```
+
+This revised structure creates a robust, continuous loop where the dispatcher is constantly being re-evaluated, ensuring that as soon as a worker slot opens up, it is immediately filled if tasks are available. This is the correct way to solve the stall.
