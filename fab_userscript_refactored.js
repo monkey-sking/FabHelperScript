@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0.2
+// @version      3.0.4
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -2277,6 +2277,47 @@
             return; // IMPORTANT: Stop all further script execution for this worker tab.
         }
 
+        // --- NEW FLOW: Create the UI FIRST for immediate user feedback ---
+        UI.create();
+
+        // --- Dead on Arrival Check for initial 429 page load ---
+        const pageTitle = document.title || '';
+        const bodyText = document.body ? document.body.textContent.trim() : '';
+
+        // Heuristic 1: Standard Cloudflare interstitial pages.
+        const isCloudflareTitle = pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required');
+        const isCloudflareBody = bodyText.includes('DDoS protection by Cloudflare');
+
+        // Heuristic 2: API-style JSON error rendered as the main document.
+        const isJsonError = bodyText.startsWith('{') && bodyText.endsWith('}') && bodyText.includes('Too many requests');
+
+        if (isCloudflareTitle || isCloudflareBody || isJsonError) {
+            Utils.logger('error', '🚨 Initial page load resulted in a 429 block page.');
+            
+            const enterRateLimitedState = () => {
+                if (State.autoResumeAfter429) {
+                    Utils.logger('info', 'Auto-recovery is enabled. Scheduling a refresh...');
+                    const randomDelay = Math.floor(Math.random() * (10000 - 5000 + 1) + 5000); // 5-10s
+                    setTimeout(() => location.reload(), randomDelay);
+                } else {
+                    Utils.logger('warn', 'Please enable "Auto-Recovery" in Settings to handle this automatically, or refresh the page manually later.');
+                }
+            };
+
+            if (State.appStatus !== 'RATE_LIMITED') {
+                State.appStatus = 'RATE_LIMITED';
+                State.rateLimitStartTime = Date.now();
+                // Persist this state so the next load knows what's happening.
+                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime })
+                    .then(enterRateLimitedState);
+            } else {
+                // We are already in the state, just trigger the action.
+                enterRateLimitedState();
+            }
+            // IMPORTANT: Stop all further script execution for this page, but AFTER UI is created.
+            return; 
+        }
+
         // --- Auto-Recovery Check ---
         // This runs after DB load and before any UI is created.
         if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
@@ -2286,7 +2327,7 @@
         // --- Standard page setup (runs only for the main, non-worker tab) ---
         // The UI.create() function now internally checks if it should run,
         // so we can call it unconditionally here.
-        UI.create();
+        // DEPRECATED: UI is now created at the top of this function.
 
         // The rest of the setup only makes sense if the UI was actually created.
         if (!State.UI.container) {
