@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.3.2
+// @version      2.4.1
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -541,6 +541,12 @@
                 return;
             }
 
+            // --- BEHAVIOR CHANGE: From Accumulate to Overwrite Mode ---
+            // As per user request for waterfall pages, clear the existing To-Do list before every scan.
+            // This ensures "To-Do" always reflects the currently visible and actionable items.
+            State.db.todo = [];
+            Utils.logger('info', '待办列表已清空。现在将扫描并仅添加当前可见的项目。');
+
             Utils.logger('info', '正在扫描已加载完成的商品...');
             const cards = document.querySelectorAll(Config.SELECTORS.card);
             const newlyAddedList = [];
@@ -1032,7 +1038,7 @@
         runWatchdog: () => {
             if (State.watchdogTimer) clearInterval(State.watchdogTimer); // Clear any existing timer
 
-            State.watchdogTimer = setInterval(() => {
+            State.watchdogTimer = setInterval(async () => {
                 if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
@@ -1047,13 +1053,27 @@
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
 
-                        Database.markAsFailed(workerInfo.task);
+                        // The watchdog now follows the same logic as the WORKER_DONE listener for failures.
+                        const task = workerInfo.task;
 
+                        // 1. Remove from To-Do
+                        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+
+                        // 2. Add to Failed
+                        if (!State.db.failed.some(f => f.uid === task.uid)) {
+                            State.db.failed.push(task);
+                            await Database.saveFailed();
+                        }
+                        State.executionFailedTasks++;
+
+                        // 3. Clean up worker
                         delete State.runningWorkers[workerId];
                         State.activeWorkers--;
 
                         Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
-
+                        
+                        // 4. Update UI and dispatch
+                        UI.update();
                         TaskRunner.executeBatch();
                     }
                 }
@@ -1076,12 +1096,17 @@
             }
 
             // --- DISPATCHER FOR DETAIL TASKS ---
-            while (State.activeWorkers < Config.MAX_WORKERS && State.db.todo.length > 0 && State.db.todo[0].type === 'detail') {
-                const task = State.db.todo.shift();
+            // New logic: Iterate without modifying the todo list. Dispatch tasks that are not yet "in-flight".
+            const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
+
+            for (const task of State.db.todo) {
+                if (State.activeWorkers >= Config.MAX_WORKERS) break;
+
+                // Skip if this task is already in-flight
+                if (inFlightUIDs.has(task.uid)) continue;
+
                 State.activeWorkers++;
-
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
                 State.runningWorkers[workerId] = { task, startTime: Date.now() };
 
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
@@ -1234,22 +1259,15 @@
                 logBuffer.push(`A critical error occurred: ${error.message}`);
                 success = false;
             } finally {
-                if (success) {
-                    await Database.markAsDone(currentTask);
-                    logBuffer.push(`✅ Task marked as DONE.`);
-                } else {
-                    await Database.markAsFailed(currentTask);
-                    logBuffer.push(`❌ Task marked as FAILED.`);
-                }
-
-                // This is the one and only signal the worker sends back.
-                // It contains its ID, its success status, and its full log.
+                // The worker's ONLY job is to report back. It does NOT modify the database.
+                // All state changes are handled by the main tab's listener for consistency.
                 await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
                     workerId: workerId,
                     success: success,
-                    logs: logBuffer
+                    logs: logBuffer,
+                    task: currentTask // Pass the original task back
                 });
-                await GM_deleteValue(workerId);
+                await GM_deleteValue(workerId); // Clean up the task payload
                 window.close();
             }
         },
@@ -1799,6 +1817,9 @@
             State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
             State.UI.container.querySelector('#fab-status-hidden').textContent = State.hiddenThisPageCount;
 
+            // Debug Log as requested by user
+            Utils.logger('info', `[UI Update] Counts -> To-Do: ${State.db.todo.length}, Visible: ${visibleCount}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
+
             // NEW: Progress Bar
             // This is removed for the new UI, can be re-added later if needed.
 
@@ -2045,9 +2066,9 @@
         // State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TASK, ...));
 
         // RESTORED LISTENER: For receiving and printing logs from worker tabs.
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, (key, oldValue, newValue) => {
+        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
             if (!newValue || !newValue.workerId) return;
-            const { workerId, success, logs } = newValue;
+            const { workerId, success, logs, task } = newValue; // Get the task from the payload
 
             // --- Log printing first ---
             if (logs && Array.isArray(logs)) {
@@ -2060,32 +2081,43 @@
             }
 
             // --- Then, process the result ---
-            if (State.runningWorkers[workerId]) {
-                const task = State.runningWorkers[workerId].task;  // Get the task from runningWorkers
-                if (success) {
-                    State.executionCompletedTasks++;
-                    // Phase15: Track successfully completed tasks in the current session
-                    if (task && task.url) {
-                        State.sessionCompleted.add(task.url.split('?')[0]); // Add the clean URL to sessionCompleted
-                    }
-                } else {
-                    State.executionFailedTasks++;
-                }
+            // Ensure the task hasn't been processed already by a racing listener
+            if (!State.runningWorkers[workerId]) return;
 
-                State.activeWorkers--;
-                delete State.runningWorkers[workerId];
-                // This log now makes more sense as it comes AFTER the detailed log report.
-                Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}.`);
-
-                // Explicitly update UI to show progress immediately
-                UI.update();
-                // We must update overlays and hide/show logic after a worker finishes
-                UI.applyOverlaysToPage();
-                TaskRunner.runHideOrShow();
-
-
-                TaskRunner.executeBatch();
+            // CRITICAL: This is the ONLY place where state is modified post-execution.
+            // 1. Remove task from the To-Do list
+            const initialTodoCount = State.db.todo.length;
+            State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+            if (State.db.todo.length === initialTodoCount && initialTodoCount > 0) {
+                Utils.logger('warn', `Task UID ${task.uid} not found in To-Do list upon completion.`);
             }
+
+            // 2. Add to Done or Failed list
+            if (success) {
+                State.executionCompletedTasks++;
+                const cleanUrl = task.url.split('?')[0];
+                if (!Database.isDone(cleanUrl)) {
+                    State.db.done.push(cleanUrl);
+                    await Database.saveDone(); // Persist
+                }
+                State.sessionCompleted.add(cleanUrl);
+            } else {
+                State.executionFailedTasks++;
+                if (!State.db.failed.some(f => f.uid === task.uid)) {
+                    State.db.failed.push(task);
+                    await Database.saveFailed(); // Persist
+                }
+            }
+
+            // 3. Update worker management state
+            State.activeWorkers--;
+            delete State.runningWorkers[workerId];
+            Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}.`);
+
+            // 4. Update UI and dispatch next batch
+            UI.update();
+            TaskRunner.runHideOrShow();
+            TaskRunner.executeBatch();
         }));
 
         // The old TASK listener is now obsolete and will be removed.
