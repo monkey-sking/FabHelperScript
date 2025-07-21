@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.0.7
+// @version      3.0.9
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1984,8 +1984,38 @@
             debugTitle.textContent = '状态周期历史记录';
             debugTitle.style.margin = '0';
 
+            const debugControls = document.createElement('div');
+            debugControls.style.cssText = 'display: flex; gap: 8px;';
+
+            const copyHistoryBtn = document.createElement('button');
+            copyHistoryBtn.textContent = '复制';
+            copyHistoryBtn.title = '复制详细历史记录';
+            copyHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
+            copyHistoryBtn.onclick = () => {
+                if (State.statusHistory.length === 0) {
+                    Utils.logger('info', '没有历史记录可供复制。');
+                    return;
+                }
+                const formatEntry = (entry) => {
+                    const date = new Date(entry.endTime).toLocaleString();
+                    const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
+                    let details = `持续: ${entry.duration.toFixed(2)}s`;
+                    if (entry.requests !== undefined) {
+                        details += `, 请求: ${entry.requests}次`;
+                    }
+                    return `${type}\n  - 结束于: ${date}\n  - ${details}`;
+                };
+                const fullLog = State.statusHistory.map(formatEntry).join('\n\n');
+                navigator.clipboard.writeText(fullLog).then(() => {
+                    const originalText = copyHistoryBtn.textContent;
+                    copyHistoryBtn.textContent = '已复制!';
+                    setTimeout(() => { copyHistoryBtn.textContent = originalText; }, 2000);
+                }).catch(err => Utils.logger('error', '复制失败:', err));
+            };
+
             const clearHistoryBtn = document.createElement('button');
-            clearHistoryBtn.textContent = '清空历史';
+            clearHistoryBtn.textContent = '清空';
+            clearHistoryBtn.title = '清空历史记录';
             clearHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
             clearHistoryBtn.onclick = async () => {
                 if (window.confirm('您确定要清空所有状态历史记录吗？')) {
@@ -1996,7 +2026,8 @@
                 }
             };
             
-            debugHeader.append(debugTitle, clearHistoryBtn);
+            debugControls.append(copyHistoryBtn, clearHistoryBtn);
+            debugHeader.append(debugTitle, debugControls);
 
             const historyListContainer = document.createElement('div');
             historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto;';
@@ -2261,14 +2292,14 @@
 
         // 由于脚本在 document-start 运行，UI 相关的操作必须等待 DOM 加载完成
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', runDomDependentPart);
+            document.addEventListener('DOMContentLoaded', () => runDomDependentPart());
         } else {
             runDomDependentPart();
         }
     }
 
     // 将所有依赖 DOM 的操作移到这里
-    function runDomDependentPart() {
+    async function runDomDependentPart() {
         // The new, correct worker detection logic.
         // We check if a workerId is present in the URL. If so, it's a worker tab.
         const urlParams = new URLSearchParams(window.location.search);
@@ -2282,18 +2313,47 @@
         UI.create();
 
         // --- Dead on Arrival Check for initial 429 page load ---
+        const checkIsErrorPage = (title, text) => {
+            const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
+            const isCloudflareBody = text.includes('DDoS protection by Cloudflare');
+            const isJsonError = text.length < 100 && text.includes('"detail"') && text.includes('"Too many requests"');
+            return isCloudflareTitle || isCloudflareBody || isJsonError;
+        };
+
         const pageTitle = document.title || '';
-        const bodyText = document.body ? document.body.textContent.trim() : '';
+        let bodyText = document.body ? document.body.textContent.trim() : '';
+        let isError = checkIsErrorPage(pageTitle, bodyText);
 
-        // Heuristic 1: Standard Cloudflare interstitial pages.
-        const isCloudflareTitle = pageTitle.includes('Cloudflare') || pageTitle.includes('Attention Required');
-        const isCloudflareBody = bodyText.includes('DDoS protection by Cloudflare');
+        // ASYNC WATCHDOG: If the page is initially empty, content might be injected after DOMContentLoaded.
+        // We'll observe for a short period to make sure.
+        if (!isError && bodyText.length < 10) {
+            Utils.logger('info', 'Page is initially empty. Observing for dynamic content...');
+            try {
+                const newContent = await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => {
+                        observer.disconnect();
+                        reject(new Error('Timeout waiting for page content.'));
+                    }, 2000); // Wait up to 2 seconds
 
-        // FINAL HEURISTIC: A robust "fingerprint" check for API-style errors.
-        // It checks for a very short page content combined with the specific error message keys.
-        const isJsonError = bodyText.length < 100 && bodyText.includes('"detail"') && bodyText.includes('"Too many requests"');
-
-        if (isCloudflareTitle || isCloudflareBody || isJsonError) {
+                    const observer = new MutationObserver(() => {
+                        const updatedText = document.body.textContent.trim();
+                        if (updatedText.length >= 10) { // Check for any meaningful content
+                            observer.disconnect();
+                            clearTimeout(timeout);
+                            resolve(updatedText);
+                        }
+                    });
+                    observer.observe(document.body, { childList: true, subtree: true });
+                });
+                bodyText = newContent; // Update bodyText with the new content
+                isError = checkIsErrorPage(pageTitle, bodyText); // Re-run the check
+            } catch (e) {
+                isError = false; // Timed out, assume the page is not an error page.
+                Utils.logger('info', 'Observer timed out. Assuming normal page.');
+            }
+        }
+        
+        if (isError) {
             Utils.logger('error', '🚨 Initial page load resulted in a 429 block page.');
             
             const enterRateLimitedState = () => {
