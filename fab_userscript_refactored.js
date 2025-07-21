@@ -689,9 +689,18 @@
                 return;
             }
 
+            // NEW: Divert logic if auto-add is on. The observer populates the list,
+            // so the button should just act as a "start" signal.
+            if (State.autoAddOnScroll) {
+                Utils.logger('info', '“自动添加”已开启。将直接处理当前"待办"队列中的所有任务。');
+                TaskRunner.startExecution(); // This will use the existing todo list
+                return;
+            }
+
+
             // --- BEHAVIOR CHANGE: From Accumulate to Overwrite Mode ---
             // As per user request for waterfall pages, clear the existing To-Do list before every scan.
-            // This ensures "To-Do" always reflects the currently visible and actionable items.
+            // This part now only runs when auto-add is OFF.
             State.db.todo = [];
             Utils.logger('info', '待办列表已清空。现在将扫描并仅添加当前可见的项目。');
 
@@ -1497,18 +1506,15 @@
                 if (!url) return;
 
                 // Check if visibly owned, in the DB, or completed this session
-                const cardText = card.textContent || '';
-                const isVisiblyOwned = [...Config.SAVED_TEXT_SET].some(s => cardText.includes(s));
-                const isOwned = isVisiblyOwned || Database.isDone(url) || State.sessionCompleted.has(url);
-                if (isOwned) {
+                const isFinished = TaskRunner.isCardFinished(card);
+                if (isFinished) {
                     ownedCount++;
                     return;
                 }
 
                 // Check if already in todo or failed lists
                 const isTodo = Database.isTodo(url);
-                const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
-                if (isTodo || isFailed) {
+                if (isTodo) {
                     alreadyInQueueCount++;
                     return;
                 }
@@ -1520,10 +1526,16 @@
             if (newlyAddedList.length > 0) {
                 State.db.todo.push(...newlyAddedList);
                 Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
-                // If execution is running, we need to update the total task count
+                // If execution is running, we just need to update the total task count.
+                // The main loop will pick up new tasks.
                 if (State.isExecuting) {
-                    State.executionTotalTasks += newlyAddedList.length;
+                    State.executionTotalTasks = State.db.todo.length;
                     UI.update();
+                }
+                // If not executing, and auto-add is on, we should kick off the process.
+                else {
+                    Utils.logger('info', '[自动添加] 检测到新任务，且执行器已空闲。自动开始执行...');
+                    TaskRunner.startExecution();
                 }
             }
         },
