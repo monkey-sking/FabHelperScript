@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.4
+// @version      2.2.5
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1401,12 +1401,12 @@
                 .fab-helper-status-bar {
                     display: grid;
                     grid-template-columns: repeat(5, 1fr);
-                    gap: 8px;
+                    gap: 6px; /* FIX: Reduced gap to create more space */
                     margin-bottom: 12px;
                 }
                 .fab-helper-status-item {
                     background: var(--dark-gray);
-                    padding: 8px;
+                    padding: 8px 6px; /* FIX: Reduced horizontal padding */
                     border-radius: var(--radius-m);
                     font-size: 12px;
                     color: var(--text-color-secondary);
@@ -1415,6 +1415,7 @@
                     justify-content: center;
                     align-items: center;
                     gap: 2px;
+                    min-width: 0; /* FIX: Allow grid item to shrink below its content size */
                 }
                 .fab-helper-status-label {
                     display: flex;
@@ -1422,6 +1423,10 @@
                     justify-content: center;
                     gap: 4px;
                     white-space: nowrap;
+                    /* FIX: Gracefully handle overflow if text is still too long */
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    width: 100%; /* Ensure label uses full width for ellipsis to work */
                 }
                 .fab-helper-status-item span {
                     display: block;
