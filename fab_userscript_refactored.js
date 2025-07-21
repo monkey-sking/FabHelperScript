@@ -477,6 +477,28 @@
 
     // --- 模块七: 任务运行器与事件处理 (Task Runner & Event Handlers) ---
     const TaskRunner = {
+        isCardFinished: (card) => {
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            // If there's no link, we can't get a URL to check against the DB.
+            // In this case, rely only on visual cues.
+            const url = link ? link.href.split('?')[0] : null;
+
+            // Priority 1: Check for the specific 'owned' status element. This is the most reliable.
+            if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) return true;
+
+            // Priority 2: Check our databases and session state if we have a URL.
+            if (url) {
+                if (Database.isDone(url)) return true;
+                if (Database.isFailed(url)) return true; // A failed item is also considered "finished" for skipping/hiding purposes.
+                if (State.sessionCompleted.has(url)) return true;
+            }
+
+            // Priority 3 (Fallback): Check for broad text content. Less reliable but catches edge cases.
+            const text = card.textContent || '';
+            if ([...Config.SAVED_TEXT_SET].some(s => text.includes(s))) return true;
+
+            return false;
+        },
         // --- Toggles ---
         // This is the new main execution function, triggered by the "一键开刷" button.
         toggleExecution: () => {
@@ -515,21 +537,19 @@
                     return; // Skip unsettled cards
                 }
 
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                const url = link ? link.href.split('?')[0] : null;
-                if (!url) return;
-
-                const isVisiblyOwned = card.querySelector(Config.SELECTORS.ownedStatus) !== null;
-                const isDoneInDb = Database.isDone(url) || State.sessionCompleted.has(url);
-
-                if (isVisiblyOwned || isDoneInDb) {
+                // UNIFIED LOGIC: Use the new single source of truth to check if the card is finished.
+                if (TaskRunner.isCardFinished(card)) {
                     ownedCount++;
                     return;
                 }
 
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                const url = link ? link.href.split('?')[0] : null;
+                if (!url) return; // Should be caught by isCardFinished, but good for safety.
+
+                // The only check unique to adding is whether it's already in the 'todo' queue.
                 const isTodo = Database.isTodo(url);
-                const isFailed = State.db.failed.some(t => t.url && t.url.startsWith(url));
-                if (isTodo || isFailed) {
+                if (isTodo) {
                     alreadyInQueueCount++;
                     return;
                 }
@@ -1207,18 +1227,10 @@
         runHideOrShow: () => {
             State.hiddenThisPageCount = 0;
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                const text = card.textContent || '';
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (!link) return;
-                const url = link.href.split('?')[0];
+                // UNIFIED LOGIC: Use the new single source of truth.
+                const isFinished = TaskRunner.isCardFinished(card);
 
-                // 检查是否由网站原生标记为已保存
-                const isNativelySaved = [...Config.SAVED_TEXT_SET].some(s => text.includes(s));
-                const isFailed = Database.isFailed(url);
-                const isDone = Database.isDone(url);
-
-                // 如果设置为隐藏已保存项目，并且项目是已保存的或在本次会话中完成的
-                if (State.hideSaved && (isNativelySaved || isDone || isFailed)) {
+                if (State.hideSaved && isFinished) {
                     card.style.display = 'none';
                     State.hiddenThisPageCount++;
                 } else {
