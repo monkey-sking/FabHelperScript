@@ -1375,6 +1375,7 @@
                 }
                 .fab-helper-actions button {
                     flex: 1;
+                    min-width: 0; /* Ensures buttons can shrink properly */
                     display: flex;
                     align-items: center;
                     justify-content: center;
@@ -1383,11 +1384,12 @@
                     border: none;
                     border-radius: var(--radius-m);
                     color: var(--text-color-primary);
-                    padding: 8px 4px;
+                    padding: 9px 5px; /* Slightly more vertical padding */
                     cursor: pointer;
                     transition: background-color 0.2s;
                     white-space: nowrap;
-                    font-size: 13px;
+                    font-size: 14px; /* A bit larger for readability */
+                    font-weight: 500; /* Medium weight for clarity */
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }
