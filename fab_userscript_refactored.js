@@ -540,14 +540,22 @@
         init: () => {
             // This is the single listener on the main tab that reacts to workers finishing.
             GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue, remote) => {
-                if (!newValue || !newValue.workerId) return;
+                if (!newValue || !newValue.workerId || !newValue.task) return; // FIX: Ensure task is present
 
-                const { workerId, success, logs } = newValue;
+                const { workerId, success, logs, task } = newValue; // FIX: Get task from payload
 
                 // Log the report from the worker
                 Utils.logger('info', '--- Log Report from Worker [%s] ---', workerId.substring(0, 12));
                 logs.forEach(log => Utils.logger('info', log));
                 Utils.logger('info', '--- End Log Report ---');
+
+                // FIX: Centralized state management in the main tab.
+                // The main tab is now responsible for updating the database.
+                if (success) {
+                    await Database.markAsDone(task);
+                } else {
+                    await Database.markAsFailed(task);
+                }
 
                 // Clean up worker state
                 delete State.runningWorkers[workerId];
@@ -559,7 +567,7 @@
 
                     // Auto-hide the completed item if the feature is enabled
                     if (State.hideSaved) {
-                        TaskRunner.refreshVisibleStates(); // This forces a full UI re-evaluation and hide
+                        runHideOrShow();
                     }
 
                 } else {
@@ -1200,10 +1208,8 @@
             const urlParams = new URLSearchParams(window.location.search);
             const workerId = urlParams.get('workerId');
 
-            // If there's no workerId, this is not a worker tab, so we do nothing.
             if (!workerId) return;
 
-            // This is a safety check. If the main tab stops execution, it might delete the task.
             const payload = await GM_getValue(workerId);
             if (!payload || !payload.task) {
                 window.close();
@@ -1331,20 +1337,20 @@
                 logBuffer.push(`A critical error occurred: ${error.message}`);
                 success = false;
             } finally {
+                // FIX: Worker no longer updates the database directly. It only reports.
                 if (success) {
-                    await Database.markAsDone(currentTask);
-                    logBuffer.push(`✅ Task marked as DONE.`);
+                    logBuffer.push(`✅ Task reported as DONE.`);
                 } else {
-                    await Database.markAsFailed(currentTask);
-                    logBuffer.push(`❌ Task marked as FAILED.`);
+                    logBuffer.push(`❌ Task reported as FAILED.`);
                 }
 
                 // This is the one and only signal the worker sends back.
-                // It contains its ID, its success status, and its full log.
+                // It contains its ID, its success status, its full log, and the task object.
                 await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
                     workerId: workerId,
                     success: success,
-                    logs: logBuffer
+                    logs: logBuffer,
+                    task: currentTask // FIX: Pass the task object back
                 });
                 await GM_deleteValue(workerId);
                 window.close();
