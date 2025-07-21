@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.8
+// @version      2.3.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1416,9 +1416,9 @@
                     align-items: center;
                     gap: 2px;
                     min-width: 0;
-                    /* FIX: Set flex-basis to create a 3-column primary layout */
                     flex-grow: 1;
-                    flex-basis: calc(33.333% - 4px); /* (100% / 3) - gap adjustment */
+                    /* FINAL FIX: Use a precise formula to calculate the basis */
+                    flex-basis: calc((100% - 12px) / 3); /* (100% width - 2*6px gap) / 3 columns */
                 }
                 .fab-helper-status-label {
                     display: flex;
@@ -1638,7 +1638,7 @@
                 }
             };
             State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
-            statusBar.append(State.UI.statusTodo, State.UI.statusFailed, State.UI.statusDone, State.UI.statusVisible, State.UI.statusHidden);
+            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
 
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
