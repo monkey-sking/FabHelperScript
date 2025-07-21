@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.2.0
+// @version      2.2.1
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -727,26 +727,37 @@
                 const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
                 if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
 
+                // 收集可见卡片的 UID
                 const visibleCards = [...document.querySelectorAll(CARD_SELECTOR)].filter(isElementInViewport);
                 const uidToCardMap = new Map();
-
+                const uidsFromVisibleCards = new Set();
                 visibleCards.forEach(card => {
                     const link = card.querySelector(LINK_SELECTOR);
                     if (link) {
                         const match = link.href.match(/listings\/([a-f0-9-]+)/);
-                        if (match && match[1]) uidToCardMap.set(match[1], card);
+                        if (match && match[1]) {
+                            uidToCardMap.set(match[1], card);
+                            uidsFromVisibleCards.add(match[1]);
+                        }
                     }
                 });
 
-                const uidsToQuery = [...uidToCardMap.keys()];
-                if (uidsToQuery.length === 0) {
-                    Utils.logger('info', '[Fab DOM Refresh] No visible items to check.');
+                // 收集失败列表中的 UID
+                const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
+
+                // 合并所有需要查询的 UID，并去重
+                const uidsToQuery = new Set([...uidsFromVisibleCards, ...uidsFromFailedList]);
+
+                if (uidsToQuery.size === 0) {
+                    Utils.logger('info', '[Fab DOM Refresh] 没有可见或失败的项目需要检查。');
                     return;
                 }
-                Utils.logger('info', `[Fab DOM Refresh] Found ${uidsToQuery.length} visible items. Querying API...`);
+                Utils.logger('info', `[Fab DOM Refresh] 正在检查 ${uidsFromVisibleCards.size} 个可见项目和 ${uidsFromFailedList.size} 个失败项目的状态...`);
 
                 const apiUrl = new URL(API_ENDPOINT);
-                uidsToQuery.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
+                for (const uid of uidsToQuery) {
+                    apiUrl.searchParams.append('listing_ids', uid);
+                }
 
                 // Use fetch directly as it's a simple GET request with standard headers.
                 const response = await fetch(apiUrl.href, {
