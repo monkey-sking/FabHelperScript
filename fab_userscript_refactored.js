@@ -78,6 +78,7 @@
         db: {},
         isExecuting: false,
         isReconning: false,
+        isScanning: false, // NEW: Lock to prevent concurrent scans in Smart Pursuit
         isCoolingDown: false, // NEW: Global cooldown state
         wasExecutingBeforeCooldown: false, // NEW: State memory for Phoenix Protocol
         hideSaved: false,
@@ -637,132 +638,84 @@
         },
 
         processPageWithApi: async (options = {}) => {
-            const { autoAdd = false, onlyVisible = false } = options;
-            
-            const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
-            const CARD_SELECTOR = 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root';
-            const LINK_SELECTOR = 'a[href*="/listings/"]';
-            const CSRF_COOKIE_NAME = 'fab_csrftoken';
-            const CHUNK_SIZE = 8;
-            const DELAY_BETWEEN_CHUNKS = 250;
-            
-            const FREE_STATUS_SELECTOR = '.csZFzinF'; 
-            const OWNED_STATUS_SELECTOR = '.cUUvxo_s';
-
-            const createOwnedElement = () => {
-                const ownedDiv = document.createElement('div');
-                ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
-                const icon = document.createElement('i');
-                icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
-                icon.setAttribute('aria-hidden', 'true');
-                ownedDiv.appendChild(icon);
-                ownedDiv.append('已保存在我的库中');
-                return ownedDiv;
-            };
-
-            const createFreeElement = () => {
-                const freeContainer = document.createElement('div');
-                freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
-                const innerStack = document.createElement('div');
-                innerStack.className = 'fabkit-Stack-root fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 J9vFXlBh';
-                const freeText = document.createElement('div');
-                freeText.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-primary fabkit-Text--sm fabkit-Text--regular';
-                freeText.textContent = '免费';
-                innerStack.appendChild(freeText);
-                freeContainer.appendChild(innerStack);
-                return freeContainer;
-            };
-            
-            const isElementInViewport = (el) => {
-                if (!el) return false;
-                const rect = el.getBoundingClientRect();
-                return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
-            };
+            if (State.isScanning) {
+                Utils.logger('warn', '扫描已在进行中，本次触发已忽略。');
+                return 0;
+            }
+            State.isScanning = true;
 
             try {
-                const csrfToken = Utils.getCookie(CSRF_COOKIE_NAME);
-                if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
+                const {
+                    autoAdd = false, // Automatically add to 'todo' list
+                    onlyVisible = true, // Scan only visible cards on screen
+                } = options;
 
-                const allCards = [...document.querySelectorAll(CARD_SELECTOR)];
-                const cardsToProcess = onlyVisible ? allCards.filter(isElementInViewport) : allCards;
+                Utils.logger('info', Utils.getText('log_recon_start'));
 
-                const uidToCardMap = new Map();
-                cardsToProcess.forEach(card => {
-                    const link = card.querySelector(LINK_SELECTOR);
-                    if (link) {
-                        const match = link.href.match(/listings\/([a-f0-9-]+)/);
-                        if (match && match[1]) uidToCardMap.set(match[1], card);
+                const cardSelector = Config.SELECTORS.card;
+                const linkSelector = Config.SELECTORS.cardLink;
+                let cards = Array.from(document.querySelectorAll(cardSelector));
+
+                if (cards.length === 0) {
+                    Utils.logger('warn', '在当前页面上没有发现任何项目卡片。');
+                    return 0;
+                }
+
+                if (onlyVisible) {
+                    cards = cards.filter(card => Utils.isElementInViewport(card));
+                    if (cards.length === 0) {
+                        Utils.logger('info', '在可视区域内没有发现新的项目卡片。');
+                        return 0;
+                    }
+                }
+
+                const listingIds = cards.map(card => {
+                    const link = card.querySelector(linkSelector);
+                    return link ? link.href.split('/listings/')[1]?.split('?')[0] : null;
+                }).filter(id => id);
+
+                if (listingIds.length === 0) {
+                    Utils.logger('info', '无法从卡片中提取任何有效的项目ID。');
+                    return 0;
+                }
+
+                Utils.logger('info', Utils.getText('log_api_owned_check', {
+                    count: listingIds.length
+                }));
+
+                const ownedMap = await Api.checkOwnership(listingIds);
+                const newItems = [];
+
+                cards.forEach(card => {
+                    const link = card.querySelector(linkSelector);
+                    if (!link) return;
+
+                    const url = link.href;
+                    const listingId = url.split('/listings/')[1]?.split('?')[0];
+
+                    if (listingId && !ownedMap[listingId] && !DB.isDone(url)) {
+                        newItems.push({
+                            url,
+                            id: listingId
+                        });
+                        Utils.logger('log', Utils.getText('log_task_added'), url);
                     }
                 });
 
-                const uidsToQuery = [...uidToCardMap.keys()];
-                if (uidsToQuery.length === 0) {
-                    Utils.logger('info', '[API Processor] No items found to process.');
-                    return 0; // Return 0 tasks added
-                }
-                Utils.logger('info', `[API Processor] Found ${uidsToQuery.length} items. Querying API in chunks of ${CHUNK_SIZE}...`);
-
-                const allOwnedUids = new Set();
-                for (let i = 0; i < uidsToQuery.length; i += CHUNK_SIZE) {
-                    const chunk = uidsToQuery.slice(i, i + CHUNK_SIZE);
-                    const apiUrl = new URL(API_ENDPOINT);
-                    chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
-                    const response = await fetch(apiUrl.href, { headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' } });
-                    if (!response.ok) { continue; }
-                    let data;
-                    try { data = await response.json(); } catch (jsonError) { continue; }
-                    data.filter(item => item.acquired).forEach(item => allOwnedUids.add(item.uid));
-                    if (i + CHUNK_SIZE < uidsToQuery.length) {
-                        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_CHUNKS));
-                    }
-                }
-                
-                let updatedCount = 0;
-                const newlyAddedTasks = [];
-
-                uidToCardMap.forEach((card, uid) => {
-                    const isOwned = allOwnedUids.has(uid);
-                    if (isOwned) {
-                        const freeElement = card.querySelector(FREE_STATUS_SELECTOR);
-                        if (freeElement) {
-                            freeElement.replaceWith(createOwnedElement());
-                            updatedCount++;
-                        }
-                    } else { // Item is not owned
-                        const ownedElement = card.querySelector(OWNED_STATUS_SELECTOR);
-                        if (ownedElement) {
-                            ownedElement.replaceWith(createFreeElement());
-                            updatedCount++;
-                        }
-                        if (autoAdd) {
-                            const url = `${window.location.origin}/listings/${uid}`;
-                            const cleanUrl = url.split('?')[0];
-                            
-                            // --- NEW: More Robust "Three-Way Check" before adding a task ---
-                            const isAlreadyInTodo = Database.isTodo(cleanUrl);
-                            const isAlreadyInFailed = State.db.failed.some(t => t.url === cleanUrl);
-                            const isAlreadyCompletedThisSession = State.sessionCompleted.has(cleanUrl);
-
-                            if (!isAlreadyInTodo && !isAlreadyInFailed && !isAlreadyCompletedThisSession) {
-                                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                                newlyAddedTasks.push({ name, url: cleanUrl, type: 'detail', uid });
-                            }
-                        }
-                    }
-                });
-
-                if (autoAdd && newlyAddedTasks.length > 0) {
-                    State.db.todo.push(...newlyAddedTasks);
-                    Utils.logger('info', `[API Processor] 已通过 API 精确扫描, 自动添加了 ${newlyAddedTasks.length} 个新项目到待办队列。`);
+                if (autoAdd && newItems.length > 0) {
+                    await DB.addTasks(newItems.map(item => item.url));
+                    UI.updateStatus();
                 }
 
-                Utils.logger('info', `[API Processor] Complete. Updated ${updatedCount} card states.`);
-                TaskRunner.runHideOrShow(); // Ensure UI reflects hidden state correctly
-                return newlyAddedTasks.length;
-
-            } catch (e) {
-                Utils.logger('error', '[API Processor] An error occurred:', e.message);
-                return 0; // Return 0 on error
+                Utils.logger('info', Utils.getText('log_api_owned_done', {
+                    newCount: newItems.length
+                }));
+                return newItems.length;
+            } catch (error) {
+                Utils.logger('error', Utils.getText('log_recon_error'), error);
+                return 0;
+            } finally {
+                State.isScanning = false;
             }
         },
 
@@ -1393,18 +1346,18 @@
                         isRecovered = true;
                         Utils.logger('info', 'PHOENIX PROTOCOL: Verification successful! Server is responsive.');
                     } else {
-                        Utils.logger('warn', `PHOENIX PROTOCOL: Verification failed. Server responded with ${response.status}. Retrying in 30s.`);
-                        countdown = 30;
+                        Utils.logger('warn', `PHOENIX PROTOCOL: Verification failed. Server responded with ${response.status}. Retrying in 65s.`);
+                        countdown = 65;
                         const retryTimerInterval = setInterval(() => {
                             countdown--;
                              if (State.UI.cooldownStatus) State.UI.cooldownStatus.innerHTML = `探针失败，服务器仍有限制。${countdown}秒后再次尝试...`;
                             if (countdown <= 0) clearInterval(retryTimerInterval);
                         }, 1000);
-                        await new Promise(resolve => setTimeout(resolve, 30000));
+                        await new Promise(resolve => setTimeout(resolve, 65000));
                     }
                 } catch (e) {
                      Utils.logger('error', 'PHOENIX PROTOCOL: Canary request failed critically.', e);
-                     await new Promise(resolve => setTimeout(resolve, 30000));
+                     await new Promise(resolve => setTimeout(resolve, 65000));
                 }
             }
 
