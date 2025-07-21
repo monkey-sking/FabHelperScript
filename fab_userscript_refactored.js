@@ -1342,16 +1342,27 @@
                     background: var(--dark-gray);
                     padding: 8px;
                     border-radius: var(--radius-m);
-                    font-size: 11px;
-                    text-align: center;
+                    font-size: 12px;
                     color: var(--text-color-secondary);
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    gap: 2px;
+                }
+                .fab-helper-status-label {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 4px;
+                    white-space: nowrap;
                 }
                 .fab-helper-status-item span {
                     display: block;
                     font-size: 18px;
                     font-weight: 600;
                     color: #fff;
-                    margin-top: 2px;
+                    margin-top: 0;
                 }
                 .fab-helper-execute-btn {
                     width: 100%;
@@ -1375,21 +1386,21 @@
                 }
                 .fab-helper-actions button {
                     flex: 1;
-                    min-width: 0; /* Ensures buttons can shrink properly */
+                    min-width: 0; /* Crucial for forcing equal width */
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    gap: 6px;
+                    gap: 5px; /* Slightly reduced gap */
                     background: var(--dark-gray);
                     border: none;
                     border-radius: var(--radius-m);
                     color: var(--text-color-primary);
-                    padding: 9px 5px; /* Slightly more vertical padding */
+                    padding: 8px; /* Balanced padding */
                     cursor: pointer;
                     transition: background-color 0.2s;
-                    white-space: nowrap;
-                    font-size: 14px; /* A bit larger for readability */
-                    font-weight: 500; /* Medium weight for clarity */
+                    white-space: nowrap; /* Prevent wrapping */
+                    font-size: 13.5px; /* Fine-tuned font size */
+                    font-weight: normal; /* Revert to normal weight */
                     overflow: hidden;
                     text-overflow: ellipsis;
                 }
@@ -1531,7 +1542,7 @@
             const createStatusItem = (id, label, icon) => {
                 const item = document.createElement('div');
                 item.className = 'fab-helper-status-item';
-                item.innerHTML = `${icon} ${label}<span id="${id}">0</span>`;
+                item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
                 return item;
             };
             State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
