@@ -30,52 +30,70 @@
     'use strict';
 
     // --- 页面级 cursor 恢复逻辑（最优先，document-start）---
-    (function restoreCursorToUrl() {
+    // --- cursor patch/restore 兼容旧版 ---
+    let patchHasBeenApplied = false;
+    let lastSeenCursor = null;
+    let secondToLastSeenCursor = null;
+
+    // 初始化时恢复 savedCursor
+    (async function restoreSavedCursor() {
         try {
-            // 只在主商品搜索页生效
-            const url = new URL(window.location.href);
-            const isFabSearch =
-                (/\/search\?is_free=1&sort_by=title/.test(url.pathname + url.search) ||
-                 /\/zh-cn\/search\?is_free=1&sort_by=title/.test(url.pathname + url.search));
-            if (!isFabSearch) return;
-            if (url.searchParams.has('cursor')) {
-                console.info('[Fab Helper][URL恢复] 当前URL已包含cursor参数，无需跳转');
-                return;
-            }
-            // 读取本地保存的cursor（同步）
-            let savedCursor = null;
-            try {
-                savedCursor = localStorage.getItem('fab_lastCursor') || null;
-            } catch (e) {}
-            // 若未找到，再尝试GM_getValue（异步，降级方案）
-            if (!savedCursor && typeof GM_getValue === 'function') {
-                try {
-                    if (GM_getValue.length === 1) {
-                        savedCursor = GM_getValue('fab_lastCursor');
-                    } else {
-                        // 异步API
-                        GM_getValue('fab_lastCursor', null).then(cursor => {
-                            if (cursor) {
-                                url.searchParams.set('cursor', cursor);
-                                console.info('[Fab Helper][URL恢复-异步] 跳转到带cursor的URL:', url.toString());
-                                location.replace(url.toString());
-                            }
-                        });
-                        return;
-                    }
-                } catch (e) {}
-            }
-            if (savedCursor) {
-                url.searchParams.set('cursor', savedCursor);
-                console.info('[Fab Helper][URL恢复] 跳转到带cursor的URL:', url.toString());
-                location.replace(url.toString());
-            } else {
-                console.info('[Fab Helper][URL恢复] 未检测到本地保存的cursor，无需跳转');
+            const cursor = typeof GM_getValue === 'function'
+                ? (GM_getValue.length === 2
+                    ? await GM_getValue('fab_lastCursor', null)
+                    : GM_getValue('fab_lastCursor'))
+                : localStorage.getItem('fab_lastCursor');
+            if (cursor) {
+                State.savedCursor = cursor;
+                Utils.logger('info', '[PagePatcher] 读取到已保存的 cursor:', cursor);
             }
         } catch (e) {
-            console.error('[Fab Helper][URL恢复] 发生异常:', e);
+            Utils.logger('warn', '[PagePatcher] 恢复 cursor 失败:', e);
         }
     })();
+
+    function shouldPatchUrl(url) {
+        if (typeof url !== 'string') return false;
+        if (patchHasBeenApplied) return false;
+        if (!State.rememberScrollPosition || !State.savedCursor) return false;
+        if (!url.includes('/i/listings/search')) return false;
+        if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
+        return true;
+    }
+
+    function getPatchedUrl(originalUrl) {
+        if (State.savedCursor) {
+            const urlObj = new URL(originalUrl, window.location.origin);
+            urlObj.searchParams.set('cursor', State.savedCursor);
+            const modifiedUrl = urlObj.pathname + urlObj.search;
+            Utils.logger('info', `[PagePatcher] -> 🚀 PATCHING. Original: ${originalUrl}`);
+            Utils.logger('info', `[PagePatcher] -> 🚀 PATCHED. New URL: ${modifiedUrl}`);
+            patchHasBeenApplied = true;
+            return modifiedUrl;
+        }
+        return originalUrl;
+    }
+
+    function saveLatestCursorFromUrl(url) {
+        try {
+            if (typeof url === 'string' && url.includes('/i/listings/search') && url.includes('cursor=')) {
+                const urlObj = new URL(url, window.location.origin);
+                const newCursor = urlObj.searchParams.get('cursor');
+                if (newCursor && newCursor !== lastSeenCursor) {
+                    secondToLastSeenCursor = lastSeenCursor;
+                    lastSeenCursor = newCursor;
+                    if (secondToLastSeenCursor) {
+                        State.savedCursor = secondToLastSeenCursor;
+                        localStorage.setItem('fab_lastCursor', secondToLastSeenCursor);
+                        if (typeof GM_setValue === 'function') GM_setValue('fab_lastCursor', secondToLastSeenCursor);
+                        Utils.logger('info', `[PagePatcher] 已自动保存 [上一页] 的起点: ${secondToLastSeenCursor.substring(0, 30)}...`);
+                    }
+                }
+            }
+        } catch (e) {
+            Utils.logger('warn', `[PagePatcher] Error while auto-saving cursor:`, e);
+        }
+    }
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
@@ -490,6 +508,21 @@
             Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
             const originalXhrOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                // 只处理 /i/listings/search
+                if (typeof url === 'string' && url.includes('/i/listings/search')) {
+                    const u = new URL(url, window.location.origin);
+                    const currentCursor = u.searchParams.get('cursor');
+                    if (currentCursor) {
+                        localStorage.setItem('fab_lastCursor', currentCursor);
+                        if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, currentCursor);
+                        Utils.logger('info', `[补丁-保存] 已保存当前页 cursor: ${currentCursor}`);
+                    } else {
+                        // 如果没有 cursor，说明是第一页
+                        localStorage.removeItem('fab_lastCursor');
+                        if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                        Utils.logger('info', '[补丁-保存] 当前为第一页，清除已保存位置');
+                    }
+                }
                 let modifiedUrl = url;
                 if (
                     typeof url === 'string' &&
@@ -515,30 +548,6 @@
                 const xhr = this;
                 const originalOnReadyStateChange = xhr.onreadystatechange;
                 xhr.onreadystatechange = function() {
-                    if (
-                        xhr.readyState === 4 &&
-                        xhr.status === 200 &&
-                        typeof xhr._url === 'string' &&
-                        xhr._url.includes('/i/listings/search')
-                    ) {
-                        Utils.logger('info', `[补丁-XHR] onreadystatechange 捕获: ${xhr._url}`);
-                        // 只保存 cursors.next 字段
-                        try {
-                            const responseJson = JSON.parse(xhr.responseText);
-                            const cursorValue = responseJson.cursors && responseJson.cursors.next;
-                            if (cursorValue) {
-                                localStorage.setItem('fab_lastCursor', cursorValue);
-                                if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
-                                Utils.logger('info', `[补丁-保存] 已保存下一页 cursor: ${cursorValue}`);
-                            } else {
-                                localStorage.removeItem('fab_lastCursor');
-                                if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                                Utils.logger('info', '[补丁-保存] 已到达末尾，清除已保存位置');
-                            }
-                        } catch (e) {
-                            Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
-                        }
-                    }
                     if (originalOnReadyStateChange) {
                         return originalOnReadyStateChange.apply(this, arguments);
                     }
@@ -551,6 +560,20 @@
             const originalFetch = window.fetch;
             window.fetch = function(input, init) {
                 let url = (typeof input === 'string') ? input : input.url;
+                // 只处理 /i/listings/search
+                if (url.includes('/i/listings/search')) {
+                    const u = new URL(url, window.location.origin);
+                    const currentCursor = u.searchParams.get('cursor');
+                    if (currentCursor) {
+                        localStorage.setItem('fab_lastCursor', currentCursor);
+                        if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, currentCursor);
+                        Utils.logger('info', `[补丁-保存] 已保存当前页 cursor: ${currentCursor}`);
+                    } else {
+                        localStorage.removeItem('fab_lastCursor');
+                        if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                        Utils.logger('info', '[补丁-保存] 当前为第一页，清除已保存位置');
+                    }
+                }
                 let modifiedInput = input;
                 if (
                     url.includes('/i/listings/search') &&
@@ -570,30 +593,7 @@
                         Utils.logger('info', `[补丁-Fetch] 首次请求已注入cursor: ${savedCursor}`);
                     }
                 }
-                return originalFetch.apply(this, [modifiedInput, init]).then(response => {
-                    if (response.ok && response.url.includes('/i/listings/search')) {
-                        Utils.logger('info', `[补丁-Fetch] Response 捕获: ${response.url}`);
-                        // 只保存 cursors.next 字段
-                        response.clone().text().then(text => {
-                            try {
-                                const responseJson = JSON.parse(text);
-                                const cursorValue = responseJson.cursors && responseJson.cursors.next;
-                                if (cursorValue) {
-                                    localStorage.setItem('fab_lastCursor', cursorValue);
-                                    if (typeof GM_setValue === 'function') GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
-                                    Utils.logger('info', `[补丁-保存] 已保存下一页 cursor: ${cursorValue}`);
-                                } else {
-                                    localStorage.removeItem('fab_lastCursor');
-                                    if (typeof GM_deleteValue === 'function') GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                                    Utils.logger('info', '[补丁-保存] 已到达末尾，清除已保存位置');
-                                }
-                            } catch (e) {
-                                Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
-                            }
-                        });
-                    }
-                    return response;
-                });
+                return originalFetch.apply(this, [modifiedInput, init]);
             };
         }
     };
