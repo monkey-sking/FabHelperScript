@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      2.1.1
+// @version      2.2.0
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -110,6 +110,7 @@
             execBtn: null,
             hideBtn: null,
             syncBtn: null,
+            statusVisible: null,
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -1390,7 +1391,7 @@
                 }
                 .fab-helper-status-bar {
                     display: grid;
-                    grid-template-columns: repeat(4, 1fr);
+                    grid-template-columns: repeat(5, 1fr);
                     gap: 8px;
                     margin-bottom: 12px;
                 }
@@ -1601,6 +1602,7 @@
                 item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
                 return item;
             };
+            State.UI.statusVisible = createStatusItem('fab-status-visible', '可见', '👁️');
             State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
             State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅');
             State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌');
@@ -1619,7 +1621,7 @@
                 }
             };
             State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
-            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusHidden);
+            statusBar.append(State.UI.statusVisible, State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusHidden);
 
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
@@ -1765,6 +1767,9 @@
             if (!State.UI.container) return;
 
             // Status Bar
+            const visibleCards = document.querySelectorAll(Config.SELECTORS.card);
+            const visibleCount = [...visibleCards].filter(card => card.style.display !== 'none').length;
+            State.UI.container.querySelector('#fab-status-visible').textContent = visibleCount;
             State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
             State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
             State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
