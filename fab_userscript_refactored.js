@@ -3,7 +3,7 @@
 // @name:en      Fab API-Driven Helper
 // @name:zh      Fab API 驱动助手
 // @namespace    http://tampermonkey.net/
-// @version      2.0.4
+// @version      2.0.6
 // @description  Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:en Automates acquiring free assets from Fab.com using its internal API, with a modern UI.
 // @description:zh 通过调用内部API，自动化获取Fab.com上的免费资源，并配有现代化的UI。
@@ -28,6 +28,54 @@
 
 (function () {
     'use strict';
+
+    // --- 页面级 cursor 恢复逻辑（最优先，document-start）---
+    (function restoreCursorToUrl() {
+        try {
+            // 只在主商品搜索页生效
+            const url = new URL(window.location.href);
+            const isFabSearch =
+                (/\/search\?is_free=1&sort_by=title/.test(url.pathname + url.search) ||
+                 /\/zh-cn\/search\?is_free=1&sort_by=title/.test(url.pathname + url.search));
+            if (!isFabSearch) return;
+            if (url.searchParams.has('cursor')) {
+                console.info('[Fab Helper][URL恢复] 当前URL已包含cursor参数，无需跳转');
+                return;
+            }
+            // 读取本地保存的cursor（同步）
+            let savedCursor = null;
+            try {
+                savedCursor = localStorage.getItem('fab_lastCursor') || null;
+            } catch (e) {}
+            // 若未找到，再尝试GM_getValue（异步，降级方案）
+            if (!savedCursor && typeof GM_getValue === 'function') {
+                try {
+                    if (GM_getValue.length === 1) {
+                        savedCursor = GM_getValue('fab_lastCursor');
+                    } else {
+                        // 异步API
+                        GM_getValue('fab_lastCursor', null).then(cursor => {
+                            if (cursor) {
+                                url.searchParams.set('cursor', cursor);
+                                console.info('[Fab Helper][URL恢复-异步] 跳转到带cursor的URL:', url.toString());
+                                location.replace(url.toString());
+                            }
+                        });
+                        return;
+                    }
+                } catch (e) {}
+            }
+            if (savedCursor) {
+                url.searchParams.set('cursor', savedCursor);
+                console.info('[Fab Helper][URL恢复] 跳转到带cursor的URL:', url.toString());
+                location.replace(url.toString());
+            } else {
+                console.info('[Fab Helper][URL恢复] 未检测到本地保存的cursor，无需跳转');
+            }
+        } catch (e) {
+            console.error('[Fab Helper][URL恢复] 发生异常:', e);
+        }
+    })();
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
@@ -366,41 +414,147 @@
     // --- 模块六: 网络请求过滤器 (Network Filter) ---
     const NetworkFilter = {
         init: () => {
-            if (typeof GM_addValueChangeListener === 'undefined' || !State.rememberScrollPosition) {
-                 Utils.logger('info', '网络过滤器未激活 (功能关闭或API不可用)。');
+            // 此模块的功能已完全被 MonkeyPatcher 取代，以确保在 document-start 时能立即生效。
+            Utils.logger('info', '网络过滤器(NetworkFilter)模块已弃用，功能由补丁程序(MonkeyPatcher)处理。');
+        }
+    };
+
+    const MonkeyPatcher = {
+        init: () => {
+            Utils.logger('info', '[补丁] 初始化 MonkeyPatcher...');
+            if (!State.rememberScrollPosition) {
+                Utils.logger('info', '[补丁] 记住位置功能未开启，MonkeyPatcher 不生效');
                 return;
             }
-             Utils.logger('info', '网络过滤器初始化，用于保存浏览位置...');
 
-            // 使用 GM_xmlhttpRequest 替代 fetch/XHR 补丁来监听网络请求
-            // 这是一种更可靠且非侵入性的方式
-            const originalXhr = GM_xmlhttpRequest;
-            unsafeWindow.GM_xmlhttpRequest = function(details) {
-                if (typeof details.url === 'string' && details.url.includes('/i/listings/search')) {
-                    const originalOnload = details.onload;
-                    details.onload = function(response) {
-                        if (response.status === 200) {
-                            try {
-                                const responseJson = JSON.parse(response.responseText);
-                                const nextUrl = responseJson.next;
-                                if (nextUrl) {
-                                    GM_setValue(Config.DB_KEYS.LAST_CURSOR, nextUrl);
-                                    Utils.logger('info', `[位置保存] 已保存下一页 URL: ${nextUrl.substring(0, 100)}...`);
-                                } else {
-                                    GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                                    Utils.logger('info', '[位置保存] 已到达列表末尾，清除位置。');
-                                }
-                            } catch (e) { /* 静默失败 */ }
+            // --- 共享的核心逻辑 ---
+            const saveNextUrlFromResponse = (responseText) => {
+                try {
+                    const responseJson = JSON.parse(responseText);
+                    const nextUrl = responseJson.next;
+                    if (nextUrl) {
+                        // 从下一个API URL中只提取cursor的值
+                        const cursorValue = new URL(nextUrl).searchParams.get('cursor');
+                        if (cursorValue) {
+                            GM_setValue(Config.DB_KEYS.LAST_CURSOR, cursorValue);
+                            Utils.logger('info', `[补丁-保存] 已成功保存下一页的 cursor: ${cursorValue}`);
+                        } else {
+                            Utils.logger('warn', `[补丁-保存] 在 'next' URL 中未找到 cursor: ${nextUrl}`);
                         }
-                        if (originalOnload) {
-                            originalOnload(response);
-                        }
-                    };
+                    } else {
+                        GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                        Utils.logger('info', '[补丁-保存] 已到达列表末尾，清除已保存的位置。');
+                    }
+            } catch (e) {
+                    Utils.logger('error', `[补丁-保存] 解析API响应失败: ${e.message}`);
                 }
-                return originalXhr(details);
+            };
+
+            const getModifiedUrl = (originalUrl) => {
+                // 定义主内容加载请求的特征，用于精确打击
+                const isMainContentRequest =
+                    originalUrl.includes('is_free=1') &&
+                    !originalUrl.includes('aggregate_on') &&
+                    !originalUrl.includes('in=wishlist');
+
+                if (!State.rememberScrollPosition) {
+                    Utils.logger('info', `[补丁-劫持] 跳过：功能未开启`);
+                    return originalUrl;
+                }
+                if (!State.savedCursor) {
+                    Utils.logger('info', `[补丁-劫持] 跳过：无已保存cursor`);
+                    return originalUrl;
+                }
+                if (!isMainContentRequest) {
+                    Utils.logger('info', `[补丁-劫持] 跳过：非主内容请求: ${originalUrl}`);
+                    return originalUrl;
+                }
+                if (originalUrl.includes('cursor=')) {
+                    Utils.logger('info', `[补丁-劫持] 跳过：已包含cursor: ${originalUrl}`);
+                    return originalUrl;
+                }
+
+                Utils.logger('info', `[补丁-劫持] 命中主内容初始请求: ${originalUrl}`);
+                // 注入cursor参数
+                const fullUrl = new URL(originalUrl, window.location.origin);
+                fullUrl.searchParams.set('cursor', State.savedCursor);
+                const modifiedUrl = fullUrl.pathname + fullUrl.search;
+                Utils.logger('info', `[补丁-劫持] 注入cursor后URL: ${modifiedUrl}`);
+                return modifiedUrl;
+            };
+
+            // --- 补丁 #1: XMLHttpRequest ---
+            Utils.logger('info', '[补丁] 正在为 XMLHttpRequest 打补丁...');
+            const originalXhrOpen = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                let modifiedUrl = url;
+                if (typeof url === 'string' && url.includes('/i/listings/search') && method.toUpperCase() === 'GET') {
+                    const originalUrl = url;
+                    modifiedUrl = getModifiedUrl(url);
+                    if (modifiedUrl !== originalUrl) {
+                        Utils.logger('info', `[补丁-XHR] open() 劫持成功: 原始URL: ${originalUrl} -> 新URL: ${modifiedUrl}`);
+                    } else {
+                        Utils.logger('info', `[补丁-XHR] open() 未劫持: ${originalUrl}`);
+                    }
+                }
+                this._url = modifiedUrl; // 存储修改后(或原始)的URL供后续使用
+                return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
+            };
+
+            const originalXhrSend = XMLHttpRequest.prototype.send;
+            XMLHttpRequest.prototype.send = function(...args) {
+                const xhr = this;
+                const originalOnReadyStateChange = xhr.onreadystatechange;
+                xhr.onreadystatechange = function() {
+                    if (xhr.readyState === 4 && xhr.status === 200 && typeof xhr._url === 'string' && xhr._url.includes('/i/listings/search')) {
+                        Utils.logger('info', `[补丁-XHR] onreadystatechange 捕获: ${xhr._url}`);
+                        saveNextUrlFromResponse(xhr.responseText);
+                    }
+                    if (originalOnReadyStateChange) {
+                        return originalOnReadyStateChange.apply(this, arguments);
+                    }
+                };
+                return originalXhrSend.apply(this, args);
+            };
+
+            // --- 补丁 #2: Fetch API ---
+            Utils.logger('info', '[补丁] 正在为 Fetch API 打补丁...');
+            const originalFetch = window.fetch;
+            window.fetch = function(input, init) {
+                let url = (typeof input === 'string') ? input : input.url;
+                let modifiedInput = input;
+
+                if (url.includes('/i/listings/search')) {
+                    const originalUrl = url;
+                    const modifiedUrl = getModifiedUrl(url);
+                    if (modifiedUrl !== originalUrl) {
+                        Utils.logger('info', `[补丁-Fetch] fetch() 劫持成功: 原始URL: ${originalUrl} -> 新URL: ${modifiedUrl}`);
+                        if (typeof input === 'string') {
+                            modifiedInput = modifiedUrl;
+                        } else {
+                            // Request 对象是不可变的, 必须创建一个新的
+                            modifiedInput = new Request(modifiedUrl, input);
+                        }
+                    } else {
+                        Utils.logger('info', `[补丁-Fetch] fetch() 未劫持: ${originalUrl}`);
+                    }
+                }
+                
+                return originalFetch.apply(this, [modifiedInput, init]).then(response => {
+                    if (response.ok && response.url.includes('/i/listings/search')) {
+                        Utils.logger('info', `[补丁-Fetch] Response 捕获: ${response.url}`);
+                        // 克隆响应体，因为他只能被读取一次
+                        const responseClone = response.clone();
+                        responseClone.text().then(text => {
+                            saveNextUrlFromResponse(text);
+                        });
+                    }
+                    return response; // 将原始响应返回给调用者
+                });
             };
         }
     };
+
 
     // --- 模块七: 任务运行器与事件处理 (Task Runner & Event Handlers) ---
     const TaskRunner = {
@@ -458,11 +612,11 @@
                 if (actionableCount > 0) {
                     if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
                          Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
-                    }
-                    TaskRunner.startExecution();
-                } else {
-                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
                 }
+                    TaskRunner.startExecution();
+            } else {
+                     Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个)。`);
+            }
             }
             UI.update();
         },
@@ -1471,7 +1625,7 @@
 
             actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
             dashboardContent.append(statusBar, State.UI.execBtn, actionButtons);
-            
+
             // --- Log Panel (moved to Dashboard) ---
             const logContainer = document.createElement('div');
             logContainer.className = 'fab-log-container';
@@ -1482,7 +1636,7 @@
             logTitle.textContent = '📝 操作日志';
             const logControls = document.createElement('div');
             logControls.className = 'fab-log-controls';
-            
+
             const copyLogBtn = document.createElement('button');
             copyLogBtn.innerHTML = '📄';
             copyLogBtn.title = Utils.getText('copyLog');
@@ -1501,7 +1655,7 @@
 
             logControls.append(copyLogBtn, clearLogBtn);
             logHeader.append(logTitle, logControls);
-            
+
             State.UI.logPanel = document.createElement('div');
             State.UI.logPanel.id = Config.UI_LOG_ID;
             
@@ -1725,47 +1879,21 @@
         State.isInitialized = true;
 
         Utils.detectLanguage();
-        await Database.load();
+        await Database.load(); // 先加载所有 State.xxx
 
-        // --- 位置恢复逻辑 ---
         if (State.rememberScrollPosition) {
-            const savedUrl = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
-            const currentUrl = window.location.href;
-
-            // 如果有保存的URL，且当前URL不包含cursor（防止刷新循环）
-            if (savedUrl && !currentUrl.includes('cursor=')) {
-                Utils.logger('info', `[位置恢复] 发现已保存的位置: ${savedUrl.substring(0, 150)}...`);
-                Utils.logger('info', `[位置恢复] 正在重载页面以应用...`);
-                // 直接用保存的URL替换当前页面，服务器会返回对应cursor的内容
-                window.location.replace(savedUrl);
-                // 脚本将在这个重定向的页面上重新执行，但因为URL已包含cursor，不会再次进入此逻辑。
-                return; // 终止当前脚本的后续执行
-            }
-             Utils.logger('info', `[位置恢复] 无需恢复位置 (已在目标位置或无保存点)。`);
+            State.savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
+            Utils.logger('info', `[位置] 读取到已保存的cursor: ${State.savedCursor || '无'}`);
         }
 
-        // --- 后续初始化 ---
+        // 现在再初始化补丁，保证能正确判断 State.rememberScrollPosition
+        MonkeyPatcher.init();
+
         // 由于脚本在 document-start 运行，UI 相关的操作必须等待 DOM 加载完成
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', runDomDependentPart);
         } else {
             runDomDependentPart();
-        }
-
-        // 只有在功能开启时才应用补丁
-        // MonkeyPatcher.init(); // 已废弃
-
-        // 初始化网络过滤器，现在只负责保存位置
-        NetworkFilter.init();
-
-        // Load the saved cursor into state before any other script logic
-        if (State.rememberScrollPosition) {
-            // 读取保存的纯净 cursor 字符串
-            State.savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
-            Utils.logger('info', `[位置] 读取到已保存的cursor: ${State.savedCursor || '无'}`);
-
-            // 只有在功能开启时才应用补丁
-            MonkeyPatcher.init();
         }
     }
 
@@ -1912,7 +2040,7 @@
             State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
         }
     }
-    
+
     // --- Script Entry Point ---
     // This is the final, robust, SPA-and-infinite-scroll-aware entry point.
     // DEPRECATED SPA navigation handler, main() is now the entry point.
