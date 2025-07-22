@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.11
+// @version      1.0.12
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -31,7 +31,7 @@
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 3, // 最大并发工作标签页数量 - 改为3，避免打开太多标签页
+        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量 - 提高到7个，增加并行处理能力
         WORKER_TIMEOUT: 30000, // 工作标签页超时时间，30秒
         UI_CONTAINER_ID: 'fab-helper-container',
         UI_LOG_ID: 'fab-helper-log',
