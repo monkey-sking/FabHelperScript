@@ -533,21 +533,15 @@
             UI.updateDebugTab();
             UI.update();
             
-            // 检查是否有待办任务或活动工作线程
-            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
-                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+            // 无论是否有待办任务，都开始随机刷新
+            // 这是为了确保在429状态下总是会自动刷新
+            const randomDelay = 5000 + Math.random() * 2000; // 缩短延迟时间为5-7秒
+            if (State.autoResumeAfter429) {
+                Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后刷新页面尝试恢复...');
             } else {
-                // 无论是否启用了自动恢复，都开始随机刷新
-                // 这是为了确保在429状态下总是会自动刷新
-                const randomDelay = 5000 + Math.random() * 10000;
-                if (State.autoResumeAfter429) {
-                    Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
-                } else {
-                    Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
-                }
-                countdownRefresh(randomDelay, '429自动恢复');
+                Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后自动刷新页面尝试恢复...');
             }
+            countdownRefresh(randomDelay, '429自动恢复');
             
             return true;
         },
@@ -2714,8 +2708,26 @@
             
             logContainer.append(logHeader, State.UI.logPanel);
             
-            // Reorder elements for the new layout: Log first, then status, then buttons
-            dashboardContent.append(logContainer, statusBar, State.UI.execBtn, actionButtons);
+            // 添加当前保存的浏览位置显示
+            const positionContainer = document.createElement('div');
+            positionContainer.className = 'fab-helper-position-container';
+            positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px;';
+
+            const positionIcon = document.createElement('span');
+            positionIcon.textContent = '📍 ';
+            positionIcon.style.marginRight = '4px';
+
+            const positionInfo = document.createElement('span');
+            positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+            
+            // 保存引用以便后续更新
+            State.UI.savedPositionDisplay = positionInfo;
+            
+            positionContainer.appendChild(positionIcon);
+            positionContainer.appendChild(positionInfo);
+            
+            // Reorder elements for the new layout: Log first, then position, status, then buttons
+            dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
 
             container.appendChild(dashboardContent);
 
@@ -2759,32 +2771,9 @@
                 switchContainer.append(input, slider);
                 row.append(label, switchContainer);
                 
-                // 特殊处理记住位置的设置行，添加当前保存位置的信息
-                if (stateKey === 'rememberScrollPosition') {
-                    const positionInfo = document.createElement('div');
-                    positionInfo.className = 'fab-helper-position-info';
-                    positionInfo.style.fontSize = '12px';
-                    positionInfo.style.color = '#666';
-                    positionInfo.style.marginTop = '4px';
-                    positionInfo.style.fontStyle = 'italic';
-                    
-                    // 保存引用以便后续更新
-                    State.UI.savedPositionDisplay = positionInfo;
-                    
-                    // 初始显示
-                    positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
-                    
-                    // 将位置信息添加到行中
-                    row.removeChild(label);
-                    row.removeChild(switchContainer);
-                    row.appendChild(label);
-                    row.appendChild(switchContainer);
-                    row.appendChild(positionInfo);
-                } else {
-                    // 普通设置行
-                    row.appendChild(label);
-                    row.appendChild(switchContainer);
-                }
+                // 所有设置行都使用相同的布局
+                row.appendChild(label);
+                row.appendChild(switchContainer);
                 
                 return row;
             };
