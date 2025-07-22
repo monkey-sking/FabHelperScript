@@ -135,6 +135,12 @@
             syncBtn: null,
             statusVisible: null,
             debugContent: null,
+            settingsVisible: false,
+            historyVisible: false,
+            historyTab: 'all',
+            statusBarContainer: null,
+            statusItems: {},
+            savedPositionDisplay: null, // 新增：保存位置显示元素的引用
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -276,7 +282,36 @@
                 } catch (e) { /* Ignore errors */ }
             });
             State.valueChangeListeners = [];
-        }
+        },
+        // 在Utils对象中添加一个新函数来解码cursor
+        decodeCursor: (cursor) => {
+            if (!cursor) return '无保存位置';
+            try {
+                // Base64解码
+                const decoded = atob(cursor);
+                
+                // cursor通常格式为: o=1&p=Item+Name
+                // 或者: p=Item+Name
+                // 我们主要提取p参数的值，它通常包含项目名称
+                let match;
+                if (decoded.includes('&p=')) {
+                    match = decoded.match(/&p=([^&]+)/);
+                } else if (decoded.startsWith('p=')) {
+                    match = decoded.match(/p=([^&]+)/);
+                }
+                
+                if (match && match[1]) {
+                    // 解码URI组件并替换+为空格
+                    const itemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                    return `位置: "${itemName}"`;
+                }
+                
+                return `位置: (已保存，但无法读取名称)`;
+            } catch (e) {
+                console.error('Cursor解码失败:', e);
+                return '位置: (格式无法解析)';
+            }
+        },
     };
 
     // --- DOM Creation Helpers (moved outside for broader scope) ---
@@ -769,6 +804,11 @@
                     
                     // NEW: Logging for saving
                     Utils.logger('info', `[Cursor] New restore point saved: ${newCursor.substring(0, 30)}...`);
+                    
+                    // 更新UI中的位置显示
+                    if (State.UI.savedPositionDisplay) {
+                        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
+                    }
                 }
             } catch (e) {
                 Utils.logger('warn', `[Cursor] Error while saving cursor:`, e);
@@ -1190,7 +1230,16 @@
                 PagePatcher._lastSeenCursor = null;
                 State.savedCursor = null;
                 Utils.logger('info', '已清除已保存的浏览位置。');
+                
+                // 更新UI中的位置显示
+                if (State.UI.savedPositionDisplay) {
+                    State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
+                }
+            } else if (State.UI.savedPositionDisplay) {
+                // 如果开启功能，更新显示当前保存的位置
+                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
             }
+            
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
         
@@ -2709,17 +2758,45 @@
 
                 switchContainer.append(input, slider);
                 row.append(label, switchContainer);
-                return { row, input };
+                
+                // 特殊处理记住位置的设置行，添加当前保存位置的信息
+                if (stateKey === 'rememberScrollPosition') {
+                    const positionInfo = document.createElement('div');
+                    positionInfo.className = 'fab-helper-position-info';
+                    positionInfo.style.fontSize = '12px';
+                    positionInfo.style.color = '#666';
+                    positionInfo.style.marginTop = '4px';
+                    positionInfo.style.fontStyle = 'italic';
+                    
+                    // 保存引用以便后续更新
+                    State.UI.savedPositionDisplay = positionInfo;
+                    
+                    // 初始显示
+                    positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+                    
+                    // 将位置信息添加到行中
+                    row.removeChild(label);
+                    row.removeChild(switchContainer);
+                    row.appendChild(label);
+                    row.appendChild(switchContainer);
+                    row.appendChild(positionInfo);
+                } else {
+                    // 普通设置行
+                    row.appendChild(label);
+                    row.appendChild(switchContainer);
+                }
+                
+                return row;
             };
 
             const autoAddSetting = createSettingRow('无限滚动时自动添加任务', 'autoAddOnScroll');
-            settingsContent.appendChild(autoAddSetting.row);
+            settingsContent.appendChild(autoAddSetting);
             
             const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
-            settingsContent.appendChild(rememberPosSetting.row);
+            settingsContent.appendChild(rememberPosSetting);
 
             const autoResumeSetting = createSettingRow('429后自动恢复并继续', 'autoResumeAfter429');
-            settingsContent.appendChild(autoResumeSetting.row);
+            settingsContent.appendChild(autoResumeSetting);
 
             const resetButton = document.createElement('button');
             resetButton.textContent = '🗑️ 清空所有存档';
