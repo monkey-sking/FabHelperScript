@@ -550,7 +550,8 @@
                     request.removeEventListener("load", onLoad);
                     
                     // 对所有请求检查429错误
-                    if (request.status === 429) {
+                    if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
+                        Utils.logger('warn', `[XHR] 检测到429状态码: ${request.responseURL || request._url}`);
                         // 调用handleRateLimit函数处理限速情况
                         self.handleRateLimit(request.responseURL || request._url);
                         return;
@@ -690,9 +691,10 @@
                 return originalFetch.apply(this, [modifiedInput, init])
                     .then(async response => {
                         // 检查429错误
-                        if (response.status === 429) {
+                        if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                             // 克隆响应以避免"已消费"错误
                             const clonedResponse = response.clone();
+                            Utils.logger('warn', `[Fetch] 检测到429状态码: ${response.url}`);
                             // 异步处理限速情况
                             self.handleRateLimit(response.url).catch(e => 
                                 Utils.logger('error', '处理限速时出错:', e)
@@ -2575,10 +2577,12 @@
 
         const checkIsErrorPage = (title, text) => {
             const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-            const is429Text = text.includes('429 Too Many Requests') || 
+            const is429Text = text.includes('429') || 
+                              text.includes('Too Many Requests') || 
                               text.includes('Too many requests') || 
                               text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
             if (isCloudflareTitle || is429Text) {
+                Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
                 enterRateLimitedState();
                 return true;
             }
@@ -2744,6 +2748,102 @@
                 PagePatcher.handleRateLimit('页面内容检测');
             }
         }, 3000); // 每3秒检查一次
+
+        // 添加HTTP状态码检测功能，定期检查当前页面的HTTP状态码
+        const checkHttpStatus = async () => {
+            try {
+                // 如果已经处于限速状态，不需要检查
+                if (State.appStatus !== 'NORMAL') return;
+                
+                // 发送HEAD请求检查当前页面的HTTP状态码
+                const response = await fetch(window.location.href, { 
+                    method: 'HEAD',
+                    cache: 'no-store',
+                    credentials: 'same-origin'
+                });
+                
+                if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
+                    Utils.logger('warn', `[HTTP状态检测] 检测到当前页面状态码为429！`);
+                    PagePatcher.handleRateLimit('HTTP状态检测');
+                }
+            } catch (error) {
+                // 忽略错误
+            }
+        };
+        
+        // 每10秒检查一次HTTP状态码
+        setInterval(checkHttpStatus, 10000);
+
+        // 添加API请求监控，定期检查最近的API请求状态
+        const checkApiRequests = async () => {
+            try {
+                // 如果已经处于限速状态，不需要检查
+                if (State.appStatus !== 'NORMAL') return;
+                
+                // 发送API请求检查状态
+                const apiUrl = 'https://www.fab.com/i/listings/search?is_free=1&sort_by=title&cursor=' + 
+                               encodeURIComponent('bz02JnA9Tm9yZGljK0JlYWNoK0JvdWxkZXI=');
+                
+                const response = await fetch(apiUrl, { 
+                    method: 'HEAD',
+                    cache: 'no-store',
+                    credentials: 'same-origin',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
+                    Utils.logger('warn', `[API状态检测] 检测到API请求状态码为429！`);
+                    PagePatcher.handleRateLimit('API状态检测');
+                }
+            } catch (error) {
+                // 如果请求失败，可能也是限速导致的
+                Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
+                if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
+                    PagePatcher.handleRateLimit('API请求失败');
+                }
+            }
+        };
+        
+        // 每15秒检查一次API状态
+        setInterval(checkApiRequests, 15000);
+
+        // 添加专门针对滚动加载API请求的拦截器
+        const originalXMLHttpRequestSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(...args) {
+            const xhr = this;
+            
+            // 添加额外的事件监听器，专门用于检测429错误
+            xhr.addEventListener('load', function() {
+                // 只检查listings/search相关的请求
+                if (xhr._url && xhr._url.includes('/i/listings/search')) {
+                    // 检查状态码
+                    if (xhr.status === 429 || xhr.status === '429' || xhr.status.toString() === '429') {
+                        Utils.logger('warn', `[滚动API监控] 检测到API请求状态码为429: ${xhr._url}`);
+                        PagePatcher.handleRateLimit('滚动API监控');
+                        return;
+                    }
+                    
+                    // 检查响应内容
+                    try {
+                        const responseText = xhr.responseText;
+                        if (responseText && (
+                            responseText.includes('Too many requests') || 
+                            responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)
+                        )) {
+                            Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
+                            PagePatcher.handleRateLimit('滚动API监控');
+                            return;
+                        }
+                    } catch (e) {
+                        // 忽略错误
+                    }
+                }
+            });
+            
+            return originalXMLHttpRequestSend.apply(this, args);
+        };
     }
 
     main();
