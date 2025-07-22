@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.9
+// @version      1.0.10
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -449,6 +449,143 @@
         }
     };
 
+    // 集中处理限速状态的函数
+    const RateLimitManager = {
+        // 进入限速状态
+        enterRateLimitedState: async function(source = '未知来源') {
+            // 如果已经处于限速状态，不需要重复处理
+            if (State.appStatus === 'RATE_LIMITED') return;
+            
+            // 记录正常运行期的统计信息
+            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+            const logEntry = {
+                type: 'NORMAL',
+                duration: parseFloat(normalDuration),
+                requests: State.successfulSearchCount,
+                endTime: new Date().toISOString()
+            };
+            
+            // 保存到历史记录
+            State.statusHistory.push(logEntry);
+            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+            
+            // 切换到限速状态
+            State.appStatus = 'RATE_LIMITED';
+            State.rateLimitStartTime = Date.now();
+            
+            // 保存状态到存储
+            await GM_setValue(Config.DB_KEYS.APP_STATUS, { 
+                status: 'RATE_LIMITED', 
+                startTime: State.rateLimitStartTime,
+                source: source
+            });
+            
+            Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
+            
+            // 更新UI
+            UI.updateDebugTab();
+            UI.update();
+            
+            // 检查是否有待办任务或活动工作线程
+            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
+                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+            } else {
+                // 无论是否启用了自动恢复，都开始随机刷新
+                // 这是为了确保在429状态下总是会自动刷新
+                const randomDelay = 5000 + Math.random() * 10000;
+                if (State.autoResumeAfter429) {
+                    Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
+                } else {
+                    Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
+                }
+                countdownRefresh(randomDelay, '429自动恢复');
+            }
+        },
+        
+        // 退出限速状态
+        exitRateLimitedState: async function(source = '未知来源') {
+            // 如果当前不是限速状态，不需要处理
+            if (State.appStatus !== 'RATE_LIMITED') return;
+            
+            // 记录限速期的统计信息
+            const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+            const logEntry = {
+                type: 'RATE_LIMITED',
+                duration: parseFloat(rateLimitDuration),
+                endTime: new Date().toISOString(),
+                source: source
+            };
+            
+            // 保存到历史记录
+            State.statusHistory.push(logEntry);
+            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+            
+            Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s.`);
+            
+            // 恢复到正常状态
+            State.appStatus = 'NORMAL';
+            State.rateLimitStartTime = null;
+            State.normalStartTime = Date.now();
+            State.successfulSearchCount = 0;
+            
+            // 删除存储的限速状态
+            await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+            
+            // 更新UI
+            UI.updateDebugTab();
+            UI.update();
+            
+            // 如果有待办任务，继续执行
+            if (State.db.todo.length > 0 && !State.isExecuting) {
+                Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
+                State.isExecuting = true;
+                Database.saveExecutingState();
+                TaskRunner.executeBatch();
+            }
+        },
+        
+        // 检查限速状态
+        checkRateLimitStatus: async function() {
+            try {
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) throw new Error("CSRF token not found for probe.");
+                
+                // 使用一个轻量级的API端点进行探测
+                const probeResponse = await API.gmFetch({
+                    method: 'GET',
+                    url: 'https://www.fab.com/i/users/context',
+                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                });
+                
+                if (probeResponse.status === 429) {
+                    // 如果返回429，确认限速状态
+                    await this.enterRateLimitedState('API探测');
+                    return false;
+                } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
+                    // 尝试解析响应内容
+                    try {
+                        const data = JSON.parse(probeResponse.responseText);
+                        // 如果响应有效，退出限速状态
+                        await this.exitRateLimitedState('API探测成功');
+                        return true;
+                    } catch (e) {
+                        // 如果解析失败，可能仍然处于限速状态
+                        Utils.logger('warn', '探测响应解析失败，可能仍处于限速状态');
+                        return false;
+                    }
+                } else {
+                    // 其他状态码，可能仍然处于限速状态
+                    Utils.logger('warn', `探测返回意外状态码: ${probeResponse.status}`);
+                    return false;
+                }
+            } catch (e) {
+                Utils.logger('error', `限速状态检查失败: ${e.message}`);
+                return false;
+            }
+        }
+    };
+
     const PagePatcher = {
         _patchHasBeenApplied: false,
         _lastSeenCursor: null,
@@ -481,27 +618,12 @@
 
         async handleSearchResponse(request) {
             if (request.status === 429) {
-                // 使用通用的handleRateLimit函数处理限速情况
-                await this.handleRateLimit(request._url);
+                // 使用统一的限速管理器处理限速情况
+                await RateLimitManager.enterRateLimitedState('搜索响应429');
             } else if (request.status >= 200 && request.status < 300) {
                 if (State.appStatus === 'RATE_LIMITED') {
-                    const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
-                    const logEntry = {
-                        type: 'RATE_LIMITED',
-                        duration: parseFloat(rateLimitDuration),
-                        endTime: new Date().toISOString()
-                    };
-                    State.statusHistory.push(logEntry);
-                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                    UI.updateDebugTab();
-
-                    Utils.logger('info', `✅ Rate limit appears to be lifted. The 429 period lasted ${rateLimitDuration}s.`);
-
-                    State.appStatus = 'NORMAL';
-                    State.rateLimitStartTime = null;
-                    State.normalStartTime = Date.now();
-                    State.successfulSearchCount = 0;
-                    GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+                    // 使用统一的限速管理器退出限速状态
+                    await RateLimitManager.exitRateLimitedState('搜索响应成功');
                 }
                 
                 // 移除这里的计数逻辑，因为我们已经在listenerAwareSend中处理了
@@ -2061,74 +2183,8 @@
         },
 
         async handleRateLimit(url) {
-            // 如果已经处于限速状态，不需要重复处理
-            if (State.appStatus === 'RATE_LIMITED') return;
-            
-            // 记录正常运行期的统计信息
-            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
-            const logEntry = {
-                type: 'NORMAL',
-                duration: parseFloat(normalDuration),
-                requests: State.successfulSearchCount,
-                endTime: new Date().toISOString()
-            };
-            
-            // 保存到历史记录并更新UI
-            State.statusHistory.push(logEntry);
-            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-            
-            // 记录日志
-            Utils.logger('error', `🚨 RATE LIMIT DETECTED at ${url}! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
-            
-            // 切换到限速状态
-            State.appStatus = 'RATE_LIMITED';
-            State.rateLimitStartTime = Date.now();
-            
-            // 保存状态到存储
-            await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
-            
-            // 不停止任务执行，但暂停新任务的派发
-            Utils.logger('warn', '检测到限速。已暂停新任务派发，但现有任务将继续执行。');
-            
-            // 更新UI
-            UI.updateDebugTab();
-            UI.update();
-            
-            // 自动恢复逻辑 - 总是尝试恢复
-            // 开始随机刷新尝试恢复
-            if (State.autoResumeAfter429) {
-                Utils.logger('info', '自动恢复已启用。开始随机时间刷新页面尝试恢复...');
-            } else {
-                Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
-            }
-            
-            // 设置一个递归的随机刷新函数
-            const attemptRecovery = () => {
-                // 如果不再处于限速状态，停止刷新
-                if (State.appStatus !== 'RATE_LIMITED') return;
-                
-                // 如果有活动任务，等待它们完成
-                if (State.activeWorkers > 0) {
-                    Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
-                    setTimeout(attemptRecovery, 5000); // 5秒后再检查
-                    return;
-                }
-                
-                // 生成一个随机延迟（5-15秒）
-                const randomDelay = 5000 + Math.random() * 10000;
-                
-                // 如果还有待办任务，保存它们
-                if (State.db.todo.length > 0) {
-                    Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
-                    GM_setValue('temp_todo_tasks', State.db.todo);
-                }
-                
-                // 使用倒计时刷新
-                countdownRefresh(randomDelay, '自动恢复尝试');
-            };
-            
-            // 开始第一次恢复尝试
-            attemptRecovery();
+            // 使用统一的限速管理器进入限速状态
+            await RateLimitManager.enterRateLimitedState(url || '网络请求');
         },
     };
 
@@ -2979,6 +3035,15 @@
             State.isExecuting = storedExecutingState;
         }
         
+        // 从存储中恢复限速状态
+        const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+        if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
+            State.appStatus = 'RATE_LIMITED';
+            State.rateLimitStartTime = persistedStatus.startTime;
+            const previousDuration = ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2);
+            Utils.logger('warn', `脚本启动时处于限速状态。限速已持续至少 ${previousDuration}s，来源: ${persistedStatus.source || '未知'}`);
+        }
+        
         await PagePatcher.init();
         
         // 检查是否有临时保存的待办任务（从429恢复）
@@ -2989,38 +3054,7 @@
             await GM_deleteValue('temp_todo_tasks'); // 清除临时存储
         }
         
-        // 初始化状态时间和历史记录
-        if (State.appStatus === 'NORMAL' || State.appStatus === undefined) {
-            State.appStatus = 'NORMAL';
-            State.normalStartTime = Date.now();
-            State.successfulSearchCount = 0;
-            
-            // 添加一个初始状态记录，表示脚本启动
-            if (State.statusHistory.length === 0) {
-                const startupEntry = {
-                    type: 'STARTUP',
-                    duration: 0,
-                    endTime: new Date().toISOString(),
-                    message: '脚本启动'
-                };
-                State.statusHistory.push(startupEntry);
-                await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-            }
-        } else if (State.appStatus === 'RATE_LIMITED') {
-            // 确保rateLimitStartTime正确设置
-            const savedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS, null);
-            if (savedStatus && savedStatus.status === 'RATE_LIMITED' && savedStatus.startTime) {
-                State.rateLimitStartTime = savedStatus.startTime;
-                const duration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
-                Utils.logger('warn', `脚本以限速状态启动。限速已持续至少 ${duration}s。`);
-        } else {
-                // 如果没有保存的开始时间，使用当前时间
-                State.rateLimitStartTime = Date.now();
-                await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
-            }
-        }
-        
-                // 添加工作标签页完成任务的监听器
+        // 添加工作标签页完成任务的监听器
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
             if (!newValue) return; // 如果值被删除，忽略此事件
             
@@ -3122,6 +3156,14 @@
                     Database.saveExecutingState();
                     // 保存待办列表（虽然为空，但仍需保存以更新存储）
                     await Database.saveTodo();
+                    
+                    // 如果处于限速状态且待办任务为0，触发页面刷新
+                    if (State.appStatus === 'RATE_LIMITED') {
+                        Utils.logger('info', '所有任务已完成，且处于限速状态，将刷新页面尝试恢复...');
+                        const randomDelay = 3000 + Math.random() * 5000;
+                        countdownRefresh(randomDelay, '任务完成后限速恢复');
+                    }
+                    
                     UI.update();
                 }
                 
@@ -3197,59 +3239,9 @@
 
         // --- Dead on Arrival Check for initial 429 page load ---
         // 使enterRateLimitedState函数全局可访问，以便其他部分可以调用
-        window.enterRateLimitedState = function() {
-            // 无论当前状态如何，都执行限速处理
-            
-            // 记录正常运行期的统计信息
-            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
-            const logEntry = {
-                type: 'NORMAL',
-                duration: parseFloat(normalDuration),
-                requests: State.successfulSearchCount,
-                endTime: new Date().toISOString()
-            };
-            
-            // 保存到历史记录
-            State.statusHistory.push(logEntry);
-            GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-            
-            // 切换到限速状态
-            State.appStatus = 'RATE_LIMITED';
-            
-            // 检查是否已经有保存的限速开始时间，如果有则使用它，否则使用当前时间
-            // 这样可以确保计时器在页面刷新后继续计时，而不是重置
-            const savedStatus = GM_getValue(Config.DB_KEYS.APP_STATUS, null);
-            if (savedStatus && savedStatus.status === 'RATE_LIMITED' && savedStatus.startTime) {
-                State.rateLimitStartTime = savedStatus.startTime;
-                Utils.logger('info', `使用保存的限速开始时间: ${new Date(State.rateLimitStartTime).toLocaleString()}`);
-            } else {
-                State.rateLimitStartTime = Date.now();
-            }
-            
-            GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
-            Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
-            
-            // 更新UI
-            if (UI.updateDebugTab) {
-                UI.updateDebugTab();
-                UI.update();
-            }
-            
-            // 检查是否有待办任务或活动工作线程
-            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
-                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
-            } else {
-                // 无论是否启用了自动恢复，都开始随机刷新
-                // 这是为了确保在429状态下总是会自动刷新
-                const randomDelay = 5000 + Math.random() * 10000;
-                if (State.autoResumeAfter429) {
-                    Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
-                } else {
-                    Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
-                }
-                countdownRefresh(randomDelay, '429自动恢复');
-            }
+        window.enterRateLimitedState = function(source = '全局调用') {
+            // 使用统一的限速管理器进入限速状态
+            RateLimitManager.enterRateLimitedState(source);
         };
 
         const checkIsErrorPage = (title, text) => {
@@ -3260,19 +3252,7 @@
                               text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
             if (isCloudflareTitle || is429Text) {
                 Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
-                window.enterRateLimitedState();
-                
-                // 检查是否有待办任务或活动工作线程
-                if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                    Utils.logger('info', `[页面加载] 检测到429错误，但有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
-                    Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
-                } else {
-                    // 添加明确的自动刷新代码，确保一定会刷新
-                    const randomDelay = 5000 + Math.random() * 10000;
-                    Utils.logger('info', `[页面加载] 检测到429错误，将自动刷新页面尝试恢复...`);
-                    countdownRefresh(randomDelay, '页面加载429检测');
-                }
-                
+                window.enterRateLimitedState('页面内容429检测');
                 return true;
             }
             return false;
@@ -3286,49 +3266,39 @@
         if (State.appStatus === 'RATE_LIMITED') {
             Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
             
-            // 尝试发送一个探测请求，检查是否已经恢复
-            try {
-                const probeResponse = await fetch('https://www.fab.com/api/health-check');
-                if (probeResponse.ok) {
-                    // 恢复成功，记录限速期的统计信息
-                    const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
-                    const logEntry = {
-                        type: 'RATE_LIMITED',
-                        duration: parseFloat(rateLimitDuration),
-                        endTime: new Date().toISOString()
-                    };
-                    State.statusHistory.push(logEntry);
-                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                    
-                    // 恢复到正常状态
-                    Utils.logger('info', `✅ 恢复探测成功！限速期已结束，持续了 ${rateLimitDuration}s。`);
-                    State.appStatus = 'NORMAL';
-                    State.rateLimitStartTime = null;
-                    State.normalStartTime = Date.now();
-                    State.successfulSearchCount = 0;
-                    GM_deleteValue(Config.DB_KEYS.APP_STATUS);
-                    
-                    // 如果有待办任务，继续执行
-                    if (State.db.todo.length > 0 && !State.isExecuting) {
-                        Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
+            // 使用统一的限速状态检查
+            const isRecovered = await RateLimitManager.checkRateLimitStatus();
+            
+            if (isRecovered) {
+                Utils.logger('info', '✅ 恢复探测成功！限速已解除，继续正常操作。');
+                
+                // 如果有待办任务，继续执行
+                if (State.db.todo.length > 0 && !State.isExecuting) {
+                    Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
+                    State.isExecuting = true;
+                    Database.saveExecutingState();
+                    TaskRunner.executeBatch();
+                }
+            } else {
+                // 仍然处于限速状态，继续随机刷新
+                Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
+                
+                // 如果有活动任务，等待它们完成
+                if (State.activeWorkers > 0) {
+                    Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
+                } else if (State.db.todo.length > 0) {
+                    // 如果有待办任务但没有活动任务，尝试继续执行
+                    Utils.logger('info', `有 ${State.db.todo.length} 个待办任务等待执行，将尝试继续执行...`);
+                    if (!State.isExecuting) {
                         State.isExecuting = true;
+                        Database.saveExecutingState();
                         TaskRunner.executeBatch();
                     }
-                    
-                    // 更新UI
-                    UI.updateDebugTab();
-                    UI.update();
                 } else {
-                    // 仍然处于限速状态，继续随机刷新
-                    Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
+                    // 没有任务，直接刷新
                     const randomDelay = 5000 + Math.random() * 10000;
                     countdownRefresh(randomDelay, '恢复探测失败');
                 }
-            } catch (error) {
-                // 探测出错，继续随机刷新
-                Utils.logger('error', `恢复探测出错: ${error.message}。将继续随机刷新...`);
-                const randomDelay = 5000 + Math.random() * 10000;
-                countdownRefresh(randomDelay, '恢复探测出错');
             }
         }
 
