@@ -3855,11 +3855,45 @@
                 Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
             } else {
                 Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
+                
+                // 每3秒重新检查一次条件
+                if (remainingSeconds % 3 === 0) {
+                    // 重新检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
+                    const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+                    if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+                        clearInterval(currentCountdownInterval);
+                        clearTimeout(currentRefreshTimeout);
+                        currentCountdownInterval = null;
+                        currentRefreshTimeout = null;
+                        
+                        if (visibleCount > 0) {
+                            Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
+                        } else {
+                            Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
+                        }
+                        Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
+                        return;
+                    }
+                }
             }
         }, 1000);
         
         // 设置刷新定时器
-        currentRefreshTimeout = setTimeout(() => location.reload(), delay);
+        currentRefreshTimeout = setTimeout(() => {
+            // 最后一次检查条件，确保在刷新前条件仍然满足
+            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+            if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+                if (visibleCount > 0) {
+                    Utils.logger('info', `⏹️ 刷新前检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
+                } else {
+                    Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
+                }
+                Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
+            } else {
+                // 所有条件都满足，执行刷新
+                location.reload();
+            }
+        }, delay);
     };
 
     // 在页面卸载时清理实例
