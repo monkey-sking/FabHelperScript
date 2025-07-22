@@ -1676,41 +1676,41 @@
             UI.updateDebugTab();
             UI.update();
             
-            // 自动恢复逻辑
+            // 自动恢复逻辑 - 总是尝试恢复
+            // 开始随机刷新尝试恢复
             if (State.autoResumeAfter429) {
-                // 开始随机刷新尝试恢复
                 Utils.logger('info', '自动恢复已启用。开始随机时间刷新页面尝试恢复...');
-                
-                // 设置一个递归的随机刷新函数
-                const attemptRecovery = () => {
-                    // 如果不再处于限速状态，停止刷新
-                    if (State.appStatus !== 'RATE_LIMITED') return;
-                    
-                    // 如果有活动任务，等待它们完成
-                    if (State.activeWorkers > 0) {
-                        Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
-                        setTimeout(attemptRecovery, 5000); // 5秒后再检查
-                        return;
-                    }
-                    
-                    // 生成一个随机延迟（5-15秒）
-                    const randomDelay = 5000 + Math.random() * 10000;
-                    
-                    // 如果还有待办任务，保存它们
-                    if (State.db.todo.length > 0) {
-                        Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
-                        GM_setValue('temp_todo_tasks', State.db.todo);
-                    }
-                    
-                    // 使用倒计时刷新
-                    countdownRefresh(randomDelay, '自动恢复尝试');
-                };
-                
-                // 开始第一次恢复尝试
-                attemptRecovery();
             } else {
-                Utils.logger('info', '检测到限速。启用"设定"中的"429后自动恢复并继续"选项可自动处理此情况。');
+                Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
             }
+            
+            // 设置一个递归的随机刷新函数
+            const attemptRecovery = () => {
+                // 如果不再处于限速状态，停止刷新
+                if (State.appStatus !== 'RATE_LIMITED') return;
+                
+                // 如果有活动任务，等待它们完成
+                if (State.activeWorkers > 0) {
+                    Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
+                    setTimeout(attemptRecovery, 5000); // 5秒后再检查
+                    return;
+                }
+                
+                // 生成一个随机延迟（5-15秒）
+                const randomDelay = 5000 + Math.random() * 10000;
+                
+                // 如果还有待办任务，保存它们
+                if (State.db.todo.length > 0) {
+                    Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
+                    GM_setValue('temp_todo_tasks', State.db.todo);
+                }
+                
+                // 使用倒计时刷新
+                countdownRefresh(randomDelay, '自动恢复尝试');
+            };
+            
+            // 开始第一次恢复尝试
+            attemptRecovery();
         },
     };
 
@@ -2566,38 +2566,42 @@
         // --- Dead on Arrival Check for initial 429 page load ---
         // 使enterRateLimitedState函数全局可访问，以便其他部分可以调用
         window.enterRateLimitedState = function() {
-            if (State.appStatus !== 'RATE_LIMITED') {
-                // 记录正常运行期的统计信息
-                const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
-                const logEntry = {
-                    type: 'NORMAL',
-                    duration: parseFloat(normalDuration),
-                    requests: State.successfulSearchCount,
-                    endTime: new Date().toISOString()
-                };
-                
-                // 保存到历史记录
-                State.statusHistory.push(logEntry);
-                GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                
-                // 切换到限速状态
-                State.appStatus = 'RATE_LIMITED';
-                State.rateLimitStartTime = Date.now();
-                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
-                Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
-                
-                // 更新UI
-                if (UI.updateDebugTab) {
-                    UI.updateDebugTab();
-                    UI.update();
-                }
-                
-                // 如果启用了自动恢复，开始随机刷新
-                if (State.autoResumeAfter429) {
-                    const randomDelay = 5000 + Math.random() * 10000;
-                    countdownRefresh(randomDelay, '自动恢复');
-                }
+            // 无论当前状态如何，都执行限速处理
+            
+            // 记录正常运行期的统计信息
+            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+            const logEntry = {
+                type: 'NORMAL',
+                duration: parseFloat(normalDuration),
+                requests: State.successfulSearchCount,
+                endTime: new Date().toISOString()
+            };
+            
+            // 保存到历史记录
+            State.statusHistory.push(logEntry);
+            GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+            
+            // 切换到限速状态
+            State.appStatus = 'RATE_LIMITED';
+            State.rateLimitStartTime = Date.now();
+            GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
+            Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
+            
+            // 更新UI
+            if (UI.updateDebugTab) {
+                UI.updateDebugTab();
+                UI.update();
             }
+            
+            // 无论是否启用了自动恢复，都开始随机刷新
+            // 这是为了确保在429状态下总是会自动刷新
+            const randomDelay = 5000 + Math.random() * 10000;
+            if (State.autoResumeAfter429) {
+                Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
+            } else {
+                Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
+            }
+            countdownRefresh(randomDelay, '429自动恢复');
         };
 
         const checkIsErrorPage = (title, text) => {
@@ -2609,17 +2613,23 @@
             if (isCloudflareTitle || is429Text) {
                 Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
                 window.enterRateLimitedState();
+                
+                // 添加明确的自动刷新代码，确保一定会刷新
+                const randomDelay = 5000 + Math.random() * 10000;
+                Utils.logger('info', `[页面加载] 检测到429错误，将自动刷新页面尝试恢复...`);
+                countdownRefresh(randomDelay, '页面加载429检测');
+                
                 return true;
             }
             return false;
         };
         
-        if (checkIsErrorPage(document.title, document.body.innerText || '')) {
-            return;
-        }
+        // 如果检测到错误页面，不要立即返回，而是继续尝试恢复
+        const isErrorPage = checkIsErrorPage(document.title, document.body.innerText || '');
+        // 不要在这里return，让代码继续执行到自动恢复部分
 
-        // The auto-resume logic is preserved
-        if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
+        // The auto-resume logic is preserved - always try to recover from 429
+        if (State.appStatus === 'RATE_LIMITED') {
             Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
             
             // 尝试发送一个探测请求，检查是否已经恢复
