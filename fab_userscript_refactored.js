@@ -2569,9 +2569,37 @@
         // --- Dead on Arrival Check for initial 429 page load ---
         const enterRateLimitedState = () => {
             if (State.appStatus !== 'RATE_LIMITED') {
+                // 记录正常运行期的统计信息
+                const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+                const logEntry = {
+                    type: 'NORMAL',
+                    duration: parseFloat(normalDuration),
+                    requests: State.successfulSearchCount,
+                    endTime: new Date().toISOString()
+                };
+                
+                // 保存到历史记录
+                State.statusHistory.push(logEntry);
+                GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                
+                // 切换到限速状态
                 State.appStatus = 'RATE_LIMITED';
-                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: Date.now() });
+                State.rateLimitStartTime = Date.now();
+                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
                 Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
+                
+                // 更新UI
+                if (UI.updateDebugTab) {
+                    UI.updateDebugTab();
+                    UI.update();
+                }
+                
+                // 如果启用了自动恢复，开始随机刷新
+                if (State.autoResumeAfter429) {
+                    const randomDelay = 5000 + Math.random() * 10000;
+                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后自动刷新页面尝试恢复...`);
+                    setTimeout(() => location.reload(), randomDelay);
+                }
             }
         };
 
