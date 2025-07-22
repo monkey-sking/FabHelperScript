@@ -2525,6 +2525,48 @@
                     display: flex;
                     flex-direction: column-reverse;
                     box-shadow: inset 0 1px 4px rgba(0,0,0,0.2);
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
+                }
+                
+                /* 自定义滚动条样式 */
+                #${Config.UI_LOG_ID}::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+                #${Config.UI_LOG_ID}::-webkit-scrollbar-track {
+                    background: rgba(0,0,0,0.2);
+                    border-radius: 4px;
+                }
+                #${Config.UI_LOG_ID}::-webkit-scrollbar-thumb {
+                    background: rgba(255,255,255,0.3);
+                    border-radius: 4px;
+                }
+                #${Config.UI_LOG_ID}::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255,255,255,0.5);
+                }
+                
+                /* 添加调试面板的滚动条样式 */
+                .fab-helper-tab-content {
+                    max-height: 400px;
+                    overflow-y: auto;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(150,150,150,0.3) rgba(0,0,0,0.1);
+                }
+                .fab-helper-tab-content::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+                .fab-helper-tab-content::-webkit-scrollbar-track {
+                    background: rgba(0,0,0,0.1);
+                    border-radius: 4px;
+                }
+                .fab-helper-tab-content::-webkit-scrollbar-thumb {
+                    background: rgba(150,150,150,0.3);
+                    border-radius: 4px;
+                }
+                .fab-helper-tab-content::-webkit-scrollbar-thumb:hover {
+                    background: rgba(150,150,150,0.5);
                 }
                 @keyframes fab-pulse {
                     0% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.7); }
