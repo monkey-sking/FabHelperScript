@@ -794,7 +794,12 @@
             // so the button should just act as a "start" signal.
             if (State.autoAddOnScroll) {
                 Utils.logger('info', '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。');
-                TaskRunner.startExecution(); // This will use the existing todo list
+                
+                // 先检查当前页面上的卡片状态，更新数据库
+                TaskRunner.checkVisibleCardsStatus().then(() => {
+                    // 然后开始执行任务
+                    TaskRunner.startExecution(); // This will use the existing todo list
+                });
                 return;
             }
 
@@ -862,11 +867,16 @@
                     if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
                          Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
                 }
-                    TaskRunner.startExecution();
+                    
+                    // 先检查当前页面上的卡片状态，更新数据库
+                    TaskRunner.checkVisibleCardsStatus().then(() => {
+                        // 然后开始执行任务
+                        TaskRunner.startExecution();
+                    });
             } else {
                  Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
+                 UI.update();
             }
-            UI.update();
         },
 
         // This function starts the execution loop without scanning.
@@ -1410,10 +1420,10 @@
                 return;
             }
 
-            // 如果处于限速状态，不派发新任务，但保持现有任务继续执行
+            // 如果处于限速状态，记录日志但继续执行任务
             if (State.appStatus === 'RATE_LIMITED') {
-                Utils.logger('info', '由于处于限速状态，暂停派发新任务。现有任务将继续执行。');
-                return;
+                Utils.logger('info', '当前处于限速状态，但仍将继续执行待办任务...');
+                // 不再返回，允许继续执行下面的派发逻辑
             }
 
             // --- DISPATCHER FOR DETAIL TASKS ---
@@ -1610,6 +1620,123 @@
                 }
             });
             UI.update();
+        },
+        
+        // 添加一个方法来批量检查当前页面上所有可见卡片的状态
+        checkVisibleCardsStatus: async () => {
+            // 获取所有可见的卡片
+            const cards = Array.from(document.querySelectorAll(Config.SELECTORS.card));
+            if (cards.length === 0) {
+                Utils.logger('info', '[Fab DOM Refresh] 页面上没有找到可见的卡片。');
+                return;
+            }
+            
+            // 收集所有需要检查的项目
+            const itemsToCheck = [];
+            
+            // 添加可见卡片
+            cards.forEach(card => {
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                if (link) {
+                    const url = link.href;
+                    const uid = url.split('/').pop();
+                    const name = card.querySelector('h3, h2')?.textContent?.trim() || '未知项目';
+                    
+                    // 如果不在已完成列表中，添加到检查列表
+                    if (!State.db.done.includes(url)) {
+                        itemsToCheck.push({ url, uid, name });
+                    }
+                }
+            });
+            
+            // 添加失败列表中的项目
+            State.db.failed.forEach(task => {
+                if (!itemsToCheck.some(item => item.uid === task.uid)) {
+                    itemsToCheck.push(task);
+                }
+            });
+            
+            if (itemsToCheck.length === 0) {
+                Utils.logger('info', '[Fab DOM Refresh] 没有找到需要检查状态的项目。');
+                return;
+            }
+            
+            Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${itemsToCheck.length} 个项目（可见+失败）的状态...`);
+            
+            // 分批处理，每批最多50个
+            const batchSize = 50;
+            const batches = [];
+            for (let i = 0; i < itemsToCheck.length; i += batchSize) {
+                batches.push(itemsToCheck.slice(i, i + batchSize));
+            }
+            
+            let confirmedOwned = 0;
+            
+            // 处理每一批
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${i+1}... (${batch.length}个项目)`);
+                
+                try {
+                    // 获取CSRF令牌
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    if (!csrfToken) {
+                        Utils.logger('error', '[Fab DOM Refresh] 无法获取CSRF令牌，无法检查项目状态。');
+                        return;
+                    }
+                    
+                    // 准备API请求
+                    const uids = batch.map(item => item.uid).join(',');
+                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                    statesUrl.searchParams.append('listing_ids', uids);
+                    
+                    // 发送请求
+                    const response = await API.gmFetch({
+                        method: 'GET',
+                        url: statesUrl.href,
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+                    
+                    // 解析响应
+                    const statesData = JSON.parse(response.responseText);
+                    
+                    // 处理结果
+                    for (const state of statesData) {
+                        if (state.acquired) {
+                            // 找到对应的项目
+                            const item = batch.find(i => i.uid === state.uid);
+                            if (item) {
+                                // 如果不在已完成列表中，添加
+                                if (!State.db.done.includes(item.url)) {
+                                    State.db.done.push(item.url);
+                                    confirmedOwned++;
+                                }
+                                
+                                // 从失败列表中移除
+                                State.db.failed = State.db.failed.filter(f => f.uid !== state.uid);
+                                
+                                // 从待办列表中移除
+                                State.db.todo = State.db.todo.filter(t => t.uid !== state.uid);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
+                }
+            }
+            
+            // 保存更改
+            if (confirmedOwned > 0) {
+                await Database.saveDone();
+                await Database.saveFailed();
+                Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
+                
+                // 刷新DOM
+                TaskRunner.runHideOrShow();
+                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
+            } else {
+                Utils.logger('info', '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。');
+            }
         },
 
         scanAndAddTasks: (cards) => {
@@ -2534,6 +2661,8 @@
                 if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
                     Utils.logger('info', '所有任务已完成。');
                     State.isExecuting = false;
+                    // 保存执行状态
+                    Database.saveExecutingState();
                     UI.update();
                 }
                 
