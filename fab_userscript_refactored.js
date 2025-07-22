@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.7
+// @version      1.0.8
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -1442,7 +1442,7 @@
                         // 3. Clean up worker
                         delete State.runningWorkers[workerId];
                         State.activeWorkers--;
-                        
+
                         // 删除任务数据
                         await GM_deleteValue(workerId);
                     }
@@ -1455,16 +1455,16 @@
                     // 5. 延迟一段时间后继续派发任务
                     setTimeout(() => {
                         if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-                            TaskRunner.executeBatch();
-                        }
+                        TaskRunner.executeBatch();
+                    }
                     }, 2000);
                 }
             }, 5000); // Check every 5 seconds
         },
 
         executeBatch: async () => {
-            // 如果当前实例不是活跃实例，不执行任务
-            if (!InstanceManager.isActive) {
+            // 只有主页面才需要检查是否是活跃实例
+            if (!State.isWorkerTab && !InstanceManager.isActive) {
                 Utils.logger('warn', '当前实例不是活跃实例，不执行任务。');
                 return;
             }
@@ -1481,23 +1481,23 @@
             State.isDispatchingTasks = true;
 
             try {
-                // Stop condition for the entire execution process
-                if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                    Utils.logger('info', '✅ 🎉 All tasks have been completed!');
-                    State.isExecuting = false;
+            // Stop condition for the entire execution process
+            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                State.isExecuting = false;
                     // 保存执行状态
                     Database.saveExecutingState();
                     // 保存待办列表（虽然为空，但仍需保存以更新存储）
                     Database.saveTodo();
-                    if (State.watchdogTimer) {
-                        clearInterval(State.watchdogTimer);
-                        State.watchdogTimer = null;
-                    }
+                if (State.watchdogTimer) {
+                    clearInterval(State.watchdogTimer);
+                    State.watchdogTimer = null;
+                }
                     
                     // 关闭所有可能残留的工作标签页
                     TaskRunner.closeAllWorkerTabs();
                     
-                    UI.update();
+                UI.update();
                     State.isDispatchingTasks = false;
                     return;
                 }
@@ -1511,10 +1511,10 @@
                 if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
                     Utils.logger('info', `已达到最大并发工作标签页数量 (${Config.MAX_CONCURRENT_WORKERS})，等待现有任务完成...`);
                     State.isDispatchingTasks = false;
-                    return;
-                }
+                return;
+            }
 
-                // --- DISPATCHER FOR DETAIL TASKS ---
+            // --- DISPATCHER FOR DETAIL TASKS ---
                 // 创建一个当前正在执行的任务UID集合，用于防止重复派发
                 const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
                 
@@ -1554,15 +1554,15 @@
                         instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
                     };
 
-                    Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
+                Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
 
                     await GM_setValue(workerId, { 
                         task,
                         instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
                     });
 
-                    const workerUrl = new URL(task.url);
-                    workerUrl.searchParams.set('workerId', workerId);
+                const workerUrl = new URL(task.url);
+                workerUrl.searchParams.set('workerId', workerId);
                     
                     // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
                     GM_openInTab(workerUrl.href, { active: false, insert: true });
@@ -1579,7 +1579,7 @@
                     TaskRunner.runWatchdog();
                 }
                 
-                UI.update();
+            UI.update();
             } finally {
                 // 无论如何都要重置派发任务标志
                 State.isDispatchingTasks = false;
@@ -1610,7 +1610,7 @@
 
             // If there's no workerId, this is not a worker tab, so we do nothing.
             if (!workerId) return;
-            
+
             // 标记当前标签页为工作标签页，避免执行主脚本逻辑
             State.isWorkerTab = true;
             State.workerTaskId = workerId;
@@ -1633,9 +1633,9 @@
             }, 60000); // 60秒后强制关闭
 
             try {
-                // This is a safety check. If the main tab stops execution, it might delete the task.
-                const payload = await GM_getValue(workerId);
-                if (!payload || !payload.task) {
+            // This is a safety check. If the main tab stops execution, it might delete the task.
+            const payload = await GM_getValue(workerId);
+            if (!payload || !payload.task) {
                     Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
                     closeWorkerTab();
                     return;
@@ -1647,139 +1647,139 @@
                     Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
                     await GM_deleteValue(workerId); // 清理任务数据
                     closeWorkerTab();
-                    return;
+                return;
+            }
+
+            const currentTask = payload.task;
+            const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+            let success = false;
+
+            try {
+                // API-First Ownership Check...
+                try {
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    if (!csrfToken) throw new Error("CSRF token not found for API check.");
+                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                    statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                    const response = await API.gmFetch({
+                        method: 'GET',
+                        url: statesUrl.href,
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+                    const statesData = JSON.parse(response.responseText);
+                    const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
+                    if (isOwned) {
+                        logBuffer.push(`API check confirms item is already owned.`);
+                        success = true;
+                    } else {
+                        logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+                    }
+                } catch (apiError) {
+                    logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
                 }
 
-                const currentTask = payload.task;
-                const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
-                let success = false;
-
-                try {
-                    // API-First Ownership Check...
+                if (!success) {
                     try {
-                        const csrfToken = Utils.getCookie('fab_csrftoken');
-                        if (!csrfToken) throw new Error("CSRF token not found for API check.");
-                        const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                        statesUrl.searchParams.append('listing_ids', currentTask.uid);
-                        const response = await API.gmFetch({
-                            method: 'GET',
-                            url: statesUrl.href,
-                            headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                        });
-                        const statesData = JSON.parse(response.responseText);
-                        const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
-                        if (isOwned) {
-                            logBuffer.push(`API check confirms item is already owned.`);
+                        const isItemOwned = () => {
+                            const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                            const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+                            if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                            const successHeader = document.querySelector('h2');
+                            if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                            const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                            const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                            if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                            return { owned: false };
+                        };
+
+                        const initialState = isItemOwned();
+                        if (initialState.owned) {
+                            logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
                             success = true;
                         } else {
-                            logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
-                        }
-                    } catch (apiError) {
-                        logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
-                    }
-
-                    if (!success) {
-                        try {
-                            const isItemOwned = () => {
-                                const criteria = Config.OWNED_SUCCESS_CRITERIA;
-                                const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
-                                if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
-                                const successHeader = document.querySelector('h2');
-                                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
-                                const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
-                                const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
-                                if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-                                return { owned: false };
-                            };
-
-                            const initialState = isItemOwned();
-                            if (initialState.owned) {
-                                logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
-                                success = true;
-                            } else {
-                                const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
-                                if (licenseButton) {
-                                    logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
-                                    await new Promise((resolve, reject) => {
-                                        const observer = new MutationObserver((mutationsList, obs) => {
-                                            for (const mutation of mutationsList) {
-                                                if (mutation.addedNodes.length > 0) {
-                                                    for (const node of mutation.addedNodes) {
-                                                        if (node.nodeType !== 1) continue;
-                                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                            Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
-                                                        );
-                                                        if (freeTextElement) {
-                                                            const clickableParent = freeTextElement.closest('[role="option"], button');
-                                                            if (clickableParent) {
-                                                                Utils.deepClick(clickableParent);
-                                                                observer.disconnect();
-                                                                resolve();
-                                                                return;
-                                                            }
+                            const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
+                            if (licenseButton) {
+                                logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                                await new Promise((resolve, reject) => {
+                                    const observer = new MutationObserver((mutationsList, obs) => {
+                                        for (const mutation of mutationsList) {
+                                            if (mutation.addedNodes.length > 0) {
+                                                for (const node of mutation.addedNodes) {
+                                                    if (node.nodeType !== 1) continue;
+                                                    const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                        Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
+                                                    );
+                                                    if (freeTextElement) {
+                                                        const clickableParent = freeTextElement.closest('[role="option"], button');
+                                                        if (clickableParent) {
+                                                            Utils.deepClick(clickableParent);
+                                                            observer.disconnect();
+                                                            resolve();
+                                                            return;
                                                         }
                                                     }
                                                 }
                                             }
-                                        });
-                                        observer.observe(document.body, { childList: true, subtree: true });
-                                        Utils.deepClick(licenseButton); // First click attempt
-                                        setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
-                                        setTimeout(() => {
-                                            observer.disconnect();
-                                            reject(new Error('Timeout (5s): The "免费" option did not appear.'));
-                                        }, 5000);
+                                        }
                                     });
-                                    // After license selection, re-check ownership before trying the main button
-                                    await new Promise(r => setTimeout(r, 500)); // wait for UI update
-                                    if(isItemOwned().owned) success = true;
-                                }
+                                    observer.observe(document.body, { childList: true, subtree: true });
+                                    Utils.deepClick(licenseButton); // First click attempt
+                                    setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
+                                    setTimeout(() => {
+                                        observer.disconnect();
+                                        reject(new Error('Timeout (5s): The "免费" option did not appear.'));
+                                    }, 5000);
+                                });
+                                // After license selection, re-check ownership before trying the main button
+                                await new Promise(r => setTimeout(r, 500)); // wait for UI update
+                                if(isItemOwned().owned) success = true;
+                            }
 
-                                // If not successful after license check, or if it wasn't a license item
-                                if (!success) {
-                                     const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
-                                        [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
-                                    );
+                            // If not successful after license check, or if it wasn't a license item
+                            if (!success) {
+                                 const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
+                                    [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                                );
 
-                                    if (actionButton) {
-                                        Utils.deepClick(actionButton);
-                                        await new Promise((resolve, reject) => {
-                                            const timeout = 25000;
-                                            const interval = setInterval(() => {
-                                                if (isItemOwned().owned) {
-                                                    success = true;
-                                                    clearInterval(interval);
-                                                    resolve();
-                                                }
-                                            }, 500);
-                                            setTimeout(() => {
+                                if (actionButton) {
+                                    Utils.deepClick(actionButton);
+                                    await new Promise((resolve, reject) => {
+                                        const timeout = 25000;
+                                        const interval = setInterval(() => {
+                                            if (isItemOwned().owned) {
+                                                success = true;
                                                 clearInterval(interval);
-                                                reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                                            }, timeout);
-                                        });
-                                    } else {
-                                         throw new Error('Could not find a final acquisition button.');
-                                    }
+                                                resolve();
+                                            }
+                                        }, 500);
+                                        setTimeout(() => {
+                                            clearInterval(interval);
+                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                        }, timeout);
+                                    });
+                                } else {
+                                     throw new Error('Could not find a final acquisition button.');
                                 }
                             }
-                        } catch (uiError) {
-                             logBuffer.push(`UI interaction failed: ${uiError.message}`);
-                             success = false;
                         }
+                    } catch (uiError) {
+                         logBuffer.push(`UI interaction failed: ${uiError.message}`);
+                         success = false;
                     }
-                } catch (error) {
-                    logBuffer.push(`A critical error occurred: ${error.message}`);
-                    success = false;
-                } finally {
+                }
+            } catch (error) {
+                logBuffer.push(`A critical error occurred: ${error.message}`);
+                success = false;
+            } finally {
                     try {
                         // 标记为已报告
                         hasReported = true;
                         
                         // The worker's ONLY job is to report back. It does NOT modify the database.
                         // All state changes are handled by the main tab's listener for consistency.
-                        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-                            workerId: workerId,
-                            success: success,
+                await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                    workerId: workerId,
+                    success: success,
                             logs: logBuffer,
                             task: currentTask, // Pass the original task back
                             instanceId: payload.instanceId, // 传回实例ID，确保正确的实例处理结果
@@ -1831,7 +1831,7 @@
                 // 尝试关闭标签页
                 setTimeout(() => {
                     try {
-                        window.close();
+                window.close();
                     } catch (error) {
                         console.error('Error closing window:', error);
                         // 如果关闭失败，尝试其他方法
@@ -2663,7 +2663,7 @@
             container.appendChild(debugContent);
 
             document.body.appendChild(container);
-            
+
             // --- BUG FIX: Explicitly return true on successful creation ---
             return true;
         },
@@ -2803,8 +2803,8 @@
                 emptyMessage.style.cssText = 'color: #888; text-align: center; padding: 20px;';
                 emptyMessage.textContent = '没有可显示的历史记录。';
                 State.UI.debugContent.appendChild(emptyMessage);
-                return;
-            }
+                    return;
+                }
 
             // 显示历史记录（如果有）
             const reversedHistory = [...State.statusHistory].reverse();
@@ -2822,23 +2822,37 @@
         // 初始化实例管理
         init: async function() {
             try {
-                // 检查是否已有活跃实例
+                // 检查当前页面是否是搜索页面
+                const isSearchPage = window.location.href.includes('/search') || 
+                                    window.location.pathname === '/' || 
+                                    window.location.pathname === '/zh-cn/' ||
+                                    window.location.pathname === '/en/';
+                
+                // 如果是搜索页面，总是成为活跃实例
+                if (isSearchPage) {
+                    this.isActive = true;
+                    await this.registerAsActive();
+                    Utils.logger('info', `当前是搜索页面，实例 [${Config.INSTANCE_ID}] 已激活。`);
+                    
+                    // 启动ping机制，每3秒更新一次活跃状态
+                    this.pingInterval = setInterval(() => this.ping(), 3000);
+                    return true;
+                }
+                
+                // 如果是工作标签页，检查是否有活跃实例
                 const activeInstance = await GM_getValue('fab_active_instance', null);
                 const currentTime = Date.now();
                 
                 if (activeInstance && (currentTime - activeInstance.lastPing < 10000)) {
                     // 如果有活跃实例且在10秒内有ping，则当前实例不活跃
-                    Utils.logger('warn', `检测到另一个活跃的脚本实例 [${activeInstance.id}]，当前实例将不执行任务。`);
+                    Utils.logger('info', `检测到活跃的脚本实例 [${activeInstance.id}]，当前工作标签页将与之协作。`);
                     this.isActive = false;
-                    
-                    // 每5秒检查一次是否可以接管
-                    setTimeout(() => this.checkTakeover(), 5000);
-                    return false;
+                    return true; // 工作标签页也返回true，因为它需要执行自己的任务
                 } else {
                     // 没有活跃实例或实例超时，当前实例成为活跃实例
                     this.isActive = true;
                     await this.registerAsActive();
-                    Utils.logger('info', `当前实例 [${Config.INSTANCE_ID}] 已激活。`);
+                    Utils.logger('info', `没有检测到活跃实例，当前实例 [${Config.INSTANCE_ID}] 已激活。`);
                     
                     // 启动ping机制，每3秒更新一次活跃状态
                     this.pingInterval = setInterval(() => this.ping(), 3000);
@@ -2859,7 +2873,7 @@
                 lastPing: Date.now()
             });
         },
-        
+
         // 定期更新活跃状态
         ping: async function() {
             if (!this.isActive) return;
@@ -2887,7 +2901,7 @@
                     
                     // 刷新页面以确保正确加载
                     location.reload();
-                } else {
+                    } else {
                     // 继续等待
                     setTimeout(() => this.checkTakeover(), 5000);
                 }
@@ -2918,17 +2932,17 @@
             // 如果是工作标签页，只执行工作标签页的逻辑，不执行主脚本逻辑
             State.isWorkerTab = true;
             State.workerTaskId = workerId;
+            
+            // 初始化实例管理，但不检查返回值，工作标签页总是需要执行自己的任务
+            await InstanceManager.init();
             await TaskRunner.processDetailPage();
             return;
         }
         
-        // 初始化实例管理，如果不是活跃实例，不继续执行
-        const isActiveInstance = await InstanceManager.init();
-        if (!isActiveInstance) {
-            Utils.logger('info', '当前实例不是活跃实例，将不执行主要功能。');
-            return;
-        }
+        // 初始化实例管理
+        await InstanceManager.init();
         
+        // 主页面总是继续执行，不需要检查isActiveInstance
         await Database.load();
         await PagePatcher.init();
         
@@ -3019,7 +3033,7 @@
                     // 检查是否实际移除了任务
                     if (State.db.todo.length < initialTodoCount) {
                         Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
-                    } else {
+        } else {
                         Utils.logger('warn', `任务 ${task.name} 不在待办列表中，可能已被其他工作标签页处理。`);
                     }
                     
@@ -3089,21 +3103,8 @@
         const launcherInterval = setInterval(() => {
             if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 if (!State.hasRunDomPart) {
-                    // 检查是否是工作标签页
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const workerId = urlParams.get('workerId');
-                    if (workerId) {
-                        State.isWorkerTab = true;
-                        State.workerTaskId = workerId;
-                        State.hasRunDomPart = true; // 标记为已运行，避免重复检查
-                        clearInterval(launcherInterval);
-                        Utils.logger('info', '[Launcher] 检测到工作标签页，只执行工作标签页逻辑。');
-                        main(); // 只执行main函数中的工作标签页逻辑
-                        return;
-                    }
-                    
                     Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-                    main();
+                    runDomDependentPart();
                 }
                 if (State.hasRunDomPart) {
                     clearInterval(launcherInterval);
@@ -3136,7 +3137,7 @@
         if (!uiCreated) {
             Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
             State.hasRunDomPart = true; // Mark as run to stop the launcher
-            return;
+             return;
         }
 
         // 确保UI创建后立即更新调试标签页
