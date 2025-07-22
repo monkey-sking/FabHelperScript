@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -138,11 +138,21 @@
         observerDebounceTimer: null,
         isObserverRunning: false, // New flag for the robust launcher
         lastKnownCardCount: 0,
+        isWorkerTab: false, // 新增：标记当前标签页是否是工作标签页
+        workerTaskId: null, // 新增：当前工作标签页的任务ID
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
     const Utils = {
         logger: (type, ...args) => {
+            // 在工作标签页中，只记录关键日志
+            if (State.isWorkerTab) {
+                if (type === 'error' || args.some(arg => typeof arg === 'string' && arg.includes('Worker'))) {
+                    console[type](`${Config.SCRIPT_NAME} [Worker]`, ...args);
+                }
+                return;
+            }
+            
             console[type](`${Config.SCRIPT_NAME}`, ...args);
             // The actual logging to screen will be handled by the UI module
             // to keep modules decoupled.
@@ -1600,7 +1610,11 @@
 
             // If there's no workerId, this is not a worker tab, so we do nothing.
             if (!workerId) return;
-
+            
+            // 标记当前标签页为工作标签页，避免执行主脚本逻辑
+            State.isWorkerTab = true;
+            State.workerTaskId = workerId;
+            
             // 记录工作标签页的启动时间
             const startTime = Date.now();
             let hasReported = false;
@@ -2897,6 +2911,17 @@
         Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
         
+        // 检查是否是工作标签页
+        const urlParams = new URLSearchParams(window.location.search);
+        const workerId = urlParams.get('workerId');
+        if (workerId) {
+            // 如果是工作标签页，只执行工作标签页的逻辑，不执行主脚本逻辑
+            State.isWorkerTab = true;
+            State.workerTaskId = workerId;
+            await TaskRunner.processDetailPage();
+            return;
+        }
+        
         // 初始化实例管理，如果不是活跃实例，不继续执行
         const isActiveInstance = await InstanceManager.init();
         if (!isActiveInstance) {
@@ -3064,12 +3089,25 @@
         const launcherInterval = setInterval(() => {
             if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 if (!State.hasRunDomPart) {
+                    // 检查是否是工作标签页
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const workerId = urlParams.get('workerId');
+                    if (workerId) {
+                        State.isWorkerTab = true;
+                        State.workerTaskId = workerId;
+                        State.hasRunDomPart = true; // 标记为已运行，避免重复检查
+                        clearInterval(launcherInterval);
+                        Utils.logger('info', '[Launcher] 检测到工作标签页，只执行工作标签页逻辑。');
+                        main(); // 只执行main函数中的工作标签页逻辑
+                        return;
+                    }
+                    
                     Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-            runDomDependentPart();
-        }
+                    main();
+                }
                 if (State.hasRunDomPart) {
-                     clearInterval(launcherInterval);
-                     Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
+                    clearInterval(launcherInterval);
+                    Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
                 }
             }
         }, 250); // Check every 250ms
@@ -3077,11 +3115,17 @@
 
     async function runDomDependentPart() {
         if (State.hasRunDomPart) return;
+        
+        // 如果是工作标签页，不执行主脚本的DOM相关逻辑
+        if (State.isWorkerTab) {
+            State.hasRunDomPart = true; // 标记为已运行，避免重复检查
+            return;
+        }
 
         // The new, correct worker detection logic.
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('workerId')) {
-            TaskRunner.processDetailPage();
+            // 这里不需要再调用processDetailPage，因为main函数中已经处理了
             State.hasRunDomPart = true; // Mark as run to stop the launcher
             return; 
         }
@@ -3092,7 +3136,7 @@
         if (!uiCreated) {
             Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
             State.hasRunDomPart = true; // Mark as run to stop the launcher
-             return;
+            return;
         }
 
         // 确保UI创建后立即更新调试标签页
