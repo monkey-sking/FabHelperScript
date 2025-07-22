@@ -2194,18 +2194,36 @@
         runHideOrShow: () => {
             // 无论是否在限速状态下，都应该执行隐藏功能
             State.hiddenThisPageCount = 0;
-            document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
-                // UNIFIED LOGIC: Use the new single source of truth.
+            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            
+            // 首先立即隐藏所有应该隐藏的卡片，防止闪烁
+            cards.forEach(card => {
                 const isFinished = TaskRunner.isCardFinished(card);
-
                 if (State.hideSaved && isFinished) {
                     card.style.display = 'none';
                     State.hiddenThisPageCount++;
-                } else {
-                    card.style.display = '';
                 }
             });
-            UI.update();
+            
+            // 然后添加动画效果：先显示所有卡片，再逐个隐藏
+            if (State.hideSaved && State.hiddenThisPageCount > 0) {
+                // 找出所有不应该隐藏的卡片
+                const visibleCards = Array.from(cards).filter(card => !TaskRunner.isCardFinished(card));
+                
+                // 显示这些卡片（如果它们之前被隐藏了）
+                visibleCards.forEach(card => {
+                    card.style.display = '';
+                });
+                
+                // 直接更新UI，避免闪烁
+                UI.update();
+            } else {
+                // 如果没有隐藏功能或没有需要隐藏的卡片，正常显示所有卡片
+                cards.forEach(card => {
+                    card.style.display = '';
+                });
+                UI.update();
+            }
         },
         
         // 添加一个方法来检查并确保待办任务被执行
