@@ -588,6 +588,19 @@
                             // 每次相关请求都更新调试标签页
                             UI.updateDebugTab();
                             Utils.logger('info', `[请求统计] 商品卡片搜索请求 +1，当前总数: ${State.successfulSearchCount}`);
+                            
+                            // 如果历史记录为空，添加一个新的会话记录
+                            if (State.statusHistory.length === 0) {
+                                const newSessionEntry = {
+                                    type: 'STARTUP',
+                                    duration: 0,
+                                    endTime: new Date().toISOString(),
+                                    message: '新会话开始'
+                                };
+                                State.statusHistory.push(newSessionEntry);
+                                GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                                UI.updateDebugTab();
+                            }
                         }
                     }
                 };
@@ -2067,6 +2080,17 @@
                 if (window.confirm('您确定要清空所有状态历史记录吗？')) {
                     State.statusHistory = [];
                     await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
+                    
+                    // 添加一个新的"当前会话"记录
+                    const currentSessionEntry = {
+                        type: 'STARTUP',
+                        duration: 0,
+                        endTime: new Date().toISOString(),
+                        message: '历史记录已清空，新会话开始'
+                    };
+                    State.statusHistory.push(currentSessionEntry);
+                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                    
                     UI.updateDebugTab();
                     Utils.logger('info', '状态历史记录已清空。');
                 }
@@ -2131,14 +2155,8 @@
         updateDebugTab: () => {
             if (!State.UI.debugContent) return;
             State.UI.debugContent.innerHTML = ''; // Clear previous entries
-            if (State.statusHistory.length === 0) {
-                State.UI.debugContent.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">没有可显示的历史记录。</div>';
-                return;
-            }
-
-            // Reverse the history so newest entries are at the top
-            const reversedHistory = [...State.statusHistory].reverse();
-
+            
+            // 创建历史记录项
             const createHistoryItem = (entry) => {
                 const item = document.createElement('div');
                 item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color);';
@@ -2187,7 +2205,8 @@
                 item.append(header, details);
                 return item;
             };
-
+            
+            // 创建当前状态项（即使没有历史记录也会显示）
             const createCurrentStatusItem = () => {
                 if(State.appStatus === 'NORMAL' || State.appStatus === 'RATE_LIMITED') {
                     const item = document.createElement('div');
@@ -2220,7 +2239,20 @@
                 }
             };
             
-            createCurrentStatusItem(); // Add the current status block at the top
+            // 添加当前状态项（始终显示）
+            createCurrentStatusItem();
+            
+            // 如果没有历史记录，显示提示信息
+            if (State.statusHistory.length === 0) {
+                const emptyMessage = document.createElement('div');
+                emptyMessage.style.cssText = 'color: #888; text-align: center; padding: 20px;';
+                emptyMessage.textContent = '没有可显示的历史记录。';
+                State.UI.debugContent.appendChild(emptyMessage);
+                return;
+            }
+
+            // 显示历史记录（如果有）
+            const reversedHistory = [...State.statusHistory].reverse();
             reversedHistory.forEach(entry => State.UI.debugContent.appendChild(createHistoryItem(entry)));
         },
     };
