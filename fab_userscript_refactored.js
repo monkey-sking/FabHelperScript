@@ -31,7 +31,7 @@
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 3, // 最大并发工作标签页数量
+        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
         UI_CONTAINER_ID: 'fab-helper-container',
         UI_LOG_ID: 'fab-helper-log',
         DB_KEYS: {
