@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.12
+// @version      1.0.13
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -533,15 +533,24 @@
             UI.updateDebugTab();
             UI.update();
             
-            // 无论是否有待办任务，都开始随机刷新
-            // 这是为了确保在429状态下总是会自动刷新
-            const randomDelay = 5000 + Math.random() * 2000; // 缩短延迟时间为5-7秒
-            if (State.autoResumeAfter429) {
-                Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后刷新页面尝试恢复...');
+            // 检查是否有待办任务或活动工作线程
+            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
+                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+                
+                // 如果有正在执行的任务，则不自动刷新，但显示明显提示
+                Utils.logger('warn', '⚠️ 处于限速状态，但有任务在执行，请在任务完成后手动刷新页面。');
             } else {
-                Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后自动刷新页面尝试恢复...');
+                // 无任务情况下，开始随机刷新
+                // 缩短延迟时间为5-7秒，使恢复更快
+                const randomDelay = 5000 + Math.random() * 2000;
+                if (State.autoResumeAfter429) {
+                    Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后刷新页面尝试恢复...');
+                } else {
+                    Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后自动刷新页面尝试恢复...');
+                }
+                countdownRefresh(randomDelay, '429自动恢复');
             }
-            countdownRefresh(randomDelay, '429自动恢复');
             
             return true;
         },
