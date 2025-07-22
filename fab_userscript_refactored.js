@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.8
+// @version      1.0.9
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -931,7 +931,10 @@
             State.executionTotalTasks = State.db.todo.length;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
+            
+            // 立即更新UI，确保按钮状态与执行状态一致
             UI.update();
+            
             TaskRunner.executeBatch();
         },
 
@@ -942,6 +945,9 @@
             } else {
                 TaskRunner.startExecution();
             }
+            
+            // 立即更新UI，确保按钮状态与执行状态一致
+            UI.update();
         },
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
@@ -1010,6 +1016,8 @@
             State.executionFailedTasks = 0;
             
             Utils.logger('info', '执行已由用户手动停止。');
+            
+            // 立即更新UI，确保按钮状态与执行状态一致
             UI.update();
         },
 
@@ -2469,6 +2477,15 @@
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
             State.UI.execBtn.onclick = TaskRunner.toggleExecution;
+            
+            // 根据State.isExecuting设置按钮初始状态
+            if (State.isExecuting) {
+                State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
+                State.UI.execBtn.classList.add('executing');
+            } else {
+                State.UI.execBtn.textContent = Utils.getText('execute');
+                State.UI.execBtn.classList.remove('executing');
+            }
 
             const actionButtons = document.createElement('div');
             actionButtons.className = 'fab-helper-actions';
@@ -2684,14 +2701,24 @@
             State.UI.statusVisible.querySelector('span').textContent = visibleCount;
             
             // --- Update Button States ---
+            // 确保按钮状态与State.isExecuting一致
             if (State.isExecuting) {
                 State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
                 State.UI.execBtn.classList.add('executing');
-                // Maybe add a progress bar here later
+                // 添加提示信息，显示当前执行状态
+                if (State.executionTotalTasks > 0) {
+                    const progress = State.executionCompletedTasks + State.executionFailedTasks;
+                    const percentage = Math.round((progress / State.executionTotalTasks) * 100);
+                    State.UI.execBtn.title = `执行中: ${progress}/${State.executionTotalTasks} (${percentage}%)`;
+                } else {
+                    State.UI.execBtn.title = '执行中';
+                }
             } else {
                 State.UI.execBtn.textContent = Utils.getText('execute');
                 State.UI.execBtn.classList.remove('executing');
+                State.UI.execBtn.title = '点击开始执行任务';
             }
+            
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
         },
         removeAllOverlays: () => {
@@ -2944,6 +2971,14 @@
         
         // 主页面总是继续执行，不需要检查isActiveInstance
         await Database.load();
+        
+        // 确保执行状态与存储状态一致
+        const storedExecutingState = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
+        if (State.isExecuting !== storedExecutingState) {
+            Utils.logger('info', `执行状态不一致，从存储中恢复：${storedExecutingState ? '执行中' : '已停止'}`);
+            State.isExecuting = storedExecutingState;
+        }
+        
         await PagePatcher.init();
         
         // 检查是否有临时保存的待办任务（从429恢复）
@@ -2985,7 +3020,7 @@
             }
         }
         
-        // 添加工作标签页完成任务的监听器
+                // 添加工作标签页完成任务的监听器
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
             if (!newValue) return; // 如果值被删除，忽略此事件
             
@@ -3033,7 +3068,7 @@
                     // 检查是否实际移除了任务
                     if (State.db.todo.length < initialTodoCount) {
                         Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
-        } else {
+                    } else {
                         Utils.logger('warn', `任务 ${task.name} 不在待办列表中，可能已被其他工作标签页处理。`);
                     }
                     
@@ -3096,6 +3131,16 @@
                 Utils.logger('error', `处理工作报告时出错: ${error.message}`);
             }
         }));
+        
+        // 添加执行状态变化监听器，确保UI状态与存储状态一致
+        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
+            // 如果当前不是工作标签页，且存储状态与当前状态不一致，则更新当前状态
+            if (!State.isWorkerTab && State.isExecuting !== newValue) {
+                Utils.logger('info', `检测到执行状态变化：${newValue ? '执行中' : '已停止'}`);
+                State.isExecuting = newValue;
+                UI.update();
+            }
+        }));
 
         // --- ROBUST LAUNCHER ---
         // This interval is launched from the clean userscript context and is less likely to be interfered with.
@@ -3114,7 +3159,7 @@
         }, 250); // Check every 250ms
     }
 
-    async function runDomDependentPart() {
+        async function runDomDependentPart() {
         if (State.hasRunDomPart) return;
         
         // 如果是工作标签页，不执行主脚本的DOM相关逻辑
@@ -3137,8 +3182,11 @@
         if (!uiCreated) {
             Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
             State.hasRunDomPart = true; // Mark as run to stop the launcher
-             return;
+            return;
         }
+        
+        // 初始化完成后，确保UI状态与执行状态一致
+        UI.update();
 
         // 确保UI创建后立即更新调试标签页
         UI.update();
