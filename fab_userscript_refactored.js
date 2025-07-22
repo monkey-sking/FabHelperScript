@@ -1695,18 +1695,15 @@
                     
                     // 生成一个随机延迟（5-15秒）
                     const randomDelay = 5000 + Math.random() * 10000;
-                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
                     
-                    setTimeout(() => {
-                        // 如果还有待办任务，保存它们
-                        if (State.db.todo.length > 0) {
-                            Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
-                            GM_setValue('temp_todo_tasks', State.db.todo);
-                        }
-                        
-                        // 刷新页面
-                        location.reload();
-                    }, randomDelay);
+                    // 如果还有待办任务，保存它们
+                    if (State.db.todo.length > 0) {
+                        Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
+                        GM_setValue('temp_todo_tasks', State.db.todo);
+                    }
+                    
+                    // 使用倒计时刷新
+                    countdownRefresh(randomDelay, '自动恢复尝试');
                 };
                 
                 // 开始第一次恢复尝试
@@ -2567,7 +2564,8 @@
         State.hasRunDomPart = true; // Mark as run *after* successful UI creation
 
         // --- Dead on Arrival Check for initial 429 page load ---
-        const enterRateLimitedState = () => {
+        // 使enterRateLimitedState函数全局可访问，以便其他部分可以调用
+        window.enterRateLimitedState = function() {
             if (State.appStatus !== 'RATE_LIMITED') {
                 // 记录正常运行期的统计信息
                 const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
@@ -2597,8 +2595,7 @@
                 // 如果启用了自动恢复，开始随机刷新
                 if (State.autoResumeAfter429) {
                     const randomDelay = 5000 + Math.random() * 10000;
-                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后自动刷新页面尝试恢复...`);
-                    setTimeout(() => location.reload(), randomDelay);
+                    countdownRefresh(randomDelay, '自动恢复');
                 }
             }
         };
@@ -2611,7 +2608,7 @@
                               text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
             if (isCloudflareTitle || is429Text) {
                 Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
-                enterRateLimitedState();
+                window.enterRateLimitedState();
                 return true;
             }
             return false;
@@ -2661,13 +2658,13 @@
                     // 仍然处于限速状态，继续随机刷新
                     Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
                     const randomDelay = 5000 + Math.random() * 10000;
-                    setTimeout(() => location.reload(), randomDelay);
+                    countdownRefresh(randomDelay, '恢复探测失败');
                 }
             } catch (error) {
                 // 探测出错，继续随机刷新
                 Utils.logger('error', `恢复探测出错: ${error.message}。将继续随机刷新...`);
                 const randomDelay = 5000 + Math.random() * 10000;
-                setTimeout(() => location.reload(), randomDelay);
+                countdownRefresh(randomDelay, '恢复探测出错');
             }
         }
 
@@ -2773,7 +2770,20 @@
                 pageText.includes('rate limit')) {
                 
                 Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
-                PagePatcher.handleRateLimit('页面内容检测');
+                try {
+                    PagePatcher.handleRateLimit('页面内容检测');
+                } catch (error) {
+                    Utils.logger('error', `处理限速出错: ${error.message}`);
+                    // 直接调用enterRateLimitedState作为备选方案
+                    if (typeof window.enterRateLimitedState === 'function') {
+                        window.enterRateLimitedState();
+                } else {
+                        // 最后的备选方案：直接刷新页面
+                        const randomDelay = 5000 + Math.random() * 10000;
+                        Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                        setTimeout(() => location.reload(), randomDelay);
+                    }
+                }
             }
         }, 3000); // 每3秒检查一次
 
@@ -2792,7 +2802,20 @@
                 
                 if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                     Utils.logger('warn', `[HTTP状态检测] 检测到当前页面状态码为429！`);
-                    PagePatcher.handleRateLimit('HTTP状态检测');
+                    try {
+                        PagePatcher.handleRateLimit('HTTP状态检测');
+                    } catch (error) {
+                        Utils.logger('error', `处理限速出错: ${error.message}`);
+                        // 直接调用enterRateLimitedState作为备选方案
+                        if (typeof window.enterRateLimitedState === 'function') {
+                            window.enterRateLimitedState();
+                        } else {
+                            // 最后的备选方案：直接刷新页面
+                            const randomDelay = 5000 + Math.random() * 10000;
+                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                            setTimeout(() => location.reload(), randomDelay);
+                        }
+                    }
                 }
             } catch (error) {
                 // 忽略错误
@@ -2823,13 +2846,39 @@
                 
                 if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                     Utils.logger('warn', `[API状态检测] 检测到API请求状态码为429！`);
-                    PagePatcher.handleRateLimit('API状态检测');
+                    try {
+                        PagePatcher.handleRateLimit('API状态检测');
+                    } catch (error) {
+                        Utils.logger('error', `处理限速出错: ${error.message}`);
+                        // 直接调用enterRateLimitedState作为备选方案
+                        if (typeof window.enterRateLimitedState === 'function') {
+                            window.enterRateLimitedState();
+                        } else {
+                            // 最后的备选方案：直接刷新页面
+                            const randomDelay = 5000 + Math.random() * 10000;
+                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                            setTimeout(() => location.reload(), randomDelay);
+                        }
+                    }
                 }
             } catch (error) {
                 // 如果请求失败，可能也是限速导致的
                 Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
                 if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                    PagePatcher.handleRateLimit('API请求失败');
+                    try {
+                        PagePatcher.handleRateLimit('API请求失败');
+                    } catch (innerError) {
+                        Utils.logger('error', `处理限速出错: ${innerError.message}`);
+                        // 直接调用enterRateLimitedState作为备选方案
+                        if (typeof window.enterRateLimitedState === 'function') {
+                            window.enterRateLimitedState();
+                        } else {
+                            // 最后的备选方案：直接刷新页面
+                            const randomDelay = 5000 + Math.random() * 10000;
+                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                            setTimeout(() => location.reload(), randomDelay);
+                        }
+                    }
                 }
             }
         };
@@ -2849,7 +2898,20 @@
                     // 检查状态码
                     if (xhr.status === 429 || xhr.status === '429' || xhr.status.toString() === '429') {
                         Utils.logger('warn', `[滚动API监控] 检测到API请求状态码为429: ${xhr._url}`);
-                        PagePatcher.handleRateLimit('滚动API监控');
+                        try {
+                            PagePatcher.handleRateLimit('滚动API监控');
+                        } catch (error) {
+                            Utils.logger('error', `处理限速出错: ${error.message}`);
+                            // 直接使用全局函数作为备选方案
+                            if (typeof window.enterRateLimitedState === 'function') {
+                                window.enterRateLimitedState();
+                            } else {
+                                // 最后的备选方案：直接刷新页面
+                                const randomDelay = 5000 + Math.random() * 10000;
+                                Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                                setTimeout(() => location.reload(), randomDelay);
+                            }
+                        }
                         return;
                     }
                     
@@ -2861,7 +2923,20 @@
                             responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)
                         )) {
                             Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
-                            PagePatcher.handleRateLimit('滚动API监控');
+                            try {
+                                PagePatcher.handleRateLimit('滚动API监控');
+                            } catch (error) {
+                                Utils.logger('error', `处理限速出错: ${error.message}`);
+                                // 直接使用全局函数作为备选方案
+                                if (typeof window.enterRateLimitedState === 'function') {
+                                    window.enterRateLimitedState();
+                                } else {
+                                    // 最后的备选方案：直接刷新页面
+                                    const randomDelay = 5000 + Math.random() * 10000;
+                                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                                    setTimeout(() => location.reload(), randomDelay);
+                                }
+                            }
                             return;
                         }
                     } catch (e) {
@@ -2875,5 +2950,28 @@
     }
 
     main();
+
+    // 添加一个通用的倒计时刷新函数
+    const countdownRefresh = (delay, reason = '备选方案') => {
+        const seconds = (delay/1000).toFixed(1);
+        
+        // 添加明显的倒计时日志
+        Utils.logger('info', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
+        
+        // 每秒更新倒计时日志
+        let remainingSeconds = Math.ceil(delay/1000);
+        const countdownInterval = setInterval(() => {
+            remainingSeconds--;
+            if (remainingSeconds <= 0) {
+                clearInterval(countdownInterval);
+                Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
+            } else {
+                Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
+            }
+        }, 1000);
+        
+        // 设置刷新定时器
+        setTimeout(() => location.reload(), delay);
+    };
 
 })();
