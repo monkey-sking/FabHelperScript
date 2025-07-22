@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -85,6 +85,7 @@
     const State = {
         db: {},
         isExecuting: false,
+        isDispatchingTasks: false, // 新增：标记是否正在派发任务
         isReconning: false,
         hideSaved: false,
         autoAddOnScroll: false, // New state for the setting
@@ -1379,6 +1380,9 @@
             if (State.watchdogTimer) clearInterval(State.watchdogTimer); // Clear any existing timer
 
             State.watchdogTimer = setInterval(async () => {
+                // 如果当前实例不是活跃实例，不执行监控
+                if (!InstanceManager.isActive) return;
+                
                 if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
@@ -1387,7 +1391,9 @@
 
                 const now = Date.now();
                 const STALL_TIMEOUT = Config.WORKER_TIMEOUT; // 使用配置的超时时间
+                const stalledWorkers = [];
 
+                // 先收集所有超时的工作标签页，避免在循环中修改对象
                 for (const workerId in State.runningWorkers) {
                     const workerInfo = State.runningWorkers[workerId];
                     
@@ -1395,10 +1401,22 @@
                     if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
                     
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
+                        stalledWorkers.push({
+                            workerId,
+                            task: workerInfo.task
+                        });
+                    }
+                }
+                
+                // 如果有超时的工作标签页，处理它们
+                if (stalledWorkers.length > 0) {
+                    Utils.logger('warn', `发现 ${stalledWorkers.length} 个超时的工作标签页，正在清理...`);
+                    
+                    // 逐个处理超时的工作标签页
+                    for (const stalledWorker of stalledWorkers) {
+                        const { workerId, task } = stalledWorker;
+                        
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
-
-                        // The watchdog now follows the same logic as the WORKER_DONE listener for failures.
-                        const task = workerInfo.task;
 
                         // 1. Remove from To-Do
                         State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
@@ -1417,15 +1435,19 @@
                         
                         // 删除任务数据
                         await GM_deleteValue(workerId);
-
-                        Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
-
-                        // 4. Update UI and dispatch
-                        UI.update();
-                        
-                        // 等待一小段时间再派发新任务，避免同时处理多个超时任务时一次性打开太多标签页
-                        setTimeout(() => TaskRunner.executeBatch(), 1000);
                     }
+                    
+                    Utils.logger('info', `已清理 ${stalledWorkers.length} 个超时的工作标签页。剩余活动工作标签页: ${State.activeWorkers}`);
+
+                    // 4. Update UI
+                    UI.update();
+                    
+                    // 5. 延迟一段时间后继续派发任务
+                    setTimeout(() => {
+                        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+                            TaskRunner.executeBatch();
+                        }
+                    }, 2000);
                 }
             }, 5000); // Check every 5 seconds
         },
@@ -1439,94 +1461,119 @@
             
             if (!State.isExecuting) return;
 
-            // Stop condition for the entire execution process
-            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                Utils.logger('info', '✅ 🎉 All tasks have been completed!');
-                State.isExecuting = false;
-                // 保存执行状态
-                Database.saveExecutingState();
-                // 保存待办列表（虽然为空，但仍需保存以更新存储）
-                Database.saveTodo();
-                if (State.watchdogTimer) {
-                    clearInterval(State.watchdogTimer);
-                    State.watchdogTimer = null;
+            // 防止重复执行
+            if (State.isDispatchingTasks) {
+                Utils.logger('info', '正在派发任务中，请稍候...');
+                return;
+            }
+            
+            // 设置派发任务标志
+            State.isDispatchingTasks = true;
+
+            try {
+                // Stop condition for the entire execution process
+                if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                    Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                    State.isExecuting = false;
+                    // 保存执行状态
+                    Database.saveExecutingState();
+                    // 保存待办列表（虽然为空，但仍需保存以更新存储）
+                    Database.saveTodo();
+                    if (State.watchdogTimer) {
+                        clearInterval(State.watchdogTimer);
+                        State.watchdogTimer = null;
+                    }
+                    
+                    // 关闭所有可能残留的工作标签页
+                    TaskRunner.closeAllWorkerTabs();
+                    
+                    UI.update();
+                    State.isDispatchingTasks = false;
+                    return;
+                }
+
+                // 如果处于限速状态，记录日志但继续执行任务
+                if (State.appStatus === 'RATE_LIMITED') {
+                    Utils.logger('info', '当前处于限速状态，但仍将继续执行待办任务...');
+                }
+
+                // 限制最大活动工作标签页数量
+                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
+                    Utils.logger('info', `已达到最大并发工作标签页数量 (${Config.MAX_CONCURRENT_WORKERS})，等待现有任务完成...`);
+                    State.isDispatchingTasks = false;
+                    return;
+                }
+
+                // --- DISPATCHER FOR DETAIL TASKS ---
+                // 创建一个当前正在执行的任务UID集合，用于防止重复派发
+                const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
+                
+                // 创建一个副本，避免在迭代过程中修改原数组
+                const todoList = [...State.db.todo];
+                let dispatchedCount = 0;
+                
+                // 创建一个集合，记录本次派发的任务UID
+                const dispatchedUIDs = new Set();
+
+                for (const task of todoList) {
+                    if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+                    
+                    // 如果任务已经在执行中，跳过
+                    if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
+                        Utils.logger('info', `任务 ${task.name} 已在执行中，跳过。`);
+                        continue;
+                    }
+
+                    // 如果任务已经在完成列表中，从待办列表移除并跳过
+                    if (Database.isDone(task.url)) {
+                        Utils.logger('info', `任务 ${task.name} 已完成，从待办列表中移除。`);
+                        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                        Database.saveTodo();
+                        continue;
+                    }
+                    
+                    // 记录本次派发的任务
+                    dispatchedUIDs.add(task.uid);
+
+                    State.activeWorkers++;
+                    dispatchedCount++;
+                    const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    State.runningWorkers[workerId] = { 
+                        task, 
+                        startTime: Date.now(),
+                        instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
+                    };
+
+                    Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
+
+                    await GM_setValue(workerId, { 
+                        task,
+                        instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
+                    });
+
+                    const workerUrl = new URL(task.url);
+                    workerUrl.searchParams.set('workerId', workerId);
+                    
+                    // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
+                    GM_openInTab(workerUrl.href, { active: false, insert: true });
+
+                    // 等待一小段时间再派发下一个任务，避免浏览器同时打开太多标签页
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
                 
-                // 关闭所有可能残留的工作标签页
-                TaskRunner.closeAllWorkerTabs();
+                if (dispatchedCount > 0) {
+                    Utils.logger('info', `本批次派发了 ${dispatchedCount} 个任务。`);
+                }
+
+                if (!State.watchdogTimer && State.activeWorkers > 0) {
+                    TaskRunner.runWatchdog();
+                }
                 
                 UI.update();
-                return;
+            } finally {
+                // 无论如何都要重置派发任务标志
+                State.isDispatchingTasks = false;
             }
-
-            // 如果处于限速状态，记录日志但继续执行任务
-            if (State.appStatus === 'RATE_LIMITED') {
-                Utils.logger('info', '当前处于限速状态，但仍将继续执行待办任务...');
-            }
-
-            // 限制最大活动工作标签页数量
-            if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
-                Utils.logger('info', `已达到最大并发工作标签页数量 (${Config.MAX_CONCURRENT_WORKERS})，等待现有任务完成...`);
-                return;
-            }
-
-            // --- DISPATCHER FOR DETAIL TASKS ---
-            // 创建一个当前正在执行的任务UID集合，用于防止重复派发
-            const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
-            
-            // 创建一个副本，避免在迭代过程中修改原数组
-            const todoList = [...State.db.todo];
-            let dispatchedCount = 0;
-
-            for (const task of todoList) {
-                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
-                
-                // 如果任务已经在执行中，跳过
-                if (inFlightUIDs.has(task.uid)) continue;
-
-                // 如果任务已经在完成列表中，从待办列表移除并跳过
-                if (Database.isDone(task.url)) {
-                    Utils.logger('info', `任务 ${task.name} 已完成，从待办列表中移除。`);
-                    State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                    Database.saveTodo();
-                    continue;
-                }
-
-                State.activeWorkers++;
-                dispatchedCount++;
-                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                State.runningWorkers[workerId] = { 
-                    task, 
-                    startTime: Date.now(),
-                    instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
-                };
-
-                Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
-
-                await GM_setValue(workerId, { 
-                    task,
-                    instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
-                });
-
-                const workerUrl = new URL(task.url);
-                workerUrl.searchParams.set('workerId', workerId);
-                
-                // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
-                GM_openInTab(workerUrl.href, { active: false, insert: true });
-
-                // 等待一小段时间再派发下一个任务，避免浏览器同时打开太多标签页
-                await new Promise(resolve => setTimeout(resolve, 300));
-            }
-            
-            if (dispatchedCount > 0) {
-                Utils.logger('info', `本批次派发了 ${dispatchedCount} 个任务。`);
-            }
-
-            if (!State.watchdogTimer && State.activeWorkers > 0) {
-                TaskRunner.runWatchdog();
-            }
-            
-            UI.update();
         },
         
         // 添加一个方法来关闭所有工作标签页
@@ -1554,170 +1601,231 @@
             // If there's no workerId, this is not a worker tab, so we do nothing.
             if (!workerId) return;
 
-            // This is a safety check. If the main tab stops execution, it might delete the task.
-            const payload = await GM_getValue(workerId);
-            if (!payload || !payload.task) {
-                Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
-                window.close();
-                return;
-            }
-            
-            // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
-            const activeInstance = await GM_getValue('fab_active_instance', null);
-            if (activeInstance && activeInstance.id !== payload.instanceId) {
-                Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
-                await GM_deleteValue(workerId); // 清理任务数据
-                window.close();
-                return;
-            }
+            // 记录工作标签页的启动时间
+            const startTime = Date.now();
+            let hasReported = false;
+            let closeAttempted = false;
 
-            const currentTask = payload.task;
-            const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
-            let success = false;
+            // 设置一个定时器，确保工作标签页最终会关闭
+            const forceCloseTimer = setTimeout(() => {
+                if (!closeAttempted) {
+                    console.log('强制关闭工作标签页');
+                    try {
+                        window.close();
+                    } catch (e) {
+                        console.error('关闭工作标签页失败:', e);
+                    }
+                }
+            }, 60000); // 60秒后强制关闭
 
             try {
-                // API-First Ownership Check...
-                try {
-                    const csrfToken = Utils.getCookie('fab_csrftoken');
-                    if (!csrfToken) throw new Error("CSRF token not found for API check.");
-                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                    statesUrl.searchParams.append('listing_ids', currentTask.uid);
-                    const response = await API.gmFetch({
-                        method: 'GET',
-                        url: statesUrl.href,
-                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                    });
-                    const statesData = JSON.parse(response.responseText);
-                    const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
-                    if (isOwned) {
-                        logBuffer.push(`API check confirms item is already owned.`);
-                        success = true;
-                    } else {
-                        logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
-                    }
-                } catch (apiError) {
-                    logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+                // This is a safety check. If the main tab stops execution, it might delete the task.
+                const payload = await GM_getValue(workerId);
+                if (!payload || !payload.task) {
+                    Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
+                    closeWorkerTab();
+                    return;
+                }
+                
+                // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
+                const activeInstance = await GM_getValue('fab_active_instance', null);
+                if (activeInstance && activeInstance.id !== payload.instanceId) {
+                    Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
+                    await GM_deleteValue(workerId); // 清理任务数据
+                    closeWorkerTab();
+                    return;
                 }
 
-                if (!success) {
-                    try {
-                        const isItemOwned = () => {
-                            const criteria = Config.OWNED_SUCCESS_CRITERIA;
-                            const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
-                            if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
-                            const successHeader = document.querySelector('h2');
-                            if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
-                            const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
-                            const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
-                            if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-                            return { owned: false };
-                        };
+                const currentTask = payload.task;
+                const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+                let success = false;
 
-                        const initialState = isItemOwned();
-                        if (initialState.owned) {
-                            logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                try {
+                    // API-First Ownership Check...
+                    try {
+                        const csrfToken = Utils.getCookie('fab_csrftoken');
+                        if (!csrfToken) throw new Error("CSRF token not found for API check.");
+                        const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                        statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                        const response = await API.gmFetch({
+                            method: 'GET',
+                            url: statesUrl.href,
+                            headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                        });
+                        const statesData = JSON.parse(response.responseText);
+                        const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
+                        if (isOwned) {
+                            logBuffer.push(`API check confirms item is already owned.`);
                             success = true;
                         } else {
-                            const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
-                            if (licenseButton) {
-                                logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
-                                await new Promise((resolve, reject) => {
-                                    const observer = new MutationObserver((mutationsList, obs) => {
-                                        for (const mutation of mutationsList) {
-                                            if (mutation.addedNodes.length > 0) {
-                                                for (const node of mutation.addedNodes) {
-                                                    if (node.nodeType !== 1) continue;
-                                                    const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                        Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
-                                                    );
-                                                    if (freeTextElement) {
-                                                        const clickableParent = freeTextElement.closest('[role="option"], button');
-                                                        if (clickableParent) {
-                                                            Utils.deepClick(clickableParent);
-                                                            observer.disconnect();
-                                                            resolve();
-                                                            return;
+                            logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+                        }
+                    } catch (apiError) {
+                        logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+                    }
+
+                    if (!success) {
+                        try {
+                            const isItemOwned = () => {
+                                const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                                const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+                                if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                                const successHeader = document.querySelector('h2');
+                                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                                const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                                const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                                if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                                return { owned: false };
+                            };
+
+                            const initialState = isItemOwned();
+                            if (initialState.owned) {
+                                logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                                success = true;
+                            } else {
+                                const licenseButton = [...document.querySelectorAll('button')].find(btn => btn.textContent.includes('选择许可'));
+                                if (licenseButton) {
+                                    logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                                    await new Promise((resolve, reject) => {
+                                        const observer = new MutationObserver((mutationsList, obs) => {
+                                            for (const mutation of mutationsList) {
+                                                if (mutation.addedNodes.length > 0) {
+                                                    for (const node of mutation.addedNodes) {
+                                                        if (node.nodeType !== 1) continue;
+                                                        const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                            Array.from(el.childNodes).some(cn => cn.nodeType === 3 && cn.textContent.trim() === '免费')
+                                                        );
+                                                        if (freeTextElement) {
+                                                            const clickableParent = freeTextElement.closest('[role="option"], button');
+                                                            if (clickableParent) {
+                                                                Utils.deepClick(clickableParent);
+                                                                observer.disconnect();
+                                                                resolve();
+                                                                return;
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
-                                        }
-                                    });
-                                    observer.observe(document.body, { childList: true, subtree: true });
-                                    Utils.deepClick(licenseButton); // First click attempt
-                                    setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
-                                    setTimeout(() => {
-                                        observer.disconnect();
-                                        reject(new Error('Timeout (5s): The "免费" option did not appear.'));
-                                    }, 5000);
-                                });
-                                // After license selection, re-check ownership before trying the main button
-                                await new Promise(r => setTimeout(r, 500)); // wait for UI update
-                                if(isItemOwned().owned) success = true;
-                            }
-
-                            // If not successful after license check, or if it wasn't a license item
-                            if (!success) {
-                                 const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
-                                    [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
-                                );
-
-                                if (actionButton) {
-                                    Utils.deepClick(actionButton);
-                                    await new Promise((resolve, reject) => {
-                                        const timeout = 25000;
-                                        const interval = setInterval(() => {
-                                            if (isItemOwned().owned) {
-                                                success = true;
-                                                clearInterval(interval);
-                                                resolve();
-                                            }
-                                        }, 500);
+                                        });
+                                        observer.observe(document.body, { childList: true, subtree: true });
+                                        Utils.deepClick(licenseButton); // First click attempt
+                                        setTimeout(() => Utils.deepClick(licenseButton), 1500); // Second attempt
                                         setTimeout(() => {
-                                            clearInterval(interval);
-                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                                        }, timeout);
+                                            observer.disconnect();
+                                            reject(new Error('Timeout (5s): The "免费" option did not appear.'));
+                                        }, 5000);
                                     });
-                                } else {
-                                     throw new Error('Could not find a final acquisition button.');
+                                    // After license selection, re-check ownership before trying the main button
+                                    await new Promise(r => setTimeout(r, 500)); // wait for UI update
+                                    if(isItemOwned().owned) success = true;
+                                }
+
+                                // If not successful after license check, or if it wasn't a license item
+                                if (!success) {
+                                     const actionButton = [...document.querySelectorAll('button.fabkit-Button-root')].find(btn =>
+                                        [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                                    );
+
+                                    if (actionButton) {
+                                        Utils.deepClick(actionButton);
+                                        await new Promise((resolve, reject) => {
+                                            const timeout = 25000;
+                                            const interval = setInterval(() => {
+                                                if (isItemOwned().owned) {
+                                                    success = true;
+                                                    clearInterval(interval);
+                                                    resolve();
+                                                }
+                                            }, 500);
+                                            setTimeout(() => {
+                                                clearInterval(interval);
+                                                reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                            }, timeout);
+                                        });
+                                    } else {
+                                         throw new Error('Could not find a final acquisition button.');
+                                    }
                                 }
                             }
+                        } catch (uiError) {
+                             logBuffer.push(`UI interaction failed: ${uiError.message}`);
+                             success = false;
                         }
-                    } catch (uiError) {
-                         logBuffer.push(`UI interaction failed: ${uiError.message}`);
-                         success = false;
                     }
+                } catch (error) {
+                    logBuffer.push(`A critical error occurred: ${error.message}`);
+                    success = false;
+                } finally {
+                    try {
+                        // 标记为已报告
+                        hasReported = true;
+                        
+                        // The worker's ONLY job is to report back. It does NOT modify the database.
+                        // All state changes are handled by the main tab's listener for consistency.
+                        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: success,
+                            logs: logBuffer,
+                            task: currentTask, // Pass the original task back
+                            instanceId: payload.instanceId, // 传回实例ID，确保正确的实例处理结果
+                            executionTime: Date.now() - startTime // 记录执行时间
+                        });
+                    } catch (error) {
+                        console.error('Error setting worker done value:', error);
+                    }
+                    
+                    try {
+                        await GM_deleteValue(workerId); // Clean up the task payload
+                    } catch (error) {
+                        console.error('Error deleting worker value:', error);
+                    }
+                    
+                    // 确保工作标签页在报告完成后关闭
+                    closeWorkerTab();
                 }
             } catch (error) {
-                logBuffer.push(`A critical error occurred: ${error.message}`);
-                success = false;
-            } finally {
-                try {
-                    // The worker's ONLY job is to report back. It does NOT modify the database.
-                    // All state changes are handled by the main tab's listener for consistency.
-                    await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-                        workerId: workerId,
-                        success: success,
-                        logs: logBuffer,
-                        task: currentTask, // Pass the original task back
-                        instanceId: payload.instanceId // 传回实例ID，确保正确的实例处理结果
-                    });
-                } catch (error) {
-                    console.error('Error setting worker done value:', error);
+                console.error('Worker tab error:', error);
+                closeWorkerTab();
+            }
+            
+            // 关闭工作标签页的函数
+            function closeWorkerTab() {
+                if (closeAttempted) return;
+                closeAttempted = true;
+                
+                // 清除强制关闭定时器
+                if (forceCloseTimer) {
+                    clearTimeout(forceCloseTimer);
                 }
                 
-                try {
-                    await GM_deleteValue(workerId); // Clean up the task payload
-                } catch (error) {
-                    console.error('Error deleting worker value:', error);
+                // 如果还没有报告结果，尝试报告失败
+                if (!hasReported && workerId) {
+                    try {
+                        GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: false,
+                            logs: ['工作标签页异常关闭'],
+                            task: { uid: workerId.split('_')[2] }, // 尝试从workerId中提取任务UID
+                            instanceId: Config.INSTANCE_ID
+                        });
+                    } catch (e) {
+                        console.error('报告失败时出错:', e);
+                    }
                 }
                 
-                // 确保工作标签页在报告完成后关闭
+                // 尝试关闭标签页
                 setTimeout(() => {
                     try {
                         window.close();
                     } catch (error) {
                         console.error('Error closing window:', error);
+                        // 如果关闭失败，尝试其他方法
+                        try {
+                            window.location.href = 'about:blank';
+                        } catch (e) {
+                            console.error('重定向失败:', e);
+                        }
                     }
                 }, 500);
             }
@@ -2846,7 +2954,7 @@
                 // 删除值，防止重复处理
                 await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
                 
-                const { workerId, success, task, logs, instanceId } = newValue;
+                const { workerId, success, task, logs, instanceId, executionTime } = newValue;
                 
                 // 检查是否由当前实例处理
                 if (instanceId !== Config.INSTANCE_ID) {
@@ -2857,6 +2965,11 @@
                 if (!workerId || !task) {
                     Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
                     return;
+                }
+                
+                // 记录执行时间（如果有）
+                if (executionTime) {
+                    Utils.logger('info', `任务执行时间: ${(executionTime / 1000).toFixed(2)}秒`);
                 }
                 
                 // 移除此工作标签页的记录
@@ -2924,7 +3037,7 @@
                 // 如果还有待办任务，继续执行
                 if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
                     // 延迟一小段时间再派发新任务，避免同时打开太多标签页
-                    setTimeout(() => TaskRunner.executeBatch(), 500);
+                    setTimeout(() => TaskRunner.executeBatch(), 1000);
                 }
                 
                 // 如果所有任务都已完成，停止执行
