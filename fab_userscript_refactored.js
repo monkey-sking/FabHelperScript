@@ -533,13 +533,21 @@
             UI.updateDebugTab();
             UI.update();
             
-            // 检查是否有待办任务或活动工作线程
-            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
-                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+            // 检查可见商品数量
+            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+            
+            // 检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
+            if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+                if (visibleCount > 0) {
+                    Utils.logger('info', `检测到页面上有 ${visibleCount} 个可见商品，暂不自动刷新页面。`);
+                    Utils.logger('info', '当仍有可见商品时不触发自动刷新，以避免中断浏览。');
+                } else {
+                    Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
+                    Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+                }
                 
-                // 如果有正在执行的任务，则不自动刷新，但显示明显提示
-                Utils.logger('warn', '⚠️ 处于限速状态，但有任务在执行，请在任务完成后手动刷新页面。');
+                // 显示明显提示
+                Utils.logger('warn', '⚠️ 处于限速状态，但不满足自动刷新条件，请在需要时手动刷新页面。');
             } else {
                 // 无任务情况下，开始随机刷新
                 // 缩短延迟时间为5-7秒，使恢复更快
