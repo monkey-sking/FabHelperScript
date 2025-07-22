@@ -2546,7 +2546,35 @@
                     background: rgba(255,255,255,0.5);
                 }
                 
-                /* 移除了调试面板的滚动条样式，只保留日志区域的滚动条 */
+                /* 添加状态周期历史记录的滚动条样式 */
+                #${Config.UI_DEBUG_HISTORY_ID},
+                .fab-debug-history-container {
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
+                }
+                
+                #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar,
+                .fab-debug-history-container::-webkit-scrollbar {
+                    width: 8px;
+                    height: 8px;
+                }
+                
+                #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-track,
+                .fab-debug-history-container::-webkit-scrollbar-track {
+                    background: rgba(0,0,0,0.2);
+                    border-radius: 4px;
+                }
+                
+                #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-thumb,
+                .fab-debug-history-container::-webkit-scrollbar-thumb {
+                    background: rgba(255,255,255,0.3);
+                    border-radius: 4px;
+                }
+                
+                #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-thumb:hover,
+                .fab-debug-history-container::-webkit-scrollbar-thumb:hover {
+                    background: rgba(255,255,255,0.5);
+                }
                 @keyframes fab-pulse {
                     0% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.7); }
                     70% { box-shadow: 0 0 0 10px rgba(0, 122, 255, 0); }
@@ -2899,7 +2927,8 @@
             debugHeader.append(debugTitle, debugControls);
 
             const historyListContainer = document.createElement('div');
-            historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto;';
+            historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto; background: rgba(10,10,10,0.85); color: #ddd; padding: 8px; border-radius: var(--radius-m);';
+            historyListContainer.className = 'fab-debug-history-container';
             State.UI.debugContent = historyListContainer;
 
             debugContent.append(debugHeader, historyListContainer);
