@@ -2192,6 +2192,7 @@
         advanceDetailTask: async () => {},
 
         runHideOrShow: () => {
+            // 无论是否在限速状态下，都应该执行隐藏功能
             State.hiddenThisPageCount = 0;
             document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
                 // UNIFIED LOGIC: Use the new single source of truth.
@@ -3625,8 +3626,13 @@
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
                     Utils.logger('info', '[Observer] New content detected. Processing...');
-                    TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
-            TaskRunner.runHideOrShow();
+                    // 即使在限速状态下也应执行隐藏功能
+                    TaskRunner.runHideOrShow();
+                    
+                    // 只在非限速状态下执行自动添加任务功能
+                    if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
+                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
+                    }
                 }, 500);
             }
         });
