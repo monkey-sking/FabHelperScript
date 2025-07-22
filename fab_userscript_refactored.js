@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.10
+// @version      1.0.11
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -99,6 +99,11 @@
         successfulSearchCount: 0,
         statusHistory: [], // Holds the history of NORMAL/RATE_LIMITED periods
         autoResumeAfter429: false, // The new setting for the feature
+        // --- 限速恢复相关状态 ---
+        consecutiveSuccessCount: 0, // 连续成功请求计数
+        requiredSuccessCount: 3, // 退出限速需要的连续成功请求数
+        lastLimitSource: '', // 最后一次限速的来源
+        isCheckingRateLimit: false, // 是否正在检查限速状态
         // --- End New State ---
         showAdvanced: false,
         activeWorkers: 0,
@@ -454,7 +459,14 @@
         // 进入限速状态
         enterRateLimitedState: async function(source = '未知来源') {
             // 如果已经处于限速状态，不需要重复处理
-            if (State.appStatus === 'RATE_LIMITED') return;
+            if (State.appStatus === 'RATE_LIMITED') {
+                Utils.logger('info', `已处于限速状态，来源: ${State.lastLimitSource}，忽略新的限速触发: ${source}`);
+                return false;
+            }
+            
+            // 重置连续成功计数
+            State.consecutiveSuccessCount = 0;
+            State.lastLimitSource = source;
             
             // 记录正常运行期的统计信息
             const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
@@ -501,12 +513,47 @@
                 }
                 countdownRefresh(randomDelay, '429自动恢复');
             }
+            
+            return true;
+        },
+        
+        // 记录成功请求
+        recordSuccessfulRequest: async function(source = '未知来源', hasResults = true) {
+            // 只有在限速状态下才需要记录连续成功
+            if (State.appStatus !== 'RATE_LIMITED') {
+                // 在正常状态下，增加成功请求计数
+                if (hasResults) {
+                    State.successfulSearchCount++;
+                    UI.updateDebugTab();
+                }
+                return;
+            }
+            
+            // 如果请求没有返回有效结果，不计入连续成功
+            if (!hasResults) {
+                Utils.logger('info', `请求成功但没有返回有效结果，不计入连续成功计数。来源: ${source}`);
+                State.consecutiveSuccessCount = 0;
+                return;
+            }
+            
+            // 增加连续成功计数
+            State.consecutiveSuccessCount++;
+            
+            Utils.logger('info', `限速状态下成功请求 +1，当前连续成功: ${State.consecutiveSuccessCount}/${State.requiredSuccessCount}，来源: ${source}`);
+            
+            // 如果达到所需的连续成功数，退出限速状态
+            if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
+                await this.exitRateLimitedState(`连续${State.consecutiveSuccessCount}次成功请求 (${source})`);
+            }
         },
         
         // 退出限速状态
         exitRateLimitedState: async function(source = '未知来源') {
             // 如果当前不是限速状态，不需要处理
-            if (State.appStatus !== 'RATE_LIMITED') return;
+            if (State.appStatus !== 'RATE_LIMITED') {
+                Utils.logger('info', `当前不是限速状态，忽略退出限速请求: ${source}`);
+                return false;
+            }
             
             // 记录限速期的统计信息
             const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
@@ -528,6 +575,7 @@
             State.rateLimitStartTime = null;
             State.normalStartTime = Date.now();
             State.successfulSearchCount = 0;
+            State.consecutiveSuccessCount = 0;
             
             // 删除存储的限速状态
             await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
@@ -543,45 +591,84 @@
                 Database.saveExecutingState();
                 TaskRunner.executeBatch();
             }
+            
+            return true;
         },
         
         // 检查限速状态
         checkRateLimitStatus: async function() {
+            // 如果已经在检查中，避免重复检查
+            if (State.isCheckingRateLimit) {
+                Utils.logger('info', '已有限速状态检查正在进行，跳过本次检查');
+                return false;
+            }
+            
+            State.isCheckingRateLimit = true;
+            
             try {
-                const csrfToken = Utils.getCookie('fab_csrftoken');
-                if (!csrfToken) throw new Error("CSRF token not found for probe.");
+                Utils.logger('info', '开始检查限速状态...');
                 
-                // 使用一个轻量级的API端点进行探测
+                // 首先检查页面内容是否包含限速信息
+                const pageText = document.body.innerText || '';
+                if (pageText.includes('Too many requests') || 
+                    pageText.includes('rate limit') || 
+                    pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                    
+                    Utils.logger('warn', '页面内容包含限速信息，确认仍处于限速状态');
+                    await this.enterRateLimitedState('页面内容检测');
+                    return false;
+                }
+                
+                // 然后使用API探测
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) {
+                    Utils.logger('error', '无法获取CSRF令牌，无法进行API探测');
+                    return false;
+                }
+                
+                // 使用主要的商品列表API进行探测，这比用户上下文API更准确
+                const listingUrl = 'https://www.fab.com/i/listings/search?is_free=1&count=1';
                 const probeResponse = await API.gmFetch({
                     method: 'GET',
-                    url: 'https://www.fab.com/i/users/context',
+                    url: listingUrl,
                     headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
                 });
                 
                 if (probeResponse.status === 429) {
                     // 如果返回429，确认限速状态
-                    await this.enterRateLimitedState('API探测');
+                    await this.enterRateLimitedState('API探测429');
                     return false;
                 } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
                     // 尝试解析响应内容
                     try {
                         const data = JSON.parse(probeResponse.responseText);
-                        // 如果响应有效，退出限速状态
-                        await this.exitRateLimitedState('API探测成功');
-                        return true;
+                        
+                        // 检查响应是否包含有效数据
+                        if (data && data.results && data.results.length > 0) {
+                            // 记录成功请求
+                            await this.recordSuccessfulRequest('API探测成功', true);
+                            return true;
+                        } else {
+                            // 响应成功但没有数据，可能仍处于限速状态
+                            Utils.logger('warn', 'API探测响应成功但没有数据，可能仍处于限速状态');
+                            State.consecutiveSuccessCount = 0; // 重置连续成功计数
+                            return false;
+                        }
                     } catch (e) {
                         // 如果解析失败，可能仍然处于限速状态
-                        Utils.logger('warn', '探测响应解析失败，可能仍处于限速状态');
+                        Utils.logger('warn', `API探测响应解析失败: ${e.message}，可能仍处于限速状态`);
                         return false;
                     }
                 } else {
                     // 其他状态码，可能仍然处于限速状态
-                    Utils.logger('warn', `探测返回意外状态码: ${probeResponse.status}`);
+                    Utils.logger('warn', `API探测返回意外状态码: ${probeResponse.status}`);
                     return false;
                 }
             } catch (e) {
                 Utils.logger('error', `限速状态检查失败: ${e.message}`);
                 return false;
+            } finally {
+                State.isCheckingRateLimit = false;
             }
         }
     };
@@ -611,7 +698,7 @@
                     }
             } catch (e) {
                  Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
-            }
+                }
             this.applyPatches();
             Utils.logger('info', '[Cursor] Network interceptors applied.');
         },
@@ -621,15 +708,19 @@
                 // 使用统一的限速管理器处理限速情况
                 await RateLimitManager.enterRateLimitedState('搜索响应429');
             } else if (request.status >= 200 && request.status < 300) {
-                if (State.appStatus === 'RATE_LIMITED') {
-                    // 使用统一的限速管理器退出限速状态
-                    await RateLimitManager.exitRateLimitedState('搜索响应成功');
+                try {
+                    // 检查响应是否包含有效数据
+                    const responseText = request.responseText;
+                    if (responseText) {
+                        const data = JSON.parse(responseText);
+                        const hasResults = data && data.results && data.results.length > 0;
+                        
+                        // 记录成功请求，并传递是否有结果的信息
+                        await RateLimitManager.recordSuccessfulRequest('搜索响应成功', hasResults);
+                    }
+                } catch (e) {
+                    Utils.logger('warn', `搜索响应解析失败: ${e.message}`);
                 }
-                
-                // 移除这里的计数逻辑，因为我们已经在listenerAwareSend中处理了
-                // if (State.appStatus === 'NORMAL') {
-                //     State.successfulSearchCount++;
-                // }
             }
         },
 
@@ -700,68 +791,52 @@
                     if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
                         Utils.logger('warn', `[XHR] 检测到429状态码: ${request.responseURL || request._url}`);
                         // 调用handleRateLimit函数处理限速情况
-                        self.handleRateLimit(request.responseURL || request._url);
+                        RateLimitManager.enterRateLimitedState(request.responseURL || request._url || 'XHR响应429');
                         return;
                     }
                     
-                                    // 检查其他可能的限速情况（返回空结果或错误信息）
-                if (request.status >= 200 && request.status < 300) {
-                    try {
-                        const responseText = request.responseText;
-                        if (responseText) {
-                            // 先检查原始文本是否包含限速相关的关键词
-                            if (responseText.includes("Too many requests") || 
-                                responseText.includes("rate limit") ||
-                                responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                                Utils.logger('warn', `[XHR限速检测] 检测到限速情况，原始响应: ${responseText}`);
-                                self.handleRateLimit(request.responseURL || request._url);
-                                return;
-                            }
-                            
-                            // 尝试解析JSON
-                            try {
-                                const data = JSON.parse(responseText);
-                                
-                                // 检查是否返回了空结果或错误信息
-                                if ((data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) || 
-                                    (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit")))) {
-                                    Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况: ${JSON.stringify(data)}`);
-                                    self.handleRateLimit(request.responseURL || request._url);
+                    // 检查其他可能的限速情况（返回空结果或错误信息）
+                    if (request.status >= 200 && request.status < 300) {
+                        try {
+                            const responseText = request.responseText;
+                            if (responseText) {
+                                // 先检查原始文本是否包含限速相关的关键词
+                                if (responseText.includes("Too many requests") || 
+                                    responseText.includes("rate limit") ||
+                                    responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                                    Utils.logger('warn', `[XHR限速检测] 检测到限速情况，原始响应: ${responseText}`);
+                                    RateLimitManager.enterRateLimitedState('XHR响应内容限速');
                                     return;
                                 }
-                            } catch (jsonError) {
-                                // JSON解析错误，忽略
+                                
+                                // 尝试解析JSON
+                                try {
+                                    const data = JSON.parse(responseText);
+                                    
+                                    // 检查是否返回了空结果或错误信息
+                                    if ((data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) || 
+                                        (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit")))) {
+                                        Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况: ${JSON.stringify(data)}`);
+                                        RateLimitManager.enterRateLimitedState('XHR响应空结果');
+                                        return;
+                                    }
+                                    
+                                    // 如果是搜索请求且有结果，记录成功请求
+                                    if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
+                                        RateLimitManager.recordSuccessfulRequest('XHR搜索成功', true);
+                                    }
+                                } catch (jsonError) {
+                                    // JSON解析错误，忽略
+                                }
                             }
+                        } catch (e) {
+                            // 解析错误，忽略
                         }
-                    } catch (e) {
-                        // 解析错误，忽略
                     }
-                }
                     
                     // 处理搜索请求的特殊逻辑（429检测等）
                     if (self.isDebounceableSearch(request._url)) {
                         self.handleSearchResponse(request);
-                        
-                        // 只对商品卡片的搜索请求进行计数
-                        if (request.status >= 200 && request.status < 300 && State.appStatus === 'NORMAL') {
-                            State.successfulSearchCount++;
-                            // 每次相关请求都更新调试标签页
-                            UI.updateDebugTab();
-                            Utils.logger('info', `[请求统计] 商品卡片搜索请求 +1，当前总数: ${State.successfulSearchCount}`);
-                            
-                            // 如果历史记录为空，添加一个新的会话记录
-                            if (State.statusHistory.length === 0) {
-                                const newSessionEntry = {
-                                    type: 'STARTUP',
-                                    duration: 0,
-                                    endTime: new Date().toISOString(),
-                                    message: '新会话开始'
-                                };
-                                State.statusHistory.push(newSessionEntry);
-                                GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                                UI.updateDebugTab();
-                            }
-                        }
                     }
                 };
                 request.addEventListener("load", onLoad);
@@ -832,7 +907,7 @@
                         }
                     } else {
                     self.saveLatestCursorFromUrl(url);
-                }
+                    }
                 
                 // 拦截响应以检测429错误
                 return originalFetch.apply(this, [modifiedInput, init])
@@ -1675,9 +1750,9 @@
                     // 记录本次派发的任务
                     dispatchedUIDs.add(task.uid);
 
-                    State.activeWorkers++;
+                State.activeWorkers++;
                     dispatchedCount++;
-                    const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                     State.runningWorkers[workerId] = { 
                         task, 
                         startTime: Date.now(),
@@ -2910,7 +2985,7 @@
                                     window.location.pathname === '/' || 
                                     window.location.pathname === '/zh-cn/' ||
                                     window.location.pathname === '/en/';
-                
+
                 // 如果是搜索页面，总是成为活跃实例
                 if (isSearchPage) {
                     this.isActive = true;
@@ -2972,13 +3047,13 @@
             try {
                 const activeInstance = await GM_getValue('fab_active_instance', null);
                 const currentTime = Date.now();
-                
+
                 if (!activeInstance || (currentTime - activeInstance.lastPing > 10000)) {
                     // 如果没有活跃实例或实例超时，接管
                     this.isActive = true;
                     await this.registerAsActive();
                     Utils.logger('info', `之前的实例不再活跃，当前实例 [${Config.INSTANCE_ID}] 已接管。`);
-                    
+
                     // 启动ping机制
                     this.pingInterval = setInterval(() => this.ping(), 3000);
                     
@@ -2987,7 +3062,7 @@
                     } else {
                     // 继续等待
                     setTimeout(() => this.checkTakeover(), 5000);
-                }
+                    }
             } catch (error) {
                 Utils.logger('error', `接管检查失败: ${error.message}`);
                 // 5秒后重试
@@ -3053,7 +3128,7 @@
             State.db.todo = tempTasks;
             await GM_deleteValue('temp_todo_tasks'); // 清除临时存储
         }
-        
+
         // 添加工作标签页完成任务的监听器
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
             if (!newValue) return; // 如果值被删除，忽略此事件
@@ -3067,9 +3142,9 @@
                 // 检查是否由当前实例处理
                 if (instanceId !== Config.INSTANCE_ID) {
                     Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
-                    return;
-                }
-                
+             return;
+        }
+
                 if (!workerId || !task) {
                     Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
                     return;
@@ -3104,8 +3179,8 @@
                         Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
                     } else {
                         Utils.logger('warn', `任务 ${task.name} 不在待办列表中，可能已被其他工作标签页处理。`);
-                    }
-                    
+                            }
+
                     // 保存待办列表
                     await Database.saveTodo();
                     
@@ -3146,7 +3221,7 @@
                 if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
                     // 延迟一小段时间再派发新任务，避免同时打开太多标签页
                     setTimeout(() => TaskRunner.executeBatch(), 1000);
-                }
+                            }
                 
                 // 如果所有任务都已完成，停止执行
                 if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
@@ -3164,11 +3239,11 @@
                         countdownRefresh(randomDelay, '任务完成后限速恢复');
                     }
                     
-                    UI.update();
+            UI.update();
                 }
                 
                 // 更新隐藏状态
-                TaskRunner.runHideOrShow();
+            TaskRunner.runHideOrShow();
             } catch (error) {
                 Utils.logger('error', `处理工作报告时出错: ${error.message}`);
             }
@@ -3180,7 +3255,7 @@
             if (!State.isWorkerTab && State.isExecuting !== newValue) {
                 Utils.logger('info', `检测到执行状态变化：${newValue ? '执行中' : '已停止'}`);
                 State.isExecuting = newValue;
-                UI.update();
+            UI.update();
             }
         }));
 
@@ -3228,7 +3303,7 @@
         }
         
         // 初始化完成后，确保UI状态与执行状态一致
-        UI.update();
+            UI.update();
 
         // 确保UI创建后立即更新调试标签页
         UI.update();
@@ -3243,6 +3318,22 @@
             // 使用统一的限速管理器进入限速状态
             RateLimitManager.enterRateLimitedState(source);
         };
+        
+        // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
+        setInterval(() => {
+            // 如果已经处于限速状态，不需要检查
+            if (State.appStatus === 'NORMAL') {
+                // 检查页面内容是否包含限速错误信息
+                const pageText = document.body.innerText || '';
+                if (pageText.includes('Too many requests') || 
+                    pageText.includes('rate limit') || 
+                    pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                    
+                    Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
+                    RateLimitManager.enterRateLimitedState('页面内容检测');
+                }
+            }
+        }, 5000); // 每5秒检查一次
 
         const checkIsErrorPage = (title, text) => {
             const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
@@ -3324,7 +3415,7 @@
                 State.observerDebounceTimer = setTimeout(() => {
                     Utils.logger('info', '[Observer] New content detected. Processing...');
                     TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
-                    TaskRunner.runHideOrShow();
+            TaskRunner.runHideOrShow();
                 }, 500);
             }
         });
@@ -3350,7 +3441,7 @@
                 // 如果任务已经在"完成"列表中，则从待办列表中移除
                 return !State.db.done.includes(url);
             });
-            
+
             // 如果待办列表的数量发生了变化，更新UI
             if (State.db.todo.length < initialTodoCount) {
                 Utils.logger('info', `[自动清理] 从待办列表中移除了 ${initialTodoCount - State.db.todo.length} 个已完成的任务。`);
@@ -3412,7 +3503,7 @@
                         // 最后的备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
                         countdownRefresh(randomDelay, '页面内容检测');
-                    }
+                }
                 } catch (error) {
                     Utils.logger('error', `处理限速出错: ${error.message}`);
                     // 最后的备选方案：直接刷新页面
@@ -3457,7 +3548,7 @@
                 // 忽略错误
             }
         };
-        
+
         // 每10秒检查一次HTTP状态码
         setInterval(checkHttpStatus, 10000);
 
@@ -3496,8 +3587,8 @@
                         // 最后的备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
                         countdownRefresh(randomDelay, '错误恢复');
-                    }
-                }
+        }
+    }
             } catch (error) {
                 // 如果请求失败，可能也是限速导致的
                 Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
