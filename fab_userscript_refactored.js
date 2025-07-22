@@ -782,6 +782,7 @@
             if (!State.rememberScrollPosition || !State.savedCursor) return false;
             if (!url.includes('/i/listings/search')) return false;
             if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
+            // 同时支持sort_by=title和sort_by=-title的URL
             Utils.logger('info', `[PagePatcher] -> ✅ MATCH! URL will be patched: ${url}`);
             return true;
         },
@@ -790,6 +791,8 @@
             if (State.savedCursor) {
                 const urlObj = new URL(originalUrl, window.location.origin);
                 urlObj.searchParams.set('cursor', State.savedCursor);
+                // 确保不改变原始URL中的sort_by参数，如果存在的话
+                // 这样可以支持sort_by=-title（降序）和sort_by=title（升序）
                 const modifiedUrl = urlObj.pathname + urlObj.search;
                 // NEW: Logging for injection
                 Utils.logger('info', `[Cursor] Injecting cursor. Original: ${originalUrl}`);
@@ -864,9 +867,15 @@
                                     const newFirstWord = getFirstWord(newItemName);
                                     const lastFirstWord = getFirstWord(lastItemName);
                                     
-                                    // 如果新位置的首字母/单词在字母表中排在当前位置前面，说明是回退了
-                                    if (newFirstWord < lastFirstWord) {
-                                        Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName})`);
+                                    // 检查URL是否包含降序排列参数sort_by=-title
+                                    const urlHasReverseSort = url.includes('sort_by=-title');
+                                    
+                                    // 根据排序方向决定比较逻辑
+                                    // 升序排列(title)：如果新位置的首字母在字母表中排在当前位置前面，说明是回退了
+                                    // 降序排列(-title)：如果新位置的首字母在字母表中排在当前位置后面，说明是回退了
+                                    if ((urlHasReverseSort && newFirstWord > lastFirstWord) || 
+                                        (!urlHasReverseSort && newFirstWord < lastFirstWord)) {
+                                        Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName}), 排序: ${urlHasReverseSort ? '降序' : '升序'}`);
                                         isValidPosition = false;
                                     }
                                 }
@@ -911,6 +920,11 @@
                 // 为所有请求添加监听器
                 const onLoad = () => {
                     request.removeEventListener("load", onLoad);
+                    
+                    // 记录所有网络活动
+                    if (typeof window.recordNetworkActivity === 'function') {
+                        window.recordNetworkActivity();
+                    }
                     
                     // 只统计商品相关的请求，保持原有逻辑
                     if (request.status >= 200 && request.status < 300 && 
@@ -1044,6 +1058,11 @@
                 // 拦截响应以检测429错误
                 return originalFetch.apply(this, [modifiedInput, init])
                     .then(async response => {
+                        // 记录所有网络活动
+                        if (typeof window.recordNetworkActivity === 'function') {
+                            window.recordNetworkActivity();
+                        }
+                        
                         // 只统计商品相关的请求
                         if (response.status >= 200 && response.status < 300 && 
                             typeof url === 'string' && self.isDebounceableSearch(url)) {
@@ -1736,10 +1755,20 @@
                 const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
                 candidates.forEach(item => statesUrl.searchParams.append('listing_ids', item.uid));
                 const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
-                const statesData = JSON.parse(statesResponse.responseText);
+                let statesData;
+                try {
+                    statesData = JSON.parse(statesResponse.responseText);
+                    if (!Array.isArray(statesData)) {
+                        Utils.logger('warn', '列表状态API返回的数据不是数组格式，这可能是API变更导致的');
+                        statesData = [];
+                    }
+                } catch (e) {
+                    Utils.logger('error', '解析列表状态API响应失败:', e.message);
+                    statesData = [];
+                }
 
                 // API returns an array, convert it to a Set for efficient lookup.
-                const ownedUids = new Set(statesData.filter(s => s.acquired).map(s => s.uid));
+                const ownedUids = new Set((Array.isArray(statesData) ? statesData : []).filter(s => s && s.acquired).map(s => s.uid));
 
                 const notOwnedItems = [];
                 candidates.forEach(item => {
@@ -2102,8 +2131,20 @@
                         url: statesUrl.href,
                         headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
                     });
-                    const statesData = JSON.parse(response.responseText);
-                    const isOwned = statesData.some(s => s.uid === currentTask.uid && s.acquired);
+                    
+                    let statesData;
+                    try {
+                        statesData = JSON.parse(response.responseText);
+                        if (!Array.isArray(statesData)) {
+                            logBuffer.push('API返回的数据不是数组格式，这可能是API变更导致的');
+                            statesData = [];
+                        }
+                    } catch (e) {
+                        logBuffer.push(`解析API响应失败: ${e.message}`);
+                        statesData = [];
+                    }
+                    
+                    const isOwned = Array.isArray(statesData) && statesData.some(s => s && s.uid === currentTask.uid && s.acquired);
                     if (isOwned) {
                         logBuffer.push(`API check confirms item is already owned.`);
                         success = true;
@@ -2453,11 +2494,21 @@
                     });
                     
                     // 解析响应
-                    const statesData = JSON.parse(response.responseText);
+                    let statesData;
+                    try {
+                        statesData = JSON.parse(response.responseText);
+                        if (!Array.isArray(statesData)) {
+                            Utils.logger('warn', '[Fab DOM Refresh] API返回的数据不是数组格式，这可能是API变更导致的');
+                            statesData = [];
+                        }
+                    } catch (e) {
+                        Utils.logger('error', `[Fab DOM Refresh] 解析API响应失败: ${e.message}`);
+                        statesData = [];
+                    }
                     
                     // 处理结果
-                    for (const state of statesData) {
-                        if (state.acquired) {
+                    for (const state of (Array.isArray(statesData) ? statesData : [])) {
+                        if (state && state.acquired) {
                             // 找到对应的项目
                             const item = batch.find(i => i.uid === state.uid);
                             if (item) {
@@ -3651,6 +3702,39 @@
                 }
             }
         }, 250); // Check every 250ms
+
+        // 添加无活动超时刷新功能
+        let lastNetworkActivityTime = Date.now();
+        
+        // 记录网络活动的函数
+        window.recordNetworkActivity = function() {
+            lastNetworkActivityTime = Date.now();
+        };
+        
+        // 修改现有的recordNetworkRequest函数，添加网络活动记录
+        const originalRecordNetworkRequest = window.recordNetworkRequest || function() {};
+        window.recordNetworkRequest = function(source, isSuccess) {
+            // 调用原来的函数
+            originalRecordNetworkRequest(source, isSuccess);
+            // 记录网络活动
+            window.recordNetworkActivity();
+        };
+        
+        // 定期检查是否长时间无活动
+        setInterval(() => {
+            // 只有在限速状态下才考虑无活动刷新
+            if (State.appStatus === 'RATE_LIMITED') {
+                const inactiveTime = Date.now() - lastNetworkActivityTime;
+                // 如果超过30秒没有网络活动，强制刷新
+                if (inactiveTime > 30000) {
+                    Utils.logger('warn', `⚠️ 检测到在限速状态下 ${Math.floor(inactiveTime/1000)} 秒无网络活动，即将强制刷新页面...`);
+                    // 使用延迟以便用户能看到日志
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1500);
+                }
+            }
+        }, 5000); // 每5秒检查一次
     }
 
         async function runDomDependentPart() {
@@ -3959,7 +4043,9 @@
                 if (State.appStatus !== 'NORMAL') return;
                 
                 // 发送API请求检查状态
-                const apiUrl = 'https://www.fab.com/i/listings/search?is_free=1&sort_by=title&cursor=' + 
+                // 根据当前页面URL判断使用什么排序顺序
+                const currentSortBy = window.location.href.includes('sort_by=-title') ? '-title' : 'title';
+                const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${currentSortBy}&cursor=` + 
                                encodeURIComponent('bz02JnA9Tm9yZGljK0JlYWNoK0JvdWxkZXI=');
                 
                 const response = await fetch(apiUrl, { 
