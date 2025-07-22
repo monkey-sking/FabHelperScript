@@ -912,10 +912,11 @@
                 const onLoad = () => {
                     request.removeEventListener("load", onLoad);
                     
-                    // 首先记录所有成功的请求，确保计数准确
-                    if (request.status >= 200 && request.status < 300) {
-                        // 记录任何成功的请求
-                        window.recordNetworkRequest('XHR请求', true);
+                    // 只统计商品相关的请求，保持原有逻辑
+                    if (request.status >= 200 && request.status < 300 && 
+                        request._url && self.isDebounceableSearch(request._url)) {
+                        // 只记录商品卡片相关请求
+                        window.recordNetworkRequest('XHR商品请求', true);
                     }
                     
                     // 对所有请求检查429错误
@@ -1043,9 +1044,10 @@
                 // 拦截响应以检测429错误
                 return originalFetch.apply(this, [modifiedInput, init])
                     .then(async response => {
-                        // 统计所有成功的请求
-                        if (response.status >= 200 && response.status < 300) {
-                            window.recordNetworkRequest('Fetch请求', true);
+                        // 只统计商品相关的请求
+                        if (response.status >= 200 && response.status < 300 && 
+                            typeof url === 'string' && self.isDebounceableSearch(url)) {
+                            window.recordNetworkRequest('Fetch商品请求', true);
                         }
                         
                         // 检查429错误
