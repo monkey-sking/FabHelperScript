@@ -565,13 +565,14 @@
         
         // 记录成功请求
         recordSuccessfulRequest: async function(source = '未知来源', hasResults = true) {
+            // 无论在什么状态下，总是增加成功请求计数 - 修复统计问题
+            if (hasResults) {
+                State.successfulSearchCount++;
+                UI.updateDebugTab();
+            }
+            
             // 只有在限速状态下才需要记录连续成功
             if (State.appStatus !== 'RATE_LIMITED') {
-                // 在正常状态下，增加成功请求计数
-                if (hasResults) {
-                    State.successfulSearchCount++;
-                    UI.updateDebugTab();
-                }
                 return;
             }
             
@@ -620,7 +621,8 @@
             State.appStatus = 'NORMAL';
             State.rateLimitStartTime = null;
             State.normalStartTime = Date.now();
-            State.successfulSearchCount = 0;
+            // 不重置请求计数，保留累计值，这样每个正常期的请求数会累加起来
+            // State.successfulSearchCount = 0;  
             State.consecutiveSuccessCount = 0;
             
             // 删除存储的限速状态
@@ -809,13 +811,68 @@
                 if (newCursor && newCursor !== this._lastSeenCursor) {
                     // 解码cursor，检查是否是有效的浏览位置
                     let isValidPosition = true;
+                    let decodedCursor = '';
+                    
                     try {
-                        const decoded = atob(newCursor);
-                        // 检查是否包含特定字符串，如"Nude Tennis Racket"
-                        // 这可能是一个老的或默认的位置
-                        if (decoded.includes("Nude+Tennis+Racket")) {
-                            Utils.logger('info', `[Cursor] 跳过特定位置的保存: ${decoded}`);
+                        decodedCursor = atob(newCursor);
+                        
+                        // 1. 检查特定的过滤关键词列表
+                        const filterKeywords = [
+                            "Nude+Tennis+Racket",
+                            "Nordic+Beach+Boulder", 
+                            "Nordic+Beach+Rock"
+                        ];
+                        
+                        // 检查是否包含任何需要过滤的关键词
+                        if (filterKeywords.some(keyword => decodedCursor.includes(keyword))) {
+                            Utils.logger('info', `[Cursor] 跳过已知位置的保存: ${decodedCursor}`);
                             isValidPosition = false;
+                        }
+                        
+                        // 2. 检查是否是已经滚动过的前面位置（直接检测首字母）
+                        if (isValidPosition && this._lastSeenCursor) {
+                            try {
+                                // 从解码的cursor中提取物品名称
+                                let newItemName = '';
+                                let lastItemName = '';
+                                
+                                // 提取当前cursor中的物品名
+                                if (decodedCursor.includes("p=")) {
+                                    const match = decodedCursor.match(/p=([^&]+)/);
+                                    if (match && match[1]) {
+                                        newItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                                    }
+                                }
+                                
+                                // 提取上次保存cursor中的物品名
+                                const lastDecoded = atob(this._lastSeenCursor);
+                                if (lastDecoded.includes("p=")) {
+                                    const match = lastDecoded.match(/p=([^&]+)/);
+                                    if (match && match[1]) {
+                                        lastItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                                    }
+                                }
+                                
+                                // 提取首字母或首个单词进行比较
+                                if (newItemName && lastItemName) {
+                                    // 获取首个单词或首字母
+                                    const getFirstWord = (text) => {
+                                        // 优先获取前三个字母，如果不足三个则获取全部
+                                        return text.trim().substring(0, 3);
+                                    };
+                                    
+                                    const newFirstWord = getFirstWord(newItemName);
+                                    const lastFirstWord = getFirstWord(lastItemName);
+                                    
+                                    // 如果新位置的首字母/单词在字母表中排在当前位置前面，说明是回退了
+                                    if (newFirstWord < lastFirstWord) {
+                                        Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName})`);
+                                        isValidPosition = false;
+                                    }
+                                }
+                            } catch (compareError) {
+                                // 比较错误，继续正常流程
+                            }
                         }
                     } catch (decodeError) {
                         // 解码错误，继续正常流程
@@ -854,6 +911,12 @@
                 // 为所有请求添加监听器
                 const onLoad = () => {
                     request.removeEventListener("load", onLoad);
+                    
+                    // 首先记录所有成功的请求，确保计数准确
+                    if (request.status >= 200 && request.status < 300) {
+                        // 记录任何成功的请求
+                        window.recordNetworkRequest('XHR请求', true);
+                    }
                     
                     // 对所有请求检查429错误
                     if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
@@ -980,6 +1043,11 @@
                 // 拦截响应以检测429错误
                 return originalFetch.apply(this, [modifiedInput, init])
                     .then(async response => {
+                        // 统计所有成功的请求
+                        if (response.status >= 200 && response.status < 300) {
+                            window.recordNetworkRequest('Fetch请求', true);
+                        }
+                        
                         // 检查429错误
                         if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                             // 克隆响应以避免"已消费"错误
@@ -1047,6 +1115,29 @@
 
             // Priority 1: Check for the specific 'owned' status element. This is the most reliable.
             if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) return true;
+            
+            // 扩展检测：检查各种可能的"已拥有"标记
+            const checkOwnedText = [
+                "已保存在我的库中", 
+                "已保存", 
+                "Saved to My Library",
+                "In your library",
+                "✓"
+            ];
+            
+            // 查找包含这些文本的任何元素
+            for (const text of checkOwnedText) {
+                // 使用原生JavaScript查找包含文本的元素
+                const elements = Array.from(card.querySelectorAll('*:not(button)'));
+                if (elements.some(el => el.textContent && el.textContent.includes(text)) || 
+                    card.innerText.includes(text)) {
+                    return true;
+                }
+            }
+            
+            // 检查是否有"已拥有"样式标记（绿色对勾图标）
+            const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
+            if (icons.length > 0) return true;
 
             // Priority 2: Check our databases and session state if we have a URL.
             if (url) {
@@ -2249,7 +2340,9 @@
         // 添加一个方法来批量检查当前页面上所有可见卡片的状态
         checkVisibleCardsStatus: async () => {
             // 获取所有可见的卡片
-            const cards = Array.from(document.querySelectorAll(Config.SELECTORS.card));
+            const cards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
+                .filter(card => card.style.display !== 'none'); // 只处理可见的卡片
+                
             if (cards.length === 0) {
                 Utils.logger('info', '[Fab DOM Refresh] 页面上没有找到可见的卡片。');
                 return;
@@ -2257,18 +2350,24 @@
             
             // 收集所有需要检查的项目
             const itemsToCheck = [];
+            const visibleCount = cards.length;
             
             // 添加可见卡片
             cards.forEach(card => {
+                // 如果卡片已经被判定为"已完成"，跳过
+                if (TaskRunner.isCardFinished(card)) {
+                    return;
+                }
+                
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 if (link) {
-                    const url = link.href;
+                    const url = link.href.split('?')[0]; // 确保URL干净，不含参数
                     const uid = url.split('/').pop();
                     const name = card.querySelector('h3, h2')?.textContent?.trim() || '未知项目';
                     
                     // 如果不在已完成列表中，添加到检查列表
                     if (!State.db.done.includes(url)) {
-                        itemsToCheck.push({ url, uid, name });
+                        itemsToCheck.push({ url, uid, name, element: card });
                     }
                 }
             });
@@ -2281,14 +2380,14 @@
             });
             
             if (itemsToCheck.length === 0) {
-                Utils.logger('info', '[Fab DOM Refresh] 没有找到需要检查状态的项目。');
+                Utils.logger('info', `[Fab DOM Refresh] 所有${visibleCount}个可见卡片均已处理完毕，无需检查。`);
                 return;
             }
             
             Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${itemsToCheck.length} 个项目（可见+失败）的状态...`);
             
-            // 分批处理，每批最多50个
-            const batchSize = 50;
+            // 分批处理，每批最多30个，减少API负担
+            const batchSize = 30;
             const batches = [];
             for (let i = 0; i < itemsToCheck.length; i += batchSize) {
                 batches.push(itemsToCheck.slice(i, i + batchSize));
@@ -2296,10 +2395,40 @@
             
             let confirmedOwned = 0;
             
+            // 首先检查是否处于限速状态
+            if (State.appStatus === 'RATE_LIMITED') {
+                Utils.logger('info', `[Fab DOM Refresh] 处于限速状态，仅使用本地数据和DOM检查。`);
+                
+                // 使用DOM方法再次检查卡片状态
+                for (const item of itemsToCheck) {
+                    if (item.element) {
+                        // 重新扫描元素，查找是否有"已拥有"标记
+                        const cardText = item.element.innerText || '';
+                        if (cardText.includes("已保存") || 
+                            cardText.includes("Saved") ||
+                            cardText.includes("In your library")) {
+                            if (!State.db.done.includes(item.url)) {
+                                State.db.done.push(item.url);
+                                confirmedOwned++;
+                            }
+                        }
+                    }
+                }
+                
+                // 如果找到了新的已拥有项目，保存并刷新UI
+                if (confirmedOwned > 0) {
+                    await Database.saveDone();
+                    Utils.logger('info', `[Fab DOM Refresh] DOM扫描完成，发现 ${confirmedOwned} 个已拥有项目。`);
+                    TaskRunner.runHideOrShow();
+                }
+                
+                return;
+            }
+            
             // 处理每一批
             for (let i = 0; i < batches.length; i++) {
                 const batch = batches[i];
-                Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${i+1}... (${batch.length}个项目)`);
+                Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${i+1}/${batches.length}... (${batch.length}个项目)`);
                 
                 try {
                     // 获取CSRF令牌
@@ -2334,6 +2463,16 @@
                                 if (!State.db.done.includes(item.url)) {
                                     State.db.done.push(item.url);
                                     confirmedOwned++;
+                                    
+                                    // 如果有对应DOM元素，立即在UI上标记为已完成
+                                    if (item.element) {
+                                        // 尝试为卡片添加"已保存"标记
+                                        const ownedElement = createOwnedElement();
+                                        const infoSection = item.element.querySelector('.fabkit-Stack-root');
+                                        if (infoSection) {
+                                            infoSection.appendChild(ownedElement);
+                                        }
+                                    }
                                 }
                                 
                                 // 从失败列表中移除
@@ -2346,6 +2485,12 @@
                     }
                 } catch (error) {
                     Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
+                    
+                    // 如果是429错误，进入限速状态并退出
+                    if (error.message && error.message.includes('429')) {
+                        RateLimitManager.enterRateLimitedState('[Fab DOM Refresh] 429错误');
+                        return;
+                    }
                 }
             }
             
@@ -3549,6 +3694,11 @@
             RateLimitManager.enterRateLimitedState(source);
         };
         
+        // 添加全局函数用于记录所有网络请求，确保计数正确
+        window.recordNetworkRequest = function(source = '网络请求', hasResults = true) {
+            RateLimitManager.recordSuccessfulRequest(source, hasResults);
+        };
+        
         // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
         setInterval(() => {
             // 如果已经处于限速状态，不需要检查
@@ -3641,17 +3791,30 @@
                 )
             );
             if (hasNewContent) {
+                // 先立即执行一次隐藏，防止闪烁
+                if (State.hideSaved) {
+                    TaskRunner.runHideOrShow();
+                }
+                
+                // 然后延迟进行更彻底的处理
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
                     Utils.logger('info', '[Observer] New content detected. Processing...');
-                    // 即使在限速状态下也应执行隐藏功能
-                    TaskRunner.runHideOrShow();
                     
-                    // 只在非限速状态下执行自动添加任务功能
-                    if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
-                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
-                    }
-                }, 500);
+                    // 执行一次状态检查，尝试更新卡片状态
+                    TaskRunner.checkVisibleCardsStatus().then(() => {
+                        // 状态检查后再次执行隐藏，确保新状态被应用
+                        TaskRunner.runHideOrShow();
+                        
+                        // 只在非限速状态下执行自动添加任务功能
+                        if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
+                            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
+                        }
+                    }).catch(() => {
+                        // 即使状态检查失败也执行隐藏
+                        TaskRunner.runHideOrShow();
+                    });
+                }, 300);
             }
         });
 
