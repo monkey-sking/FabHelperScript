@@ -444,9 +444,9 @@
                     this._lastSeenCursor = cursor;
                     // NEW: More descriptive log
                     Utils.logger('info', `[Cursor] Initialized. Loaded saved cursor: ${cursor.substring(0, 30)}...`);
-                } else {
+                        } else {
                     Utils.logger('info', `[Cursor] Initialized. No saved cursor found.`);
-                }
+                    }
             } catch (e) {
                  Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
             }
@@ -456,37 +456,8 @@
 
         async handleSearchResponse(request) {
             if (request.status === 429) {
-                if (State.appStatus === 'NORMAL') {
-                    const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
-                    const logEntry = {
-                        type: 'NORMAL',
-                        duration: parseFloat(normalDuration),
-                        requests: State.successfulSearchCount,
-                        endTime: new Date().toISOString()
-                    };
-                    State.statusHistory.push(logEntry);
-                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                    UI.updateDebugTab();
-
-                    Utils.logger('error', `🚨 RATE LIMIT DETECTED! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
-                    
-                    State.appStatus = 'RATE_LIMITED';
-                    State.rateLimitStartTime = Date.now();
-                    
-                    await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
-
-                    // NEW LOGIC: Check if we should start the auto-recovery process.
-                    if (State.autoResumeAfter429) {
-                        if (State.db.todo.length === 0) {
-                            Utils.logger('info', 'Auto-recovery enabled. Refreshing page to begin recovery cycle...');
-                            setTimeout(() => location.reload(), 1500);
-                        } else {
-                            Utils.logger('warn', `Auto-recovery enabled, but tasks are running. Page refresh is deferred until the queue is empty.`);
-                        }
-                    } else {
-                        Utils.logger('info', 'Rate limit detected. Enable auto-recovery in Settings to handle this automatically.');
-                    }
-                }
+                // 使用通用的handleRateLimit函数处理限速情况
+                await this.handleRateLimit(request._url);
             } else if (request.status >= 200 && request.status < 300) {
                 if (State.appStatus === 'RATE_LIMITED') {
                     const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
@@ -540,7 +511,7 @@
                 this._patchHasBeenApplied = true; // This should be set here
                 return modifiedUrl;
             }
-            return originalUrl;
+                    return originalUrl;
         },
 
         saveLatestCursorFromUrl(url) {
@@ -577,6 +548,47 @@
                 // 为所有请求添加监听器
                 const onLoad = () => {
                     request.removeEventListener("load", onLoad);
+                    
+                    // 对所有请求检查429错误
+                    if (request.status === 429) {
+                        // 调用handleRateLimit函数处理限速情况
+                        self.handleRateLimit(request.responseURL || request._url);
+                        return;
+                    }
+                    
+                                    // 检查其他可能的限速情况（返回空结果或错误信息）
+                if (request.status >= 200 && request.status < 300) {
+                    try {
+                        const responseText = request.responseText;
+                        if (responseText) {
+                            // 先检查原始文本是否包含限速相关的关键词
+                            if (responseText.includes("Too many requests") || 
+                                responseText.includes("rate limit") ||
+                                responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                                Utils.logger('warn', `[XHR限速检测] 检测到限速情况，原始响应: ${responseText}`);
+                                self.handleRateLimit(request.responseURL || request._url);
+                                return;
+                            }
+                            
+                            // 尝试解析JSON
+                            try {
+                                const data = JSON.parse(responseText);
+                                
+                                // 检查是否返回了空结果或错误信息
+                                if ((data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) || 
+                                    (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit")))) {
+                                    Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况: ${JSON.stringify(data)}`);
+                                    self.handleRateLimit(request.responseURL || request._url);
+                                    return;
+                                }
+                            } catch (jsonError) {
+                                // JSON解析错误，忽略
+                            }
+                        }
+                    } catch (e) {
+                        // 解析错误，忽略
+                    }
+                }
                     
                     // 处理搜索请求的特殊逻辑（429检测等）
                     if (self.isDebounceableSearch(request._url)) {
@@ -665,15 +677,69 @@
                 let modifiedInput = input;
                 if (self.shouldPatchUrl(url)) {
                     const modifiedUrl = self.getPatchedUrl(url);
-                    if (typeof input === 'string') {
-                        modifiedInput = modifiedUrl;
+                        if (typeof input === 'string') {
+                            modifiedInput = modifiedUrl;
+                        } else {
+                            modifiedInput = new Request(modifiedUrl, input);
+                        }
                     } else {
-                        modifiedInput = new Request(modifiedUrl, input);
-                    }
-                } else {
                     self.saveLatestCursorFromUrl(url);
                 }
-                return originalFetch.apply(this, [modifiedInput, init]);
+                
+                // 拦截响应以检测429错误
+                return originalFetch.apply(this, [modifiedInput, init])
+                    .then(async response => {
+                        // 检查429错误
+                        if (response.status === 429) {
+                            // 克隆响应以避免"已消费"错误
+                            const clonedResponse = response.clone();
+                            // 异步处理限速情况
+                            self.handleRateLimit(response.url).catch(e => 
+                                Utils.logger('error', '处理限速时出错:', e)
+                            );
+                        }
+                        
+                        // 检查其他可能的限速情况（返回空结果或错误信息）
+                        if (response.status >= 200 && response.status < 300) {
+                            try {
+                                // 克隆响应以避免"已消费"错误
+                                const clonedResponse = response.clone();
+                                
+                                // 先检查原始文本
+                                const text = await clonedResponse.text();
+                                if (text.includes("Too many requests") || 
+                                    text.includes("rate limit") ||
+                                    text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                                    Utils.logger('warn', `[Fetch限速检测] 检测到限速情况，原始响应: ${text.substring(0, 100)}...`);
+                                    self.handleRateLimit(response.url).catch(e => 
+                                        Utils.logger('error', '处理限速时出错:', e)
+                                    );
+                                    return response;
+                                }
+                                
+                                // 尝试解析JSON
+                                try {
+                                    const data = JSON.parse(text);
+                                    
+                                    // 检查是否返回了空结果或错误信息
+                                    if ((data.results && data.results.length === 0 && 
+                                         typeof url === 'string' && url.includes('/i/listings/search')) || 
+                                        (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit")))) {
+                                        Utils.logger('warn', `[隐性限速检测] Fetch请求检测到可能的限速情况: ${JSON.stringify(data)}`);
+                                        self.handleRateLimit(response.url).catch(e => 
+                                            Utils.logger('error', '处理限速时出错:', e)
+                                        );
+                                    }
+                                } catch (jsonError) {
+                                    // JSON解析错误，忽略
+                                }
+                            } catch (e) {
+                                // 解析错误，忽略
+                            }
+                        }
+                        
+                        return response;
+                });
             };
         }
     };
@@ -735,17 +801,17 @@
             Utils.logger('info', '待办列表已清空。现在将扫描并仅添加当前可见的项目。');
 
             Utils.logger('info', '正在扫描已加载完成的商品...');
-            const cards = document.querySelectorAll(Config.SELECTORS.card);
-            const newlyAddedList = [];
-            let alreadyInQueueCount = 0;
-            let ownedCount = 0;
+                const cards = document.querySelectorAll(Config.SELECTORS.card);
+                const newlyAddedList = [];
+                let alreadyInQueueCount = 0;
+                let ownedCount = 0;
             let skippedCount = 0;
 
             const isCardSettled = (card) => {
                 return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
             };
 
-            cards.forEach(card => {
+                cards.forEach(card => {
                 // 正确的修复：直接检查元素的 display 样式。如果它是 'none'，就意味着它被隐藏了，应该跳过。
                 if (card.style.display === 'none') {
                     return;
@@ -758,40 +824,40 @@
 
                 // UNIFIED LOGIC: Use the new single source of truth to check if the card is finished.
                 if (TaskRunner.isCardFinished(card)) {
-                    ownedCount++;
-                    return;
-                }
+                        ownedCount++;
+                        return;
+                    }
 
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 const url = link ? link.href.split('?')[0] : null;
                 if (!url) return; // Should be caught by isCardFinished, but good for safety.
 
                 // The only check unique to adding is whether it's already in the 'todo' queue.
-                const isTodo = Database.isTodo(url);
+                    const isTodo = Database.isTodo(url);
                 if (isTodo) {
-                    alreadyInQueueCount++;
-                    return;
-                }
+                        alreadyInQueueCount++;
+                        return;
+                    }
 
-                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-            });
+                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                });
 
             if (skippedCount > 0) {
                 Utils.logger('info', `已跳过 ${skippedCount} 个状态未加载的商品。`);
             }
 
-            if (newlyAddedList.length > 0) {
-                State.db.todo.push(...newlyAddedList);
-                Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
-            }
-
-            const actionableCount = State.db.todo.length;
-            if (actionableCount > 0) {
-                if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
-                     Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
+                if (newlyAddedList.length > 0) {
+                    State.db.todo.push(...newlyAddedList);
+                    Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
                 }
-                TaskRunner.startExecution();
+
+                const actionableCount = State.db.todo.length;
+                if (actionableCount > 0) {
+                    if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
+                         Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
+                }
+                    TaskRunner.startExecution();
             } else {
                  Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
             }
@@ -973,21 +1039,21 @@
                 const ownedUids = new Set();
                 for (let i = 0; i < allUidsToCheck.length; i += API_CHUNK_SIZE) {
                     const chunk = allUidsToCheck.slice(i, i + API_CHUNK_SIZE);
-                    const apiUrl = new URL(API_ENDPOINT);
+                const apiUrl = new URL(API_ENDPOINT);
                     chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
 
                     Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${Math.floor(i / API_CHUNK_SIZE) + 1}... (${chunk.length}个项目)`);
 
-                    const response = await fetch(apiUrl.href, {
-                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                    });
+                const response = await fetch(apiUrl.href, {
+                    headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                });
 
                     if (!response.ok) {
                          Utils.logger('warn', `批次处理失败，状态码: ${response.status}。将跳过此批次。`);
                          continue; // Skip to next chunk
                     }
 
-                    const data = await response.json();
+                const data = await response.json();
                     data.filter(item => item.acquired).forEach(item => ownedUids.add(item.uid));
 
                     // Add a small delay between chunks to be safe
@@ -1303,7 +1369,7 @@
                         State.activeWorkers--;
 
                         Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
-                        
+
                         // 4. Update UI and dispatch
                         UI.update();
                         TaskRunner.executeBatch();
@@ -1326,6 +1392,12 @@
                 
                 // REMOVED: This logic is now handled more reliably in the WORKER_DONE listener.
                 UI.update();
+                return;
+            }
+
+            // 如果处于限速状态，不派发新任务，但保持现有任务继续执行
+            if (State.appStatus === 'RATE_LIMITED') {
+                Utils.logger('info', '由于处于限速状态，暂停派发新任务。现有任务将继续执行。');
                 return;
             }
 
@@ -1532,40 +1604,114 @@
             // 延迟处理，给卡片状态更新留出时间
             setTimeout(() => {
                 const newlyAddedList = [];
-                cards.forEach(card => {
-                    const link = card.querySelector(Config.SELECTORS.cardLink);
-                    const url = link ? link.href.split('?')[0] : null;
-                    if (!url) return;
-    
+            cards.forEach(card => {
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                const url = link ? link.href.split('?')[0] : null;
+                if (!url) return;
+
                     // 1. Must NOT be already finished (in done list, etc.) or in the current to-do list.
                     const isAlreadyProcessed = TaskRunner.isCardFinished(card) || Database.isTodo(url);
                     if (isAlreadyProcessed) {
-                        return;
-                    }
-                    
+                    return;
+                }
+
                     // 2. Must be visibly "Free". This is the most critical filter.
                     const isFree = card.querySelector(Config.SELECTORS.freeStatus) !== null;
                     if (!isFree) {
-                        return;
-                    }
-    
+                    return;
+                }
+
                     // If it passes all checks, it's a valid new task.
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-                });
-    
-                if (newlyAddedList.length > 0) {
-                    State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
+                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+            });
+
+            if (newlyAddedList.length > 0) {
+                State.db.todo.push(...newlyAddedList);
+                Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
                     
                     // Do NOT start execution from here. Only update totals if already running.
-                    if (State.isExecuting) {
+                if (State.isExecuting) {
                         State.executionTotalTasks = State.db.todo.length;
                     }
                     
                     UI.update();
                 }
             }, 1000); // 延迟1秒，给API请求和状态更新留出时间
+        },
+
+        async handleRateLimit(url) {
+            // 如果已经处于限速状态，不需要重复处理
+            if (State.appStatus === 'RATE_LIMITED') return;
+            
+            // 记录正常运行期的统计信息
+            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+            const logEntry = {
+                type: 'NORMAL',
+                duration: parseFloat(normalDuration),
+                requests: State.successfulSearchCount,
+                endTime: new Date().toISOString()
+            };
+            
+            // 保存到历史记录并更新UI
+            State.statusHistory.push(logEntry);
+            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+            
+            // 记录日志
+            Utils.logger('error', `🚨 RATE LIMIT DETECTED at ${url}! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
+            
+            // 切换到限速状态
+            State.appStatus = 'RATE_LIMITED';
+            State.rateLimitStartTime = Date.now();
+            
+            // 保存状态到存储
+            await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
+            
+            // 不停止任务执行，但暂停新任务的派发
+            Utils.logger('warn', '检测到限速。已暂停新任务派发，但现有任务将继续执行。');
+            
+            // 更新UI
+            UI.updateDebugTab();
+            UI.update();
+            
+            // 自动恢复逻辑
+            if (State.autoResumeAfter429) {
+                // 开始随机刷新尝试恢复
+                Utils.logger('info', '自动恢复已启用。开始随机时间刷新页面尝试恢复...');
+                
+                // 设置一个递归的随机刷新函数
+                const attemptRecovery = () => {
+                    // 如果不再处于限速状态，停止刷新
+                    if (State.appStatus !== 'RATE_LIMITED') return;
+                    
+                    // 如果有活动任务，等待它们完成
+                    if (State.activeWorkers > 0) {
+                        Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
+                        setTimeout(attemptRecovery, 5000); // 5秒后再检查
+                        return;
+                    }
+                    
+                    // 生成一个随机延迟（5-15秒）
+                    const randomDelay = 5000 + Math.random() * 10000;
+                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
+                    
+                    setTimeout(() => {
+                        // 如果还有待办任务，保存它们
+                        if (State.db.todo.length > 0) {
+                            Utils.logger('info', `保存 ${State.db.todo.length} 个待办任务，刷新后将继续处理...`);
+                            GM_setValue('temp_todo_tasks', State.db.todo);
+                        }
+                        
+                        // 刷新页面
+                        location.reload();
+                    }, randomDelay);
+                };
+                
+                // 开始第一次恢复尝试
+                attemptRecovery();
+            } else {
+                Utils.logger('info', '检测到限速。启用"设定"中的"429后自动恢复并继续"选项可自动处理此情况。');
+            }
         },
     };
 
@@ -1585,7 +1731,7 @@
             );
 
             if (acquisitionButton || downloadButton) {
-                const urlParams = new URLSearchParams(window.location.search);
+                 const urlParams = new URLSearchParams(window.location.search);
                 if (urlParams.has('workerId')) return false; // Explicitly return false for worker
 
                 Utils.logger('info', "On a detail page (detected by action buttons), skipping UI creation.");
@@ -1926,7 +2072,7 @@
             State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
 
             actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
-            
+
             // --- Log Panel (created before other elements to be appended first) ---
             const logContainer = document.createElement('div');
             logContainer.className = 'fab-log-container';
@@ -2265,6 +2411,14 @@
         await Database.load();
         await PagePatcher.init();
         
+        // 检查是否有临时保存的待办任务（从429恢复）
+        const tempTasks = await GM_getValue('temp_todo_tasks', null);
+        if (tempTasks && tempTasks.length > 0) {
+            Utils.logger('info', `从429恢复：找到 ${tempTasks.length} 个临时保存的待办任务，正在恢复...`);
+            State.db.todo = tempTasks;
+            await GM_deleteValue('temp_todo_tasks'); // 清除临时存储
+        }
+        
         // 初始化状态时间和历史记录
         if (State.appStatus === 'NORMAL' || State.appStatus === undefined) {
             State.appStatus = 'NORMAL';
@@ -2328,7 +2482,7 @@
                     
                     // 更新执行统计
                     State.executionCompletedTasks++;
-                } else {
+        } else {
                     Utils.logger('warn', `❌ 任务失败: ${task.name}`);
                     
                     // 从待办列表中移除此任务
@@ -2373,8 +2527,8 @@
             if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 if (!State.hasRunDomPart) {
                     Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-                    runDomDependentPart();
-                }
+            runDomDependentPart();
+        }
                 if (State.hasRunDomPart) {
                      clearInterval(launcherInterval);
                      Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
@@ -2400,9 +2554,9 @@
         if (!uiCreated) {
             Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
             State.hasRunDomPart = true; // Mark as run to stop the launcher
-            return;
+             return;
         }
-        
+
         // 确保UI创建后立即更新调试标签页
         UI.update();
         UI.updateDebugTab();
@@ -2421,7 +2575,9 @@
 
         const checkIsErrorPage = (title, text) => {
             const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-            const is429Text = text.includes('429 Too Many Requests');
+            const is429Text = text.includes('429 Too Many Requests') || 
+                              text.includes('Too many requests') || 
+                              text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
             if (isCloudflareTitle || is429Text) {
                 enterRateLimitedState();
                 return true;
@@ -2435,8 +2591,52 @@
 
         // The auto-resume logic is preserved
         if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
-            Utils.logger('info', '[Auto-Resume] Page loaded in rate-limited state. Initiating recovery probe...');
-            TaskRunner.runRecoveryProbe();
+            Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
+            
+            // 尝试发送一个探测请求，检查是否已经恢复
+            try {
+                const probeResponse = await fetch('https://www.fab.com/api/health-check');
+                if (probeResponse.ok) {
+                    // 恢复成功，记录限速期的统计信息
+                    const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+                    const logEntry = {
+                        type: 'RATE_LIMITED',
+                        duration: parseFloat(rateLimitDuration),
+                        endTime: new Date().toISOString()
+                    };
+                    State.statusHistory.push(logEntry);
+                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                    
+                    // 恢复到正常状态
+                    Utils.logger('info', `✅ 恢复探测成功！限速期已结束，持续了 ${rateLimitDuration}s。`);
+                    State.appStatus = 'NORMAL';
+                    State.rateLimitStartTime = null;
+                    State.normalStartTime = Date.now();
+                    State.successfulSearchCount = 0;
+                    GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+                    
+                    // 如果有待办任务，继续执行
+                    if (State.db.todo.length > 0 && !State.isExecuting) {
+                        Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
+                        State.isExecuting = true;
+                        TaskRunner.executeBatch();
+                    }
+                    
+                    // 更新UI
+                    UI.updateDebugTab();
+                    UI.update();
+                } else {
+                    // 仍然处于限速状态，继续随机刷新
+                    Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
+                    const randomDelay = 5000 + Math.random() * 10000;
+                    setTimeout(() => location.reload(), randomDelay);
+                }
+            } catch (error) {
+                // 探测出错，继续随机刷新
+                Utils.logger('error', `恢复探测出错: ${error.message}。将继续随机刷新...`);
+                const randomDelay = 5000 + Math.random() * 10000;
+                setTimeout(() => location.reload(), randomDelay);
+            }
         }
 
         // --- Observer setup is now directly inside runDomDependentPart ---
@@ -2473,7 +2673,7 @@
         Utils.logger('info', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
         
         // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
-        TaskRunner.runHideOrShow();
+            TaskRunner.runHideOrShow();
         
         // 添加定期检查功能，每10秒检查一次待办列表中的任务是否已经完成
         setInterval(() => {
@@ -2494,8 +2694,58 @@
                 UI.update();
             }
         }, 10000);
+        
+        // 添加定期检查功能，检测是否请求不出新商品（隐性限速）
+        let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+        let noNewCardsCounter = 0;
+        let lastScrollY = window.scrollY;
+        
+        setInterval(() => {
+            // 如果已经处于限速状态，不需要检查
+            if (State.appStatus !== 'NORMAL') return;
+            
+            // 获取当前卡片数量
+            const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+            
+            // 如果滚动了但卡片数量没有增加，可能是隐性限速
+            if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
+                noNewCardsCounter++;
+                
+                // 如果连续3次检查都没有新卡片，认为是隐性限速
+                if (noNewCardsCounter >= 3) {
+                    Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况：连续${noNewCardsCounter}次滚动后卡片数量未增加。`);
+                    PagePatcher.handleRateLimit('隐性限速检测');
+                    noNewCardsCounter = 0;
+                }
+            } else if (currentCardCount > lastCardCount) {
+                // 有新卡片，重置计数器
+                noNewCardsCounter = 0;
+            }
+            
+            // 更新上次卡片数量和滚动位置
+            lastCardCount = currentCardCount;
+            lastScrollY = window.scrollY;
+        }, 5000); // 每5秒检查一次
+
+        // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
+        setInterval(() => {
+            // 如果已经处于限速状态，不需要检查
+            if (State.appStatus !== 'NORMAL') return;
+            
+            // 检查页面内容是否包含限速错误信息
+            const pageText = document.body.innerText || '';
+            const jsonPattern = /\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i;
+            
+            if (pageText.match(jsonPattern) || 
+                pageText.includes('Too many requests') || 
+                pageText.includes('rate limit')) {
+                
+                Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
+                PagePatcher.handleRateLimit('页面内容检测');
+            }
+        }, 3000); // 每3秒检查一次
     }
 
     main();
 
-})(); 
+})();
