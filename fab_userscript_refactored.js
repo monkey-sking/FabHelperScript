@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -31,7 +31,7 @@
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
+        MAX_CONCURRENT_WORKERS: 5, // 最大并发工作标签页数量 - 改为5，避免打开太多标签页
         UI_CONTAINER_ID: 'fab-helper-container',
         UI_LOG_ID: 'fab-helper-log',
         DB_KEYS: {
@@ -881,11 +881,11 @@
                     // 先检查当前页面上的卡片状态，更新数据库
                     TaskRunner.checkVisibleCardsStatus().then(() => {
                         // 然后开始执行任务
-                        TaskRunner.startExecution();
+                    TaskRunner.startExecution();
                     });
             } else {
                  Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
-                 UI.update();
+            UI.update();
             }
         },
 
@@ -968,6 +968,10 @@
 
             if (!State.rememberScrollPosition) {
                 await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                // 重置PagePatcher中的状态
+                PagePatcher._patchHasBeenApplied = false;
+                PagePatcher._lastSeenCursor = null;
+                State.savedCursor = null;
                 Utils.logger('info', '已清除已保存的浏览位置。');
             }
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
@@ -1429,6 +1433,9 @@
                     State.watchdogTimer = null;
                 }
                 
+                // 关闭所有可能残留的工作标签页
+                TaskRunner.closeAllWorkerTabs();
+                
                 // REMOVED: This logic is now handled more reliably in the WORKER_DONE listener.
                 UI.update();
                 return;
@@ -1444,8 +1451,14 @@
             // New logic: Iterate without modifying the todo list. Dispatch tasks that are not yet "in-flight".
             const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
 
+            // 限制最大活动工作标签页数量
+            if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
+                Utils.logger('info', `已达到最大并发工作标签页数量 (${Config.MAX_CONCURRENT_WORKERS})，等待现有任务完成...`);
+                return;
+            }
+
             for (const task of State.db.todo) {
-                if (State.activeWorkers >= Config.MAX_WORKERS) break;
+                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
 
                 // Skip if this task is already in-flight
                 if (inFlightUIDs.has(task.uid)) continue;
@@ -1460,13 +1473,28 @@
 
                 const workerUrl = new URL(task.url);
                 workerUrl.searchParams.set('workerId', workerId);
-                GM_openInTab(workerUrl.href, { active: false, setParent: true });
+                
+                // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
+                // 这样可以避免标签页堆积在浏览器的最前面
+                GM_openInTab(workerUrl.href, { active: false, insert: true });
 
                 if (!State.watchdogTimer) {
                     TaskRunner.runWatchdog();
                 }
             }
             UI.update();
+        },
+        
+        // 添加一个方法来关闭所有工作标签页
+        closeAllWorkerTabs: () => {
+            // 目前没有直接的方法可以关闭由GM_openInTab打开的标签页
+            // 但我们可以清理相关的状态
+            for (const workerId in State.runningWorkers) {
+                GM_deleteValue(workerId);
+            }
+            State.runningWorkers = {};
+            State.activeWorkers = 0;
+            Utils.logger('info', '已清理所有工作标签页的状态。');
         },
 
         processDetailPage: async () => {
@@ -1613,7 +1641,9 @@
                     task: currentTask // Pass the original task back
                 });
                 await GM_deleteValue(workerId); // Clean up the task payload
-                window.close();
+                
+                // 确保工作标签页在报告完成后关闭
+                setTimeout(() => window.close(), 500);
             }
         },
 
@@ -1819,8 +1849,8 @@
                     TaskRunner.startExecution();
                 }
                 
-                UI.update();
-            }
+                    UI.update();
+                }
             }, 1000); // 延迟1秒，给API请求和状态更新留出时间
         },
 
@@ -2624,7 +2654,7 @@
                 State.rateLimitStartTime = savedStatus.startTime;
                 const duration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
                 Utils.logger('warn', `脚本以限速状态启动。限速已持续至少 ${duration}s。`);
-            } else {
+        } else {
                 // 如果没有保存的开始时间，使用当前时间
                 State.rateLimitStartTime = Date.now();
                 await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
@@ -3008,7 +3038,7 @@
                     // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                     if (typeof window.enterRateLimitedState === 'function') {
                         window.enterRateLimitedState();
-                    } else {
+                } else {
                         // 最后的备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
                         countdownRefresh(randomDelay, '页面内容检测');
