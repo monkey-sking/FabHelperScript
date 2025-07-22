@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
+// @version      1.0.2
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -27,16 +27,17 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: '[Fab API-Driven Helper v2.0.0]',
+        SCRIPT_NAME: 'Fab API-Driven Helper',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        UI_CONTAINER_ID: 'fab-helper-container-v2',
-        UI_LOG_ID: 'fab-helper-log-v2',
+        MAX_CONCURRENT_WORKERS: 3, // 最大并发工作标签页数量
+        UI_CONTAINER_ID: 'fab-helper-container',
+        UI_LOG_ID: 'fab-helper-log',
         DB_KEYS: {
-            DONE: 'fab_doneList_v8',
-            FAILED: 'fab_failedList_v8', // For items that failed processing
-            HIDE: 'fab_hideSaved_v8',
+            DONE: 'fab_done_v8',
+            FAILED: 'fab_failed_v8',
+            HIDE: 'fab_hide_v8',
             AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
             REMEMBER_POS: 'fab_rememberPos_v8',
             LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
@@ -128,6 +129,9 @@
         sessionCompleted: new Set(), // Phase15: URLs completed this session
         isLogCollapsed: localStorage.getItem('fab_helper_log_collapsed') === 'true' || false, // 日志面板折叠状态
         hasRunDomPart: false,
+        observerDebounceTimer: null,
+        isObserverRunning: false, // New flag for the robust launcher
+        lastKnownCardCount: 0,
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
@@ -504,9 +508,10 @@
                     GM_deleteValue(Config.DB_KEYS.APP_STATUS);
                 }
                 
-                if (State.appStatus === 'NORMAL') {
-                    State.successfulSearchCount++;
-                }
+                // 移除这里的计数逻辑，因为我们已经在listenerAwareSend中处理了
+                // if (State.appStatus === 'NORMAL') {
+                //     State.successfulSearchCount++;
+                // }
             }
         },
 
@@ -569,13 +574,25 @@
 
             const listenerAwareSend = function(...args) {
                 const request = this;
-                if (self.isDebounceableSearch(request._url)) {
-                    const onLoad = () => {
-                        request.removeEventListener("load", onLoad);
+                // 为所有请求添加监听器
+                const onLoad = () => {
+                    request.removeEventListener("load", onLoad);
+                    
+                    // 处理搜索请求的特殊逻辑（429检测等）
+                    if (self.isDebounceableSearch(request._url)) {
                         self.handleSearchResponse(request);
-                    };
-                    request.addEventListener("load", onLoad);
-                }
+                        
+                        // 只对商品卡片的搜索请求进行计数
+                        if (request.status >= 200 && request.status < 300 && State.appStatus === 'NORMAL') {
+                            State.successfulSearchCount++;
+                            // 每次相关请求都更新调试标签页
+                            UI.updateDebugTab();
+                            Utils.logger('info', `[请求统计] 商品卡片搜索请求 +1，当前总数: ${State.successfulSearchCount}`);
+                        }
+                    }
+                };
+                request.addEventListener("load", onLoad);
+                
                 return originalXhrSend.apply(request, args);
             };
             
@@ -692,7 +709,7 @@
             // NEW: Divert logic if auto-add is on. The observer populates the list,
             // so the button should just act as a "start" signal.
             if (State.autoAddOnScroll) {
-                Utils.logger('info', '“自动添加”已开启。将直接处理当前"待办"队列中的所有任务。');
+                Utils.logger('info', '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。');
                 TaskRunner.startExecution(); // This will use the existing todo list
                 return;
             }
@@ -1496,48 +1513,46 @@
         },
 
         scanAndAddTasks: (cards) => {
-            const newlyAddedList = [];
-            let alreadyInQueueCount = 0;
-            let ownedCount = 0;
+            // This function should ONLY ever run if auto-add is enabled.
+            if (!State.autoAddOnScroll) return;
 
-            cards.forEach(card => {
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                const url = link ? link.href.split('?')[0] : null;
-                if (!url) return;
-
-                // Check if visibly owned, in the DB, or completed this session
-                const isFinished = TaskRunner.isCardFinished(card);
-                if (isFinished) {
-                    ownedCount++;
-                    return;
-                }
-
-                // Check if already in todo or failed lists
-                const isTodo = Database.isTodo(url);
-                if (isTodo) {
-                    alreadyInQueueCount++;
-                    return;
-                }
-
-                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
-                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-            });
-
-            if (newlyAddedList.length > 0) {
-                State.db.todo.push(...newlyAddedList);
-                Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
-                // If execution is running, we just need to update the total task count.
-                // The main loop will pick up new tasks.
-                if (State.isExecuting) {
-                    State.executionTotalTasks = State.db.todo.length;
+            // 延迟处理，给卡片状态更新留出时间
+            setTimeout(() => {
+                const newlyAddedList = [];
+                cards.forEach(card => {
+                    const link = card.querySelector(Config.SELECTORS.cardLink);
+                    const url = link ? link.href.split('?')[0] : null;
+                    if (!url) return;
+    
+                    // 1. Must NOT be already finished (in done list, etc.) or in the current to-do list.
+                    const isAlreadyProcessed = TaskRunner.isCardFinished(card) || Database.isTodo(url);
+                    if (isAlreadyProcessed) {
+                        return;
+                    }
+                    
+                    // 2. Must be visibly "Free". This is the most critical filter.
+                    const isFree = card.querySelector(Config.SELECTORS.freeStatus) !== null;
+                    if (!isFree) {
+                        return;
+                    }
+    
+                    // If it passes all checks, it's a valid new task.
+                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                });
+    
+                if (newlyAddedList.length > 0) {
+                    State.db.todo.push(...newlyAddedList);
+                    Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
+                    
+                    // Do NOT start execution from here. Only update totals if already running.
+                    if (State.isExecuting) {
+                        State.executionTotalTasks = State.db.todo.length;
+                    }
+                    
                     UI.update();
                 }
-                // If not executing, and auto-add is on, we should kick off the process.
-                else {
-                    Utils.logger('info', '[自动添加] 检测到新任务，且执行器已空闲。自动开始执行...');
-                    TaskRunner.startExecution();
-                }
-            }
+            }, 1000); // 延迟1秒，给API请求和状态更新留出时间
         },
     };
 
@@ -1557,14 +1572,14 @@
             );
 
             if (acquisitionButton || downloadButton) {
-                 const urlParams = new URLSearchParams(window.location.search);
-                 if (urlParams.has('workerId')) return;
+                const urlParams = new URLSearchParams(window.location.search);
+                if (urlParams.has('workerId')) return false; // Explicitly return false for worker
 
                 Utils.logger('info', "On a detail page (detected by action buttons), skipping UI creation.");
-                return;
+                return false; // Explicitly return false to halt further execution
             }
 
-            if (document.getElementById(Config.UI_CONTAINER_ID)) return;
+            if (document.getElementById(Config.UI_CONTAINER_ID)) return true; // Already created
 
             // --- Style Injection ---
             const styles = `
@@ -1822,6 +1837,18 @@
             container.id = Config.UI_CONTAINER_ID;
             State.UI.container = container;
 
+            // --- Header with Version ---
+            const header = document.createElement('div');
+            header.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;';
+            const title = document.createElement('span');
+            title.textContent = 'Fab Helper';
+            title.style.fontWeight = '600';
+            const version = document.createElement('span');
+            version.textContent = `v${GM_info.script.version}`;
+            version.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); background: var(--dark-gray); padding: 2px 5px; border-radius: var(--radius-s);';
+            header.append(title, version);
+            container.appendChild(header);
+
             // --- Tab Controls ---
             const tabContainer = document.createElement('div');
             tabContainer.className = 'fab-helper-tabs';
@@ -1987,7 +2014,7 @@
             State.UI.tabContents.settings = settingsContent;
             container.appendChild(settingsContent);
 
-            // --- Debug Tab (Log Panel) ---
+            // --- 调试标签页 ---
             const debugContent = document.createElement('div');
             debugContent.className = 'fab-helper-tab-content';
             
@@ -2012,12 +2039,17 @@
                 }
                 const formatEntry = (entry) => {
                     const date = new Date(entry.endTime).toLocaleString();
-                    const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
-                    let details = `持续: ${entry.duration.toFixed(2)}s`;
-                    if (entry.requests !== undefined) {
-                        details += `, 请求: ${entry.requests}次`;
+                    
+                    if (entry.type === 'STARTUP') {
+                        return `🚀 脚本启动\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
+                    } else {
+                        const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
+                        let details = `持续: ${entry.duration.toFixed(2)}s`;
+                        if (entry.requests !== undefined) {
+                            details += `, 请求: ${entry.requests}次`;
+                        }
+                        return `${type}\n  - 结束于: ${date}\n  - ${details}`;
                     }
-                    return `${type}\n  - 结束于: ${date}\n  - ${details}`;
                 };
                 const fullLog = State.statusHistory.map(formatEntry).join('\n\n');
                 navigator.clipboard.writeText(fullLog).then(() => {
@@ -2051,591 +2083,387 @@
             State.UI.tabContents.debug = debugContent;
             container.appendChild(debugContent);
 
-            try {
-                const versionDisplay = document.createElement('div');
-                versionDisplay.textContent = `v${GM_info.script.version}`;
-                versionDisplay.style.cssText = 'position: absolute; bottom: 5px; right: 8px; font-size: 10px; color: var(--text-color-secondary); opacity: 0.6;';
-                container.appendChild(versionDisplay);
-            } catch (e) {
-                // GM_info might not be available in all environments
-            }
-
             document.body.appendChild(container);
-
-            UI.switchTab('dashboard'); // Set initial tab
-            UI.update();
-        },
-
-        updateDebugTab: () => {
-            if (!State.UI.debugContent) return;
-            const list = State.UI.debugContent;
-            list.innerHTML = ''; // Clear previous entries
-
-            // --- NEW: Render the CURRENT, LIVE status at the top ---
-            const createCurrentStatusItem = () => {
-                const item = document.createElement('div');
-                item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border-color); font-size: 12px; background: rgba(255,255,255,0.05);';
-
-                const typeLabel = document.createElement('span');
-                const details = document.createElement('span');
-                details.style.color = 'var(--text-color-secondary)';
-
-                if (State.appStatus === 'NORMAL') {
-                    const duration = ((Date.now() - State.normalStartTime) / 1000);
-                    typeLabel.innerHTML = `✅ 正常运行...`;
-                    typeLabel.style.color = 'var(--green)';
-                    details.innerHTML = `持续 <strong>${duration.toFixed(1)}s</strong>, 请求 <strong>${State.successfulSearchCount}</strong> 次`;
-                } else { // RATE_LIMITED
-                    const duration = ((Date.now() - State.rateLimitStartTime) / 1000);
-                    typeLabel.innerHTML = `🚨 限速时期...`;
-                    typeLabel.style.color = 'var(--orange)';
-                    details.innerHTML = `持续 <strong>${duration.toFixed(1)}s</strong>`;
-                }
-                
-                item.append(typeLabel, details);
-                return item;
-            };
-            list.appendChild(createCurrentStatusItem());
-
-
-            if (State.statusHistory.length === 0) {
-                // Keep the current status item, but add a note if history is empty
-                const noHistory = document.createElement('p');
-                noHistory.textContent = '暂无历史记录。';
-                noHistory.style.cssText = 'text-align: center; color: var(--text-color-secondary); padding: 20px; margin: 0;';
-                list.appendChild(noHistory);
-                return;
-            }
-
-            [...State.statusHistory].reverse().forEach(entry => {
-                const item = document.createElement('div');
-                item.style.cssText = 'display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border-color); font-size: 12px;';
-
-                const typeLabel = document.createElement('span');
-                if (entry.type === 'NORMAL') {
-                    typeLabel.innerHTML = `✅ 正常运行`;
-                    typeLabel.style.color = 'var(--green)';
-                } else {
-                    typeLabel.innerHTML = `🚨 限速时期`;
-                    typeLabel.style.color = 'var(--orange)';
-                }
-
-                const details = document.createElement('span');
-                let detailText = `持续 <strong>${entry.duration.toFixed(2)}s</strong>`;
-                if (entry.requests !== undefined) {
-                    detailText += `, 请求 <strong>${entry.requests}</strong> 次`;
-                }
-                details.innerHTML = detailText;
-                details.style.color = 'var(--text-color-secondary)';
-                
-                item.append(typeLabel, details);
-                list.appendChild(item);
-            });
-        },
-
-        switchTab: (tabNameToActivate) => {
-            for (const tabName in State.UI.tabs) {
-                const isActive = tabName === tabNameToActivate;
-                State.UI.tabs[tabName].classList.toggle('active', isActive);
-                State.UI.tabContents[tabName].style.display = isActive ? 'block' : 'none';
-            }
+            
+            // --- BUG FIX: Explicitly return true on successful creation ---
+            return true;
         },
 
         update: () => {
             if (!State.UI.container) return;
 
-            // Always update the debug tab first, as it's now a live dashboard
-            UI.updateDebugTab();
+            // --- Update Status Numbers ---
+            const todoCount = State.db.todo.length;
+            const doneCount = State.db.done.length;
+            const failedCount = State.db.failed.length;
+            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
 
-            // Status Bar
-            const visibleCards = document.querySelectorAll(Config.SELECTORS.card);
-            const visibleCount = [...visibleCards].filter(card => card.style.display !== 'none').length;
-            State.UI.container.querySelector('#fab-status-visible').textContent = visibleCount;
-            State.UI.container.querySelector('#fab-status-todo').textContent = State.db.todo.length;
-            State.UI.container.querySelector('#fab-status-done').textContent = State.db.done.length;
-            State.UI.container.querySelector('#fab-status-failed').textContent = State.db.failed.length;
-            State.UI.container.querySelector('#fab-status-hidden').textContent = State.hiddenThisPageCount;
-
-            // Debug Log as requested by user
-            Utils.logger('info', `[UI Update] Counts -> To-Do: ${State.db.todo.length}, Visible: ${visibleCount}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
-
-            // NEW: Progress Bar
-            // This is removed for the new UI, can be re-added later if needed.
-
-            // Execute Button
-            const execText = State.isExecuting ? `🛑 ${Utils.getText('stopExecute')}` : `+ ${Utils.getText('execute')}`;
-            State.UI.execBtn.innerHTML = execText;
-            State.UI.execBtn.classList.toggle('executing', State.isExecuting);
-            State.UI.execBtn.classList.remove('fab-helper-pulse');
-            if (!State.isExecuting && State.db.todo.length > 0) {
-                State.UI.execBtn.classList.add('fab-helper-pulse');
+            State.UI.statusTodo.querySelector('span').textContent = todoCount;
+            State.UI.statusDone.querySelector('span').textContent = doneCount;
+            State.UI.statusFailed.querySelector('span').textContent = failedCount;
+            State.UI.statusHidden.querySelector('span').textContent = State.hiddenThisPageCount;
+            State.UI.statusVisible.querySelector('span').textContent = visibleCount;
+            
+            // --- Update Button States ---
+            if (State.isExecuting) {
+                State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
+                State.UI.execBtn.classList.add('executing');
+                // Maybe add a progress bar here later
+            } else {
+                State.UI.execBtn.textContent = Utils.getText('execute');
+                State.UI.execBtn.classList.remove('executing');
             }
-
-            // Sync Button
-            State.UI.syncBtn.disabled = State.isExecuting;
-
-
-            // Hide/Show Button
-            const hideText = State.hideSaved ? `👀 ${Utils.getText('show')}` : `🙈 ${Utils.getText('hide')}`;
-            State.UI.hideBtn.innerHTML = hideText;
-
-            // Update the numbers on the UI elements
-            const updateCounts = () => {
-                const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length;
-                // Utils.logger('debug', `[UI Update] Counts -> To-Do: ${State.db.todo.length}, Visible: ${visibleCount}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
-
-                if (State.UI.statusTodo) State.UI.statusTodo.querySelector('.fab-helper-status-count').textContent = State.db.todo.length;
-                if (State.UI.statusDone) State.UI.statusDone.querySelector('.fab-helper-status-count').textContent = State.db.done.length;
-                if (State.UI.statusFailed) State.UI.statusFailed.querySelector('.fab-helper-status-count').textContent = State.db.failed.length;
-            };
-            updateCounts();
+            State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
         },
-
-        applyOverlay: (card, type='owned') => {
-            const existing = card.querySelector('.fab-helper-overlay-v8');
-            if (existing) existing.remove();
-            const isNativelyOwned = card.textContent.includes('已保存在我的库中') || card.textContent.includes('Saved in My Library');
-            if (isNativelyOwned) return;
-            const link = card.querySelector(Config.SELECTORS.cardLink);
-            const url = link && link.href.split('?')[0];
-            if (!url) return;
-            const overlay = document.createElement('div'); overlay.className='fab-helper-overlay-v8';
-            const styles={position:'absolute',top:'0',left:'0',width:'100%',height:'100%',background:'rgba(25,25,25,0.6)',zIndex:'10',display:'flex',justifyContent:'center',alignItems:'center',fontSize:'24px',fontWeight:'bold',backdropFilter:'blur(2px)',borderRadius:'inherit'};
-
-            // 改进基于会话的标记显示逻辑
-            if (type === 'owned' || State.sessionCompleted.has(url)) {
-                styles.color='#4caf50';  // 绿色
-                overlay.innerHTML='✅';   // 勾选标记
-            }
-            else if (type === 'queued' && Database.isTodo(url)) {
-                styles.color='#ff9800';  // 橙色
-                overlay.innerHTML='⏳';   // 等待标记
-            }
-            else if (type === 'failed') {
-                styles.color='#f44336'; // 红色
-                overlay.innerHTML='❌';  // 失败标记
-            }
-            else return;
-
-            Object.assign(overlay.style,styles);
-            const thumb=card.querySelector('.fabkit-Thumbnail-root, .AssetCard-thumbnail');
-            if (thumb) {if(getComputedStyle(thumb).position==='static')thumb.style.position='relative';thumb.appendChild(overlay);}
-        },
-
         removeAllOverlays: () => {
-            document.querySelectorAll('.fab-helper-overlay-v8').forEach(overlay => overlay.remove());
-        },
-
-        applyOverlaysToPage: () => {
-            document.querySelectorAll(Config.SELECTORS.card).forEach(card=>{
-                const link=card.querySelector(Config.SELECTORS.cardLink);
-                if (!link) return;
-                const url=link.href.split('?')[0];
-                const isNativelyOwned=[...Config.SAVED_TEXT_SET].some(s=>card.textContent.includes(s));
-                const existingOverlay = card.querySelector('.fab-helper-overlay-v8');
-
-                // 如果原生就显示已拥有，确保移除我们的覆盖层
-                if (isNativelyOwned) {
-                    if(existingOverlay) existingOverlay.remove();
-                    return;
-                }
-
-                // 根据状态应用不同的覆盖层
-                if (State.sessionCompleted.has(url) || Database.isDone(url)) {
-                    UI.applyOverlay(card, 'owned');
-                } else if (Database.isTodo(url)) {
-                    UI.applyOverlay(card, 'queued');
-                } else if (Database.isFailed(url)) {
-                    UI.applyOverlay(card, 'failed');
-                } else {
-                    // 如果没有任何状态，确保移除覆盖层
-                    if(existingOverlay) existingOverlay.remove();
-                }
+            document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
+                const overlay = card.querySelector('.fab-helper-overlay');
+                if (overlay) overlay.remove();
+                card.style.opacity = '1';
             });
         },
-
-        toggleLogPanel: () => {
-            // This is now handled by tab switching, so this function is obsolete.
+        switchTab: (tabName) => {
+            for (const name in State.UI.tabs) {
+                State.UI.tabs[name].classList.toggle('active', name === tabName);
+                State.UI.tabContents[name].style.display = name === tabName ? 'block' : 'none';
+            }
         },
+        updateDebugTab: () => {
+            if (!State.UI.debugContent) return;
+            State.UI.debugContent.innerHTML = ''; // Clear previous entries
+            if (State.statusHistory.length === 0) {
+                State.UI.debugContent.innerHTML = '<div style="color: #888; text-align: center; padding: 20px;">没有可显示的历史记录。</div>';
+                return;
+            }
 
-        setupOwnershipObserver: (card) => {
-            const checkHide=()=>{
-                const text=card.textContent||'';
-                if(State.hideSaved && [...Config.SAVED_TEXT_SET].some(s=>text.includes(s))){card.style.display='none';UI.update();return true;} return false;
-            };
-            if (checkHide()) return;
+            // Reverse the history so newest entries are at the top
+            const reversedHistory = [...State.statusHistory].reverse();
 
-            // 获取卡片的 URL
-            const link = card.querySelector(Config.SELECTORS.cardLink);
-            if (!link) return;
-            const url = link.href.split('?')[0];
+            const createHistoryItem = (entry) => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color);';
+                
+                const header = document.createElement('div');
+                header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
+                
+                let icon, color, titleText;
+                
+                if (entry.type === 'STARTUP') {
+                    icon = '🚀';
+                    color = 'var(--blue)';
+                    titleText = '脚本启动';
+                } else if (entry.type === 'NORMAL') {
+                    icon = '✅';
+                    color = 'var(--green)';
+                    titleText = '正常运行期';
+                } else { // RATE_LIMITED
+                    icon = '🚨';
+                    color = 'var(--orange)';
+                    titleText = '限速期';
+                }
 
-            const obs = new MutationObserver((mutations) => {
-                // 检查文本变化，判断是否商品已被拥有
-                if ([...Config.SAVED_TEXT_SET].some(s => card.textContent.includes(s))) {
-                    // 如果检测到"已保存"文本，将该 URL 添加到会话完成集合中
-                    State.sessionCompleted.add(url);
-
-                    // 更新 UI 显示（隐藏卡片或应用覆盖层）
-                    if (State.hideSaved) {
-                        card.style.display = 'none';
-                        State.hiddenThisPageCount++;
-                        UI.update();
-                    } else {
-                        UI.applyOverlay(card, 'owned');
+                header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
+                
+                const details = document.createElement('div');
+                details.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;';
+                
+                let detailsHtml = '';
+                
+                if (entry.type === 'STARTUP') {
+                    detailsHtml = `<div>时间: ${new Date(entry.endTime).toLocaleString()}</div>`;
+                    if (entry.message) {
+                        detailsHtml += `<div>信息: <strong>${entry.message}</strong></div>`;
                     }
-
-                    // 断开观察器连接，不再需要监听
-                    obs.disconnect();
+                } else {
+                    detailsHtml = `<div>持续时间: <strong>${entry.duration.toFixed(2)}s</strong></div>`;
+                    if (entry.requests !== undefined) {
+                        detailsHtml += `<div>期间请求数: <strong>${entry.requests}</strong></div>`;
+                    }
+                    detailsHtml += `<div>结束于: ${new Date(entry.endTime).toLocaleString()}</div>`;
                 }
-            });
+                
+                details.innerHTML = detailsHtml;
 
-            // 监听卡片的文本变化
-            obs.observe(card, {childList: true, subtree: true, characterData: true});
+                item.append(header, details);
+                return item;
+            };
 
-            // 设置超时，确保不会无限期监听
-            setTimeout(() => obs.disconnect(), 10000);
+            const createCurrentStatusItem = () => {
+                if(State.appStatus === 'NORMAL' || State.appStatus === 'RATE_LIMITED') {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color); background: var(--blue-bg);';
+
+                    const header = document.createElement('div');
+                    header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
+                    
+                    const icon = State.appStatus === 'NORMAL' ? '✅' : '🚨';
+                    const color = State.appStatus === 'NORMAL' ? 'var(--green)' : 'var(--orange)';
+                    const titleText = State.appStatus === 'NORMAL' ? '当前: 正常运行' : '当前: 限速中';
+                    
+                    header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
+
+                    const details = document.createElement('div');
+                    details.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;';
+
+                    const startTime = State.appStatus === 'NORMAL' ? State.normalStartTime : State.rateLimitStartTime;
+                    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+                    
+                    let detailsHtml = `<div>已持续: <strong>${duration}s</strong></div>`;
+                    if (State.appStatus === 'NORMAL') {
+                         detailsHtml += `<div>期间请求数: <strong>${State.successfulSearchCount}</strong></div>`;
+                    }
+                     detailsHtml += `<div>开始于: ${new Date(startTime).toLocaleString()}</div>`;
+                    details.innerHTML = detailsHtml;
+
+                    item.append(header, details);
+                    State.UI.debugContent.appendChild(item);
+                }
+            };
+            
+            createCurrentStatusItem(); // Add the current status block at the top
+            reversedHistory.forEach(entry => State.UI.debugContent.appendChild(createHistoryItem(entry)));
         },
     };
 
 
     // --- 模块九: 主程序与初始化 (Main & Initialization) ---
     async function main() {
-        if (State.isInitialized) return;
-        State.isInitialized = true;
-
+        Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
-        await Database.load(); // 先加载所有 State.xxx, 包括 rememberScrollPosition
-
-        // 确保在DOM加载前、脚本最开始阶段初始化Patcher
-        if (State.rememberScrollPosition) {
-            await PagePatcher.init();
-        } else {
-            Utils.logger('info', '[PagePatcher] Disabled by user setting.');
-        }
-
-        // 由于脚本在 document-start 运行，UI 相关的操作必须等待 DOM 加载完成
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => runDomDependentPart());
-        } else {
-            runDomDependentPart();
-        }
-    }
-
-    // 将所有依赖 DOM 的操作移到这里
-    async function runDomDependentPart() {
-        if (State.hasRunDomPart) return;
-        State.hasRunDomPart = true;
-
-        // The new, correct worker detection logic.
-        // We check if a workerId is present in the URL. If so, it's a worker tab.
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('workerId')) {
-            // This is a worker tab. Its only job is to process the page and then close.
-            TaskRunner.processDetailPage();
-            return; // IMPORTANT: Stop all further script execution for this worker tab.
-        }
-
-        // --- NEW FLOW: Create the UI FIRST for immediate user feedback ---
-        UI.create();
-
-        // --- Dead on Arrival Check for initial 429 page load ---
-        const checkIsErrorPage = (title, text) => {
-            const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-            const isCloudflareBody = text.includes('DDoS protection by Cloudflare');
-
-            // FINAL, ROBUST HEURISTIC: Check for the ABSENCE of the main React app container
-            // and the PRESENCE of the error message. This is the most reliable fingerprint.
-            const isMissingAppRoot = !document.getElementById('root');
-            const hasErrorText = text.includes('Too many requests');
+        await Database.load();
+        await PagePatcher.init();
+        
+        // 初始化状态时间和历史记录
+        if (State.appStatus === 'NORMAL' || State.appStatus === undefined) {
+            State.appStatus = 'NORMAL';
+            State.normalStartTime = Date.now();
+            State.successfulSearchCount = 0;
             
-            return isCloudflareTitle || isCloudflareBody || (isMissingAppRoot && hasErrorText);
-        };
-
-        const pageTitle = document.title || '';
-        let bodyText = document.body ? document.body.textContent.trim() : '';
-        let isError = checkIsErrorPage(pageTitle, bodyText);
-
-        // ASYNC WATCHDOG: If the page is initially empty, content might be injected after DOMContentLoaded.
-        // We'll observe for a short period to make sure.
-        if (!isError && bodyText.length < 10) {
-            Utils.logger('info', 'Page is initially empty. Observing for dynamic content...');
-            try {
-                const newContent = await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => {
-                        observer.disconnect();
-                        reject(new Error('Timeout waiting for page content.'));
-                    }, 2000); // Wait up to 2 seconds
-
-                    const observer = new MutationObserver(() => {
-                        const updatedText = document.body.textContent.trim();
-                        if (updatedText.length >= 10) { // Check for any meaningful content
-                            observer.disconnect();
-                            clearTimeout(timeout);
-                            resolve(updatedText);
-                        }
-                    });
-                    observer.observe(document.body, { childList: true, subtree: true });
-                });
-                bodyText = newContent; // Update bodyText with the new content
-                isError = checkIsErrorPage(pageTitle, bodyText); // Re-run the check
-            } catch (e) {
-                isError = false; // Timed out, assume the page is not an error page.
-                Utils.logger('info', 'Observer timed out. Assuming normal page.');
+            // 添加一个初始状态记录，表示脚本启动
+            if (State.statusHistory.length === 0) {
+                const startupEntry = {
+                    type: 'STARTUP',
+                    duration: 0,
+                    endTime: new Date().toISOString(),
+                    message: '脚本启动'
+                };
+                State.statusHistory.push(startupEntry);
+                await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
             }
         }
         
-        if (isError) {
-            Utils.logger('error', '🚨 Initial page load resulted in a 429 block page.');
+        // 添加工作标签页完成任务的监听器
+        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
+            if (!newValue) return; // 如果值被删除，忽略此事件
             
-            const enterRateLimitedState = () => {
-                if (State.autoResumeAfter429) {
-                    Utils.logger('info', 'Auto-recovery is enabled. Scheduling a refresh...');
-                    const randomDelay = Math.floor(Math.random() * (10000 - 5000 + 1) + 5000); // 5-10s
-                    setTimeout(() => location.reload(), randomDelay);
-                } else {
-                    Utils.logger('warn', 'Please enable "Auto-Recovery" in Settings to handle this automatically, or refresh the page manually later.');
+            try {
+                // 删除值，防止重复处理
+                await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
+                
+                const { workerId, success, task, logs } = newValue;
+                
+                if (!workerId || !task) {
+                    Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
+                    return;
                 }
-            };
-
-            if (State.appStatus !== 'RATE_LIMITED') {
-                State.appStatus = 'RATE_LIMITED';
-                State.rateLimitStartTime = Date.now();
-                UI.update(); // CRITICAL FIX: Update the UI to show the new state BEFORE stopping execution.
-                // Persist this state so the next load knows what's happening.
-                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime })
-                    .then(enterRateLimitedState);
-            } else {
-                UI.update(); // Also update if we're already in the state, just to be safe.
-                // We are already in the state, just trigger the action.
-                enterRateLimitedState();
+                
+                // 移除此工作标签页的记录
+                if (State.runningWorkers[workerId]) {
+                    delete State.runningWorkers[workerId];
+                    State.activeWorkers--;
+                }
+                
+                // 记录工作标签页的日志
+                if (logs && logs.length) {
+                    logs.forEach(log => Utils.logger('info', log));
+                }
+                
+                // 处理任务结果
+                if (success) {
+                    Utils.logger('info', `✅ 任务完成: ${task.name}`);
+                    
+                    // 从待办列表中移除此任务
+                    State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    
+                    // 如果尚未在完成列表中，则添加
+                    if (!State.db.done.includes(task.url)) {
+                        State.db.done.push(task.url);
+                        await Database.saveDone();
+                    }
+                    
+                    // 更新会话状态
+                    State.sessionCompleted.add(task.url);
+                    
+                    // 更新执行统计
+                    State.executionCompletedTasks++;
+                } else {
+                    Utils.logger('warn', `❌ 任务失败: ${task.name}`);
+                    
+                    // 从待办列表中移除此任务
+                    State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    
+                    // 添加到失败列表（如果尚未存在）
+                    if (!State.db.failed.some(f => f.uid === task.uid)) {
+                        State.db.failed.push(task);
+                        await Database.saveFailed();
+                    }
+                    
+                    // 更新执行统计
+                    State.executionFailedTasks++;
+                }
+                
+                // 更新UI
+                UI.update();
+                
+                // 如果还有待办任务，继续执行
+                if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+                    TaskRunner.executeBatch();
+                }
+                
+                // 如果所有任务都已完成，停止执行
+                if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+                    Utils.logger('info', '所有任务已完成。');
+                    State.isExecuting = false;
+                    UI.update();
+                }
+                
+                // 更新隐藏状态
+                TaskRunner.runHideOrShow();
+            } catch (error) {
+                Utils.logger('error', `处理工作报告时出错: ${error.message}`);
             }
-            // IMPORTANT: Stop all further script execution for this page.
+        }));
+
+        // --- ROBUST LAUNCHER ---
+        // This interval is launched from the clean userscript context and is less likely to be interfered with.
+        // It will persistently try to launch the DOM-dependent part of the script.
+        const launcherInterval = setInterval(() => {
+            if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                if (!State.hasRunDomPart) {
+                    Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
+                    runDomDependentPart();
+                }
+                if (State.hasRunDomPart) {
+                     clearInterval(launcherInterval);
+                     Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
+                }
+            }
+        }, 250); // Check every 250ms
+    }
+
+    async function runDomDependentPart() {
+        if (State.hasRunDomPart) return;
+
+        // The new, correct worker detection logic.
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('workerId')) {
+            TaskRunner.processDetailPage();
+            State.hasRunDomPart = true; // Mark as run to stop the launcher
             return; 
         }
 
-        // --- Auto-Recovery Check ---
-        // This runs after DB load and before any UI is created.
-        if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
-            TaskRunner.runRecoveryProbe();
+        // --- NEW FLOW: Create the UI FIRST for immediate user feedback ---
+        const uiCreated = UI.create();
+
+        if (!uiCreated) {
+            Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
+            State.hasRunDomPart = true; // Mark as run to stop the launcher
+            return;
         }
-
-        // --- Standard page setup (runs only for the main, non-worker tab) ---
-        // The UI.create() function now internally checks if it should run,
-        // so we can call it unconditionally here.
-        // DEPRECATED: UI is now created at the top of this function.
-
-        // The rest of the setup only makes sense if the UI was actually created.
-        if (!State.UI.container) {
-             Utils.logger('info', 'UI container not found, skipping remaining setup for this page.');
-             return;
-        }
-
-        UI.applyOverlaysToPage();
-        TaskRunner.runHideOrShow(); // Initial run
-
-        Utils.logger('info', Utils.getText('log_init'));
-
-        // Attach listeners and observers
-        const mainObserver = new MutationObserver((mutations) => {
-            for (const mutation of mutations) {
-                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                    let newCardNodes = [];
-                    mutation.addedNodes.forEach(node => {
-                        // We only care about element nodes
-                        if (node.nodeType === 1) {
-                            // Check if the added node itself is a card
-                            if (node.matches(Config.SELECTORS.card)) {
-                                UI.setupOwnershipObserver(node);
-                                newCardNodes.push(node);
-                            }
-
-                            // Check if the added node contains new cards (e.g., a container was added)
-                            const newCardsInside = node.querySelectorAll(Config.SELECTORS.card);
-                            if (newCardsInside.length > 0) {
-                                newCardsInside.forEach(c => {
-                                    UI.setupOwnershipObserver(c);
-                                    newCardNodes.push(c);
-                                });
-                            }
-                        }
-                    });
-
-                    if (newCardNodes.length > 0) {
-                        // Always run visual updates for new cards
-                                UI.applyOverlaysToPage();
-                                TaskRunner.runHideOrShow();
-
-                        // Conditionally scan for tasks if auto-add is on
-                        if (State.isExecuting && State.autoAddOnScroll) {
-                            TaskRunner.scanAndAddTasks(newCardNodes);
-                            }
-                        }
-                }
-            }
-        });
-
-        mainObserver.observe(document.body, { childList: true, subtree: true });
-
-        // Listen for changes from other tabs
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.DONE, (name, old_value, new_value) => {
-            State.db.done = new_value;
-            UI.update();
-            UI.applyOverlaysToPage();
-            TaskRunner.runHideOrShow();
-        }));
-        // TODO list is now session-based, so listening for its changes across tabs is no longer needed.
-        /*
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TODO, (name, old_value, new_value) => {
-            State.db.todo = new_value;
-            UI.applyOverlaysToPage();
-            UI.update();
-        }));
-        */
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.FAILED, (name, old_value, new_value) => {
-            State.db.failed = new_value;
-            UI.update();
-            UI.applyOverlaysToPage();
-            TaskRunner.runHideOrShow();
-        }));
-        // This listener is obsolete as the API-driven recon is removed.
-        // State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.TASK, ...));
-
-        // RESTORED LISTENER: For receiving and printing logs from worker tabs.
-        State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
-            if (!newValue || !newValue.workerId) return;
-            const { workerId, success, logs, task } = newValue; // Get the task from the payload
-
-            // --- Log printing first ---
-            if (logs && Array.isArray(logs)) {
-                Utils.logger('info', `--- Log Report from Worker [${workerId.substring(0,12)}] ---`);
-                logs.forEach(logMsg => {
-                    const logType = logMsg.includes('FAIL') ? 'error' : 'info';
-                    Utils.logger(logType, logMsg);
-                });
-                Utils.logger('info', '--- End Log Report ---');
-            }
-
-            // --- Then, process the result ---
-            // Ensure the task hasn't been processed already by a racing listener
-            if (!State.runningWorkers[workerId]) return;
-
-            // CRITICAL: This is the ONLY place where state is modified post-execution.
-            // 1. Remove task from the To-Do list
-            const initialTodoCount = State.db.todo.length;
-            State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-            if (State.db.todo.length === initialTodoCount && initialTodoCount > 0) {
-                Utils.logger('warn', `Task UID ${task.uid} not found in To-Do list upon completion.`);
-            }
-
-            // 2. Add to Done or Failed list
-            if (success) {
-                State.executionCompletedTasks++;
-                const cleanUrl = task.url.split('?')[0];
-                if (!Database.isDone(cleanUrl)) {
-                    State.db.done.push(cleanUrl);
-                    await Database.saveDone(); // Persist
-                }
-                State.sessionCompleted.add(cleanUrl);
-            } else {
-                State.executionFailedTasks++;
-                if (!State.db.failed.some(f => f.uid === task.uid)) {
-                    State.db.failed.push(task);
-                    await Database.saveFailed(); // Persist
-                }
-            }
-
-            // 3. Update worker management state
-            State.activeWorkers--;
-            delete State.runningWorkers[workerId];
-            Utils.logger('info', `Worker [${workerId.substring(0,12)}] has finished. Active: ${State.activeWorkers}.`);
-
-            // 4. NEW: Reliable check for deferred refresh RIGHT AFTER state changes.
-            if (State.db.todo.length === 0 && State.activeWorkers === 0 && State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
-                Utils.logger('info', 'Task queue emptied during rate limit. Initiating recovery refresh...');
-                setTimeout(() => location.reload(), 1500);
-                return; // Stop processing further, as the page is reloading.
-            }
-
-            // 5. Update UI and dispatch next batch
-            UI.update();
-            TaskRunner.runHideOrShow();
-            TaskRunner.executeBatch();
-        }));
-
-        // The old TASK listener is now obsolete and will be removed.
-        const oldTaskListener = State.valueChangeListeners.find(l => l.key === Config.DB_KEYS.TASK);
-        if (oldTaskListener) {
-            GM_removeValueChangeListener(oldTaskListener.id);
-            State.valueChangeListeners = State.valueChangeListeners.filter(l => l.key !== Config.DB_KEYS.TASK);
-        }
-
-        // --- NEW: Add a timer to periodically refresh the UI for live data ---
-        setInterval(() => {
-            // FIX: Refresh if the UI exists, to keep timers updated regardless of active tab.
-            if (State.UI.container) {
-                UI.update();
-            }
-        }, 1000); // Refresh every second
-
-        setupGlobalListeners();
-        UI.create();
+        
+        // 确保UI创建后立即更新调试标签页
         UI.update();
-        TaskRunner.runHideOrShow();
+        UI.updateDebugTab();
+        UI.switchTab('dashboard'); // 设置初始标签页
+        
+        State.hasRunDomPart = true; // Mark as run *after* successful UI creation
 
+        // --- Dead on Arrival Check for initial 429 page load ---
+        const enterRateLimitedState = () => {
+            if (State.appStatus !== 'RATE_LIMITED') {
+                State.appStatus = 'RATE_LIMITED';
+                GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: Date.now() });
+                Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
+            }
+        };
+
+        const checkIsErrorPage = (title, text) => {
+            const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
+            const is429Text = text.includes('429 Too Many Requests');
+            if (isCloudflareTitle || is429Text) {
+                enterRateLimitedState();
+                return true;
+            }
+            return false;
+        };
+        
+        if (checkIsErrorPage(document.title, document.body.innerText || '')) {
+            return;
+        }
+
+        // The auto-resume logic is preserved
         if (State.appStatus === 'RATE_LIMITED' && State.autoResumeAfter429) {
             Utils.logger('info', '[Auto-Resume] Page loaded in rate-limited state. Initiating recovery probe...');
             TaskRunner.runRecoveryProbe();
         }
 
-        // --- REGRESSION FIX: Re-implement the core MutationObserver ---
-        // This observer watches for new cards being added to the DOM by infinite scroll.
-        const observer = new MutationObserver((mutationsList) => {
-            let newCardsAdded = false;
-            for (const mutation of mutationsList) {
-                if (mutation.type === 'childList') {
-                    for (const node of mutation.addedNodes) {
-                        // Check if the added node is an element and if it's a card or contains a card.
-                        if (node.nodeType === 1 && (node.matches(Config.SELECTORS.card) || node.querySelector(Config.SELECTORS.card))) {
-                            newCardsAdded = true;
-                            break;
-                        }
-                    }
-                }
-                if (newCardsAdded) break;
-            }
+        // --- Observer setup is now directly inside runDomDependentPart ---
+        const containerSelectors = [
+            'main', '#main', '.AssetGrid-root', '.fabkit-responsive-grid-container'
+        ];
+        let targetNode = null;
+        for (const selector of containerSelectors) {
+            targetNode = document.querySelector(selector);
+            if (targetNode) break;
+        }
+        if (!targetNode) targetNode = document.body;
 
-            if (newCardsAdded) {
-                Utils.logger('info', '[Observer] Detected new content from infinite scroll.');
-                // Always run the hide/show logic if the preference is set.
-                if (State.hideSaved) {
+        const observer = new MutationObserver((mutationsList) => {
+            const hasNewContent = mutationsList.some(mutation =>
+                [...mutation.addedNodes].some(node =>
+                    node.nodeType === 1 && (node.matches(Config.SELECTORS.card) || node.querySelector(Config.SELECTORS.card))
+                )
+            );
+            if (hasNewContent) {
+                clearTimeout(State.observerDebounceTimer);
+                State.observerDebounceTimer = setTimeout(() => {
+                    Utils.logger('info', '[Observer] New content detected. Processing...');
+                    TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
                     TaskRunner.runHideOrShow();
-                }
-                // Only scan and add if the setting is enabled.
-                if (State.autoAddOnScroll) {
-                    const cards = document.querySelectorAll(Config.SELECTORS.card);
-                    TaskRunner.scanAndAddTasks(cards);
-                }
+                }, 500);
             }
         });
 
-        // Start observing the container that holds all the cards.
-        // Use a more generic selector to catch different page layouts.
-        try {
-            const mainContentContainer = await Utils.waitForElement('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container');
-             if (mainContentContainer) {
-                observer.observe(mainContentContainer, { childList: true, subtree: true });
-                Utils.logger('info', '✅ Core page observer is now active.');
-            } else {
-                Utils.logger('error', 'Could not find main content container to observe. Auto-add and auto-hide on scroll may not work.');
+        observer.observe(targetNode, {
+            childList: true,
+            subtree: true
+        });
+        Utils.logger('info', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
+        
+        // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
+        TaskRunner.runHideOrShow();
+        
+        // 添加定期检查功能，每10秒检查一次待办列表中的任务是否已经完成
+        setInterval(() => {
+            // 如果待办列表为空，不需要检查
+            if (State.db.todo.length === 0) return;
+            
+            // 检查待办列表中的每个任务，看是否已经在"完成"列表中
+            const initialTodoCount = State.db.todo.length;
+            State.db.todo = State.db.todo.filter(task => {
+                const url = task.url.split('?')[0];
+                // 如果任务已经在"完成"列表中，则从待办列表中移除
+                return !State.db.done.includes(url);
+            });
+            
+            // 如果待办列表的数量发生了变化，更新UI
+            if (State.db.todo.length < initialTodoCount) {
+                Utils.logger('info', `[自动清理] 从待办列表中移除了 ${initialTodoCount - State.db.todo.length} 个已完成的任务。`);
+                UI.update();
             }
-        } catch(e) {
-             Utils.logger('error', 'Failed to start observer:', e.message);
-        }
+        }, 10000);
     }
 
-
-    // This is the initial entry point. We wait for the DOM to be ready before doing anything complex.
     main();
 
-})();
+})(); 
