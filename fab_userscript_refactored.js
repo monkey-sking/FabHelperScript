@@ -37,6 +37,7 @@
         DB_KEYS: {
             DONE: 'fab_done_v8',
             FAILED: 'fab_failed_v8',
+            TODO: 'fab_todo_v1', // 新增：用于永久存储待办列表
             HIDE: 'fab_hide_v8',
             AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
             REMEMBER_POS: 'fab_rememberPos_v8',
@@ -305,15 +306,15 @@
     // --- 模块五: 数据库交互 (Database Interaction) ---
     const Database = {
         load: async () => {
-            // "To-Do" list is now session-only and starts empty on each full page load.
-            State.db.todo = [];
-                    State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
-        State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
-        State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-        State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
-        State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
-        State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
-        State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
+            // 从存储中加载待办列表，不再是session-only
+            State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
+            State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
+            State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
+            State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
+            State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
+            State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
+            State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+            State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
             const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
             if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
@@ -326,7 +327,8 @@
 
             Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
         },
-        // saveTodo is no longer needed as the todo list is not persisted across sessions.
+        // 添加保存待办列表的方法
+        saveTodo: () => GM_setValue(Config.DB_KEYS.TODO, State.db.todo),
         saveDone: () => GM_setValue(Config.DB_KEYS.DONE, State.db.done),
         saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
@@ -336,11 +338,12 @@
         saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
         resetAllData: async () => {
-            if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败列表）吗？待办列表也会被清空。此操作不可逆！')) {
-                // No need to delete TODO, it's session-based. Just clear the state.
-                State.db.todo = [];
+            if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败、待办列表）吗？此操作不可逆！')) {
+                // 清除待办列表
+                await GM_deleteValue(Config.DB_KEYS.TODO);
                 await GM_deleteValue(Config.DB_KEYS.DONE);
                 await GM_deleteValue(Config.DB_KEYS.FAILED);
+                State.db.todo = [];
                 State.db.done = [];
                 State.db.failed = [];
                 Utils.logger('info', '所有脚本数据已重置。');
@@ -374,6 +377,11 @@
             Utils.logger('info', `Debug: To-Do count before: ${initialTodoCount}`);
 
             State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+            
+            // 如果待办列表发生了变化，保存到存储
+            if (State.db.todo.length !== initialTodoCount) {
+                Database.saveTodo();
+            }
 
             if (State.db.todo.length === initialTodoCount && initialTodoCount > 0) {
                 Utils.logger('warn', 'Debug: FILTER FAILED! UID not found in To-Do list.');
@@ -780,6 +788,8 @@
             if (State.isExecuting) {
                 // If it's running, stop it.
                 State.isExecuting = false;
+                // 保存执行状态
+                Database.saveExecutingState();
                 State.runningWorkers = {};
                 State.activeWorkers = 0;
                 State.executionTotalTasks = 0;
@@ -970,6 +980,8 @@
             State.isExecuting = false;
             // 保存执行状态
             Database.saveExecutingState();
+            // 保存待办列表
+            Database.saveTodo();
             
             // 清理任务和工作线程
             GM_deleteValue(Config.DB_KEYS.TASK);
@@ -1410,6 +1422,8 @@
                 State.isExecuting = false;
                 // 保存执行状态
                 Database.saveExecutingState();
+                // 保存待办列表（虽然为空，但仍需保存以更新存储）
+                Database.saveTodo();
                 if (State.watchdogTimer) {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
@@ -1622,6 +1636,26 @@
             UI.update();
         },
         
+        // 添加一个方法来检查并确保待办任务被执行
+        ensureTasksAreExecuted: () => {
+            // 如果没有待办任务，不需要执行
+            if (State.db.todo.length === 0) return;
+            
+            // 如果已经在执行中，不需要重新启动
+            if (State.isExecuting) {
+                // 如果有待办任务但没有活动工作线程，可能是执行卡住了，尝试重新执行
+                if (State.activeWorkers === 0) {
+                    Utils.logger('info', '检测到有待办任务但没有活动工作线程，尝试重新执行...');
+                    TaskRunner.executeBatch();
+                }
+                return;
+            }
+            
+            // 如果有待办任务但没有执行，自动开始执行
+            Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务但未执行，自动开始执行...`);
+            TaskRunner.startExecution();
+        },
+        
         // 添加一个方法来批量检查当前页面上所有可见卡片的状态
         checkVisibleCardsStatus: async () => {
             // 获取所有可见的卡片
@@ -1771,14 +1805,22 @@
             if (newlyAddedList.length > 0) {
                 State.db.todo.push(...newlyAddedList);
                 Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
+                
+                // 保存待办列表到存储
+                Database.saveTodo();
                     
-                    // Do NOT start execution from here. Only update totals if already running.
+                // 如果已经在执行，只更新总数
                 if (State.isExecuting) {
-                        State.executionTotalTasks = State.db.todo.length;
-                    }
-                    
-                    UI.update();
+                    State.executionTotalTasks = State.db.todo.length;
+                    // 确保任务继续执行
+                    TaskRunner.executeBatch();
+                } else if (State.autoAddOnScroll) {
+                    // 如果启用了自动添加但尚未开始执行，自动开始执行
+                    TaskRunner.startExecution();
                 }
+                
+                UI.update();
+            }
             }, 1000); // 延迟1秒，给API请求和状态更新留出时间
         },
 
@@ -2621,6 +2663,8 @@
                     
                     // 从待办列表中移除此任务
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    // 保存待办列表
+                    await Database.saveTodo();
                     
                     // 如果尚未在完成列表中，则添加
                     if (!State.db.done.includes(task.url)) {
@@ -2638,6 +2682,8 @@
                     
                     // 从待办列表中移除此任务
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    // 保存待办列表
+                    await Database.saveTodo();
                     
                     // 添加到失败列表（如果尚未存在）
                     if (!State.db.failed.some(f => f.uid === task.uid)) {
@@ -2663,6 +2709,8 @@
                     State.isExecuting = false;
                     // 保存执行状态
                     Database.saveExecutingState();
+                    // 保存待办列表（虽然为空，但仍需保存以更新存储）
+                    await Database.saveTodo();
                     UI.update();
                 }
                 
@@ -3075,6 +3123,15 @@
         
         // 每15秒检查一次API状态
         setInterval(checkApiRequests, 15000);
+        
+        // 添加定期检查功能，确保待办任务能被执行
+        setInterval(() => {
+            // 如果没有待办任务，不需要检查
+            if (State.db.todo.length === 0) return;
+            
+            // 确保任务被执行
+            TaskRunner.ensureTasksAreExecuted();
+        }, 5000); // 每5秒检查一次
 
         // 添加专门针对滚动加载API请求的拦截器
         const originalXMLHttpRequestSend = XMLHttpRequest.prototype.send;
