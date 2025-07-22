@@ -799,30 +799,47 @@
         },
 
         saveLatestCursorFromUrl(url) {
-            // REWRITTEN: A simpler, more robust implementation.
+            // 改进实现，确保不会保存过早的浏览位置
             try {
                 if (typeof url !== 'string' || !url.includes('/i/listings/search') || !url.includes('cursor=')) return;
                 const urlObj = new URL(url, window.location.origin);
                 const newCursor = urlObj.searchParams.get('cursor');
 
-                // If we have a new, valid cursor that's different from the last one we processed...
+                // 如果是有效的cursor且与上次的不同
                 if (newCursor && newCursor !== this._lastSeenCursor) {
-                    this._lastSeenCursor = newCursor;
-                    State.savedCursor = newCursor; // Update state immediately
+                    // 解码cursor，检查是否是有效的浏览位置
+                    let isValidPosition = true;
+                    try {
+                        const decoded = atob(newCursor);
+                        // 检查是否包含特定字符串，如"Nude Tennis Racket"
+                        // 这可能是一个老的或默认的位置
+                        if (decoded.includes("Nude+Tennis+Racket")) {
+                            Utils.logger('info', `[Cursor] 跳过特定位置的保存: ${decoded}`);
+                            isValidPosition = false;
+                        }
+                    } catch (decodeError) {
+                        // 解码错误，继续正常流程
+                    }
 
-                    // Persist the new cursor for the next page load.
-                    GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
-                    
-                    // NEW: Logging for saving
-                    Utils.logger('info', `[Cursor] New restore point saved: ${newCursor.substring(0, 30)}...`);
-                    
-                    // 更新UI中的位置显示
-                    if (State.UI.savedPositionDisplay) {
-                        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
+                    // 只有是有效位置才保存
+                    if (isValidPosition) {
+                        this._lastSeenCursor = newCursor;
+                        State.savedCursor = newCursor; // 立即更新状态
+
+                        // 持久化保存cursor供下次页面加载使用
+                        GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
+                        
+                        // 日志记录保存操作
+                        Utils.logger('info', `[Cursor] 保存新的恢复点: ${newCursor.substring(0, 30)}...`);
+                        
+                        // 更新UI中的位置显示
+                        if (State.UI.savedPositionDisplay) {
+                            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
+                        }
                     }
                 }
             } catch (e) {
-                Utils.logger('warn', `[Cursor] Error while saving cursor:`, e);
+                Utils.logger('warn', `[Cursor] 保存cursor时出错:`, e);
             }
         },
 
@@ -1191,6 +1208,67 @@
             if (State.isExecuting) {
                 TaskRunner.stop();
             } else {
+                // 检查待办清单是否为空，如果为空则先扫描页面
+                if (State.db.todo.length === 0) {
+                    Utils.logger('info', '待办清单为空，正在扫描当前页面...');
+                    // 使用主扫描函数，这会清空待办并添加新发现的商品
+                    const cards = document.querySelectorAll(Config.SELECTORS.card);
+                    const newlyAddedList = [];
+                    let alreadyInQueueCount = 0;
+                    let ownedCount = 0;
+                    let skippedCount = 0;
+
+                    const isCardSettled = (card) => {
+                        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+                    };
+
+                    cards.forEach(card => {
+                        // 检查元素是否被隐藏
+                        if (card.style.display === 'none') {
+                            return;
+                        }
+
+                        if (!isCardSettled(card)) {
+                            skippedCount++;
+                            return; // 跳过未加载完成的卡片
+                        }
+
+                        // 使用统一逻辑检查卡片是否已处理
+                        if (TaskRunner.isCardFinished(card)) {
+                            ownedCount++;
+                            return;
+                        }
+
+                        const link = card.querySelector(Config.SELECTORS.cardLink);
+                        const url = link ? link.href.split('?')[0] : null;
+                        if (!url) return;
+
+                        // 检查是否已在待办队列
+                        const isTodo = Database.isTodo(url);
+                        if (isTodo) {
+                            alreadyInQueueCount++;
+                            return;
+                        }
+
+                        const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                        newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                    });
+
+                    if (skippedCount > 0) {
+                        Utils.logger('info', `已跳过 ${skippedCount} 个状态未加载的商品。`);
+                    }
+
+                    if (newlyAddedList.length > 0) {
+                        State.db.todo.push(...newlyAddedList);
+                        Utils.logger('info', `已将 ${newlyAddedList.length} 个新商品加入待办队列。`);
+                        // 保存待办列表到存储
+                        Database.saveTodo();
+                    } else {
+                        Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
+                    }
+                }
+                
+                // 然后开始执行
                 TaskRunner.startExecution();
             }
             
