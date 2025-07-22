@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -31,7 +31,8 @@
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 5, // 最大并发工作标签页数量 - 改为5，避免打开太多标签页
+        MAX_CONCURRENT_WORKERS: 3, // 最大并发工作标签页数量 - 改为3，避免打开太多标签页
+        WORKER_TIMEOUT: 30000, // 工作标签页超时时间，30秒
         UI_CONTAINER_ID: 'fab-helper-container',
         UI_LOG_ID: 'fab-helper-log',
         DB_KEYS: {
@@ -76,6 +77,8 @@
         // Kept for backward compatibility with recon logic.
         SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library']),
         FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费']),
+        // 添加一个实例ID，用于防止多实例运行
+        INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
     };
 
     // --- 模块二: 全局状态管理 (Global State) ---
@@ -1383,10 +1386,14 @@
                 }
 
                 const now = Date.now();
-                const STALL_TIMEOUT = 45000; // 45 seconds
+                const STALL_TIMEOUT = Config.WORKER_TIMEOUT; // 使用配置的超时时间
 
                 for (const workerId in State.runningWorkers) {
                     const workerInfo = State.runningWorkers[workerId];
+                    
+                    // 只处理由当前实例创建的工作标签页
+                    if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
+                    
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
 
@@ -1395,6 +1402,7 @@
 
                         // 1. Remove from To-Do
                         State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                        await Database.saveTodo();
 
                         // 2. Add to Failed
                         if (!State.db.failed.some(f => f.uid === task.uid)) {
@@ -1406,18 +1414,29 @@
                         // 3. Clean up worker
                         delete State.runningWorkers[workerId];
                         State.activeWorkers--;
+                        
+                        // 删除任务数据
+                        await GM_deleteValue(workerId);
 
                         Utils.logger('info', `Stalled worker cleaned up. Active: ${State.activeWorkers}. Resuming dispatch...`);
 
                         // 4. Update UI and dispatch
                         UI.update();
-                        TaskRunner.executeBatch();
+                        
+                        // 等待一小段时间再派发新任务，避免同时处理多个超时任务时一次性打开太多标签页
+                        setTimeout(() => TaskRunner.executeBatch(), 1000);
                     }
                 }
             }, 5000); // Check every 5 seconds
         },
 
         executeBatch: async () => {
+            // 如果当前实例不是活跃实例，不执行任务
+            if (!InstanceManager.isActive) {
+                Utils.logger('warn', '当前实例不是活跃实例，不执行任务。');
+                return;
+            }
+            
             if (!State.isExecuting) return;
 
             // Stop condition for the entire execution process
@@ -1436,7 +1455,6 @@
                 // 关闭所有可能残留的工作标签页
                 TaskRunner.closeAllWorkerTabs();
                 
-                // REMOVED: This logic is now handled more reliably in the WORKER_DONE listener.
                 UI.update();
                 return;
             }
@@ -1444,12 +1462,7 @@
             // 如果处于限速状态，记录日志但继续执行任务
             if (State.appStatus === 'RATE_LIMITED') {
                 Utils.logger('info', '当前处于限速状态，但仍将继续执行待办任务...');
-                // 不再返回，允许继续执行下面的派发逻辑
             }
-
-            // --- DISPATCHER FOR DETAIL TASKS ---
-            // New logic: Iterate without modifying the todo list. Dispatch tasks that are not yet "in-flight".
-            const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
 
             // 限制最大活动工作标签页数量
             if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
@@ -1457,31 +1470,62 @@
                 return;
             }
 
-            for (const task of State.db.todo) {
-                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+            // --- DISPATCHER FOR DETAIL TASKS ---
+            // 创建一个当前正在执行的任务UID集合，用于防止重复派发
+            const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
+            
+            // 创建一个副本，避免在迭代过程中修改原数组
+            const todoList = [...State.db.todo];
+            let dispatchedCount = 0;
 
-                // Skip if this task is already in-flight
+            for (const task of todoList) {
+                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+                
+                // 如果任务已经在执行中，跳过
                 if (inFlightUIDs.has(task.uid)) continue;
 
+                // 如果任务已经在完成列表中，从待办列表移除并跳过
+                if (Database.isDone(task.url)) {
+                    Utils.logger('info', `任务 ${task.name} 已完成，从待办列表中移除。`);
+                    State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    Database.saveTodo();
+                    continue;
+                }
+
                 State.activeWorkers++;
+                dispatchedCount++;
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                State.runningWorkers[workerId] = { task, startTime: Date.now() };
+                State.runningWorkers[workerId] = { 
+                    task, 
+                    startTime: Date.now(),
+                    instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
+                };
 
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
 
-                await GM_setValue(workerId, { task });
+                await GM_setValue(workerId, { 
+                    task,
+                    instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
+                });
 
                 const workerUrl = new URL(task.url);
                 workerUrl.searchParams.set('workerId', workerId);
                 
                 // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
-                // 这样可以避免标签页堆积在浏览器的最前面
                 GM_openInTab(workerUrl.href, { active: false, insert: true });
 
-                if (!State.watchdogTimer) {
-                    TaskRunner.runWatchdog();
-                }
+                // 等待一小段时间再派发下一个任务，避免浏览器同时打开太多标签页
+                await new Promise(resolve => setTimeout(resolve, 300));
             }
+            
+            if (dispatchedCount > 0) {
+                Utils.logger('info', `本批次派发了 ${dispatchedCount} 个任务。`);
+            }
+
+            if (!State.watchdogTimer && State.activeWorkers > 0) {
+                TaskRunner.runWatchdog();
+            }
+            
             UI.update();
         },
         
@@ -1489,12 +1533,18 @@
         closeAllWorkerTabs: () => {
             // 目前没有直接的方法可以关闭由GM_openInTab打开的标签页
             // 但我们可以清理相关的状态
-            for (const workerId in State.runningWorkers) {
-                GM_deleteValue(workerId);
+            const workerIds = Object.keys(State.runningWorkers);
+            if (workerIds.length > 0) {
+                Utils.logger('info', `正在清理 ${workerIds.length} 个工作标签页的状态...`);
+                
+                for (const workerId of workerIds) {
+                    GM_deleteValue(workerId);
+                }
+                
+                State.runningWorkers = {};
+                State.activeWorkers = 0;
+                Utils.logger('info', '已清理所有工作标签页的状态。');
             }
-            State.runningWorkers = {};
-            State.activeWorkers = 0;
-            Utils.logger('info', '已清理所有工作标签页的状态。');
         },
 
         processDetailPage: async () => {
@@ -1507,6 +1557,16 @@
             // This is a safety check. If the main tab stops execution, it might delete the task.
             const payload = await GM_getValue(workerId);
             if (!payload || !payload.task) {
+                Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
+                window.close();
+                return;
+            }
+            
+            // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
+            const activeInstance = await GM_getValue('fab_active_instance', null);
+            if (activeInstance && activeInstance.id !== payload.instanceId) {
+                Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
+                await GM_deleteValue(workerId); // 清理任务数据
                 window.close();
                 return;
             }
@@ -1632,18 +1692,34 @@
                 logBuffer.push(`A critical error occurred: ${error.message}`);
                 success = false;
             } finally {
-                // The worker's ONLY job is to report back. It does NOT modify the database.
-                // All state changes are handled by the main tab's listener for consistency.
-                await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-                    workerId: workerId,
-                    success: success,
-                    logs: logBuffer,
-                    task: currentTask // Pass the original task back
-                });
-                await GM_deleteValue(workerId); // Clean up the task payload
+                try {
+                    // The worker's ONLY job is to report back. It does NOT modify the database.
+                    // All state changes are handled by the main tab's listener for consistency.
+                    await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                        workerId: workerId,
+                        success: success,
+                        logs: logBuffer,
+                        task: currentTask, // Pass the original task back
+                        instanceId: payload.instanceId // 传回实例ID，确保正确的实例处理结果
+                    });
+                } catch (error) {
+                    console.error('Error setting worker done value:', error);
+                }
+                
+                try {
+                    await GM_deleteValue(workerId); // Clean up the task payload
+                } catch (error) {
+                    console.error('Error deleting worker value:', error);
+                }
                 
                 // 确保工作标签页在报告完成后关闭
-                setTimeout(() => window.close(), 500);
+                setTimeout(() => {
+                    try {
+                        window.close();
+                    } catch (error) {
+                        console.error('Error closing window:', error);
+                    }
+                }, 500);
             }
         },
 
@@ -2616,9 +2692,110 @@
 
 
     // --- 模块九: 主程序与初始化 (Main & Initialization) ---
+    const InstanceManager = {
+        isActive: false,
+        lastPingTime: 0,
+        pingInterval: null,
+        
+        // 初始化实例管理
+        init: async function() {
+            try {
+                // 检查是否已有活跃实例
+                const activeInstance = await GM_getValue('fab_active_instance', null);
+                const currentTime = Date.now();
+                
+                if (activeInstance && (currentTime - activeInstance.lastPing < 10000)) {
+                    // 如果有活跃实例且在10秒内有ping，则当前实例不活跃
+                    Utils.logger('warn', `检测到另一个活跃的脚本实例 [${activeInstance.id}]，当前实例将不执行任务。`);
+                    this.isActive = false;
+                    
+                    // 每5秒检查一次是否可以接管
+                    setTimeout(() => this.checkTakeover(), 5000);
+                    return false;
+                } else {
+                    // 没有活跃实例或实例超时，当前实例成为活跃实例
+                    this.isActive = true;
+                    await this.registerAsActive();
+                    Utils.logger('info', `当前实例 [${Config.INSTANCE_ID}] 已激活。`);
+                    
+                    // 启动ping机制，每3秒更新一次活跃状态
+                    this.pingInterval = setInterval(() => this.ping(), 3000);
+                    return true;
+                }
+            } catch (error) {
+                Utils.logger('error', `实例管理初始化失败: ${error.message}`);
+                // 出错时默认为活跃，避免脚本不工作
+                this.isActive = true;
+                return true;
+            }
+        },
+        
+        // 注册为活跃实例
+        registerAsActive: async function() {
+            await GM_setValue('fab_active_instance', {
+                id: Config.INSTANCE_ID,
+                lastPing: Date.now()
+            });
+        },
+        
+        // 定期更新活跃状态
+        ping: async function() {
+            if (!this.isActive) return;
+            
+            this.lastPingTime = Date.now();
+            await this.registerAsActive();
+        },
+        
+        // 检查是否可以接管
+        checkTakeover: async function() {
+            if (this.isActive) return;
+            
+            try {
+                const activeInstance = await GM_getValue('fab_active_instance', null);
+                const currentTime = Date.now();
+                
+                if (!activeInstance || (currentTime - activeInstance.lastPing > 10000)) {
+                    // 如果没有活跃实例或实例超时，接管
+                    this.isActive = true;
+                    await this.registerAsActive();
+                    Utils.logger('info', `之前的实例不再活跃，当前实例 [${Config.INSTANCE_ID}] 已接管。`);
+                    
+                    // 启动ping机制
+                    this.pingInterval = setInterval(() => this.ping(), 3000);
+                    
+                    // 刷新页面以确保正确加载
+                    location.reload();
+                } else {
+                    // 继续等待
+                    setTimeout(() => this.checkTakeover(), 5000);
+                }
+            } catch (error) {
+                Utils.logger('error', `接管检查失败: ${error.message}`);
+                // 5秒后重试
+                setTimeout(() => this.checkTakeover(), 5000);
+            }
+        },
+        
+        // 清理实例
+        cleanup: function() {
+            if (this.pingInterval) {
+                clearInterval(this.pingInterval);
+                this.pingInterval = null;
+            }
+        }
+    };
+
     async function main() {
         Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
+        
+        // 初始化实例管理，如果不是活跃实例，不继续执行
+        const isActiveInstance = await InstanceManager.init();
+        if (!isActiveInstance) {
+            Utils.logger('info', '当前实例不是活跃实例，将不执行主要功能。');
+            return;
+        }
+        
         await Database.load();
         await PagePatcher.init();
         
@@ -2669,7 +2846,13 @@
                 // 删除值，防止重复处理
                 await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
                 
-                const { workerId, success, task, logs } = newValue;
+                const { workerId, success, task, logs, instanceId } = newValue;
+                
+                // 检查是否由当前实例处理
+                if (instanceId !== Config.INSTANCE_ID) {
+                    Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
+                    return;
+                }
                 
                 if (!workerId || !task) {
                     Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
@@ -2692,7 +2875,16 @@
                     Utils.logger('info', `✅ 任务完成: ${task.name}`);
                     
                     // 从待办列表中移除此任务
+                    const initialTodoCount = State.db.todo.length;
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    
+                    // 检查是否实际移除了任务
+                    if (State.db.todo.length < initialTodoCount) {
+                        Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
+                    } else {
+                        Utils.logger('warn', `任务 ${task.name} 不在待办列表中，可能已被其他工作标签页处理。`);
+                    }
+                    
                     // 保存待办列表
                     await Database.saveTodo();
                     
@@ -2707,11 +2899,12 @@
                     
                     // 更新执行统计
                     State.executionCompletedTasks++;
-        } else {
+                } else {
                     Utils.logger('warn', `❌ 任务失败: ${task.name}`);
                     
                     // 从待办列表中移除此任务
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                    
                     // 保存待办列表
                     await Database.saveTodo();
                     
@@ -2730,7 +2923,8 @@
                 
                 // 如果还有待办任务，继续执行
                 if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-                    TaskRunner.executeBatch();
+                    // 延迟一小段时间再派发新任务，避免同时打开太多标签页
+                    setTimeout(() => TaskRunner.executeBatch(), 500);
                 }
                 
                 // 如果所有任务都已完成，停止执行
@@ -3267,5 +3461,11 @@
         // 设置刷新定时器
         currentRefreshTimeout = setTimeout(() => location.reload(), delay);
     };
+
+    // 在页面卸载时清理实例
+    window.addEventListener('beforeunload', () => {
+        InstanceManager.cleanup();
+        Utils.cleanup();
+    });
 
 })();
