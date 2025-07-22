@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab API-Driven Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Automate tasks on Fab.com based on API responses, with enhanced UI and controls.
 // @author       Your Name
 // @match        https://www.fab.com/*
@@ -45,6 +45,7 @@
             APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
             STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
             AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
+            IS_EXECUTING: 'fab_is_executing_v1', // For saving the "一键开刷" state
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -306,12 +307,13 @@
         load: async () => {
             // "To-Do" list is now session-only and starts empty on each full page load.
             State.db.todo = [];
-            State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
-            State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
-            State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-            State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
-            State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
-            State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+                    State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
+        State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
+        State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
+        State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
+        State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
+        State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+        State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
             const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
             if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
@@ -331,6 +333,7 @@
         saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
         saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
         saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
+        saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
         resetAllData: async () => {
             if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败列表）吗？待办列表也会被清空。此操作不可逆！')) {
@@ -889,6 +892,8 @@
             }
             Utils.logger('info', `队列中有 ${State.db.todo.length} 个任务，即将开始执行...`);
             State.isExecuting = true;
+            // 保存执行状态
+            Database.saveExecutingState();
             State.executionTotalTasks = State.db.todo.length;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
@@ -896,28 +901,14 @@
             TaskRunner.executeBatch();
         },
 
-        // This function is for the main UI button to toggle start/stop.
-        // OBSOLETE - merged into toggleExecution
-        /*
+        // 执行按钮的点击处理函数
         toggleExecution: () => {
             if (State.isExecuting) {
-                State.isExecuting = false;
-                // This will signal all active workers to stop, but relies on them checking the key.
-                // A more robust stop would involve cleaning up workers directly.
-                GM_deleteValue(Config.DB_KEYS.TASK);
-                // We also clear the running workers so the watchdog stops.
-                State.runningWorkers = {};
-                State.activeWorkers = 0;
-                State.executionTotalTasks = 0;
-                State.executionCompletedTasks = 0;
-                State.executionFailedTasks = 0;
-                Utils.logger('info', '执行已由用户手动停止。');
+                TaskRunner.stop();
             } else {
                 TaskRunner.startExecution();
             }
-            UI.update();
         },
-        */
         toggleHideSaved: async () => {
             State.hideSaved = !State.hideSaved;
             await Database.saveHidePref();
@@ -960,6 +951,26 @@
                 Utils.logger('info', '已清除已保存的浏览位置。');
             }
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+        
+        // 停止执行任务
+        stop: () => {
+            if (!State.isExecuting) return;
+            
+            State.isExecuting = false;
+            // 保存执行状态
+            Database.saveExecutingState();
+            
+            // 清理任务和工作线程
+            GM_deleteValue(Config.DB_KEYS.TASK);
+            State.runningWorkers = {};
+            State.activeWorkers = 0;
+            State.executionTotalTasks = 0;
+            State.executionCompletedTasks = 0;
+            State.executionFailedTasks = 0;
+            
+            Utils.logger('info', '执行已由用户手动停止。');
+            UI.update();
         },
 
         runRecoveryProbe: async () => {
@@ -1387,6 +1398,8 @@
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
                 Utils.logger('info', '✅ 🎉 All tasks have been completed!');
                 State.isExecuting = false;
+                // 保存执行状态
+                Database.saveExecutingState();
                 if (State.watchdogTimer) {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
@@ -2435,6 +2448,18 @@
                 State.statusHistory.push(startupEntry);
                 await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
             }
+        } else if (State.appStatus === 'RATE_LIMITED') {
+            // 确保rateLimitStartTime正确设置
+            const savedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS, null);
+            if (savedStatus && savedStatus.status === 'RATE_LIMITED' && savedStatus.startTime) {
+                State.rateLimitStartTime = savedStatus.startTime;
+                const duration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+                Utils.logger('warn', `脚本以限速状态启动。限速已持续至少 ${duration}s。`);
+            } else {
+                // 如果没有保存的开始时间，使用当前时间
+                State.rateLimitStartTime = Date.now();
+                await GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
+            }
         }
         
         // 添加工作标签页完成任务的监听器
@@ -2583,7 +2608,17 @@
             
             // 切换到限速状态
             State.appStatus = 'RATE_LIMITED';
-            State.rateLimitStartTime = Date.now();
+            
+            // 检查是否已经有保存的限速开始时间，如果有则使用它，否则使用当前时间
+            // 这样可以确保计时器在页面刷新后继续计时，而不是重置
+            const savedStatus = GM_getValue(Config.DB_KEYS.APP_STATUS, null);
+            if (savedStatus && savedStatus.status === 'RATE_LIMITED' && savedStatus.startTime) {
+                State.rateLimitStartTime = savedStatus.startTime;
+                Utils.logger('info', `使用保存的限速开始时间: ${new Date(State.rateLimitStartTime).toLocaleString()}`);
+            } else {
+                State.rateLimitStartTime = Date.now();
+            }
+            
             GM_setValue(Config.DB_KEYS.APP_STATUS, { status: 'RATE_LIMITED', startTime: State.rateLimitStartTime });
             Utils.logger('error', 'Rate limit detected on page load. Waiting for manual or automatic recovery.');
             
@@ -2593,15 +2628,21 @@
                 UI.update();
             }
             
-            // 无论是否启用了自动恢复，都开始随机刷新
-            // 这是为了确保在429状态下总是会自动刷新
-            const randomDelay = 5000 + Math.random() * 10000;
-            if (State.autoResumeAfter429) {
-                Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
+            // 检查是否有待办任务或活动工作线程
+            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
+                Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
             } else {
-                Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
+                // 无论是否启用了自动恢复，都开始随机刷新
+                // 这是为了确保在429状态下总是会自动刷新
+                const randomDelay = 5000 + Math.random() * 10000;
+                if (State.autoResumeAfter429) {
+                    Utils.logger('info', '自动恢复功能已启用，开始倒计时刷新...');
+                } else {
+                    Utils.logger('info', '检测到429错误，将自动刷新页面尝试恢复...');
+                }
+                countdownRefresh(randomDelay, '429自动恢复');
             }
-            countdownRefresh(randomDelay, '429自动恢复');
         };
 
         const checkIsErrorPage = (title, text) => {
@@ -2614,10 +2655,16 @@
                 Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
                 window.enterRateLimitedState();
                 
-                // 添加明确的自动刷新代码，确保一定会刷新
-                const randomDelay = 5000 + Math.random() * 10000;
-                Utils.logger('info', `[页面加载] 检测到429错误，将自动刷新页面尝试恢复...`);
-                countdownRefresh(randomDelay, '页面加载429检测');
+                // 检查是否有待办任务或活动工作线程
+                if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                    Utils.logger('info', `[页面加载] 检测到429错误，但有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
+                    Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
+                } else {
+                    // 添加明确的自动刷新代码，确保一定会刷新
+                    const randomDelay = 5000 + Math.random() * 10000;
+                    Utils.logger('info', `[页面加载] 检测到429错误，将自动刷新页面尝试恢复...`);
+                    countdownRefresh(randomDelay, '页面加载429检测');
+                }
                 
                 return true;
             }
@@ -2781,18 +2828,19 @@
                 
                 Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
                 try {
-                    PagePatcher.handleRateLimit('页面内容检测');
-                } catch (error) {
-                    Utils.logger('error', `处理限速出错: ${error.message}`);
-                    // 直接调用enterRateLimitedState作为备选方案
+                    // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                     if (typeof window.enterRateLimitedState === 'function') {
                         window.enterRateLimitedState();
-                } else {
+                    } else {
                         // 最后的备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
-                        Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                        setTimeout(() => location.reload(), randomDelay);
+                        countdownRefresh(randomDelay, '页面内容检测');
                     }
+                } catch (error) {
+                    Utils.logger('error', `处理限速出错: ${error.message}`);
+                    // 最后的备选方案：直接刷新页面
+                    const randomDelay = 5000 + Math.random() * 10000;
+                    countdownRefresh(randomDelay, '错误恢复');
                 }
             }
         }, 3000); // 每3秒检查一次
@@ -2813,18 +2861,19 @@
                 if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                     Utils.logger('warn', `[HTTP状态检测] 检测到当前页面状态码为429！`);
                     try {
-                        PagePatcher.handleRateLimit('HTTP状态检测');
-                    } catch (error) {
-                        Utils.logger('error', `处理限速出错: ${error.message}`);
-                        // 直接调用enterRateLimitedState作为备选方案
+                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                         if (typeof window.enterRateLimitedState === 'function') {
                             window.enterRateLimitedState();
                         } else {
                             // 最后的备选方案：直接刷新页面
                             const randomDelay = 5000 + Math.random() * 10000;
-                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                            setTimeout(() => location.reload(), randomDelay);
+                            countdownRefresh(randomDelay, 'HTTP状态检测');
                         }
+                    } catch (error) {
+                        Utils.logger('error', `处理限速出错: ${error.message}`);
+                        // 最后的备选方案：直接刷新页面
+                        const randomDelay = 5000 + Math.random() * 10000;
+                        countdownRefresh(randomDelay, '错误恢复');
                     }
                 }
             } catch (error) {
@@ -2857,18 +2906,19 @@
                 if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                     Utils.logger('warn', `[API状态检测] 检测到API请求状态码为429！`);
                     try {
-                        PagePatcher.handleRateLimit('API状态检测');
-                    } catch (error) {
-                        Utils.logger('error', `处理限速出错: ${error.message}`);
-                        // 直接调用enterRateLimitedState作为备选方案
+                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                         if (typeof window.enterRateLimitedState === 'function') {
                             window.enterRateLimitedState();
                         } else {
                             // 最后的备选方案：直接刷新页面
                             const randomDelay = 5000 + Math.random() * 10000;
-                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                            setTimeout(() => location.reload(), randomDelay);
+                            countdownRefresh(randomDelay, 'API状态检测');
                         }
+                    } catch (error) {
+                        Utils.logger('error', `处理限速出错: ${error.message}`);
+                        // 最后的备选方案：直接刷新页面
+                        const randomDelay = 5000 + Math.random() * 10000;
+                        countdownRefresh(randomDelay, '错误恢复');
                     }
                 }
             } catch (error) {
@@ -2876,18 +2926,19 @@
                 Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
                 if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
                     try {
-                        PagePatcher.handleRateLimit('API请求失败');
-                    } catch (innerError) {
-                        Utils.logger('error', `处理限速出错: ${innerError.message}`);
-                        // 直接调用enterRateLimitedState作为备选方案
+                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                         if (typeof window.enterRateLimitedState === 'function') {
                             window.enterRateLimitedState();
                         } else {
                             // 最后的备选方案：直接刷新页面
                             const randomDelay = 5000 + Math.random() * 10000;
-                            Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                            setTimeout(() => location.reload(), randomDelay);
+                            countdownRefresh(randomDelay, 'API请求失败');
                         }
+                    } catch (innerError) {
+                        Utils.logger('error', `处理限速出错: ${innerError.message}`);
+                        // 最后的备选方案：直接刷新页面
+                        const randomDelay = 5000 + Math.random() * 10000;
+                        countdownRefresh(randomDelay, '错误恢复');
                     }
                 }
             }
@@ -2909,18 +2960,19 @@
                     if (xhr.status === 429 || xhr.status === '429' || xhr.status.toString() === '429') {
                         Utils.logger('warn', `[滚动API监控] 检测到API请求状态码为429: ${xhr._url}`);
                         try {
-                            PagePatcher.handleRateLimit('滚动API监控');
-                        } catch (error) {
-                            Utils.logger('error', `处理限速出错: ${error.message}`);
-                            // 直接使用全局函数作为备选方案
+                            // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                             if (typeof window.enterRateLimitedState === 'function') {
                                 window.enterRateLimitedState();
                             } else {
                                 // 最后的备选方案：直接刷新页面
                                 const randomDelay = 5000 + Math.random() * 10000;
-                                Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                                setTimeout(() => location.reload(), randomDelay);
+                                countdownRefresh(randomDelay, '滚动API监控');
                             }
+                        } catch (error) {
+                            Utils.logger('error', `处理限速出错: ${error.message}`);
+                            // 最后的备选方案：直接刷新页面
+                            const randomDelay = 5000 + Math.random() * 10000;
+                            countdownRefresh(randomDelay, '错误恢复');
                         }
                         return;
                     }
@@ -2934,18 +2986,19 @@
                         )) {
                             Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
                             try {
-                                PagePatcher.handleRateLimit('滚动API监控');
-                            } catch (error) {
-                                Utils.logger('error', `处理限速出错: ${error.message}`);
-                                // 直接使用全局函数作为备选方案
+                                // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                                 if (typeof window.enterRateLimitedState === 'function') {
                                     window.enterRateLimitedState();
                                 } else {
                                     // 最后的备选方案：直接刷新页面
                                     const randomDelay = 5000 + Math.random() * 10000;
-                                    Utils.logger('info', `将在 ${(randomDelay/1000).toFixed(1)} 秒后刷新页面尝试恢复...`);
-                                    setTimeout(() => location.reload(), randomDelay);
+                                    countdownRefresh(randomDelay, '滚动API监控');
                                 }
+                            } catch (error) {
+                                Utils.logger('error', `处理限速出错: ${error.message}`);
+                                // 最后的备选方案：直接刷新页面
+                                const randomDelay = 5000 + Math.random() * 10000;
+                                countdownRefresh(randomDelay, '错误恢复');
                             }
                             return;
                         }
@@ -2962,7 +3015,21 @@
     main();
 
     // 添加一个通用的倒计时刷新函数
+    // 使用一个全局变量来跟踪当前的倒计时，避免多个倒计时同时运行
+    let currentCountdownInterval = null;
+    let currentRefreshTimeout = null;
+    
     const countdownRefresh = (delay, reason = '备选方案') => {
+        // 如果已经有倒计时在运行，先清除它
+        if (currentCountdownInterval) {
+            clearInterval(currentCountdownInterval);
+            currentCountdownInterval = null;
+        }
+        if (currentRefreshTimeout) {
+            clearTimeout(currentRefreshTimeout);
+            currentRefreshTimeout = null;
+        }
+        
         const seconds = (delay/1000).toFixed(1);
         
         // 添加明显的倒计时日志
@@ -2970,10 +3037,11 @@
         
         // 每秒更新倒计时日志
         let remainingSeconds = Math.ceil(delay/1000);
-        const countdownInterval = setInterval(() => {
+        currentCountdownInterval = setInterval(() => {
             remainingSeconds--;
             if (remainingSeconds <= 0) {
-                clearInterval(countdownInterval);
+                clearInterval(currentCountdownInterval);
+                currentCountdownInterval = null;
                 Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
             } else {
                 Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
@@ -2981,7 +3049,7 @@
         }, 1000);
         
         // 设置刷新定时器
-        setTimeout(() => location.reload(), delay);
+        currentRefreshTimeout = setTimeout(() => location.reload(), delay);
     };
 
 })();
