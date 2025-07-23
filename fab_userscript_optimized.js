@@ -23,28 +23,29 @@
 
     // --- 模块一: 配置与常量 (Config & Constants) ---
     const Config = {
-        SCRIPT_NAME: 'Fab Helper (优化版)',
-        DB_VERSION: 3,
-        DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量 - 提高到7个，增加并行处理能力
-        WORKER_TIMEOUT: 30000, // 工作标签页超时时间，30秒
-        UI_CONTAINER_ID: 'fab-helper-container',
-        UI_LOG_ID: 'fab-helper-log',
-        DB_KEYS: {
-            DONE: 'fab_done_v8',
-            FAILED: 'fab_failed_v8',
-            TODO: 'fab_todo_v1', // 新增：用于永久存储待办列表
-            HIDE: 'fab_hide_v8',
-            AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
-            REMEMBER_POS: 'fab_rememberPos_v8',
-            LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
-            WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
-            APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
-            STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
-            AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
-            IS_EXECUTING: 'fab_is_executing_v1', // For saving the "一键开刷" state
-            AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 新增：无商品可见时自动刷新
+    SCRIPT_NAME: 'Fab Helper (优化版)',
+    DB_VERSION: 3,
+    DB_NAME: 'fab_helper_db',
+    MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
+    MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量 - 提高到7个，增加并行处理能力
+    WORKER_TIMEOUT: 30000, // 工作标签页超时时间，30秒
+    UI_CONTAINER_ID: 'fab-helper-container',
+    UI_LOG_ID: 'fab-helper-log',
+    DB_KEYS: {
+        DONE: 'fab_done_v8',
+        FAILED: 'fab_failed_v8',
+        TODO: 'fab_todo_v1', // 新增：用于永久存储待办列表
+        HIDE: 'fab_hide_v8',
+        AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
+        REMEMBER_POS: 'fab_rememberPos_v8',
+        LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
+        WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
+        APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
+        STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
+        AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
+        IS_EXECUTING: 'fab_is_executing_v1', // For saving the "一键开刷" state
+        AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 新增：限速状态下无商品可见时自动刷新
+        AUTO_REFRESH_NORMAL: 'fab_auto_refresh_normal_v1', // 新增：正常状态下无商品可见时自动刷新
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -89,7 +90,8 @@ const State = {
     autoAddOnScroll: false, // 是否在滚动时自动添加任务
     rememberScrollPosition: false, // 是否记住滚动位置
     autoResumeAfter429: false, // 是否在429后自动恢复
-    autoRefreshEmptyPage: true, // 新增：无商品可见时自动刷新（默认开启）
+    autoRefreshEmptyPage: true, // 新增：限速状态下无商品可见时自动刷新（默认开启）
+    autoRefreshNormalPage: false, // 新增：正常状态下无商品可见时自动刷新（默认关闭）
     debugMode: false, // 是否启用调试模式
     isExecuting: false, // 是否正在执行任务
     isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
@@ -719,19 +721,20 @@ const State = {
 
     // --- 模块五: 数据库交互 (Database Interaction) ---
     const Database = {
-        load: async () => {
-            // 从存储中加载待办列表，不再是session-only
-            State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
-            State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
-            State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
-            State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-            State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
-            State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
-            State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
-            State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
-            State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
-            State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
-            State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
+            load: async () => {
+        // 从存储中加载待办列表，不再是session-only
+        State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
+        State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
+        State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
+        State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
+        State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
+        State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
+        State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+        State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载限速状态下无商品自动刷新设置
+        State.autoRefreshNormalPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_NORMAL, false); // 加载正常状态下无商品自动刷新设置
+        State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
+        State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
+        State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
             const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
             if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
@@ -751,11 +754,12 @@ const State = {
         saveDone: () => GM_setValue(Config.DB_KEYS.DONE, State.db.done),
         saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
         saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
-        saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
-        saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
-        saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
-        saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
-        saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
+            saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
+    saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
+    saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
+    saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存限速状态下无商品自动刷新设置
+    saveAutoRefreshNormalPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_NORMAL, State.autoRefreshNormalPage), // 保存正常状态下无商品自动刷新设置
+    saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
         resetAllData: async () => {
             if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败、待办列表）吗？此操作不可逆！')) {
@@ -2732,8 +2736,8 @@ const State = {
             // 随机打乱卡片顺序，使隐藏更加随机
             cardsToHide.sort(() => Math.random() - 0.5);
             
-            // 分批次隐藏卡片，每批次最多20张
-            const batchSize = 20;
+            // 分批次隐藏卡片，每批次最多15张
+            const batchSize = 15;
             const batches = Math.ceil(cardsToHide.length / batchSize);
             
             for (let i = 0; i < batches; i++) {
@@ -2741,13 +2745,13 @@ const State = {
                 const end = Math.min(start + batchSize, cardsToHide.length);
                 const currentBatch = cardsToHide.slice(start, end);
                 
-                // 为每个批次设置一个随机延迟
-                const batchDelay = i * 50 + Math.random() * 100;
+                // 为每个批次设置一个随机延迟，增加延迟时间
+                const batchDelay = i * 150 + Math.random() * 200;
                 
                 setTimeout(() => {
                     currentBatch.forEach((card, index) => {
-                        // 为每张卡片设置一个额外的随机延迟
-                        const cardDelay = index * 5 + Math.random() * 20;
+                        // 为每张卡片设置一个额外的随机延迟，增加延迟时间
+                        const cardDelay = index * 20 + Math.random() * 50;
                         
                         setTimeout(() => {
                             card.style.display = 'none';
@@ -2761,7 +2765,7 @@ const State = {
                                     UI.update();
                                     // 隐藏完成后检查可见性并决定是否刷新
                                     TaskRunner.checkVisibilityAndRefresh();
-                                }, 100);
+                                }, 200);
                             }
                         }, cardDelay);
                     });
@@ -3047,16 +3051,27 @@ const State = {
             }
         },
 
-        toggleAutoRefreshEmpty: async () => {
-            if (State.isTogglingSetting) return;
-            State.isTogglingSetting = true;
+            toggleAutoRefreshEmpty: async () => {
+        if (State.isTogglingSetting) return;
+        State.isTogglingSetting = true;
 
-            State.autoRefreshEmptyPage = !State.autoRefreshEmptyPage;
-            await Database.saveAutoRefreshEmptyPref();
-            Utils.logger('info', `无商品可见时自动刷新功能已${State.autoRefreshEmptyPage ? '开启' : '关闭'}。`);
+        State.autoRefreshEmptyPage = !State.autoRefreshEmptyPage;
+        await Database.saveAutoRefreshEmptyPref();
+        Utils.logger('info', `限速状态下无商品可见时自动刷新功能已${State.autoRefreshEmptyPage ? '开启' : '关闭'}。`);
 
-            setTimeout(() => { State.isTogglingSetting = false; }, 200);
-        },
+        setTimeout(() => { State.isTogglingSetting = false; }, 200);
+    },
+    
+    toggleAutoRefreshNormal: async () => {
+        if (State.isTogglingSetting) return;
+        State.isTogglingSetting = true;
+
+        State.autoRefreshNormalPage = !State.autoRefreshNormalPage;
+        await Database.saveAutoRefreshNormalPref();
+        Utils.logger('info', `正常状态下无商品可见时自动刷新功能已${State.autoRefreshNormalPage ? '开启' : '关闭'}。`);
+
+        setTimeout(() => { State.isTogglingSetting = false; }, 200);
+    },
     };
 
 
@@ -4121,7 +4136,7 @@ const State = {
                         Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
                     } else {
                         Utils.logger('warn', `任务 ${task.name} 不在待办列表中，可能已被其他工作标签页处理。`);
-                            }
+                    }
 
                     // 保存待办列表
                     await Database.saveTodo();
@@ -4163,7 +4178,7 @@ const State = {
                 if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
                     // 延迟一小段时间再派发新任务，避免同时打开太多标签页
                     setTimeout(() => TaskRunner.executeBatch(), 1000);
-                            }
+                }
                 
                 // 如果所有任务都已完成，停止执行
                 if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
@@ -4181,11 +4196,11 @@ const State = {
                         countdownRefresh(randomDelay, '任务完成后限速恢复');
                     }
                     
-            UI.update();
+                    UI.update();
                 }
                 
                 // 更新隐藏状态
-            TaskRunner.runHideOrShow();
+                TaskRunner.runHideOrShow();
             } catch (error) {
                 Utils.logger('error', `处理工作报告时出错: ${error.message}`);
             }
@@ -4197,984 +4212,11 @@ const State = {
             if (!State.isWorkerTab && State.isExecuting !== newValue) {
                 Utils.logger('info', `检测到执行状态变化：${newValue ? '执行中' : '已停止'}`);
                 State.isExecuting = newValue;
-            UI.update();
-            }
-        }));
-
-        // --- ROBUST LAUNCHER ---
-        // This interval is launched from the clean userscript context and is less likely to be interfered with.
-        // It will persistently try to launch the DOM-dependent part of the script.
-        // 使用一个全局变量来防止多次初始化
-        window._fabHelperLauncherActive = window._fabHelperLauncherActive || false;
-        
-        if (!window._fabHelperLauncherActive) {
-            window._fabHelperLauncherActive = true;
-            
-            const launcherInterval = setInterval(() => {
-                if (document.readyState === 'interactive' || document.readyState === 'complete') {
-                    if (!State.hasRunDomPart) {
-                        Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-                        runDomDependentPart();
-                    }
-                    if (State.hasRunDomPart) {
-                        clearInterval(launcherInterval);
-                        window._fabHelperLauncherActive = false;
-                        Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
-                    }
-                }
-            }, 500); // 增加间隔到500ms，减少频繁检查
-        } else {
-            Utils.logger('info', '[Launcher] Another launcher is already active. Skipping initialization.');
-        }
-
-        // 添加无活动超时刷新功能
-        let lastNetworkActivityTime = Date.now();
-        
-        // 记录网络活动的函数
-        // 记录网络活动时间
-        window.recordNetworkActivity = function() {
-            lastNetworkActivityTime = Date.now();
-        };
-        
-        // 记录网络请求
-        window.recordNetworkRequest = function(source, isSuccess) {
-            // 记录网络活动
-            window.recordNetworkActivity();
-        };
-        
-        // 定期检查是否长时间无活动
-        setInterval(() => {
-            // 只有在限速状态下才考虑无活动刷新
-            if (State.appStatus === 'RATE_LIMITED') {
-                const inactiveTime = Date.now() - lastNetworkActivityTime;
-                // 如果超过30秒没有网络活动，强制刷新
-                if (inactiveTime > 30000) {
-                    Utils.logger('warn', `⚠️ 检测到在限速状态下 ${Math.floor(inactiveTime/1000)} 秒无网络活动，即将强制刷新页面...`);
-                    // 使用延迟以便用户能看到日志
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                }
-            }
-        }, 5000); // 每5秒检查一次
-    }
-
-        async function runDomDependentPart() {
-        if (State.hasRunDomPart) return;
-        
-        // 如果是工作标签页，不执行主脚本的DOM相关逻辑
-        if (State.isWorkerTab) {
-            State.hasRunDomPart = true; // 标记为已运行，避免重复检查
-            return;
-        }
-
-        // The new, correct worker detection logic.
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('workerId')) {
-            // 这里不需要再调用processDetailPage，因为main函数中已经处理了
-            State.hasRunDomPart = true; // Mark as run to stop the launcher
-            return; 
-        }
-
-        // --- NEW FLOW: Create the UI FIRST for immediate user feedback ---
-        const uiCreated = UI.create();
-
-        if (!uiCreated) {
-            Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
-            State.hasRunDomPart = true; // Mark as run to stop the launcher
-            return;
-        }
-        
-        // 初始化完成后，确保UI状态与执行状态一致
-            UI.update();
-
-        // 确保UI创建后立即更新调试标签页
-        UI.update();
-        UI.updateDebugTab();
-        UI.switchTab('dashboard'); // 设置初始标签页
-        
-        State.hasRunDomPart = true; // Mark as run *after* successful UI creation
-
-        // --- Dead on Arrival Check for initial 429 page load ---
-        // 使enterRateLimitedState函数全局可访问，以便其他部分可以调用
-        window.enterRateLimitedState = function(source = '全局调用') {
-            // 使用统一的限速管理器进入限速状态
-            RateLimitManager.enterRateLimitedState(source);
-        };
-        
-        // 添加全局函数用于记录所有网络请求 - 简化版
-        window.recordNetworkRequest = function(source = '网络请求', hasResults = true) {
-            // 只记录成功请求，不再进行复杂的计数
-            if (hasResults) {
-                RateLimitManager.recordSuccessfulRequest(source, hasResults);
-            }
-        };
-        
-        // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
-        setInterval(() => {
-            // 如果已经处于限速状态，不需要检查
-            if (State.appStatus === 'NORMAL') {
-                // 检查页面内容是否包含限速错误信息
-                const pageText = document.body.innerText || '';
-                if (pageText.includes('Too many requests') || 
-                    pageText.includes('rate limit') || 
-                    pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                    
-                    Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
-                    RateLimitManager.enterRateLimitedState('页面内容检测');
-                }
-            }
-        }, 5000); // 每5秒检查一次
-
-        const checkIsErrorPage = (title, text) => {
-            const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-            const is429Text = text.includes('429') || 
-                              text.includes('Too Many Requests') || 
-                              text.includes('Too many requests') || 
-                              text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
-            if (isCloudflareTitle || is429Text) {
-                Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
-                window.enterRateLimitedState('页面内容429检测');
-                return true;
-            }
-            return false;
-        };
-        
-        // 如果检测到错误页面，不要立即返回，而是继续尝试恢复
-        const isErrorPage = checkIsErrorPage(document.title, document.body.innerText || '');
-        // 不要在这里return，让代码继续执行到自动恢复部分
-
-        // The auto-resume logic is preserved - always try to recover from 429
-        if (State.appStatus === 'RATE_LIMITED') {
-            Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
-            
-            // 使用统一的限速状态检查
-            const isRecovered = await RateLimitManager.checkRateLimitStatus();
-            
-            if (isRecovered) {
-                Utils.logger('info', '✅ 恢复探测成功！限速已解除，继续正常操作。');
-                
-                // 如果有待办任务，继续执行
-                if (State.db.todo.length > 0 && !State.isExecuting) {
-                    Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
-                    State.isExecuting = true;
-                    Database.saveExecutingState();
-                    TaskRunner.executeBatch();
-                }
-            } else {
-                // 仍然处于限速状态，继续随机刷新
-                Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
-                
-                // 如果有活动任务，等待它们完成
-                if (State.activeWorkers > 0) {
-                    Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
-                } else if (State.db.todo.length > 0) {
-                    // 如果有待办任务但没有活动任务，尝试继续执行
-                    Utils.logger('info', `有 ${State.db.todo.length} 个待办任务等待执行，将尝试继续执行...`);
-                    if (!State.isExecuting) {
-                        State.isExecuting = true;
-                        Database.saveExecutingState();
-                        TaskRunner.executeBatch();
-                    }
-                } else {
-                    // 没有任务，直接刷新
-                    const randomDelay = 5000 + Math.random() * 10000;
-                    countdownRefresh(randomDelay, '恢复探测失败');
-                }
-            }
-        }
-
-        // --- Observer setup is now directly inside runDomDependentPart ---
-        const containerSelectors = [
-            'main', '#main', '.AssetGrid-root', '.fabkit-responsive-grid-container'
-        ];
-        let targetNode = null;
-        for (const selector of containerSelectors) {
-            targetNode = document.querySelector(selector);
-            if (targetNode) break;
-        }
-        if (!targetNode) targetNode = document.body;
-
-        const observer = new MutationObserver((mutationsList) => {
-            const hasNewContent = mutationsList.some(mutation =>
-                [...mutation.addedNodes].some(node =>
-                    node.nodeType === 1 && (node.matches(Config.SELECTORS.card) || node.querySelector(Config.SELECTORS.card))
-                )
-            );
-            if (hasNewContent) {
-                // 先立即执行一次隐藏，防止闪烁
-                if (State.hideSaved) {
-                    TaskRunner.runHideOrShow();
-                }
-                
-                // 然后延迟进行更彻底的处理
-                clearTimeout(State.observerDebounceTimer);
-                State.observerDebounceTimer = setTimeout(() => {
-                    Utils.logger('info', '[Observer] New content detected. Processing...');
-                    
-                    // 执行一次状态检查，尝试更新卡片状态
-                    TaskRunner.checkVisibleCardsStatus().then(() => {
-                        // 状态检查后再次执行隐藏，确保新状态被应用
-                        TaskRunner.runHideOrShow();
-                        
-                        // 只在非限速状态下执行自动添加任务功能
-                        if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
-                            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
-                        }
-                    }).catch(() => {
-                        // 即使状态检查失败也执行隐藏
-                        TaskRunner.runHideOrShow();
-                    });
-                }, 300);
-            }
-        });
-
-        observer.observe(targetNode, {
-            childList: true,
-            subtree: true
-        });
-        Utils.logger('info', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
-        
-        // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
-            TaskRunner.runHideOrShow();
-        
-        // 添加定期检查功能，每10秒检查一次待办列表中的任务是否已经完成
-        setInterval(() => {
-            // 如果待办列表为空，不需要检查
-            if (State.db.todo.length === 0) return;
-            
-            // 检查待办列表中的每个任务，看是否已经在"完成"列表中
-            const initialTodoCount = State.db.todo.length;
-            State.db.todo = State.db.todo.filter(task => {
-                const url = task.url.split('?')[0];
-                // 如果任务已经在"完成"列表中，则从待办列表中移除
-                return !State.db.done.includes(url);
-            });
-
-            // 如果待办列表的数量发生了变化，更新UI
-            if (State.db.todo.length < initialTodoCount) {
-                Utils.logger('info', `[自动清理] 从待办列表中移除了 ${initialTodoCount - State.db.todo.length} 个已完成的任务。`);
                 UI.update();
             }
-        }, 10000);
-        
-        // 添加定期检查功能，检测是否请求不出新商品（隐性限速）
-        let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
-        let noNewCardsCounter = 0;
-        let lastScrollY = window.scrollY;
-        
-        setInterval(() => {
-            // 如果已经处于限速状态，不需要检查
-            if (State.appStatus !== 'NORMAL') return;
-            
-            // 获取当前卡片数量
-            const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
-            
-            // 如果滚动了但卡片数量没有增加，可能是隐性限速
-            if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
-                noNewCardsCounter++;
-                
-                // 如果连续3次检查都没有新卡片，认为是隐性限速
-                if (noNewCardsCounter >= 3) {
-                    Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况：连续${noNewCardsCounter}次滚动后卡片数量未增加。`);
-                    try {
-                        // 使用RateLimitManager处理限速
-                        RateLimitManager.enterRateLimitedState('隐性限速检测');
-                    } catch (error) {
-                        Utils.logger('error', `处理限速出错: ${error.message}`);
-                        // 备选方案：直接刷新页面
-                        const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '隐性限速检测');
-                    }
-                    noNewCardsCounter = 0;
-                }
-            } else if (currentCardCount > lastCardCount) {
-                // 有新卡片，重置计数器
-                noNewCardsCounter = 0;
-            }
-            
-            // 更新上次卡片数量和滚动位置
-            lastCardCount = currentCardCount;
-            lastScrollY = window.scrollY;
-        }, 5000); // 每5秒检查一次
-
-        // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
-        setInterval(() => {
-            // 如果已经处于限速状态，不需要检查
-            if (State.appStatus !== 'NORMAL') return;
-            
-            // 检查页面内容是否包含限速错误信息
-            const pageText = document.body.innerText || '';
-            const jsonPattern = /\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i;
-            
-            if (pageText.match(jsonPattern) || 
-                pageText.includes('Too many requests') || 
-                pageText.includes('rate limit')) {
-                
-                Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
-                try {
-                    // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                    if (typeof window.enterRateLimitedState === 'function') {
-                        window.enterRateLimitedState();
-                } else {
-                        // 最后的备选方案：直接刷新页面
-                        const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '页面内容检测');
-                }
-                } catch (error) {
-                    Utils.logger('error', `处理限速出错: ${error.message}`);
-                    // 最后的备选方案：直接刷新页面
-                    const randomDelay = 5000 + Math.random() * 10000;
-                    countdownRefresh(randomDelay, '错误恢复');
-                }
-            }
-        }, 3000); // 每3秒检查一次
-
-        // 添加HTTP状态码检测功能，定期检查当前页面的HTTP状态码
-        const checkHttpStatus = async () => {
-            try {
-                // 如果已经处于限速状态，不需要检查
-                if (State.appStatus !== 'NORMAL') return;
-                
-                // 使用window.performance API检查最近的页面请求
-                if (window.performance && window.performance.getEntriesByType) {
-                    const navigationEntries = window.performance.getEntriesByType('navigation');
-                    if (navigationEntries && navigationEntries.length > 0) {
-                        const lastNavigation = navigationEntries[0];
-                        if (lastNavigation.responseStatus === 429) {
-                            Utils.logger('warn', `[HTTP状态检测] 检测到导航请求状态码为429！`);
-                            if (typeof window.enterRateLimitedState === 'function') {
-                                window.enterRateLimitedState();
-                            } else {
-                                const randomDelay = 5000 + Math.random() * 10000;
-                                countdownRefresh(randomDelay, 'HTTP状态检测');
-                            }
-                            return;
-                        }
-                    }
-                }
-                
-                // 如果Performance API没有提供有用信息，则发送HEAD请求
-                const response = await fetch(window.location.href, { 
-                    method: 'HEAD',
-                    cache: 'no-store',
-                    credentials: 'same-origin'
-                });
-                
-                if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
-                    Utils.logger('warn', `[HTTP状态检测] 检测到当前页面状态码为429！`);
-                    try {
-                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                        if (typeof window.enterRateLimitedState === 'function') {
-                            window.enterRateLimitedState();
-                        } else {
-                            // 最后的备选方案：直接刷新页面
-                            const randomDelay = 5000 + Math.random() * 10000;
-                            countdownRefresh(randomDelay, 'HTTP状态检测');
-                        }
-                    } catch (error) {
-                        Utils.logger('error', `处理限速出错: ${error.message}`);
-                        // 最后的备选方案：直接刷新页面
-                        const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '错误恢复');
-                    }
-                }
-            } catch (error) {
-                // 忽略错误
-            }
-        };
-
-        // 每10秒检查一次HTTP状态码
-        setInterval(checkHttpStatus, 10000);
-
-        // 添加状态监控，定期检查页面状态
-        const checkPageStatus = async () => {
-            try {
-                // 重新计算实际可见的商品数量，确保与DOM状态同步
-                const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-                const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-                const actualVisibleCards = totalCards - hiddenCards;
-                
-                // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
-                const visibleCountElement = document.getElementById('fab-status-visible');
-                if (visibleCountElement) {
-                    visibleCountElement.textContent = actualVisibleCards.toString();
-                }
-                
-                // 更新全局状态
-                State.hiddenThisPageCount = hiddenCards;
-                
-                // 如果处于限速状态且没有可见商品，考虑刷新
-                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
-                    // 如果已经有倒计时在运行，不要干扰它
-                    if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
-                        return;
-                    }
-                    
-                    Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品，准备刷新页面`);
-                    const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
-                    countdownRefresh(randomDelay, '限速状态无可见商品');
-                    return;
-                }
-                
-                // 如果处于正常状态，但所有商品都被隐藏，也考虑刷新
-                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
-                    Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏，准备刷新页面`);
-                    const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
-                    countdownRefresh(randomDelay, '正常状态所有商品隐藏');
-                    return;
-                }
-                
-                // 使用window.performance API检查最近的API请求
-                if (window.performance && window.performance.getEntriesByType) {
-                    const recentRequests = window.performance.getEntriesByType('resource')
-                        .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
-                        .filter(r => Date.now() - r.startTime < 15000); // 最近15秒内的请求
-                    
-                    // 检查是否有429状态码的请求
-                    const has429 = recentRequests.some(r => r.responseStatus === 429);
-                    if (has429 && State.appStatus === 'NORMAL') {
-                        Utils.logger('warn', `[状态监控] 检测到最近15秒内有429状态码的请求，进入限速状态`);
-                        if (typeof window.enterRateLimitedState === 'function') {
-                            window.enterRateLimitedState('性能API检测429');
-                        }
-                        return;
-                    }
-                    
-                    // 检查是否有成功的请求
-                    const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
-                    if (hasSuccess && State.appStatus === 'RATE_LIMITED' && State.consecutiveSuccessCount >= 2) {
-                        Utils.logger('info', `[状态监控] 检测到最近15秒内有成功的API请求，尝试退出限速状态`);
-                        if (typeof RateLimitManager.exitRateLimitedState === 'function') {
-                            RateLimitManager.exitRateLimitedState('性能API检测成功');
-                        }
-                    }
-                }
-            } catch (error) {
-                Utils.logger('error', `页面状态检查出错: ${error.message}`);
-            }
-        };
-        
-        // 每10秒检查一次页面状态
-        setInterval(checkPageStatus, 10000);
-        
-        // 添加定期检查功能，确保待办任务能被执行
-        setInterval(() => {
-            // 如果没有待办任务，不需要检查
-            if (State.db.todo.length === 0) return;
-            
-            // 确保任务被执行
-            TaskRunner.ensureTasksAreExecuted();
-        }, 5000); // 每5秒检查一次
-
-        // 添加专门针对滚动加载API请求的拦截器
-        const originalXMLHttpRequestSend = XMLHttpRequest.prototype.send;
-        XMLHttpRequest.prototype.send = function(...args) {
-            const xhr = this;
-            
-            // 添加额外的事件监听器，专门用于检测429错误
-            xhr.addEventListener('load', function() {
-                // 只检查listings/search相关的请求
-                if (xhr._url && xhr._url.includes('/i/listings/search')) {
-                    // 检查状态码
-                    if (xhr.status === 429 || xhr.status === '429' || xhr.status.toString() === '429') {
-                        Utils.logger('warn', `[滚动API监控] 检测到API请求状态码为429: ${xhr._url}`);
-                        try {
-                            // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                            if (typeof window.enterRateLimitedState === 'function') {
-                                window.enterRateLimitedState();
-                            } else {
-                                // 最后的备选方案：直接刷新页面
-                                const randomDelay = 5000 + Math.random() * 10000;
-                                countdownRefresh(randomDelay, '滚动API监控');
-                            }
-                        } catch (error) {
-                            Utils.logger('error', `处理限速出错: ${error.message}`);
-                            // 最后的备选方案：直接刷新页面
-                            const randomDelay = 5000 + Math.random() * 10000;
-                            countdownRefresh(randomDelay, '错误恢复');
-                        }
-                        return;
-                    }
-                    
-                    // 检查响应内容
-                    try {
-                        const responseText = xhr.responseText;
-                        if (responseText && (
-                            responseText.includes('Too many requests') || 
-                            responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)
-                        )) {
-                            Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
-                            try {
-                                // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                                if (typeof window.enterRateLimitedState === 'function') {
-                                    window.enterRateLimitedState();
-                                } else {
-                                    // 最后的备选方案：直接刷新页面
-                                    const randomDelay = 5000 + Math.random() * 10000;
-                                    countdownRefresh(randomDelay, '滚动API监控');
-                                }
-                            } catch (error) {
-                                Utils.logger('error', `处理限速出错: ${error.message}`);
-                                // 最后的备选方案：直接刷新页面
-                                const randomDelay = 5000 + Math.random() * 10000;
-                                countdownRefresh(randomDelay, '错误恢复');
-                            }
-                            return;
-                        }
-                    } catch (e) {
-                        // 忽略错误
-                    }
-                }
-            });
-            
-            return originalXMLHttpRequestSend.apply(this, args);
-        };
+        }));
     }
 
     main();
-
-    // 添加一个通用的倒计时刷新函数
-    // 使用一个全局变量来跟踪当前的倒计时，避免多个倒计时同时运行
-    let currentCountdownInterval = null;
-    let currentRefreshTimeout = null;
-    
-    const countdownRefresh = (delay, reason = '备选方案') => {
-        // 如果已经安排了刷新，不要重复安排
-        if (State.isRefreshScheduled) {
-            Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (${reason})`);
-            return;
-        }
-        
-        // 标记已安排刷新
-        State.isRefreshScheduled = true;
-        
-        // 如果已经有倒计时在运行，先清除它
-        if (currentCountdownInterval) {
-            clearInterval(currentCountdownInterval);
-            currentCountdownInterval = null;
-        }
-        if (currentRefreshTimeout) {
-            clearTimeout(currentRefreshTimeout);
-            currentRefreshTimeout = null;
-        }
-        
-        // 添加空值检查，防止delay为null
-        const seconds = delay ? (delay/1000).toFixed(1) : '未知';
-        
-        // 添加明显的倒计时日志
-        Utils.logger('info', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
-        
-        // 每秒更新倒计时日志
-        let remainingSeconds = Math.ceil(delay/1000);
-        currentCountdownInterval = setInterval(() => {
-            remainingSeconds--;
-            if (remainingSeconds <= 0) {
-                clearInterval(currentCountdownInterval);
-                currentCountdownInterval = null;
-                                    Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
-                } else {
-                    Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
-                    
-                    // 如果用户手动取消了刷新标记
-                    if (!State.isRefreshScheduled) {
-                        Utils.logger('info', `⏹️ 检测到刷新已被取消，停止倒计时`);
-                        clearInterval(currentCountdownInterval);
-                        currentCountdownInterval = null;
-                        
-                        if (currentRefreshTimeout) {
-                            clearTimeout(currentRefreshTimeout);
-                            currentRefreshTimeout = null;
-                        }
-                        return;
-                    }
-                
-                // 每3秒重新检查一次条件
-                if (remainingSeconds % 3 === 0) {
-                    // 尝试使用优化后的API函数检查限速状态
-                    checkRateLimitStatus().then(isNotLimited => {
-                        if (isNotLimited) {
-                            Utils.logger('info', `⏱️ 检测到API限速已解除，取消刷新...`);
-                            clearInterval(currentCountdownInterval);
-                            currentCountdownInterval = null;
-                            
-                            if (currentRefreshTimeout) {
-                                clearTimeout(currentRefreshTimeout);
-                                currentRefreshTimeout = null;
-                            }
-                            
-                            // 重置刷新标记
-                            State.isRefreshScheduled = false;
-                            
-                            // 恢复正常状态
-                            if (State.appStatus === 'RATE_LIMITED') {
-                                RateLimitManager.exitRateLimitedState();
-                            }
-                            
-                            return;
-                        }
-                        
-                        // 如果是429限速状态，则检查可见商品是否为0
-                        if (State.appStatus === 'RATE_LIMITED') {
-                            // 使用UI上显示的可见商品数量作为判断依据
-                            const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                            
-                            // 只检查是否有待办任务或活动工作线程
-                            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                                clearInterval(currentCountdownInterval);
-                                clearTimeout(currentRefreshTimeout);
-                                currentCountdownInterval = null;
-                                currentRefreshTimeout = null;
-                                // 重置刷新标记
-                                State.isRefreshScheduled = false;
-                                Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
-                                Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
-                                return;
-                            }
-                            
-                            // 如果没有实际可见的商品，继续刷新
-                            if (actualVisibleCount === 0) {
-                                Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。`);
-                            } else {
-                                Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，暂不刷新。`);
-                                clearInterval(currentCountdownInterval);
-                                clearTimeout(currentRefreshTimeout);
-                                currentCountdownInterval = null;
-                                currentRefreshTimeout = null;
-                                return;
-                            }
-                        } else {
-                            // 正常状态下，如果有可见商品、待办任务或活动工作线程，则取消刷新
-                            // 使用UI上显示的可见商品数量
-                            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                            
-                            if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
-                                clearInterval(currentCountdownInterval);
-                                clearTimeout(currentRefreshTimeout);
-                                currentCountdownInterval = null;
-                                currentRefreshTimeout = null;
-                                // 重置刷新标记
-                                State.isRefreshScheduled = false;
-                                
-                                if (visibleCount > 0) {
-                                    Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
-                                } else {
-                                    Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
-                                }
-                                Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
-                                return;
-                            }
-                        }
-                    }).catch(e => {
-                        if (State.debugMode) {
-                            Utils.logger('debug', `检查限速状态出错: ${e.message}`);
-                        }
-                    });
-                }
-            }
-        }, 1000);
-        
-        // 设置刷新定时器
-        currentRefreshTimeout = setTimeout(() => {
-            // 最后一次检查条件，确保在刷新前条件仍然满足
-            // 使用UI上显示的可见商品数量
-            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-            
-            // 如果是429限速状态，检查实际可见商品
-            if (State.appStatus === 'RATE_LIMITED') {
-                // 使用UI上显示的可见商品数量
-                const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                
-                // 只检查是否有待办任务或活动工作线程
-                if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                    Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
-                    Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
-                    State.isRefreshScheduled = false; // 重置刷新标记
-                    return;
-                }
-                
-                // 如果没有实际可见的商品，执行刷新
-                if (actualVisibleCount === 0) {
-                    Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将执行自动刷新。`);
-                    // 使用更可靠的刷新方式
-                    window.location.href = window.location.href;
-                } else {
-                    Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，取消自动刷新。`);
-                    State.isRefreshScheduled = false; // 重置刷新标记
-                    return;
-                }
-            } else {
-                // 正常状态下的检查
-                if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
-                    if (visibleCount > 0) {
-                        Utils.logger('info', `⏹️ 刷新前检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
-                    } else {
-                        Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
-                    }
-                    Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
-                    State.isRefreshScheduled = false; // 重置刷新标记
-                } else {
-                    // 所有条件都满足，执行刷新
-                    // 使用更可靠的刷新方式
-                    window.location.href = window.location.href;
-                }
-            }
-        }, delay);
-    };
-    
-    // 优化后的限速状态检查函数 - 完全依赖网站自身请求流量
-    async function checkRateLimitStatus() {
-        try {
-            // 重新计算实际可见的商品数量，确保与DOM状态同步
-            const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-            const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-            const actualVisibleCards = totalCards - hiddenCards;
-            
-            // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
-            const visibleCountElement = document.getElementById('fab-status-visible');
-            if (visibleCountElement) {
-                visibleCountElement.textContent = actualVisibleCards.toString();
-            }
-            
-            // 使用实际DOM状态更新全局状态
-            State.hiddenThisPageCount = hiddenCards;
-            
-            Utils.logger('info', `📊 状态检查 - 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${hiddenCards}`);
-            
-            // 如果处于限速状态且没有可见商品，直接返回false触发刷新
-            if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
-                Utils.logger('info', `🔄 处于限速状态且没有可见商品，建议刷新页面`);
-                return false;
-            }
-            
-            // 即使在正常状态下，如果所有商品都被隐藏且隐藏的商品数量超过25个，也建议刷新
-            if (actualVisibleCards === 0 && hiddenCards > 25) {
-                Utils.logger('info', `🔄 检测到页面上有 ${hiddenCards} 个隐藏商品，但没有可见商品，建议刷新页面`);
-                return false;
-            }
-            
-            // 使用window.performance API检查最近的网络请求
-            if (window.performance && window.performance.getEntriesByType) {
-                const recentRequests = window.performance.getEntriesByType('resource')
-                    .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
-                    .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
-                
-                // 如果有最近的请求，检查它们的状态
-                if (recentRequests.length > 0) {
-                    // 检查是否有429状态码的请求
-                    const has429 = recentRequests.some(r => r.responseStatus === 429);
-                    if (has429) {
-                        Utils.logger('info', `📊 检测到最近10秒内有429状态码的请求，判断为限速状态`);
-                        return false;
-                    }
-                    
-                    // 检查是否有成功的请求
-                    const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
-                    if (hasSuccess) {
-                        Utils.logger('info', `📊 检测到最近10秒内有成功的API请求，判断为正常状态`);
-                        return true;
-                    }
-                }
-                
-                // 如果没有最近的请求或者没有明确的成功/失败状态，保持当前状态
-                return State.appStatus === 'NORMAL';
-            }
-            
-            // 如果无法使用Performance API，根据当前状态返回
-            // 在限速状态下返回false，表示需要刷新
-            // 在正常状态下返回true，表示不需要刷新
-            return State.appStatus === 'NORMAL';
-        } catch (error) {
-            Utils.logger('error', `检查限速状态出错: ${error.message}`);
-            // 出错时保守处理，认为仍然处于限速状态
-            return false;
-        }
-    }
-
-    // 在页面卸载时清理实例
-    window.addEventListener('beforeunload', () => {
-        InstanceManager.cleanup();
-        Utils.cleanup();
-    });
-
-    // 添加请求拦截器设置函数
-    function setupRequestInterceptors() {
-        try {
-            // 设置XHR拦截器
-            setupXHRInterceptor();
-            
-            // 设置Fetch拦截器
-            setupFetchInterceptor();
-            
-            // 设置定期清理过期缓存的定时器
-            setInterval(() => DataCache.cleanupExpired(), 60000); // 每分钟清理一次
-            
-            Utils.logger('info', '请求拦截和缓存系统已初始化');
-        } catch (e) {
-            Utils.logger('error', `初始化请求拦截器失败: ${e.message}`);
-        }
-    }
-
-    // 设置XHR拦截器
-    function setupXHRInterceptor() {
-        const originalOpen = XMLHttpRequest.prototype.open;
-        const originalSend = XMLHttpRequest.prototype.send;
-        
-        XMLHttpRequest.prototype.open = function(...args) {
-            this._url = args[1]; // 保存URL以便后续使用
-            return originalOpen.apply(this, args);
-        };
-        
-        XMLHttpRequest.prototype.send = function(...args) {
-            const xhr = this;
-            
-            // 只拦截相关API请求
-            if (xhr._url && typeof xhr._url === 'string') {
-                // 添加加载完成事件监听器
-                xhr.addEventListener('load', function() {
-                    if (xhr.readyState === 4 && xhr.status === 200) {
-                        try {
-                            const responseData = JSON.parse(xhr.responseText);
-                            
-                            // 处理商品列表搜索响应
-                            if (xhr._url.includes('/i/listings/search') && responseData.results && Array.isArray(responseData.results)) {
-                                DataCache.saveListings(responseData.results);
-                                if (State.debugMode) {
-                                    Utils.logger('debug', `[Cache] 已缓存 ${responseData.results.length} 个商品数据`);
-                                }
-                            }
-                            // 处理拥有状态响应
-                            else if (xhr._url.includes('/i/users/me/listings-states')) {
-                                if (Array.isArray(responseData)) {
-                                    DataCache.saveOwnedStatus(responseData);
-                                } else {
-                                    const extractedData = API.extractStateData(responseData, 'XHRInterceptor');
-                                    if (Array.isArray(extractedData) && extractedData.length > 0) {
-                                        DataCache.saveOwnedStatus(extractedData);
-                                    }
-                                }
-                            }
-                            // 处理价格信息响应
-                            else if (xhr._url.includes('/i/listings/prices-infos') && responseData.offers && Array.isArray(responseData.offers)) {
-                                DataCache.savePrices(responseData.offers);
-                            }
-                        } catch (e) {
-                            // 解析错误时只在调试模式下记录
-                            if (State.debugMode) {
-                                Utils.logger('debug', `[Cache] 解析响应失败: ${e.message}`);
-                            }
-                        }
-                    }
-                });
-            }
-            
-            return originalSend.apply(this, args);
-        };
-        
-        if (State.debugMode) {
-            Utils.logger('debug', '[优化] XHR拦截器已设置');
-        }
-    }
-
-    // 设置Fetch拦截器
-    function setupFetchInterceptor() {
-        const originalFetch = window.fetch;
-        
-        window.fetch = async function(...args) {
-            const url = args[0]?.toString() || '';
-            
-            // 只拦截相关API请求
-            if (url.includes('/i/listings/search') || 
-                url.includes('/i/users/me/listings-states') || 
-                url.includes('/i/listings/prices-infos')) {
-                
-                try {
-                    // 执行原始fetch请求
-                    const response = await originalFetch.apply(this, args);
-                    
-                    // 如果请求成功，处理响应数据
-                    if (response.ok) {
-                        // 克隆响应以避免消耗原始响应
-                        const clonedResponse = response.clone();
-                        
-                        // 异步处理响应数据
-                        clonedResponse.json().then(data => {
-                            // 处理商品列表搜索响应 - 简化版
-                            if (url.includes('/i/listings/search') && data.results && Array.isArray(data.results)) {
-                                DataCache.saveListings(data.results);
-                            }
-                            // 处理拥有状态响应
-                            else if (url.includes('/i/users/me/listings-states')) {
-                                if (Array.isArray(data)) {
-                                    DataCache.saveOwnedStatus(data);
-                                } else {
-                                    const extractedData = API.extractStateData(data, 'FetchInterceptor');
-                                    if (Array.isArray(extractedData) && extractedData.length > 0) {
-                                        DataCache.saveOwnedStatus(extractedData);
-                                    }
-                                }
-                            }
-                            // 处理价格信息响应
-                            else if (url.includes('/i/listings/prices-infos') && data.offers && Array.isArray(data.offers)) {
-                                DataCache.savePrices(data.offers);
-                            }
-                        }).catch((e) => {
-                            // 解析错误时只在调试模式下记录
-                            if (State.debugMode) {
-                                Utils.logger('debug', `[Cache] Fetch: 解析响应失败: ${e.message}`);
-                            }
-                        });
-                    }
-                    
-                    // 返回原始响应
-                    return response;
-                } catch (e) {
-                    // 请求错误，继续使用原始fetch
-                    Utils.logger('error', `[Cache] Fetch拦截器错误: ${e.message}`);
-                    return originalFetch.apply(this, args);
-                }
-            }
-            
-            // 非相关API请求，直接使用原始fetch
-            return originalFetch.apply(this, args);
-        };
-        
-        if (State.debugMode) {
-            Utils.logger('debug', '[优化] Fetch拦截器已设置');
-        }
-    }
-
-    // 添加一个函数，确保UI在刷新后能正确重新加载
-    function ensureUILoaded() {
-        // 检查UI是否已加载
-        if (!document.getElementById(Config.UI_CONTAINER_ID)) {
-            // 如果UI未加载，尝试重新初始化
-            Utils.logger('warn', '检测到UI未加载，尝试重新初始化...');
-            
-            // 延迟执行，确保页面已完全加载
-            setTimeout(() => {
-                try {
-                    // 重新执行初始化逻辑
-                    runDomDependentPart();
-                } catch (error) {
-                    Utils.logger('error', `UI重新初始化失败: ${error.message}`);
-                }
-            }, 1000);
-        }
-    }
-    
-    // 添加页面加载完成后的检查
-    window.addEventListener('load', () => {
-        // 延迟检查，确保所有脚本都有机会执行
-        setTimeout(ensureUILoaded, 2000);
-    });
-    
-    // 添加可见性变化检查，处理标签页切换回来的情况
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            // 页面变为可见时检查UI
-            setTimeout(ensureUILoaded, 500);
-        }
-    });
 
 })();
