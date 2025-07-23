@@ -1518,8 +1518,8 @@
                             // 克隆响应以避免"已消费"错误
                             const clonedResponse = response.clone();
                             Utils.logger('warn', `[Fetch] 检测到429状态码: ${response.url}`);
-                            // 异步处理限速情况
-                            self.handleRateLimit(response.url).catch(e => 
+                            // 使用RateLimitManager处理限速情况
+                            RateLimitManager.enterRateLimitedState('Fetch响应429').catch(e => 
                                 Utils.logger('error', `处理限速时出错: ${e.message}`)
                             );
                         }
@@ -1536,7 +1536,7 @@
                                     text.includes("rate limit") ||
                                     text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
                                     Utils.logger('warn', `[Fetch限速检测] 检测到限速情况，原始响应: ${text.substring(0, 100)}...`);
-                                    self.handleRateLimit(response.url).catch(e => 
+                                    RateLimitManager.enterRateLimitedState('Fetch响应内容限速').catch(e => 
                                         Utils.logger('error', `处理限速时出错: ${e.message}`)
                                     );
                                     return response;
@@ -1549,7 +1549,7 @@
             // 只检查明确的限速信息
             if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                 Utils.logger('warn', `[限速检测] 检测到API限速响应`);
-                self.handleRateLimit(response.url).catch(e => 
+                RateLimitManager.enterRateLimitedState('API限速响应').catch(e => 
                     Utils.logger('error', `处理限速时出错: ${e.message}`)
                 );
             }
@@ -4226,7 +4226,15 @@
                 // 如果连续3次检查都没有新卡片，认为是隐性限速
                 if (noNewCardsCounter >= 3) {
                     Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况：连续${noNewCardsCounter}次滚动后卡片数量未增加。`);
-                    PagePatcher.handleRateLimit('隐性限速检测');
+                    try {
+                        // 使用RateLimitManager处理限速
+                        RateLimitManager.enterRateLimitedState('隐性限速检测');
+                    } catch (error) {
+                        Utils.logger('error', `处理限速出错: ${error.message}`);
+                        // 备选方案：直接刷新页面
+                        const randomDelay = 5000 + Math.random() * 10000;
+                        countdownRefresh(randomDelay, '隐性限速检测');
+                    }
                     noNewCardsCounter = 0;
                 }
             } else if (currentCardCount > lastCardCount) {
