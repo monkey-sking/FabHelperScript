@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab Helper (优化版)
 // @namespace    https://www.fab.com/
-// @version      3.2.4-20250723
+// @version      3.2.5-20250723
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @author       RunKing
 // @match        https://www.fab.com/*
@@ -918,13 +918,24 @@
             UI.updateDebugTab();
             UI.update();
             
-            // 检查可见商品数量
-            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+            // 重新计算实际可见的商品数量，确保与DOM状态同步
+            const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+            const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+            const actualVisibleCards = totalCards - hiddenCards;
+            
+            // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
+            const visibleCountElement = document.getElementById('fab-status-visible');
+            if (visibleCountElement) {
+                visibleCountElement.textContent = actualVisibleCards.toString();
+            }
+            
+            // 更新全局状态
+            State.hiddenThisPageCount = hiddenCards;
             
             // 检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
-            if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
-                if (visibleCount > 0) {
-                    Utils.logger('info', `检测到页面上有 ${visibleCount} 个可见商品，暂不自动刷新页面。`);
+            if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
+                if (actualVisibleCards > 0) {
+                    Utils.logger('info', `检测到页面上有 ${actualVisibleCards} 个可见商品，暂不自动刷新页面。`);
                     Utils.logger('info', '当仍有可见商品时不触发自动刷新，以避免中断浏览。');
                 } else {
                     Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
@@ -1455,11 +1466,27 @@
                                     const data = JSON.parse(responseText);
                                     
                                     // 检查是否返回了空结果或错误信息
-                                    if ((data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) || 
-                                        (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit")))) {
-                                        Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况: ${JSON.stringify(data)}`);
-                                        RateLimitManager.enterRateLimitedState('XHR响应空结果');
+                                    if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
+                                        Utils.logger('warn', `[隐性限速检测] 检测到限速错误信息: ${JSON.stringify(data)}`);
+                                        RateLimitManager.enterRateLimitedState('XHR响应限速错误');
                                         return;
+                                    }
+                                    
+                                    // 检查是否返回了空结果
+                                    if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
+                                        // 检查是否是到达列表末尾的正常情况（next为null但previous不为null）
+                                        const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                                        
+                                        if (isEndOfList) {
+                                            Utils.logger('info', `[列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
+                                            // 记录成功请求，虽然没有结果，但这是正常情况
+                                            RateLimitManager.recordSuccessfulRequest('XHR列表末尾', true);
+                                            return;
+                                        } else {
+                                            Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
+                                            RateLimitManager.enterRateLimitedState('XHR响应空结果');
+                                            return;
+                                        }
                                     }
                                     
                                     // 如果是搜索请求且有结果，记录成功请求
@@ -1593,19 +1620,39 @@
                                     return response;
                                 }
                                 
-                                        // 尝试解析JSON - 简化版
+                                        // 尝试解析JSON - 增强版
         try {
             const data = JSON.parse(text);
             
-            // 只检查明确的限速信息
+            // 检查明确的限速信息
             if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                 Utils.logger('warn', `[限速检测] 检测到API限速响应`);
                 RateLimitManager.enterRateLimitedState('API限速响应').catch(e => 
                     Utils.logger('error', `处理限速时出错: ${e.message}`)
                 );
+                return;
+            }
+            
+            // 检查是否返回了空结果
+            const responseUrl = response.url || '';
+            if (data.results && data.results.length === 0 && responseUrl.includes('/i/listings/search')) {
+                // 检查是否是到达列表末尾的正常情况（next为null但previous不为null）
+                const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                
+                if (isEndOfList) {
+                    Utils.logger('info', `[Fetch列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
+                    // 记录成功请求，虽然没有结果，但这是正常情况
+                    RateLimitManager.recordSuccessfulRequest('Fetch列表末尾', true);
+                } else {
+                    Utils.logger('warn', `[Fetch隐性限速] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
+                    RateLimitManager.enterRateLimitedState('Fetch响应空结果').catch(e => 
+                        Utils.logger('error', `处理限速时出错: ${e.message}`)
+                    );
+                }
             }
         } catch (jsonError) {
             // JSON解析错误，忽略
+            Utils.logger('debug', `JSON解析错误: ${jsonError.message}`);
         }
                             } catch (e) {
                                 // 解析错误，忽略
@@ -4390,11 +4437,22 @@
         // 添加状态监控，定期检查页面状态
         const checkPageStatus = async () => {
             try {
-                // 检查可见商品数量
-                const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
+                // 重新计算实际可见的商品数量，确保与DOM状态同步
+                const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+                const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+                const actualVisibleCards = totalCards - hiddenCards;
+                
+                // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
+                const visibleCountElement = document.getElementById('fab-status-visible');
+                if (visibleCountElement) {
+                    visibleCountElement.textContent = actualVisibleCards.toString();
+                }
+                
+                // 更新全局状态
+                State.hiddenThisPageCount = hiddenCards;
                 
                 // 如果处于限速状态且没有可见商品，考虑刷新
-                if (State.appStatus === 'RATE_LIMITED' && visibleCount === 0) {
+                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
                     // 如果已经有倒计时在运行，不要干扰它
                     if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
                         return;
@@ -4407,7 +4465,7 @@
                 }
                 
                 // 如果处于正常状态，但所有商品都被隐藏，也考虑刷新
-                if (State.appStatus === 'NORMAL' && visibleCount === 0 && State.hiddenThisPageCount > 25) {
+                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
                     Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏，准备刷新页面`);
                     const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
                     countdownRefresh(randomDelay, '正常状态所有商品隐藏');
@@ -4682,24 +4740,31 @@
     // 优化后的限速状态检查函数 - 完全依赖网站自身请求流量
     async function checkRateLimitStatus() {
         try {
-            // 使用UI上显示的可见商品数量
-            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-            // 直接检查DOM中实际可见的商品卡片数量
+            // 重新计算实际可见的商品数量，确保与DOM状态同步
             const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
             const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
             const actualVisibleCards = totalCards - hiddenCards;
             
-            Utils.logger('info', `📊 状态检查 - UI显示可见商品数: ${visibleCount}, 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${State.hiddenThisPageCount}`);
+            // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
+            const visibleCountElement = document.getElementById('fab-status-visible');
+            if (visibleCountElement) {
+                visibleCountElement.textContent = actualVisibleCards.toString();
+            }
+            
+            // 使用实际DOM状态更新全局状态
+            State.hiddenThisPageCount = hiddenCards;
+            
+            Utils.logger('info', `📊 状态检查 - 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${hiddenCards}`);
             
             // 如果处于限速状态且没有可见商品，直接返回false触发刷新
-            if (State.appStatus === 'RATE_LIMITED' && visibleCount === 0) {
+            if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
                 Utils.logger('info', `🔄 处于限速状态且没有可见商品，建议刷新页面`);
                 return false;
             }
             
             // 即使在正常状态下，如果所有商品都被隐藏且隐藏的商品数量超过25个，也建议刷新
-            if (visibleCount === 0 && State.hiddenThisPageCount > 25) {
-                Utils.logger('info', `🔄 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品，建议刷新页面`);
+            if (actualVisibleCards === 0 && hiddenCards > 25) {
+                Utils.logger('info', `🔄 检测到页面上有 ${hiddenCards} 个隐藏商品，但没有可见商品，建议刷新页面`);
                 return false;
             }
             
