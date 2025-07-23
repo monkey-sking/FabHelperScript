@@ -2687,11 +2687,28 @@ const State = {
         
         // 首先收集所有需要隐藏的卡片
         const cardsToHide = [];
+        
+        // 添加一个数据属性来标记已处理的卡片，避免重复处理
         cards.forEach(card => {
+            // 检查卡片是否已经被处理过
+            const isProcessed = card.getAttribute('data-fab-processed') === 'true';
+            
+            // 如果卡片已经被处理且已经隐藏，则不需要再次处理
+            if (isProcessed && card.style.display === 'none') {
+                State.hiddenThisPageCount++;
+                return;
+            }
+            
             const isFinished = TaskRunner.isCardFinished(card);
             if (State.hideSaved && isFinished) {
                 cardsToHide.push(card);
                 State.hiddenThisPageCount++;
+                
+                // 标记卡片为已处理
+                card.setAttribute('data-fab-processed', 'true');
+            } else {
+                // 如果不需要隐藏，也标记为已处理
+                card.setAttribute('data-fab-processed', 'true');
             }
         });
         
@@ -2770,6 +2787,25 @@ const State = {
     checkVisibilityAndRefresh: () => {
         // 计算实际可见的商品数量
         const cards = document.querySelectorAll(Config.SELECTORS.card);
+        
+        // 重新检查所有卡片，确保隐藏状态正确
+        let needsReprocessing = false;
+        cards.forEach(card => {
+            const isProcessed = card.getAttribute('data-fab-processed') === 'true';
+            if (!isProcessed) {
+                needsReprocessing = true;
+            }
+        });
+        
+        // 如果发现未处理的卡片，重新执行隐藏逻辑
+        if (needsReprocessing) {
+            Utils.logger('info', '检测到未处理的卡片，重新执行隐藏逻辑');
+            setTimeout(() => {
+                TaskRunner.runHideOrShow();
+            }, 100);
+            return;
+        }
+        
         // 使用更准确的方式检查元素是否可见
         const visibleCards = Array.from(cards).filter(card => {
             // 检查元素自身的display属性
@@ -4524,7 +4560,10 @@ const State = {
                     // 执行一次状态检查，尝试更新卡片状态
                     TaskRunner.checkVisibleCardsStatus().then(() => {
                         // 状态检查后再次执行隐藏，确保新状态被应用
-                        TaskRunner.runHideOrShow();
+                        // 使用延迟执行隐藏，确保DOM已完全更新
+                        setTimeout(() => {
+                            TaskRunner.runHideOrShow();
+                        }, 300);
                         
                         // 只在非限速状态下执行自动添加任务功能
                         if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
@@ -4548,6 +4587,40 @@ const State = {
         
         // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
             TaskRunner.runHideOrShow();
+            
+            // 添加定期检查功能，确保所有卡片都被正确处理
+            setInterval(() => {
+                // 如果没有开启隐藏功能，不需要检查
+                if (!State.hideSaved) return;
+                
+                // 检查是否有未处理的卡片
+                const cards = document.querySelectorAll(Config.SELECTORS.card);
+                let unprocessedCount = 0;
+                
+                cards.forEach(card => {
+                    const isProcessed = card.getAttribute('data-fab-processed') === 'true';
+                    if (!isProcessed) {
+                        unprocessedCount++;
+                    } else {
+                        // 检查已处理的卡片是否状态正确
+                        const isFinished = TaskRunner.isCardFinished(card);
+                        const shouldBeHidden = isFinished && State.hideSaved;
+                        const isHidden = card.style.display === 'none';
+                        
+                        // 如果状态不一致，重置处理标记
+                        if (shouldBeHidden !== isHidden) {
+                            card.removeAttribute('data-fab-processed');
+                            unprocessedCount++;
+                        }
+                    }
+                });
+                
+                // 如果有未处理的卡片，重新执行隐藏逻辑
+                if (unprocessedCount > 0) {
+                    Utils.logger('info', `检测到 ${unprocessedCount} 个未处理或状态不一致的卡片，重新执行隐藏逻辑`);
+                    TaskRunner.runHideOrShow();
+                }
+            }, 3000); // 每3秒检查一次
         
         // 添加定期检查功能，每10秒检查一次待办列表中的任务是否已经完成
         setInterval(() => {
