@@ -2948,42 +2948,178 @@ const State = {
             }
         },
 
-        scanAndAddTasks: (cards) => {
+                scanAndAddTasks: async (cards) => {
             // This function should ONLY ever run if auto-add is enabled.
             if (!State.autoAddOnScroll) return;
-
-            // 延迟处理，给卡片状态更新留出时间
-            setTimeout(() => {
-                const newlyAddedList = [];
-            cards.forEach(card => {
+            
+            // 创建一个状态追踪对象
+            if (!window._apiWaitStatus) {
+                window._apiWaitStatus = {
+                    isWaiting: false,
+                    pendingCards: [],
+                    lastApiActivity: 0,
+                    apiCheckInterval: null
+                };
+            }
+            
+            // 如果已经有等待过程在进行，将当前卡片加入队列
+            if (window._apiWaitStatus.isWaiting) {
+                window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
+                Utils.logger('info', `[自动添加] 已有API等待过程在进行，将当前 ${cards.length} 张卡片加入等待队列。`);
+                return;
+            }
+            
+            // 标记开始等待API
+            window._apiWaitStatus.isWaiting = true;
+            window._apiWaitStatus.pendingCards = [...cards];
+            window._apiWaitStatus.lastApiActivity = Date.now();
+            
+            Utils.logger('info', `[自动添加] 开始等待API响应，将在API活动停止后处理 ${cards.length} 张卡片...`);
+            
+            // 创建一个函数来检测API活动
+            const waitForApiCompletion = () => {
+                return new Promise((resolve) => {
+                    // 清除之前的检查间隔
+                    if (window._apiWaitStatus.apiCheckInterval) {
+                        clearInterval(window._apiWaitStatus.apiCheckInterval);
+                    }
+                    
+                    // 设置一个最大等待时间（10秒）
+                    const maxWaitTime = 10000;
+                    const startTime = Date.now();
+                    
+                    // 监听网络请求
+                    const originalFetch = window.fetch;
+                    window.fetch = function(...args) {
+                        // 只关注商品状态相关的API请求
+                        const url = args[0]?.toString() || '';
+                        if (url.includes('/listings-states') || url.includes('/listings/search')) {
+                            window._apiWaitStatus.lastApiActivity = Date.now();
+                            Utils.logger('debug', `[API监控] 检测到API活动: ${url.substring(0, 50)}...`);
+                        }
+                        return originalFetch.apply(this, args);
+                    };
+                    
+                    // 检查API活动的间隔
+                    window._apiWaitStatus.apiCheckInterval = setInterval(() => {
+                        const now = Date.now();
+                        const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
+                        const totalWaitTime = now - startTime;
+                        
+                        // 如果超过最大等待时间，或者API活动停止超过2秒，则认为API已完成
+                        if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2000) {
+                            clearInterval(window._apiWaitStatus.apiCheckInterval);
+                            
+                            // 恢复原始的fetch函数
+                            window.fetch = originalFetch;
+                            
+                            if (totalWaitTime > maxWaitTime) {
+                                Utils.logger('warn', `[自动添加] API等待超时，已等待 ${totalWaitTime}ms，将继续处理卡片。`);
+                            } else {
+                                Utils.logger('info', `[自动添加] API活动已停止 ${timeSinceLastActivity}ms，继续处理卡片。`);
+                            }
+                            
+                            resolve();
+                        }
+                    }, 200); // 每200ms检查一次
+                });
+            };
+            
+            // 等待API完成
+            try {
+                await waitForApiCompletion();
+            } catch (error) {
+                Utils.logger('error', `[自动添加] 等待API时出错: ${error.message}`);
+            }
+            
+            // 处理卡片
+            const cardsToProcess = [...window._apiWaitStatus.pendingCards];
+            window._apiWaitStatus.pendingCards = [];
+            window._apiWaitStatus.isWaiting = false;
+            
+            Utils.logger('info', `[自动添加] API等待完成，开始处理 ${cardsToProcess.length} 张卡片...`);
+            
+            // 现在处理卡片
+            const newlyAddedList = [];
+            let skippedAlreadyOwned = 0;
+            let skippedInTodo = 0;
+            
+            cardsToProcess.forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 const url = link ? link.href.split('?')[0] : null;
                 if (!url) return;
 
-                    // 1. Must NOT be already finished (in done list, etc.) or in the current to-do list.
-                    const isAlreadyProcessed = TaskRunner.isCardFinished(card) || Database.isTodo(url);
-                    if (isAlreadyProcessed) {
+                // 1. 检查是否已经入库或在待办列表中
+                // 更严格的检查，确保已入库的商品不会被添加到待办列表
+                
+                // 检查URL是否在完成列表中
+                if (Database.isDone(url)) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+                
+                // 检查URL是否在待办列表中
+                if (Database.isTodo(url)) {
+                    skippedInTodo++;
+                    return;
+                }
+                
+                // 检查卡片是否有"已保存"标记
+                const text = card.textContent || '';
+                if (text.includes("已保存在我的库中") || 
+                    text.includes("已保存") || 
+                    text.includes("Saved to My Library") ||
+                    text.includes("In your library")) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+                
+                // 检查卡片是否有成功图标
+                const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
+                if (icons.length > 0) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+                
+                // 从链接中提取UID并检查缓存
+                const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
+                if (uidMatch && uidMatch[1]) {
+                    const uid = uidMatch[1];
+                    // 检查缓存中是否标记为已拥有
+                    if (DataCache.ownedStatus.has(uid)) {
+                        const status = DataCache.ownedStatus.get(uid);
+                        if (status && status.acquired) {
+                            skippedAlreadyOwned++;
+                            return;
+                        }
+                    }
+                }
+
+                // 2. Must be visibly "Free". This is the most critical filter.
+                const isFree = card.querySelector(Config.SELECTORS.freeStatus) !== null;
+                if (!isFree) {
                     return;
                 }
 
-                    // 2. Must be visibly "Free". This is the most critical filter.
-                    const isFree = card.querySelector(Config.SELECTORS.freeStatus) !== null;
-                    if (!isFree) {
-                    return;
-                }
-
-                    // If it passes all checks, it's a valid new task.
+                // If it passes all checks, it's a valid new task.
                 const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
                 newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
             });
 
-            if (newlyAddedList.length > 0) {
-                State.db.todo.push(...newlyAddedList);
-                Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
-                
-                // 保存待办列表到存储
-                Database.saveTodo();
+            if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+                if (newlyAddedList.length > 0) {
+                    State.db.todo.push(...newlyAddedList);
+                    Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
                     
+                    // 保存待办列表到存储
+                    Database.saveTodo();
+                }
+                
+                // 添加详细的过滤信息日志
+                if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+                    Utils.logger('info', `[自动添加] 过滤掉 ${skippedAlreadyOwned} 个已入库商品和 ${skippedInTodo} 个已在待办列表中的商品。`);
+                }
+                
                 // 如果已经在执行，只更新总数
                 if (State.isExecuting) {
                     State.executionTotalTasks = State.db.todo.length;
@@ -2994,9 +3130,8 @@ const State = {
                     TaskRunner.startExecution();
                 }
                 
-                    UI.update();
-                }
-            }, 1000); // 延迟1秒，给API请求和状态更新留出时间
+                UI.update();
+            }
         },
 
         async handleRateLimit(url) {
@@ -4393,7 +4528,9 @@ const State = {
                         
                         // 只在非限速状态下执行自动添加任务功能
                         if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
-                            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card));
+                            // 异步调用scanAndAddTasks
+                            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                                .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                         }
                     }).catch(() => {
                         // 即使状态检查失败也执行隐藏
