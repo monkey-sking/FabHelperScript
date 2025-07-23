@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab Helper (优化版)
 // @namespace    https://www.fab.com/
-// @version      3.2.2-20250723
+// @version      3.2.3-20250723
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @author       RunKing
 // @match        https://www.fab.com/*
@@ -1997,16 +1997,25 @@
 
                     Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${Math.floor(i / API_CHUNK_SIZE) + 1}... (${chunk.length}个项目)`);
 
-                const response = await fetch(apiUrl.href, {
-                    headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
+                                    const response = await fetch(apiUrl.href, {
+                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
 
                     if (!response.ok) {
                          Utils.logger('warn', `批次处理失败，状态码: ${response.status}。将跳过此批次。`);
                          continue; // Skip to next chunk
                     }
 
-                const data = await response.json();
+                    const rawData = await response.json();
+                    
+                    // 使用API.extractStateData处理可能的不同格式的响应
+                    const data = API.extractStateData(rawData, 'RefreshStates');
+                    
+                    if (!data || !Array.isArray(data)) {
+                        Utils.logger('warn', `API返回的数据格式异常: ${JSON.stringify(rawData).substring(0, 200)}...`);
+                        continue; // Skip to next chunk if data format is unexpected
+                    }
+                    
                     data.filter(item => item.acquired).forEach(item => ownedUids.add(item.uid));
 
                     // Add a small delay between chunks to be safe
