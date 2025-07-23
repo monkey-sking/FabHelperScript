@@ -354,17 +354,8 @@ const State = {
     };
 
     // --- DOM Creation Helpers (moved outside for broader scope) ---
-    const createOwnedElement = () => {
-        const ownedDiv = document.createElement('div');
-        ownedDiv.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-success fabkit-Text--sm fabkit-Text--regular fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 cUUvxo_s';
-        const icon = document.createElement('i');
-        icon.className = 'fabkit-Icon-root fabkit-Icon--intent-success fabkit-Icon--xs edsicon edsicon-check-circle-filled';
-        icon.setAttribute('aria-hidden', 'true');
-        ownedDiv.appendChild(icon);
-        ownedDiv.append('已保存在我的库中');
-        return ownedDiv;
-    };
-
+    // 移除createOwnedElement函数，不再手动添加"已保存在我的库中"标记
+    
     const createFreeElement = () => {
         const freeContainer = document.createElement('div');
         freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
@@ -388,6 +379,9 @@ const State = {
         
         // 价格缓存 - 键为报价ID，值为价格信息对象
         prices: new Map(),
+        
+        // 等待网页原生请求更新的UID列表
+        waitingList: new Set(),
         
         // 缓存时间戳 - 用于判断缓存是否过期
         timestamps: {
@@ -418,6 +412,31 @@ const State = {
             });
         },
         
+        // 添加到等待列表
+        addToWaitingList: function(uids) {
+            if (!uids || !Array.isArray(uids)) return;
+            uids.forEach(uid => this.waitingList.add(uid));
+            Utils.logger('debug', `[Cache] 添加 ${uids.length} 个商品ID到等待列表，当前等待列表大小: ${this.waitingList.size}`);
+        },
+        
+        // 检查并从等待列表中移除
+        checkWaitingList: function() {
+            if (this.waitingList.size === 0) return;
+            
+            // 检查等待列表中的UID是否已经有了拥有状态
+            let removedCount = 0;
+            for (const uid of this.waitingList) {
+                if (this.ownedStatus.has(uid)) {
+                    this.waitingList.delete(uid);
+                    removedCount++;
+                }
+            }
+            
+            if (removedCount > 0) {
+                Utils.logger('info', `[Cache] 从等待列表中移除了 ${removedCount} 个已更新的商品ID，剩余: ${this.waitingList.size}`);
+            }
+        },
+        
         // 保存拥有状态到缓存
         saveOwnedStatus: function(states) {
             if (!Array.isArray(states)) return;
@@ -431,8 +450,18 @@ const State = {
                         uid: state.uid
                     });
                     this.timestamps.ownedStatus.set(state.uid, now);
+                    
+                    // 如果在等待列表中，从等待列表移除
+                    if (this.waitingList.has(state.uid)) {
+                        this.waitingList.delete(state.uid);
+                    }
                 }
             });
+            
+            // 如果有更新，检查等待列表
+            if (states.length > 0) {
+                this.checkWaitingList();
+            }
         },
         
         // 保存价格信息到缓存
@@ -598,7 +627,7 @@ const State = {
             return [];
         },
         
-        // 优化后的商品拥有状态检查函数
+        // 优化后的商品拥有状态检查函数 - 只使用缓存和网页原生请求的数据
         checkItemsOwnership: async function(uids) {
             if (!uids || uids.length === 0) return [];
             
@@ -606,51 +635,15 @@ const State = {
                 // 从缓存中获取已知的拥有状态
                 const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
                 
-                // 如果所有商品都有缓存，直接返回
-                if (missingUids.length === 0) {
-                    if (State.debugMode) {
-                Utils.logger('info', `使用缓存的拥有状态数据，避免API请求`);
-            }
-                    return cachedResults;
+                // 如果有缺失的UID，记录但不主动请求
+                if (missingUids.length > 0) {
+                    Utils.logger('info', `有 ${missingUids.length} 个商品状态未知，等待网页原生请求更新`);
+                    // 将这些UID添加到等待列表，等待网页原生请求更新
+                    DataCache.addToWaitingList(missingUids);
                 }
                 
-                // 对缺失的商品ID发送API请求
-                if (State.debugMode) {
-                Utils.logger('info', `对 ${missingUids.length} 个缺失的商品ID发送API请求`);
-            }
-                
-                const csrfToken = Utils.getCookie('fab_csrftoken');
-                if (!csrfToken) {
-                    throw new Error("CSRF token not found");
-                }
-                
-                const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                missingUids.forEach(uid => statesUrl.searchParams.append('listing_ids', uid));
-                
-                const response = await this.gmFetch({
-                    method: 'GET',
-                    url: statesUrl.href,
-                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
-                
-                let statesData = [];
-                try {
-                    statesData = JSON.parse(response.responseText);
-                    
-                    // 如果不是数组，尝试提取数组数据
-                    if (!Array.isArray(statesData)) {
-                        Utils.logger('warn', 'API返回的数据不是数组格式，尝试提取数据');
-                        statesData = this.extractStateData(statesData, 'OptimizedCheck');
-                    }
-                    
-                    // 更新缓存
-                    DataCache.saveOwnedStatus(statesData);
-                } catch (e) {
-                    Utils.logger('error', `解析API响应失败: ${e.message}`);
-                }
-                
-                // 合并缓存结果和API结果
-                return [...cachedResults, ...statesData];
+                // 只返回缓存中已有的结果
+                return cachedResults;
             } catch (e) {
                 Utils.logger('error', `检查拥有状态失败: ${e.message}`);
                 return []; // 出错时返回空数组
@@ -1708,6 +1701,10 @@ const State = {
         } catch (jsonError) {
             // JSON解析错误，忽略
             Utils.logger('debug', `JSON解析错误: ${jsonError.message}`);
+            // 添加更多调试信息，帮助诊断问题
+            if (responseText && responseText.length > 0) {
+                Utils.logger('debug', `响应长度: ${responseText.length}, 前100个字符: ${responseText.substring(0, 100)}`);
+            }
         }
                             } catch (e) {
                                 // 解析错误，忽略
@@ -2229,18 +2226,9 @@ const State = {
                 uidToCardMap.forEach((card, uid) => {
                     const isOwned = ownedUids.has(uid);
 
+                    // 不再手动修改DOM元素，只更新计数
                     if (isOwned) {
-                        const freeElement = card.querySelector(Config.SELECTORS.freeStatus);
-                        if (freeElement) {
-                            freeElement.replaceWith(createOwnedElement());
-                            updatedCount++;
-                        }
-                    } else {
-                        const ownedElement = card.querySelector(Config.SELECTORS.ownedStatus);
-                        if (ownedElement) {
-                            ownedElement.replaceWith(createFreeElement());
-                            updatedCount++;
-                        }
+                        updatedCount++;
                     }
                 });
 
@@ -2278,52 +2266,24 @@ const State = {
             if (!State.isReconning) return;
 
             try {
-                // 如果没有提供URL，使用默认URL
-                const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=24`;
-                
-                // 获取CSRF令牌
-                const csrfToken = Utils.getCookie('fab_csrftoken');
-                if (!csrfToken) {
-                    Utils.logger('error', "CSRF token not found. Please ensure you are logged in.");
-                    State.isReconning = false;
-                    UI.update();
-                    return;
-                }
-                
-                const langPath = State.lang === 'zh' ? '/zh-cn' : '';
-                const apiHeaders = {
-                    'accept': 'application/json, text/plain, */*',
-                    'x-csrftoken': csrfToken,
-                    'x-requested-with': 'XMLHttpRequest',
-                    'Referer': window.location.href,
-                    'User-Agent': navigator.userAgent
-                };
+                // 不再主动发送API请求，而是使用网页原生请求的数据
+                Utils.logger('info', `[优化] 不再主动发送API请求，而是使用网页原生请求的数据`);
+                Utils.logger('info', `[优化] 当前等待列表中有 ${DataCache.waitingList.size} 个商品ID等待更新`);
                 
                 // 更新UI显示
-                const displayPage = Utils.getDisplayPageFromUrl(requestUrl);
                 if (State.UI.reconProgressDisplay) {
-                    State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
+                    State.UI.reconProgressDisplay.textContent = `使用网页原生请求，等待中: ${DataCache.waitingList.size}`;
                 }
                 
-                // 发送API请求
-                Utils.logger('info', `[优化] 正在扫描第 ${displayPage} 页...`);
-                const searchResponse = await API.gmFetch({ method: 'GET', url: requestUrl, headers: apiHeaders });
+                // 结束扫描
+                State.isReconning = false;
+                await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
+                Utils.logger('info', Utils.getText('log_recon_end'));
+                UI.update();
+                return;
                 
-                // 检查重定向
-                if (searchResponse.finalUrl && new URL(searchResponse.finalUrl).pathname !== new URL(requestUrl).pathname) {
-                    Utils.logger('warn', `请求被重定向，可能表示登录问题。最终URL: ${searchResponse.finalUrl}`);
-                }
-                
-                // 检查限速
-                if (searchResponse.status === 429) {
-                    Utils.logger('error', Utils.getText('log_429_error'));
-                    await new Promise(r => setTimeout(r, 15000));
-                    TaskRunner.reconWithApi(requestUrl); // 使用相同的URL重试
-                    return;
-                }
-                
-                // 解析响应
-                const searchData = JSON.parse(searchResponse.responseText);
+                // 以下代码不再执行
+                const searchData = null;
                 
                 // 保存商品数据到缓存
                 if (searchData.results && Array.isArray(searchData.results)) {
@@ -2785,7 +2745,10 @@ const State = {
         // 确保所有不应该隐藏的卡片都是可见的
         if (State.hideSaved) {
             // 找出所有不应该隐藏的卡片
-            const visibleCards = Array.from(cards).filter(card => !TaskRunner.isCardFinished(card));
+            const visibleCards = Array.from(cards).filter(card => {
+                // 不隐藏未完成的卡片
+                return !TaskRunner.isCardFinished(card);
+            });
             
             // 显示这些卡片（如果它们之前被隐藏了）
             visibleCards.forEach(card => {
@@ -2810,7 +2773,15 @@ const State = {
     checkVisibilityAndRefresh: () => {
         // 计算实际可见的商品数量
         const cards = document.querySelectorAll(Config.SELECTORS.card);
-        const visibleCards = Array.from(cards).filter(card => card.style.display !== 'none').length;
+        // 使用更准确的方式检查元素是否可见
+        const visibleCards = Array.from(cards).filter(card => {
+            // 检查元素自身的display属性
+            if (card.style.display === 'none') return false;
+            
+            // 检查是否被CSS规则隐藏
+            const computedStyle = window.getComputedStyle(card);
+            return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+        }).length;
         
         // 更新真实的可见商品数量
         Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
@@ -2856,8 +2827,9 @@ const State = {
                         State.isRefreshScheduled = false; // 重置刷新标记
                     }
                 }, 2000);
-            } else if (State.appStatus === 'NORMAL') {
+            } else if (State.appStatus === 'NORMAL' && State.hideSaved) {
                 // 正常状态下也没有可见商品，可能是全部隐藏了
+                // 只有在用户手动开启了隐藏功能时才提示
                 Utils.logger('info', `🔄 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品，建议刷新页面`);
             }
         }
@@ -2946,15 +2918,7 @@ const State = {
                             State.db.done.push(item.url);
                             confirmedOwned++;
                             
-                            // 如果有对应DOM元素，立即在UI上标记为已完成
-                            if (item.element) {
-                                // 尝试为卡片添加"已保存"标记
-                                const ownedElement = createOwnedElement();
-                                const infoSection = item.element.querySelector('.fabkit-Stack-root');
-                                if (infoSection) {
-                                    infoSection.appendChild(ownedElement);
-                                }
-                            }
+                            // 不再手动添加"已保存"标记，网页会自动更新
                         }
                         
                         // 从失败列表中移除
@@ -4605,8 +4569,19 @@ const State = {
             try {
                 // 重新计算实际可见的商品数量，确保与DOM状态同步
                 const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-                const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-                const actualVisibleCards = totalCards - hiddenCards;
+                
+                // 使用更准确的方式检查元素是否可见
+                const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter(card => {
+                    // 检查元素自身的display属性
+                    if (card.style.display === 'none') return false;
+                    
+                    // 检查是否被CSS规则隐藏
+                    const computedStyle = window.getComputedStyle(card);
+                    return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+                });
+                
+                const actualVisibleCards = visibleCards.length;
+                const hiddenCards = totalCards - actualVisibleCards;
                 
                 // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
                 const visibleCountElement = document.getElementById('fab-status-visible');
@@ -4618,7 +4593,9 @@ const State = {
                 State.hiddenThisPageCount = hiddenCards;
                 
                 // 如果处于限速状态且没有可见商品，考虑刷新
-                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
+                // 只有在用户手动开启了隐藏功能或启用了自动刷新时才触发
+                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && 
+                    (State.hideSaved || State.autoRefreshEmptyPage)) {
                     // 如果已经有倒计时在运行，不要干扰它
                     if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
                         return;
@@ -4631,7 +4608,8 @@ const State = {
                 }
                 
                 // 如果处于正常状态，但所有商品都被隐藏，也考虑刷新
-                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
+                // 只有在用户手动开启了隐藏功能时才触发自动刷新
+                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25 && State.hideSaved) {
                     Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏，准备刷新页面`);
                     const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
                     countdownRefresh(randomDelay, '正常状态所有商品隐藏');
@@ -5119,10 +5097,12 @@ const State = {
                             // 处理拥有状态响应
                             else if (url.includes('/i/users/me/listings-states')) {
                                 if (Array.isArray(data)) {
+                                    Utils.logger('info', `[网页请求] 捕获到拥有状态API响应，包含 ${data.length} 个商品状态`);
                                     DataCache.saveOwnedStatus(data);
                                 } else {
                                     const extractedData = API.extractStateData(data, 'FetchInterceptor');
                                     if (Array.isArray(extractedData) && extractedData.length > 0) {
+                                        Utils.logger('info', `[网页请求] 捕获到拥有状态API响应，提取出 ${extractedData.length} 个商品状态`);
                                         DataCache.saveOwnedStatus(extractedData);
                                     }
                                 }
