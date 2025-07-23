@@ -83,14 +83,23 @@
 
     // --- 模块二: 全局状态管理 (Global State) ---
     const State = {
-        db: {},
-        isExecuting: false,
+        db: {
+            todo: [],   // 待办任务列表
+            done: [],   // 已完成任务列表
+            failed: [], // 失败任务列表
+        },
+        hideSaved: false, // 是否隐藏已保存项目
+        autoAddOnScroll: false, // 是否在滚动时自动添加任务
+        rememberScrollPosition: false, // 是否记住滚动位置
+        autoResumeAfter429: false, // 是否在429后自动恢复
+        debugMode: false, // 是否启用调试模式
+        isExecuting: false, // 是否正在执行任务
+        isWorkerTab: false, // 是否是工作标签页
+        isReconning: false, // 是否正在进行API扫描
+        lastReconUrl: '', // 最后一次API扫描的URL
+        totalTasks: 0, // API扫描的总任务数
+        completedTasks: 0, // API扫描的已完成任务数
         isDispatchingTasks: false, // 新增：标记是否正在派发任务
-        isReconning: false,
-        hideSaved: false,
-        autoAddOnScroll: false, // New state for the setting
-        rememberScrollPosition: false, // New state for scroll position
-        isTogglingSetting: false, // Debounce flag for settings toggles
         savedCursor: null, // Holds the loaded cursor for hijacking
         // --- NEW: State for 429 monitoring ---
         appStatus: 'NORMAL', // 'NORMAL' or 'RATE_LIMITED'
@@ -110,8 +119,6 @@
         runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
         lastKnownHref: null, // To detect SPA navigation
         hiddenThisPageCount: 0,
-        totalTasks: 0, // Used for Recon
-        completedTasks: 0, // Used for Recon
         executionTotalTasks: 0, // For execution progress
         executionCompletedTasks: 0, // For execution progress
         executionFailedTasks: 0, // For execution progress
@@ -141,6 +148,7 @@
             statusBarContainer: null,
             statusItems: {},
             savedPositionDisplay: null, // 新增：保存位置显示元素的引用
+            // 排序选择器已移除
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -149,13 +157,44 @@
         observerDebounceTimer: null,
         isObserverRunning: false, // New flag for the robust launcher
         lastKnownCardCount: 0,
-        isWorkerTab: false, // 新增：标记当前标签页是否是工作标签页
         workerTaskId: null, // 新增：当前工作标签页的任务ID
+        // 添加排序相关的状态
+        sortOptions: {
+            'relevance': { name: '相关度', value: '-relevance' },
+            'rating': { name: '评分', value: '-rating' },
+            'newest': { name: '最新', value: '-created_at' },
+            'oldest': { name: '最旧', value: 'created_at' },
+            'price_asc': { name: '价格 (从低到高)', value: 'price' },
+            'price_desc': { name: '价格 (从高到低)', value: '-price' },
+            'title_asc': { name: '标题 A-Z', value: 'title' },
+            'title_desc': { name: '标题 Z-A', value: '-title' }
+        },
+        currentSortOption: 'title_desc', // 默认排序方式
     };
 
     // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
     const Utils = {
         logger: (type, ...args) => {
+            // 支持debug级别日志
+            if (type === 'debug') {
+                // 默认不在控制台显示debug级别日志，除非启用了调试模式
+                if (State.debugMode) {
+                    console.debug(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
+                }
+                // 但仍然记录到日志面板
+                if (State.UI.logPanel) {
+                    const logEntry = document.createElement('div');
+                    logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px; color: #888;';
+                    const timestamp = new Date().toLocaleTimeString();
+                    logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> <span style="color: #8a8;">[DEBUG]</span> ${args.join(' ')}`;
+                    State.UI.logPanel.prepend(logEntry);
+                    while (State.UI.logPanel.children.length > 100) {
+                        State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
+                    }
+                }
+                return;
+            }
+            
             // 在工作标签页中，只记录关键日志
             if (State.isWorkerTab) {
                 if (type === 'error' || args.some(arg => typeof arg === 'string' && arg.includes('Worker'))) {
@@ -353,6 +392,57 @@
                 });
             });
         },
+        // 新增API响应数据提取函数
+        extractStateData: (rawData, source = '') => {
+            // 记录原始数据格式
+            const dataType = Array.isArray(rawData) ? 'Array' : typeof rawData;
+            Utils.logger('debug', `[${source}] API返回数据类型: ${dataType}`);
+            
+            // 如果是数组，直接返回
+            if (Array.isArray(rawData)) {
+                return rawData;
+            }
+            
+            // 如果是对象，尝试提取可能的数组字段
+            if (rawData && typeof rawData === 'object') {
+                // 记录对象的顶级键
+                const keys = Object.keys(rawData);
+                Utils.logger('debug', `[${source}] API返回对象键: ${keys.join(', ')}`);
+                
+                // 尝试常见的数组字段名
+                const possibleArrayFields = ['data', 'results', 'items', 'listings', 'states'];
+                for (const field of possibleArrayFields) {
+                    if (rawData[field] && Array.isArray(rawData[field])) {
+                        Utils.logger('info', `[${source}] 在字段 "${field}" 中找到数组数据`);
+                        return rawData[field];
+                    }
+                }
+                
+                // 如果没有找到预定义字段，查找任何数组类型的字段
+                for (const key of keys) {
+                    if (Array.isArray(rawData[key])) {
+                        Utils.logger('info', `[${source}] 在字段 "${key}" 中找到数组数据`);
+                        return rawData[key];
+                    }
+                }
+                
+                // 如果对象中有uid和acquired字段，可能是单个项目
+                if (rawData.uid && 'acquired' in rawData) {
+                    Utils.logger('info', `[${source}] 返回的是单个项目数据，转换为数组`);
+                    return [rawData];
+                }
+            }
+            
+            // 如果无法提取，记录详细信息并返回空数组
+            Utils.logger('warn', `[${source}] 无法从API响应中提取数组数据`);
+            try {
+                const preview = JSON.stringify(rawData).substring(0, 200);
+                Utils.logger('debug', `[${source}] API响应预览: ${preview}...`);
+            } catch (e) {
+                Utils.logger('debug', `[${source}] 无法序列化API响应: ${e.message}`);
+            }
+            return [];
+        }
         // ... Other API-related functions will go here ...
     };
 
@@ -368,6 +458,8 @@
             State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
             State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
             State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+            State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
+            State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
             State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
             const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
@@ -732,23 +824,105 @@
         _pendingXhr: null,
 
         async init() {
+            // 初始化时，从存储中加载上次保存的cursor
             try {
-                // NEW: Use the unified Config key
-                const cursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR, null);
-
-                if (cursor) {
-                    State.savedCursor = cursor;
-                    this._lastSeenCursor = cursor;
-                    // NEW: More descriptive log
-                    Utils.logger('info', `[Cursor] Initialized. Loaded saved cursor: ${cursor.substring(0, 30)}...`);
-                        } else {
+                const savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR);
+                if (savedCursor) {
+                    State.savedCursor = savedCursor;
+                    this._lastSeenCursor = savedCursor;
+                    Utils.logger('info', `[Cursor] Initialized. Loaded saved cursor: ${savedCursor.substring(0, 30)}...`);
+                } else {
                     Utils.logger('info', `[Cursor] Initialized. No saved cursor found.`);
-                    }
-            } catch (e) {
-                 Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
                 }
+            } catch (e) {
+                Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
+            }
+
+            // 应用拦截器
             this.applyPatches();
             Utils.logger('info', '[Cursor] Network interceptors applied.');
+            
+            // 监听URL变化，检测排序方式变更
+            this.setupSortMonitor();
+        },
+        
+        // 添加监听URL变化的方法，检测排序方式变更
+        setupSortMonitor() {
+            // 初始检查当前URL中的排序参数
+            this.checkCurrentSortFromUrl();
+            
+            // 使用MutationObserver监听URL变化
+            if (typeof MutationObserver !== 'undefined') {
+                // 监听body变化，因为SPA应用可能不会触发popstate事件
+                const bodyObserver = new MutationObserver((mutations) => {
+                    // 如果URL发生变化，检查排序参数
+                    if (window.location.href !== this._lastCheckedUrl) {
+                        this._lastCheckedUrl = window.location.href;
+                        this.checkCurrentSortFromUrl();
+                    }
+                });
+                
+                bodyObserver.observe(document.body, { 
+                    childList: true, 
+                    subtree: true 
+                });
+                
+                // 保存引用以便后续可以断开
+                this._bodyObserver = bodyObserver;
+            }
+            
+            // 监听popstate事件（浏览器前进/后退按钮）
+            window.addEventListener('popstate', () => {
+                this.checkCurrentSortFromUrl();
+            });
+            
+            // 监听hashchange事件
+            window.addEventListener('hashchange', () => {
+                this.checkCurrentSortFromUrl();
+            });
+            
+            // 保存当前URL作为初始状态
+            this._lastCheckedUrl = window.location.href;
+        },
+        
+        // 从URL中检查当前排序方式并更新设置
+        checkCurrentSortFromUrl() {
+            try {
+                const url = new URL(window.location.href);
+                const sortParam = url.searchParams.get('sort_by');
+                
+                if (!sortParam) return; // 如果URL中没有排序参数，不做任何更改
+                
+                // 查找匹配的排序选项
+                let matchedOption = null;
+                for (const [key, option] of Object.entries(State.sortOptions)) {
+                    if (option.value === sortParam) {
+                        matchedOption = key;
+                        break;
+                    }
+                }
+                
+                // 如果找到匹配的排序选项，且与当前选项不同，则更新
+                if (matchedOption && matchedOption !== State.currentSortOption) {
+                    const previousSort = State.currentSortOption;
+                    State.currentSortOption = matchedOption;
+                    GM_setValue('fab_helper_sort_option', State.currentSortOption);
+                    
+                                         // 排序选择器UI已移除，不需要更新
+                    
+                    Utils.logger('info', `检测到URL排序参数变更，排序方式已从"${State.sortOptions[previousSort].name}"更改为"${State.sortOptions[State.currentSortOption].name}"`);
+                    
+                    // 清除已保存的浏览位置
+                    State.savedCursor = null;
+                    GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                    if (State.UI.savedPositionDisplay) {
+                        State.UI.savedPositionDisplay.textContent = '无保存位置';
+                    }
+                    Utils.logger('info', '由于排序方式变更，已清除保存的浏览位置');
+                }
+            } catch (e) {
+                Utils.logger('warn', `检查URL排序参数时出错: ${e.message}`);
+            }
         },
 
         async handleSearchResponse(request) {
@@ -867,15 +1041,17 @@
                                     const newFirstWord = getFirstWord(newItemName);
                                     const lastFirstWord = getFirstWord(lastItemName);
                                     
-                                    // 检查URL是否包含降序排列参数sort_by=-title
-                                    const urlHasReverseSort = url.includes('sort_by=-title');
+                                    // 检查URL中的排序参数
+                                    const sortParam = urlObj.searchParams.get('sort_by') || '';
+                                    const isReverseSort = sortParam.startsWith('-');
                                     
                                     // 根据排序方向决定比较逻辑
-                                    // 升序排列(title)：如果新位置的首字母在字母表中排在当前位置前面，说明是回退了
-                                    // 降序排列(-title)：如果新位置的首字母在字母表中排在当前位置后面，说明是回退了
-                                    if ((urlHasReverseSort && newFirstWord > lastFirstWord) || 
-                                        (!urlHasReverseSort && newFirstWord < lastFirstWord)) {
-                                        Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName}), 排序: ${urlHasReverseSort ? '降序' : '升序'}`);
+                                    // 如果是按标题排序：
+                                    // - 升序排列(title)：如果新位置的首字母在字母表中排在当前位置前面，说明是回退了
+                                    // - 降序排列(-title)：如果新位置的首字母在字母表中排在当前位置后面，说明是回退了
+                                    if ((isReverseSort && sortParam.includes('title') && newFirstWord > lastFirstWord) || 
+                                        (!isReverseSort && sortParam.includes('title') && newFirstWord < lastFirstWord)) {
+                                        Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName}), 排序: ${isReverseSort ? '降序' : '升序'}`);
                                         isValidPosition = false;
                                     }
                                 }
@@ -1654,7 +1830,7 @@
             let searchResponse = null;
 
             // If no URL is provided, start from the beginning.
-            const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=-relevance&page_size=24`;
+            const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=24`;
 
             try {
                 const csrfToken = Utils.getCookie('fab_csrftoken');
@@ -1760,7 +1936,8 @@
                     statesData = JSON.parse(statesResponse.responseText);
                     if (!Array.isArray(statesData)) {
                         Utils.logger('warn', '列表状态API返回的数据不是数组格式，这可能是API变更导致的');
-                        statesData = [];
+                        // 尝试提取数组数据
+                        statesData = API.extractStateData(statesData, 'ReconWithApi');
                     }
                 } catch (e) {
                     Utils.logger('error', '解析列表状态API响应失败:', e.message);
@@ -2137,7 +2314,8 @@
                         statesData = JSON.parse(response.responseText);
                         if (!Array.isArray(statesData)) {
                             logBuffer.push('API返回的数据不是数组格式，这可能是API变更导致的');
-                            statesData = [];
+                            // 尝试提取数组数据
+                            statesData = API.extractStateData(statesData, 'SingleItemCheck');
                         }
                     } catch (e) {
                         logBuffer.push(`解析API响应失败: ${e.message}`);
@@ -2499,7 +2677,16 @@
                         statesData = JSON.parse(response.responseText);
                         if (!Array.isArray(statesData)) {
                             Utils.logger('warn', '[Fab DOM Refresh] API返回的数据不是数组格式，这可能是API变更导致的');
-                            statesData = [];
+                            // 尝试提取数组数据
+                            statesData = API.extractStateData(statesData, 'FabDOMRefresh');
+                            
+                            // 记录原始响应内容以便调试
+                            try {
+                                const responsePreview = response.responseText.substring(0, 500);
+                                Utils.logger('debug', `[Fab DOM Refresh] 原始响应预览: ${responsePreview}...`);
+                            } catch (e) {
+                                Utils.logger('debug', `[Fab DOM Refresh] 无法记录原始响应: ${e.message}`);
+                            }
                         }
                     } catch (e) {
                         Utils.logger('error', `[Fab DOM Refresh] 解析API响应失败: ${e.message}`);
@@ -3154,8 +3341,23 @@
             resetButton.onclick = Database.resetAllData;
             settingsContent.appendChild(resetButton);
 
-            State.UI.tabContents.settings = settingsContent;
-            container.appendChild(settingsContent);
+            // 添加调试模式切换按钮
+            const debugModeRow = createSettingRow('调试模式', 'debugMode');
+            debugModeRow.title = '启用详细日志记录，用于排查问题';
+            debugModeRow.querySelector('span').style.color = '#ff9800';
+            debugModeRow.addEventListener('click', function() {
+                State.debugMode = !State.debugMode;
+                this.classList.toggle('active', State.debugMode);
+                Utils.logger('info', `调试模式已${State.debugMode ? '开启' : '关闭'}。${State.debugMode ? '将显示详细日志信息' : ''}`);
+                GM_setValue('fab_helper_debug_mode', State.debugMode);
+            });
+            debugModeRow.classList.toggle('active', State.debugMode);
+            settingsContent.appendChild(debugModeRow);
+
+                            // 排序选择已移除，改为自动从URL获取
+                
+              State.UI.tabContents.settings = settingsContent;
+              container.appendChild(settingsContent);
 
             // --- 调试标签页 ---
             const debugContent = document.createElement('div');
@@ -4043,9 +4245,8 @@
                 if (State.appStatus !== 'NORMAL') return;
                 
                 // 发送API请求检查状态
-                // 根据当前页面URL判断使用什么排序顺序
-                const currentSortBy = window.location.href.includes('sort_by=-title') ? '-title' : 'title';
-                const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${currentSortBy}&cursor=` + 
+                // 使用当前选择的排序方式
+                const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&cursor=` + 
                                encodeURIComponent('bz02JnA9Tm9yZGljK0JlYWNoK0JvdWxkZXI=');
                 
                 const response = await fetch(apiUrl, { 
