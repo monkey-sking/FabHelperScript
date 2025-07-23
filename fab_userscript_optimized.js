@@ -1474,13 +1474,40 @@
                                     
                                     // 检查是否返回了空结果
                                     if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
-                                        // 检查是否是到达列表末尾的正常情况（next为null但previous不为null）
+                                        // 情况1: 到达列表末尾的正常情况（next为null但previous不为null）
                                         const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                                        
+                                        // 情况2: 完全空的结果集，但可能是正常的搜索结果为空
+                                        const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                                        
+                                        // 获取当前URL的参数
+                                        const urlObj = new URL(request._url, window.location.origin);
+                                        const params = urlObj.searchParams;
+                                        
+                                        // 检查是否有特殊的搜索参数（如果有特殊过滤条件，空结果可能是正常的）
+                                        const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
                                         
                                         if (isEndOfList) {
                                             Utils.logger('info', `[列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                                             // 记录成功请求，虽然没有结果，但这是正常情况
                                             RateLimitManager.recordSuccessfulRequest('XHR列表末尾', true);
+                                            return;
+                                        } else if (isEmptySearch && hasSpecialFilters) {
+                                            Utils.logger('info', `[空搜索结果] 检测到搜索结果为空，但包含特殊过滤条件，这可能是正常情况: ${JSON.stringify(data).substring(0, 200)}...`);
+                                            // 记录成功请求，虽然没有结果，但这可能是正常情况
+                                            RateLimitManager.recordSuccessfulRequest('XHR空搜索结果', true);
+                                            return;
+                                        } else if (isEmptySearch && State.appStatus === 'RATE_LIMITED') {
+                                            // 如果已经处于限速状态，不要重复触发
+                                            Utils.logger('info', `[空搜索结果] 已处于限速状态，不重复触发: ${JSON.stringify(data).substring(0, 200)}...`);
+                                            return;
+                                        } else if (isEmptySearch && document.readyState !== 'complete') {
+                                            // 如果页面尚未完全加载，可能是初始请求，不要立即触发限速
+                                            Utils.logger('info', `[空搜索结果] 页面尚未完全加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
+                                            return;
+                                        } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5000) {
+                                            // 如果页面刚刚加载不到5秒，可能是初始请求，不要立即触发限速
+                                            Utils.logger('info', `[空搜索结果] 页面刚刚加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                                             return;
                                         } else {
                                             Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
@@ -1636,13 +1663,36 @@
             // 检查是否返回了空结果
             const responseUrl = response.url || '';
             if (data.results && data.results.length === 0 && responseUrl.includes('/i/listings/search')) {
-                // 检查是否是到达列表末尾的正常情况（next为null但previous不为null）
+                // 情况1: 到达列表末尾的正常情况（next为null但previous不为null）
                 const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                
+                // 情况2: 完全空的结果集，但可能是正常的搜索结果为空
+                const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                
+                // 获取当前URL的参数
+                const urlObj = new URL(responseUrl, window.location.origin);
+                const params = urlObj.searchParams;
+                
+                // 检查是否有特殊的搜索参数（如果有特殊过滤条件，空结果可能是正常的）
+                const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
                 
                 if (isEndOfList) {
                     Utils.logger('info', `[Fetch列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                     // 记录成功请求，虽然没有结果，但这是正常情况
                     RateLimitManager.recordSuccessfulRequest('Fetch列表末尾', true);
+                } else if (isEmptySearch && hasSpecialFilters) {
+                    Utils.logger('info', `[Fetch空搜索结果] 检测到搜索结果为空，但包含特殊过滤条件，这可能是正常情况: ${JSON.stringify(data).substring(0, 200)}...`);
+                    // 记录成功请求，虽然没有结果，但这可能是正常情况
+                    RateLimitManager.recordSuccessfulRequest('Fetch空搜索结果', true);
+                } else if (isEmptySearch && State.appStatus === 'RATE_LIMITED') {
+                    // 如果已经处于限速状态，不要重复触发
+                    Utils.logger('info', `[Fetch空搜索结果] 已处于限速状态，不重复触发: ${JSON.stringify(data).substring(0, 200)}...`);
+                } else if (isEmptySearch && document.readyState !== 'complete') {
+                    // 如果页面尚未完全加载，可能是初始请求，不要立即触发限速
+                    Utils.logger('info', `[Fetch空搜索结果] 页面尚未完全加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
+                } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5000) {
+                    // 如果页面刚刚加载不到5秒，可能是初始请求，不要立即触发限速
+                    Utils.logger('info', `[Fetch空搜索结果] 页面刚刚加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                 } else {
                     Utils.logger('warn', `[Fetch隐性限速] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
                     RateLimitManager.enterRateLimitedState('Fetch响应空结果').catch(e => 
@@ -3863,6 +3913,9 @@
     };
 
     async function main() {
+        // 记录页面加载时间
+        window.pageLoadTime = Date.now();
+        
         Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
         
