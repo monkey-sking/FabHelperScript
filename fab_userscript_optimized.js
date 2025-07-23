@@ -2707,81 +2707,148 @@ const State = {
         // This function is now fully obsolete.
         // advanceDetailTask: async () => {},
 
-        runHideOrShow: () => {
-            // 无论是否在限速状态下，都应该执行隐藏功能
-            State.hiddenThisPageCount = 0;
-            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            runHideOrShow: () => {
+        // 无论是否在限速状态下，都应该执行隐藏功能
+        State.hiddenThisPageCount = 0;
+        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        
+        // 添加一个计数器，用于跟踪实际隐藏的卡片数量
+        let actuallyHidden = 0;
+        
+        // 首先收集所有需要隐藏的卡片
+        const cardsToHide = [];
+        cards.forEach(card => {
+            const isFinished = TaskRunner.isCardFinished(card);
+            if (State.hideSaved && isFinished) {
+                cardsToHide.push(card);
+                State.hiddenThisPageCount++;
+            }
+        });
+        
+        // 如果有需要隐藏的卡片，使用随机延迟隐藏它们
+        if (cardsToHide.length > 0) {
+            Utils.logger('info', `准备隐藏 ${cardsToHide.length} 张卡片，将使用随机延迟...`);
             
-            // 首先立即隐藏所有应该隐藏的卡片，防止闪烁
-            cards.forEach(card => {
-                const isFinished = TaskRunner.isCardFinished(card);
-                if (State.hideSaved && isFinished) {
-                    card.style.display = 'none';
-                    State.hiddenThisPageCount++;
-                }
+            // 随机打乱卡片顺序，使隐藏更加随机
+            cardsToHide.sort(() => Math.random() - 0.5);
+            
+            // 分批次隐藏卡片，每批次最多20张
+            const batchSize = 20;
+            const batches = Math.ceil(cardsToHide.length / batchSize);
+            
+            for (let i = 0; i < batches; i++) {
+                const start = i * batchSize;
+                const end = Math.min(start + batchSize, cardsToHide.length);
+                const currentBatch = cardsToHide.slice(start, end);
+                
+                // 为每个批次设置一个随机延迟
+                const batchDelay = i * 50 + Math.random() * 100;
+                
+                setTimeout(() => {
+                    currentBatch.forEach((card, index) => {
+                        // 为每张卡片设置一个额外的随机延迟
+                        const cardDelay = index * 5 + Math.random() * 20;
+                        
+                        setTimeout(() => {
+                            card.style.display = 'none';
+                            actuallyHidden++;
+                            
+                            // 当所有卡片都隐藏后，更新UI
+                            if (actuallyHidden === cardsToHide.length) {
+                                Utils.logger('info', `已完成所有 ${actuallyHidden} 张卡片的隐藏`);
+                                // 延迟更新UI，确保DOM已经完全更新
+                                setTimeout(() => {
+                                    UI.update();
+                                    // 隐藏完成后检查可见性并决定是否刷新
+                                    TaskRunner.checkVisibilityAndRefresh();
+                                }, 100);
+                            }
+                        }, cardDelay);
+                    });
+                }, batchDelay);
+            }
+        }
+        
+        // 确保所有不应该隐藏的卡片都是可见的
+        if (State.hideSaved) {
+            // 找出所有不应该隐藏的卡片
+            const visibleCards = Array.from(cards).filter(card => !TaskRunner.isCardFinished(card));
+            
+            // 显示这些卡片（如果它们之前被隐藏了）
+            visibleCards.forEach(card => {
+                card.style.display = '';
             });
             
-            // 然后添加动画效果：先显示所有卡片，再逐个隐藏
-            if (State.hideSaved && State.hiddenThisPageCount > 0) {
-                // 找出所有不应该隐藏的卡片
-                const visibleCards = Array.from(cards).filter(card => !TaskRunner.isCardFinished(card));
-                
-                // 显示这些卡片（如果它们之前被隐藏了）
-                visibleCards.forEach(card => {
-                    card.style.display = '';
-                });
-                
-                // 直接更新UI，避免闪烁
+            // 只有在没有需要隐藏的卡片时才立即更新UI和检查可见性
+            if (cardsToHide.length === 0) {
                 UI.update();
+                TaskRunner.checkVisibilityAndRefresh();
+            }
+        } else {
+            // 如果没有隐藏功能，正常显示所有卡片并更新UI
+            cards.forEach(card => {
+                card.style.display = '';
+            });
+            UI.update();
+        }
+    },
+    
+    // 新增：检查可见性并决定是否刷新的方法
+    checkVisibilityAndRefresh: () => {
+        // 计算实际可见的商品数量
+        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        const visibleCards = Array.from(cards).filter(card => card.style.display !== 'none').length;
+        
+        // 更新真实的可见商品数量
+        Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
+        
+        // 更新UI上显示的可见商品数
+        const visibleCountElement = document.getElementById('fab-status-visible');
+        if (visibleCountElement) {
+            visibleCountElement.textContent = visibleCards.toString();
+        }
+        
+        if (visibleCards === 0) {
+            // 无可见商品，根据状态决定是否刷新
+            if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
+                // 如果已经安排了刷新，不要重复安排
+                if (State.isRefreshScheduled) {
+                    Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (无商品可见)`);
+                    return;
+                }
                 
-                // 检查是否所有卡片都被隐藏了，如果是且处于限速状态，则触发刷新
-                // 使用UI上显示的可见商品数量作为判断依据
-                const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
+                Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
                 
-                // 更新真实的可见商品数量
-                Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${actualVisibleCount}，隐藏商品数: ${State.hiddenThisPageCount}`);
+                // 标记已安排刷新
+                State.isRefreshScheduled = true;
                 
-                if (actualVisibleCount === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
-                    // 如果已经安排了刷新，不要重复安排
-                    if (State.isRefreshScheduled) {
-                        Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (无商品可见)`);
+                setTimeout(() => {
+                    // 再次检查实际可见的商品数量
+                    const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
+                        .filter(card => card.style.display !== 'none').length;
+                    
+                    // 检查是否有待办任务或活动工作线程
+                    if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                        Utils.logger('info', `⏹️ 刷新取消，检测到 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程`);
+                        State.isRefreshScheduled = false; // 重置刷新标记
                         return;
                     }
                     
-                    Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
-                    
-                    // 标记已安排刷新
-                    State.isRefreshScheduled = true;
-                    
-                    setTimeout(() => {
-                        // 最后检查一次，确保条件仍然满足
-                        const finalVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                        
-                        // 检查是否有待办任务或活动工作线程
-                        if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                            Utils.logger('info', `⏹️ 刷新取消，检测到 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程`);
-                            State.isRefreshScheduled = false; // 重置刷新标记
-                            return;
-                        }
-                        
-                        if (finalVisibleCount === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
-                            Utils.logger('info', '🔄 执行刷新...');
-                            // 使用更可靠的刷新方式
-                            window.location.href = window.location.href;
-                        } else {
-                            Utils.logger('info', `⏹️ 刷新取消，检测到 ${finalVisibleCount} 个可见商品`);
-                            State.isRefreshScheduled = false; // 重置刷新标记
-                        }
-                    }, 2000);
-                }
-            } else {
-                // 如果没有隐藏功能或没有需要隐藏的卡片，正常显示所有卡片
-                cards.forEach(card => {
-                    card.style.display = '';
-                });
-                UI.update();
+                    if (currentVisibleCards === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
+                        Utils.logger('info', '🔄 执行刷新...');
+                        // 使用更可靠的刷新方式
+                        window.location.href = window.location.href;
+                    } else {
+                        Utils.logger('info', `⏹️ 刷新取消，检测到 ${currentVisibleCards} 个可见商品`);
+                        State.isRefreshScheduled = false; // 重置刷新标记
+                    }
+                }, 2000);
+            } else if (State.appStatus === 'NORMAL') {
+                // 正常状态下也没有可见商品，可能是全部隐藏了
+                Utils.logger('info', `🔄 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品，建议刷新页面`);
             }
-        },
+        }
+    },
         
         // 添加一个方法来检查并确保待办任务被执行
         ensureTasksAreExecuted: () => {
