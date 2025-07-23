@@ -44,6 +44,7 @@
             STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
             AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
             IS_EXECUTING: 'fab_is_executing_v1', // For saving the "一键开刷" state
+            AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 新增：无商品可见时自动刷新
             // All other keys are either session-based or for main-tab persistence.
         },
         SELECTORS: {
@@ -78,18 +79,20 @@
     };
 
     // --- 模块二: 全局状态管理 (Global State) ---
-    const State = {
-        db: {
-            todo: [],   // 待办任务列表
-            done: [],   // 已完成任务列表
-            failed: [], // 失败任务列表
-        },
-        hideSaved: false, // 是否隐藏已保存项目
-        autoAddOnScroll: false, // 是否在滚动时自动添加任务
-        rememberScrollPosition: false, // 是否记住滚动位置
-        autoResumeAfter429: false, // 是否在429后自动恢复
-        debugMode: false, // 是否启用调试模式
-        isExecuting: false, // 是否正在执行任务
+const State = {
+    db: {
+        todo: [],   // 待办任务列表
+        done: [],   // 已完成任务列表
+        failed: [], // 失败任务列表
+    },
+    hideSaved: false, // 是否隐藏已保存项目
+    autoAddOnScroll: false, // 是否在滚动时自动添加任务
+    rememberScrollPosition: false, // 是否记住滚动位置
+    autoResumeAfter429: false, // 是否在429后自动恢复
+    autoRefreshEmptyPage: true, // 新增：无商品可见时自动刷新（默认开启）
+    debugMode: false, // 是否启用调试模式
+    isExecuting: false, // 是否正在执行任务
+    isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
         isWorkerTab: false, // 是否是工作标签页
         isReconning: false, // 是否正在进行API扫描
         lastReconUrl: '', // 最后一次API扫描的URL
@@ -725,6 +728,7 @@
             State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
             State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
             State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
+            State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
             State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
             State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
             State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
@@ -750,6 +754,7 @@
         saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
         saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
         saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
+        saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
         saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
         resetAllData: async () => {
@@ -2736,8 +2741,18 @@
                 // 更新真实的可见商品数量
                 Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${actualVisibleCount}，隐藏商品数: ${State.hiddenThisPageCount}`);
                 
-                if (actualVisibleCount === 0 && State.appStatus === 'RATE_LIMITED') {
+                if (actualVisibleCount === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
+                    // 如果已经安排了刷新，不要重复安排
+                    if (State.isRefreshScheduled) {
+                        Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (无商品可见)`);
+                        return;
+                    }
+                    
                     Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
+                    
+                    // 标记已安排刷新
+                    State.isRefreshScheduled = true;
+                    
                     setTimeout(() => {
                         // 最后检查一次，确保条件仍然满足
                         const finalVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
@@ -2745,15 +2760,17 @@
                         // 检查是否有待办任务或活动工作线程
                         if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                             Utils.logger('info', `⏹️ 刷新取消，检测到 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程`);
+                            State.isRefreshScheduled = false; // 重置刷新标记
                             return;
                         }
                         
-                        if (finalVisibleCount === 0 && State.appStatus === 'RATE_LIMITED') {
+                        if (finalVisibleCount === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
                             Utils.logger('info', '🔄 执行刷新...');
                             // 使用更可靠的刷新方式
                             window.location.href = window.location.href;
                         } else {
                             Utils.logger('info', `⏹️ 刷新取消，检测到 ${finalVisibleCount} 个可见商品`);
+                            State.isRefreshScheduled = false; // 重置刷新标记
                         }
                     }, 2000);
                 }
@@ -2961,6 +2978,17 @@
             } catch (error) {
                 Utils.logger('error', `报告任务状态时出错: ${error.message}`);
             }
+        },
+
+        toggleAutoRefreshEmpty: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.autoRefreshEmptyPage = !State.autoRefreshEmptyPage;
+            await Database.saveAutoRefreshEmptyPref();
+            Utils.logger('info', `无商品可见时自动刷新功能已${State.autoRefreshEmptyPage ? '开启' : '关闭'}。`);
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
     };
 
@@ -3473,6 +3501,8 @@
                         TaskRunner.toggleRememberPosition();
                     } else if (stateKey === 'autoResumeAfter429') {
                         TaskRunner.toggleAutoResume();
+                    } else if (stateKey === 'autoRefreshEmptyPage') {
+                        TaskRunner.toggleAutoRefreshEmpty();
                     }
                     // Manually sync the visual state of the checkbox since we prevented default action
                     e.target.checked = State[stateKey];
@@ -3499,6 +3529,9 @@
 
             const autoResumeSetting = createSettingRow('429后自动恢复并继续', 'autoResumeAfter429');
             settingsContent.appendChild(autoResumeSetting);
+
+            const autoRefreshEmptySetting = createSettingRow('无商品可见时自动刷新', 'autoRefreshEmptyPage');
+            settingsContent.appendChild(autoRefreshEmptySetting);
 
             const resetButton = document.createElement('button');
             resetButton.textContent = '🗑️ 清空所有存档';
@@ -4640,6 +4673,15 @@
     let currentRefreshTimeout = null;
     
     const countdownRefresh = (delay, reason = '备选方案') => {
+        // 如果已经安排了刷新，不要重复安排
+        if (State.isRefreshScheduled) {
+            Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (${reason})`);
+            return;
+        }
+        
+        // 标记已安排刷新
+        State.isRefreshScheduled = true;
+        
         // 如果已经有倒计时在运行，先清除它
         if (currentCountdownInterval) {
             clearInterval(currentCountdownInterval);
@@ -4663,9 +4705,22 @@
             if (remainingSeconds <= 0) {
                 clearInterval(currentCountdownInterval);
                 currentCountdownInterval = null;
-                Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
-            } else {
-                Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
+                                    Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
+                } else {
+                    Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
+                    
+                    // 如果用户手动取消了刷新标记
+                    if (!State.isRefreshScheduled) {
+                        Utils.logger('info', `⏹️ 检测到刷新已被取消，停止倒计时`);
+                        clearInterval(currentCountdownInterval);
+                        currentCountdownInterval = null;
+                        
+                        if (currentRefreshTimeout) {
+                            clearTimeout(currentRefreshTimeout);
+                            currentRefreshTimeout = null;
+                        }
+                        return;
+                    }
                 
                 // 每3秒重新检查一次条件
                 if (remainingSeconds % 3 === 0) {
@@ -4680,6 +4735,9 @@
                                 clearTimeout(currentRefreshTimeout);
                                 currentRefreshTimeout = null;
                             }
+                            
+                            // 重置刷新标记
+                            State.isRefreshScheduled = false;
                             
                             // 恢复正常状态
                             if (State.appStatus === 'RATE_LIMITED') {
@@ -4700,6 +4758,8 @@
                                 clearTimeout(currentRefreshTimeout);
                                 currentCountdownInterval = null;
                                 currentRefreshTimeout = null;
+                                // 重置刷新标记
+                                State.isRefreshScheduled = false;
                                 Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
                                 Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
                                 return;
@@ -4726,6 +4786,8 @@
                                 clearTimeout(currentRefreshTimeout);
                                 currentCountdownInterval = null;
                                 currentRefreshTimeout = null;
+                                // 重置刷新标记
+                                State.isRefreshScheduled = false;
                                 
                                 if (visibleCount > 0) {
                                     Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
@@ -4760,6 +4822,7 @@
                 if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                     Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
                     Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
+                    State.isRefreshScheduled = false; // 重置刷新标记
                     return;
                 }
                 
@@ -4770,6 +4833,7 @@
                     window.location.href = window.location.href;
                 } else {
                     Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，取消自动刷新。`);
+                    State.isRefreshScheduled = false; // 重置刷新标记
                     return;
                 }
             } else {
@@ -4781,6 +4845,7 @@
                         Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
                     }
                     Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
+                    State.isRefreshScheduled = false; // 重置刷新标记
                 } else {
                     // 所有条件都满足，执行刷新
                     // 使用更可靠的刷新方式
