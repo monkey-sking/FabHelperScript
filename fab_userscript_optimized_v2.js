@@ -1087,51 +1087,37 @@ const State = {
                     return false;
                 }
                 
-                // 然后使用API探测
-                const csrfToken = Utils.getCookie('fab_csrftoken');
-                if (!csrfToken) {
-                    Utils.logger('error', '无法获取CSRF令牌，无法进行API探测');
-                    return false;
-                }
+                // 使用Performance API检查最近的网络请求，而不是主动发送API请求
+                Utils.logger('info', '使用Performance API检查最近的网络请求，不再主动发送API请求');
                 
-                // 使用主要的商品列表API进行探测，这比用户上下文API更准确
-                const listingUrl = 'https://www.fab.com/i/listings/search?is_free=1&count=1';
-                const probeResponse = await API.gmFetch({
-                    method: 'GET',
-                    url: listingUrl,
-                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                });
-                
-                if (probeResponse.status === 429) {
-                    // 如果返回429，确认限速状态
-                    await this.enterRateLimitedState('API探测429');
-                    return false;
-                } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
-                    // 尝试解析响应内容
-                    try {
-                        const data = JSON.parse(probeResponse.responseText);
-                        
-                        // 检查响应是否包含有效数据
-                        if (data && data.results && data.results.length > 0) {
-                            // 记录成功请求
-                            await this.recordSuccessfulRequest('API探测成功', true);
-                            return true;
-                        } else {
-                            // 响应成功但没有数据，可能仍处于限速状态
-                            Utils.logger('warn', 'API探测响应成功但没有数据，可能仍处于限速状态');
-                            State.consecutiveSuccessCount = 0; // 重置连续成功计数
+                if (window.performance && window.performance.getEntriesByType) {
+                    const recentRequests = window.performance.getEntriesByType('resource')
+                        .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
+                        .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
+                    
+                    // 如果有最近的请求，检查它们的状态
+                    if (recentRequests.length > 0) {
+                        // 检查是否有429状态码的请求
+                        const has429 = recentRequests.some(r => r.responseStatus === 429);
+                        if (has429) {
+                            Utils.logger('info', `检测到最近10秒内有429状态码的请求，判断为限速状态`);
+                            await this.enterRateLimitedState('Performance API检测429');
                             return false;
                         }
-                    } catch (e) {
-                        // 如果解析失败，可能仍然处于限速状态
-                        Utils.logger('warn', `API探测响应解析失败: ${e.message}，可能仍处于限速状态`);
-                        return false;
+                        
+                        // 检查是否有成功的请求
+                        const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
+                        if (hasSuccess) {
+                            Utils.logger('info', `检测到最近10秒内有成功的API请求，判断为正常状态`);
+                            await this.recordSuccessfulRequest('Performance API检测成功', true);
+                            return true;
+                        }
                     }
-                } else {
-                    // 其他状态码，可能仍然处于限速状态
-                    Utils.logger('warn', `API探测返回意外状态码: ${probeResponse.status}`);
-                    return false;
                 }
+                
+                // 如果没有足够的信息判断，保持当前状态
+                Utils.logger('info', `没有足够的信息判断限速状态，保持当前状态`);
+                return State.appStatus === 'NORMAL';
             } catch (e) {
                 Utils.logger('error', `限速状态检查失败: ${e.message}`);
                 return false;
@@ -2143,19 +2129,30 @@ const State = {
                 if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
 
                 // Step 1: Gather all unique UIDs to check
+                // 只收集可见的未入库商品
                 const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)]
                     .filter(isElementInViewport)
+                    .filter(card => {
+                        // 过滤掉已经确认入库的商品
+                        const link = card.querySelector(Config.SELECTORS.cardLink);
+                        if (!link) return false;
+                        const url = link.href.split('?')[0];
+                        return !Database.isDone(url);
+                    })
                     .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
                     .filter(Boolean));
 
+                // 收集已经入库失败的商品
                 const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
+                
+                // 合并两类商品ID
                 const allUidsToCheck = Array.from(new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
 
                 if (allUidsToCheck.length === 0) {
-                    Utils.logger('info', '[Fab DOM Refresh] 没有可见或失败的项目需要检查。');
+                    Utils.logger('info', '[Fab DOM Refresh] 没有未入库的可见商品或入库失败的商品需要检查。');
                     return;
                 }
-                Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${allUidsToCheck.length} 个项目（可见+失败）的状态...`);
+                Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${uidsFromVisibleCards.size} 个未入库的可见商品和 ${uidsFromFailedList.size} 个入库失败的商品...`);
 
                 // Step 2: Process UIDs in chunks
                 const ownedUids = new Set();
@@ -4531,15 +4528,16 @@ const State = {
                     }
                 }
                 
-                // 如果Performance API没有提供有用信息，则发送HEAD请求
-                const response = await fetch(window.location.href, { 
-                    method: 'HEAD',
-                    cache: 'no-store',
-                    credentials: 'same-origin'
-                });
+                // 不再发送HEAD请求，只使用Performance API
+                Utils.logger('info', `[HTTP状态检测] 使用Performance API检查，不再发送HEAD请求`);
                 
-                if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
-                    Utils.logger('warn', `[HTTP状态检测] 检测到当前页面状态码为429！`);
+                // 检查页面内容是否包含限速信息
+                const pageText = document.body.innerText || '';
+                if (pageText.includes('Too many requests') || 
+                    pageText.includes('rate limit') || 
+                    pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                    
+                    Utils.logger('warn', `[HTTP状态检测] 页面内容包含限速信息，判断为429状态`);
                     try {
                         // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                         if (typeof window.enterRateLimitedState === 'function') {
