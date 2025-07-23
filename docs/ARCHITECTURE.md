@@ -27,9 +27,9 @@ Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成
 +---------------------------+     +---------------------------+
            |
            v
-+---------------------------+
-|       DOM 观察模块        |
-+---------------------------+
++---------------------------+     +---------------------------+
+|       DOM 观察模块        | <-> |       数据缓存模块        |
++---------------------------+     +---------------------------+
            |
            v
 +---------------------------+     +---------------------------+
@@ -62,6 +62,7 @@ Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成
 - 记录限速发生时间和持续时间
 - 监控全局 XHR 和 fetch 请求
 - 触发自动恢复流程
+- 智能检测可见商品数量，决定是否刷新页面
 
 关键函数：
 ```javascript
@@ -72,6 +73,10 @@ function handleRateLimit(source) {
 function monitorXHRResponses() {
   // 监控XHR响应
 }
+
+function checkRateLimitStatus() {
+  // 检查限速状态并决定是否刷新
+}
 ```
 
 ### 4. 自动恢复模块
@@ -81,6 +86,7 @@ function monitorXHRResponses() {
 - 管理自动刷新倒计时
 - 执行页面刷新
 - 恢复状态检测
+- 智能判断可见商品数量，避免中断浏览
 
 关键函数：
 ```javascript
@@ -91,6 +97,10 @@ function startAutoRecovery() {
 function checkRecoveryStatus() {
   // 检查恢复状态
 }
+
+function countdownRefresh(delay, reason) {
+  // 倒计时刷新，考虑可见商品数量
+}
 ```
 
 ### 5. 请求优化模块
@@ -100,6 +110,7 @@ function checkRecoveryStatus() {
 - 请求节流（Throttle）
 - 请求队列管理
 - 避免重复请求
+- 拦截并缓存网络请求
 
 关键函数：
 ```javascript
@@ -109,6 +120,10 @@ function debounceRequest(url, delay) {
 
 function throttleRequests() {
   // 限制请求频率
+}
+
+function setupRequestInterceptors() {
+  // 设置请求拦截器
 }
 ```
 
@@ -138,6 +153,7 @@ function restoreCursorPosition() {
 - 对特定元素进行增强
 - 添加自定义 UI 元素
 - 响应交互事件
+- 监控排序选项变化
 
 关键函数：
 ```javascript
@@ -148,17 +164,50 @@ function setupDOMObserver() {
 function handleDOMChange(mutations) {
   // 处理 DOM 变化
 }
+
+function setupSortMonitor() {
+  // 监控排序选项变化
+}
 ```
 
-### 8. 功能扩展模块
+### 8. 数据缓存模块
+
+缓存API响应数据，减少重复请求：
+- 缓存商品列表数据
+- 缓存拥有状态数据
+- 缓存价格信息数据
+- 管理缓存过期时间
+- 拦截并处理API响应
+
+关键函数：
+```javascript
+function saveListings(items) {
+  // 保存商品列表数据
+}
+
+function saveOwnedStatus(states) {
+  // 保存拥有状态数据
+}
+
+function savePrices(offers) {
+  // 保存价格信息数据
+}
+
+function cleanupExpired() {
+  // 清理过期缓存
+}
+```
+
+### 9. 功能扩展模块
 
 实现各种辅助功能：
 - 导出聊天记录
 - 添加快捷操作
 - 增强搜索功能
 - 自定义界面优化
+- 隐藏已拥有商品
 
-### 9. 热更新模块
+### 10. 热更新模块
 
 实现脚本的自动更新：
 - 检查新版本
@@ -170,10 +219,12 @@ function handleDOMChange(mutations) {
 
 1. 用户浏览页面触发 API 请求
 2. 请求优化模块处理请求（去抖动、节流）
-3. 限速处理模块监控请求结果
-4. 若检测到限速，自动恢复模块启动
-5. 恢复后，游标恢复模块将页面恢复到原位置
-6. DOM 观察模块持续监视页面变化并作出响应
+3. 请求拦截器捕获响应并缓存数据
+4. 限速处理模块监控请求结果
+5. 若检测到限速，自动恢复模块启动
+6. 在限速状态下，检查可见商品数量决定是否刷新
+7. 恢复后，游标恢复模块将页面恢复到原位置
+8. DOM 观察模块持续监视页面变化并作出响应
 
 ## 扩展开发
 

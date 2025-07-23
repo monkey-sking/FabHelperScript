@@ -38,6 +38,9 @@ FabHelper.config.enableAutoRecover = true;
 | `successfulRequestsThreshold` | Number | 3 | 判定恢复成功所需的成功请求数 |
 | `enableLogging` | Boolean | true | 是否启用日志记录 |
 | `logLevel` | String | 'info' | 日志级别 ('debug', 'info', 'warn', 'error') |
+| `debugMode` | Boolean | false | 是否启用调试模式，显示更多日志信息 |
+| `cacheTTL` | Number | 300000 | 缓存数据的生存时间 (ms) |
+| `autoRefreshWhenHidden` | Boolean | true | 限速状态下当所有商品隐藏时是否自动刷新 |
 
 ### FabHelper.saveConfig()
 
@@ -121,6 +124,34 @@ console.log(status);
 */
 ```
 
+### FabHelper.checkRateLimitStatus()
+
+检查当前限速状态并决定是否需要刷新页面。
+
+```javascript
+// 检查限速状态
+FabHelper.checkRateLimitStatus().then(canContinue => {
+  if (canContinue) {
+    console.log('可以继续发送请求');
+  } else {
+    console.log('仍处于限速状态，建议刷新页面');
+  }
+});
+```
+
+### FabHelper.forceRefresh(delay)
+
+强制在指定延迟后刷新页面，无视可见商品数量。
+
+```javascript
+// 5秒后强制刷新页面
+FabHelper.forceRefresh(5000);
+```
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `delay` | Number | 延迟时间 (ms) |
+
 ## 请求优化 API
 
 ### FabHelper.debounceRequest(url, delay)
@@ -150,6 +181,71 @@ FabHelper.throttleRequests(2000);
 | 参数 | 类型 | 描述 |
 |------|------|------|
 | `interval` | Number | 节流间隔时间 (ms) |
+
+## 数据缓存 API
+
+### FabHelper.cacheModule.getListings(uids)
+
+获取缓存的商品数据。
+
+```javascript
+// 获取指定UID的商品数据
+const result = FabHelper.cacheModule.getListings(['uid1', 'uid2', 'uid3']);
+console.log(result.cached); // 已缓存的数据
+console.log(result.missing); // 缓存中缺失的UID列表
+```
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `uids` | Array | 商品UID列表 |
+
+### FabHelper.cacheModule.getOwnedStatus(uids)
+
+获取缓存的商品拥有状态。
+
+```javascript
+// 获取指定UID的拥有状态
+const result = FabHelper.cacheModule.getOwnedStatus(['uid1', 'uid2', 'uid3']);
+```
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `uids` | Array | 商品UID列表 |
+
+### FabHelper.cacheModule.getPrices(offerIds)
+
+获取缓存的价格信息。
+
+```javascript
+// 获取指定offerID的价格信息
+const result = FabHelper.cacheModule.getPrices(['offer1', 'offer2']);
+```
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `offerIds` | Array | 报价ID列表 |
+
+### FabHelper.cacheModule.clearCache()
+
+清除所有缓存数据。
+
+```javascript
+// 清除所有缓存
+FabHelper.cacheModule.clearCache();
+```
+
+### FabHelper.cacheModule.setCacheTTL(milliseconds)
+
+设置缓存数据的生存时间。
+
+```javascript
+// 设置缓存10分钟过期
+FabHelper.cacheModule.setCacheTTL(10 * 60 * 1000);
+```
+
+| 参数 | 类型 | 描述 |
+|------|------|------|
+| `milliseconds` | Number | 缓存生存时间 (ms) |
 
 ## 游标恢复 API
 
@@ -256,6 +352,37 @@ FabHelper.disableCustomStyles();
 ```javascript
 // 启用自定义样式
 FabHelper.enableCustomStyles();
+```
+
+## 隐藏功能 API
+
+### FabHelper.toggleHideSaved()
+
+切换隐藏/显示已拥有商品的状态。
+
+```javascript
+// 切换隐藏状态
+FabHelper.toggleHideSaved();
+```
+
+### FabHelper.getVisibleItemsCount()
+
+获取当前页面上实际可见的商品数量。
+
+```javascript
+// 获取可见商品数量
+const count = FabHelper.getVisibleItemsCount();
+console.log(`当前页面有 ${count} 个可见商品`);
+```
+
+### FabHelper.getHiddenItemsCount()
+
+获取当前页面上被隐藏的商品数量。
+
+```javascript
+// 获取隐藏商品数量
+const count = FabHelper.getHiddenItemsCount();
+console.log(`当前页面有 ${count} 个隐藏商品`);
 ```
 
 ## 日志 API
@@ -539,6 +666,8 @@ FabHelper.events.once('recoveryComplete', () => {
 | `cursorRestored` | 恢复游标位置时 | `{ cursor, success }` |
 | `updateAvailable` | 检测到更新时 | `{ version, changelog }` |
 | `updateApplied` | 应用更新后 | `{ version }` |
+| `allItemsHidden` | 所有商品被隐藏时 | `{ count }` |
+| `refreshTriggered` | 自动刷新触发时 | `{ reason }` |
 
 ## 扩展 API
 
