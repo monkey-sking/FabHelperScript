@@ -1728,43 +1728,56 @@ const State = {
             // If there's no link, we can't get a URL to check against the DB.
             // In this case, rely only on visual cues.
             const url = link ? link.href.split('?')[0] : null;
-
-            // Priority 1: Check for the specific 'owned' status element. This is the most reliable.
-            if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) return true;
             
-            // 扩展检测：检查各种可能的"已拥有"标记
-            const checkOwnedText = [
-                "已保存在我的库中", 
-                "已保存", 
-                "Saved to My Library",
-                "In your library",
-                "✓"
-            ];
+            // 如果没有链接，无法获取UID，则只能依赖视觉提示
+            if (!link) {
+                // 检查是否有"已拥有"样式标记（绿色对勾图标）
+                const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
+                if (icons.length > 0) return true;
+                
+                // 检查是否有"已保存"文本
+                const text = card.textContent || '';
+                return text.includes("已保存在我的库中") || 
+                       text.includes("已保存") || 
+                       text.includes("Saved to My Library") ||
+                       text.includes("In your library");
+            }
             
-            // 查找包含这些文本的任何元素
-            for (const text of checkOwnedText) {
-                // 使用原生JavaScript查找包含文本的元素
-                const elements = Array.from(card.querySelectorAll('*:not(button)'));
-                if (elements.some(el => el.textContent && el.textContent.includes(text)) || 
-                    card.innerText.includes(text)) {
+            // 从链接中提取UID
+            const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
+            if (!uidMatch || !uidMatch[1]) {
+                return false;
+            }
+            
+            const uid = uidMatch[1];
+            
+            // 优先使用缓存的API数据判断
+            if (DataCache.ownedStatus.has(uid)) {
+                const status = DataCache.ownedStatus.get(uid);
+                if (status && status.acquired) {
                     return true;
                 }
             }
             
-            // 检查是否有"已拥有"样式标记（绿色对勾图标）
-            const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
-            if (icons.length > 0) return true;
-
-            // Priority 2: Check our databases and session state if we have a URL.
+            // 如果缓存中没有，则检查网页元素
+            if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) {
+                // 找到了，将状态保存到缓存
+                if (uid) {
+                    DataCache.saveOwnedStatus([{
+                        uid: uid,
+                        acquired: true,
+                        lastUpdatedAt: new Date().toISOString()
+                    }]);
+                }
+                return true;
+            }
+            
+            // 最后检查本地数据库
             if (url) {
                 if (Database.isDone(url)) return true;
                 if (Database.isFailed(url)) return true; // A failed item is also considered "finished" for skipping/hiding purposes.
                 if (State.sessionCompleted.has(url)) return true;
             }
-
-            // Priority 3 (Fallback): Check for broad text content. Less reliable but catches edge cases.
-            const text = card.textContent || '';
-            if ([...Config.SAVED_TEXT_SET].some(s => text.includes(s))) return true;
 
             return false;
         },
