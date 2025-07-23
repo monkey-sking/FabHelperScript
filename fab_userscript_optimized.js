@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fab Helper (优化版)
 // @namespace    https://www.fab.com/
-// @version      3.2.3-20250723
+// @version      3.2.4-20250723
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @author       RunKing
 // @match        https://www.fab.com/*
@@ -4336,64 +4336,65 @@
         // 每10秒检查一次HTTP状态码
         setInterval(checkHttpStatus, 10000);
 
-        // 添加API请求监控，定期检查最近的API请求状态
-                const checkApiRequests = async () => {
+        // 添加状态监控，定期检查页面状态
+        const checkPageStatus = async () => {
             try {
-                // 如果已经处于限速状态，不需要检查
-                if (State.appStatus !== 'NORMAL') return;
+                // 检查可见商品数量
+                const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
                 
-                // 使用优化后的限速状态检查函数
-                const isNotLimited = await checkRateLimitStatus();
-                
-                if (!isNotLimited) {
-                    Utils.logger('warn', `[API状态检测] 检测到API可能处于限速状态`);
-                    try {
-                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                        if (typeof window.enterRateLimitedState === 'function') {
-                            window.enterRateLimitedState();
-                        } else {
-                            // 最后的备选方案：直接刷新页面
-                            const randomDelay = 5000 + Math.random() * 10000;
-                            countdownRefresh(randomDelay, 'API状态检测');
-                        }
-                    } catch (error) {
-                        Utils.logger('error', `处理限速出错: ${error.message}`);
-                        // 最后的备选方案：直接刷新页面
-                        const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '错误恢复');
+                // 如果处于限速状态且没有可见商品，考虑刷新
+                if (State.appStatus === 'RATE_LIMITED' && visibleCount === 0) {
+                    // 如果已经有倒计时在运行，不要干扰它
+                    if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
+                        return;
                     }
-                } else {
-                    // 如果当前处于正常状态，记录一次成功的API检查
-                                if (State.debugMode) {
-                Utils.logger('debug', `[API状态检测] API正常响应`);
-            }
-            window.recordNetworkRequest('API状态检查', true);
+                    
+                    Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品，准备刷新页面`);
+                    const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
+                    countdownRefresh(randomDelay, '限速状态无可见商品');
+                    return;
+                }
+                
+                // 如果处于正常状态，但所有商品都被隐藏，也考虑刷新
+                if (State.appStatus === 'NORMAL' && visibleCount === 0 && State.hiddenThisPageCount > 25) {
+                    Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏，准备刷新页面`);
+                    const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
+                    countdownRefresh(randomDelay, '正常状态所有商品隐藏');
+                    return;
+                }
+                
+                // 使用window.performance API检查最近的API请求
+                if (window.performance && window.performance.getEntriesByType) {
+                    const recentRequests = window.performance.getEntriesByType('resource')
+                        .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
+                        .filter(r => Date.now() - r.startTime < 15000); // 最近15秒内的请求
+                    
+                    // 检查是否有429状态码的请求
+                    const has429 = recentRequests.some(r => r.responseStatus === 429);
+                    if (has429 && State.appStatus === 'NORMAL') {
+                        Utils.logger('warn', `[状态监控] 检测到最近15秒内有429状态码的请求，进入限速状态`);
+                        if (typeof window.enterRateLimitedState === 'function') {
+                            window.enterRateLimitedState('性能API检测429');
+                        }
+                        return;
+                    }
+                    
+                    // 检查是否有成功的请求
+                    const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
+                    if (hasSuccess && State.appStatus === 'RATE_LIMITED' && State.consecutiveSuccessCount >= 2) {
+                        Utils.logger('info', `[状态监控] 检测到最近15秒内有成功的API请求，尝试退出限速状态`);
+                        if (typeof RateLimitManager.exitRateLimitedState === 'function') {
+                            RateLimitManager.exitRateLimitedState('性能API检测成功');
+                        }
+                    }
                 }
             } catch (error) {
-                // 如果请求失败，可能也是限速导致的
-                Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
-                if (error.message.includes('429') || error.message.includes('Too Many Requests')) {
-                    try {
-                        // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
-                        if (typeof window.enterRateLimitedState === 'function') {
-                            window.enterRateLimitedState();
-                        } else {
-                            // 最后的备选方案：直接刷新页面
-                            const randomDelay = 5000 + Math.random() * 10000;
-                            countdownRefresh(randomDelay, 'API请求失败');
-                        }
-                    } catch (innerError) {
-                        Utils.logger('error', `处理限速出错: ${innerError.message}`);
-                        // 最后的备选方案：直接刷新页面
-                        const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '错误恢复');
-                    }
-                }
+                Utils.logger('error', `页面状态检查出错: ${error.message}`);
             }
         };
         
-        // 每15秒检查一次API状态
-        setInterval(checkApiRequests, 15000);
+        // 每10秒检查一次页面状态
+        setInterval(checkPageStatus, 10000);
         
         // 添加定期检查功能，确保待办任务能被执行
         setInterval(() => {
@@ -4627,7 +4628,7 @@
         }, delay);
     };
     
-    // 优化后的限速状态检查函数
+    // 优化后的限速状态检查函数 - 完全依赖网站自身请求流量
     async function checkRateLimitStatus() {
         try {
             // 使用UI上显示的可见商品数量
@@ -4657,51 +4658,31 @@
                     .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
                     .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
                 
-                // 如果有最近成功的请求，则认为没有限速
-                const hasRecentSuccess = recentRequests.some(r => r.responseStatus === 200);
-                if (hasRecentSuccess) {
-                    if (State.debugMode) {
-                        Utils.logger('debug', `[优化] 检测到最近有成功的API请求，无需发送探测请求`);
+                // 如果有最近的请求，检查它们的状态
+                if (recentRequests.length > 0) {
+                    // 检查是否有429状态码的请求
+                    const has429 = recentRequests.some(r => r.responseStatus === 429);
+                    if (has429) {
+                        Utils.logger('info', `📊 检测到最近10秒内有429状态码的请求，判断为限速状态`);
+                        return false;
                     }
-                    return true;
+                    
+                    // 检查是否有成功的请求
+                    const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
+                    if (hasSuccess) {
+                        Utils.logger('info', `📊 检测到最近10秒内有成功的API请求，判断为正常状态`);
+                        return true;
+                    }
                 }
+                
+                // 如果没有最近的请求或者没有明确的成功/失败状态，保持当前状态
+                return State.appStatus === 'NORMAL';
             }
             
-            // 如果没有最近的成功请求，发送一个轻量级的HEAD请求进行探测
-            const csrfToken = Utils.getCookie('fab_csrftoken');
-            if (!csrfToken) {
-                throw new Error("CSRF token not found for probe.");
-            }
-            
-            // 使用当前选择的排序方式
-            const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=1`;
-            
-            const response = await fetch(apiUrl, { 
-                method: 'HEAD',
-                cache: 'no-store',
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json',
-                    'x-csrftoken': csrfToken
-                }
-            });
-            
-            // 如果状态码是429，则仍然处于限速状态
-            if (response.status === 429) {
-                if (State.debugMode) {
-                    Utils.logger('debug', `[优化] 探测请求返回429，仍处于限速状态`);
-                }
-                return false;
-            }
-            
-            // 如果状态码是200-299，则认为限速已解除
-            if (response.ok) {
-                return true;
-            }
-            
-            // 其他状态码，可能是其他错误
-            Utils.logger('warn', `[优化] 探测请求返回状态码 ${response.status}，视为限速仍然存在`);
-            return false;
+            // 如果无法使用Performance API，根据当前状态返回
+            // 在限速状态下返回false，表示需要刷新
+            // 在正常状态下返回true，表示不需要刷新
+            return State.appStatus === 'NORMAL';
         } catch (error) {
             Utils.logger('error', `检查限速状态出错: ${error.message}`);
             // 出错时保守处理，认为仍然处于限速状态
