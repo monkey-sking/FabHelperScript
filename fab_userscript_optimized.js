@@ -175,10 +175,10 @@
             if (type === 'debug') {
                 // 默认不在控制台显示debug级别日志，除非启用了调试模式
                 if (State.debugMode) {
-                    // 调试模式下在控制台输出日志
-                // 调试模式下在控制台输出日志，但不使用console.debug以避免过多输出
+                    // 调试模式下在控制台输出日志，使用console.log而不是console.debug以确保可见性
+                    console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
                 }
-                // 但仍然记录到日志面板
+                // 无论是否调试模式，都记录到日志面板
                 if (State.UI.logPanel) {
                     const logEntry = document.createElement('div');
                     logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px; color: #888;';
@@ -733,7 +733,9 @@
             if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
                 State.appStatus = 'RATE_LIMITED';
                 State.rateLimitStartTime = persistedStatus.startTime;
-                const previousDuration = ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2);
+                // 添加空值检查，防止persistedStatus.startTime为null
+                const previousDuration = persistedStatus && persistedStatus.startTime ? 
+                    ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
                 Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
             }
             State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
@@ -858,7 +860,8 @@
             State.lastLimitSource = source;
             
             // 记录正常运行期的统计信息
-            const normalDuration = ((Date.now() - State.normalStartTime) / 1000).toFixed(2);
+            // 添加空值检查，防止normalStartTime为null
+            const normalDuration = State.normalStartTime ? ((Date.now() - State.normalStartTime) / 1000).toFixed(2) : '0.00';
             const logEntry = {
                 type: 'NORMAL',
                 duration: parseFloat(normalDuration),
@@ -907,9 +910,11 @@
                 // 缩短延迟时间为5-7秒，使恢复更快
                 const randomDelay = 5000 + Math.random() * 2000;
                 if (State.autoResumeAfter429) {
-                    Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后刷新页面尝试恢复...');
+                    // 添加空值检查，防止randomDelay为null
+            Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay ? (randomDelay/1000).toFixed(1) : '未知') + ' 秒后刷新页面尝试恢复...');
                 } else {
-                    Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay/1000).toFixed(1) + ' 秒后自动刷新页面尝试恢复...');
+                    // 添加空值检查，防止randomDelay为null
+                    Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay ? (randomDelay/1000).toFixed(1) : '未知') + ' 秒后自动刷新页面尝试恢复...');
                 }
                 countdownRefresh(randomDelay, '429自动恢复');
             }
@@ -957,7 +962,8 @@
             }
             
             // 记录限速期的统计信息
-            const rateLimitDuration = ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2);
+            // 添加空值检查，防止rateLimitStartTime为null
+            const rateLimitDuration = State.rateLimitStartTime ? ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2) : '0.00';
             const logEntry = {
                 type: 'RATE_LIMITED',
                 duration: parseFloat(rateLimitDuration),
@@ -3160,6 +3166,10 @@
                 const btn = document.createElement('button');
                 btn.textContent = Utils.getText(`tab_${tabName}`);
                 btn.onclick = () => UI.switchTab(tabName);
+                // 设置仪表盘标签为默认激活状态
+                if (tabName === 'dashboard') {
+                    btn.classList.add('active');
+                }
                 tabContainer.appendChild(btn);
                 State.UI.tabs[tabName] = btn;
             });
@@ -3169,6 +3179,8 @@
             // --- Dashboard Tab ---
             const dashboardContent = document.createElement('div');
             dashboardContent.className = 'fab-helper-tab-content';
+            // 仪表盘标签页默认显示
+            dashboardContent.style.display = 'block';
             State.UI.tabContents.dashboard = dashboardContent;
 
             const statusBar = document.createElement('div');
@@ -3346,16 +3358,34 @@
             resetButton.onclick = Database.resetAllData;
             settingsContent.appendChild(resetButton);
 
-            // 添加调试模式切换按钮
-            const debugModeRow = createSettingRow('调试模式', 'debugMode');
+            // 添加调试模式切换按钮 - 使用自定义行而不是createSettingRow
+            const debugModeRow = document.createElement('div');
+            debugModeRow.className = 'fab-setting-row';
             debugModeRow.title = '启用详细日志记录，用于排查问题';
-            debugModeRow.querySelector('span').style.color = '#ff9800';
-            debugModeRow.addEventListener('click', function() {
-                State.debugMode = !State.debugMode;
-                this.classList.toggle('active', State.debugMode);
+            
+            const debugLabel = document.createElement('span');
+            debugLabel.className = 'fab-setting-label';
+            debugLabel.textContent = '调试模式';
+            debugLabel.style.color = '#ff9800';
+            
+            const switchContainer = document.createElement('label');
+            switchContainer.className = 'fab-toggle-switch';
+            
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = State.debugMode;
+            input.onchange = (e) => {
+                State.debugMode = e.target.checked;
+                debugModeRow.classList.toggle('active', State.debugMode);
                 Utils.logger('info', `调试模式已${State.debugMode ? '开启' : '关闭'}。${State.debugMode ? '将显示详细日志信息' : ''}`);
                 GM_setValue('fab_helper_debug_mode', State.debugMode);
-            });
+            };
+            
+            const slider = document.createElement('span');
+            slider.className = 'fab-toggle-slider';
+            
+            switchContainer.append(input, slider);
+            debugModeRow.append(debugLabel, switchContainer);
             debugModeRow.classList.toggle('active', State.debugMode);
             settingsContent.appendChild(debugModeRow);
 
@@ -3363,10 +3393,17 @@
                 
               State.UI.tabContents.settings = settingsContent;
               container.appendChild(settingsContent);
+            
+            // 确保设置标签页默认隐藏
+            settingsContent.style.display = 'none';
 
             // --- 调试标签页 ---
             const debugContent = document.createElement('div');
             debugContent.className = 'fab-helper-tab-content';
+            // 确保调试标签页默认隐藏
+            debugContent.style.display = 'none';
+            // 初始化调试内容容器
+            State.UI.debugContent = debugContent;
             
             const debugHeader = document.createElement('div');
             debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
@@ -3394,7 +3431,8 @@
                         return `🚀 脚本启动\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
                     } else {
                         const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
-                        let details = `持续: ${entry.duration.toFixed(2)}s`;
+                        // 添加空值检查，防止toFixed错误
+            let details = `持续: ${entry.duration !== undefined && entry.duration !== null ? entry.duration.toFixed(2) : '未知'}s`;
                         if (entry.requests !== undefined) {
                             details += `, 请求: ${entry.requests}次`;
                         }
@@ -3439,10 +3477,13 @@
             const historyListContainer = document.createElement('div');
             historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto; background: rgba(10,10,10,0.85); color: #ddd; padding: 8px; border-radius: var(--radius-m);';
             historyListContainer.className = 'fab-debug-history-container';
-            State.UI.debugContent = historyListContainer;
+            // 将historyListContainer保存为State.UI.historyContainer，而不是debugContent
+            State.UI.historyContainer = historyListContainer;
 
             debugContent.append(debugHeader, historyListContainer);
             State.UI.tabContents.debug = debugContent;
+            // 确保调试标签页默认隐藏
+            debugContent.style.display = 'none';
             container.appendChild(debugContent);
 
             document.body.appendChild(container);
@@ -3501,8 +3542,9 @@
             }
         },
         updateDebugTab: () => {
-            if (!State.UI.debugContent) return;
-            State.UI.debugContent.innerHTML = ''; // Clear previous entries
+            // 使用historyContainer而不是debugContent
+            if (!State.UI.historyContainer) return;
+            State.UI.historyContainer.innerHTML = ''; // Clear previous entries
             
             // 创建历史记录项
             const createHistoryItem = (entry) => {
@@ -3541,11 +3583,16 @@
                         detailsHtml += `<div>信息: <strong>${entry.message}</strong></div>`;
                     }
                 } else {
-                    detailsHtml = `<div>持续时间: <strong>${entry.duration.toFixed(2)}s</strong></div>`;
+                    // 添加空值检查，防止toFixed错误
+                    const duration = entry.duration !== undefined && entry.duration !== null ? 
+                        entry.duration.toFixed(2) : '未知';
+                    detailsHtml = `<div>持续时间: <strong>${duration}s</strong></div>`;
                     if (entry.requests !== undefined) {
                         detailsHtml += `<div>期间请求数: <strong>${entry.requests}</strong></div>`;
                     }
-                    detailsHtml += `<div>结束于: ${new Date(entry.endTime).toLocaleString()}</div>`;
+                    // 添加空值检查，防止日期错误
+                    const endTime = entry.endTime ? new Date(entry.endTime).toLocaleString() : '未知时间';
+                    detailsHtml += `<div>结束于: ${endTime}</div>`;
                 }
                 
                 details.innerHTML = detailsHtml;
@@ -3573,17 +3620,20 @@
                     details.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;';
 
                     const startTime = State.appStatus === 'NORMAL' ? State.normalStartTime : State.rateLimitStartTime;
-                    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+                    // 添加空值检查，防止startTime为null或undefined
+                    const duration = startTime ? ((Date.now() - startTime) / 1000).toFixed(2) : '未知';
                     
                     let detailsHtml = `<div>已持续: <strong>${duration}s</strong></div>`;
                     if (State.appStatus === 'NORMAL') {
                          detailsHtml += `<div>期间请求数: <strong>${State.successfulSearchCount}</strong></div>`;
                     }
-                     detailsHtml += `<div>开始于: ${new Date(startTime).toLocaleString()}</div>`;
+                     // 添加空值检查，防止startTime为null
+                     const startTimeDisplay = startTime ? new Date(startTime).toLocaleString() : '未知时间';
+                     detailsHtml += `<div>开始于: ${startTimeDisplay}</div>`;
                     details.innerHTML = detailsHtml;
 
                     item.append(header, details);
-                    State.UI.debugContent.appendChild(item);
+                    State.UI.historyContainer.appendChild(item);
                 }
             };
             
@@ -3595,13 +3645,13 @@
                 const emptyMessage = document.createElement('div');
                 emptyMessage.style.cssText = 'color: #888; text-align: center; padding: 20px;';
                 emptyMessage.textContent = '没有可显示的历史记录。';
-                State.UI.debugContent.appendChild(emptyMessage);
-                    return;
-                }
+                State.UI.historyContainer.appendChild(emptyMessage);
+                return;
+            }
 
             // 显示历史记录（如果有）
             const reversedHistory = [...State.statusHistory].reverse();
-            reversedHistory.forEach(entry => State.UI.debugContent.appendChild(createHistoryItem(entry)));
+            reversedHistory.forEach(entry => State.UI.historyContainer.appendChild(createHistoryItem(entry)));
         },
     };
 
@@ -3750,7 +3800,9 @@
         if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
             State.appStatus = 'RATE_LIMITED';
             State.rateLimitStartTime = persistedStatus.startTime;
-            const previousDuration = ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2);
+            // 添加空值检查，防止persistedStatus.startTime为null
+            const previousDuration = persistedStatus && persistedStatus.startTime ? 
+                ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
             Utils.logger('warn', `脚本启动时处于限速状态。限速已持续至少 ${previousDuration}s，来源: ${persistedStatus.source || '未知'}`);
         }
         
@@ -3790,7 +3842,8 @@
                 
                 // 记录执行时间（如果有）
                 if (executionTime) {
-                    Utils.logger('info', `任务执行时间: ${(executionTime / 1000).toFixed(2)}秒`);
+                    // 添加空值检查，防止executionTime为null
+                    Utils.logger('info', `任务执行时间: ${executionTime ? (executionTime / 1000).toFixed(2) : '未知'}秒`);
                 }
                 
                 // 移除此工作标签页的记录
@@ -3900,18 +3953,28 @@
         // --- ROBUST LAUNCHER ---
         // This interval is launched from the clean userscript context and is less likely to be interfered with.
         // It will persistently try to launch the DOM-dependent part of the script.
-        const launcherInterval = setInterval(() => {
-            if (document.readyState === 'interactive' || document.readyState === 'complete') {
-                if (!State.hasRunDomPart) {
-                    Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-                    runDomDependentPart();
+        // 使用一个全局变量来防止多次初始化
+        window._fabHelperLauncherActive = window._fabHelperLauncherActive || false;
+        
+        if (!window._fabHelperLauncherActive) {
+            window._fabHelperLauncherActive = true;
+            
+            const launcherInterval = setInterval(() => {
+                if (document.readyState === 'interactive' || document.readyState === 'complete') {
+                    if (!State.hasRunDomPart) {
+                        Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
+                        runDomDependentPart();
+                    }
+                    if (State.hasRunDomPart) {
+                        clearInterval(launcherInterval);
+                        window._fabHelperLauncherActive = false;
+                        Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
+                    }
                 }
-                if (State.hasRunDomPart) {
-                    clearInterval(launcherInterval);
-                    Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
-                }
-            }
-        }, 250); // Check every 250ms
+            }, 500); // 增加间隔到500ms，减少频繁检查
+        } else {
+            Utils.logger('info', '[Launcher] Another launcher is already active. Skipping initialization.');
+        }
 
         // 添加无活动超时刷新功能
         let lastNetworkActivityTime = Date.now();
@@ -4416,7 +4479,8 @@
             currentRefreshTimeout = null;
         }
         
-        const seconds = (delay/1000).toFixed(1);
+        // 添加空值检查，防止delay为null
+        const seconds = delay ? (delay/1000).toFixed(1) : '未知';
         
         // 添加明显的倒计时日志
         Utils.logger('info', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
@@ -4560,10 +4624,22 @@
         try {
             // 使用UI上显示的可见商品数量
             const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
+            // 直接检查DOM中实际可见的商品卡片数量
+            const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+            const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+            const actualVisibleCards = totalCards - hiddenCards;
+            
+            Utils.logger('info', `📊 状态检查 - UI显示可见商品数: ${visibleCount}, 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${State.hiddenThisPageCount}`);
             
             // 如果处于限速状态且没有可见商品，直接返回false触发刷新
             if (State.appStatus === 'RATE_LIMITED' && visibleCount === 0) {
                 Utils.logger('info', `🔄 处于限速状态且没有可见商品，建议刷新页面`);
+                return false;
+            }
+            
+            // 即使在正常状态下，如果所有商品都被隐藏且隐藏的商品数量超过25个，也建议刷新
+            if (visibleCount === 0 && State.hiddenThisPageCount > 25) {
+                Utils.logger('info', `🔄 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品，建议刷新页面`);
                 return false;
             }
             
