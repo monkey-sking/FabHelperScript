@@ -378,6 +378,164 @@
         return freeContainer;
     };
 
+    // --- 新增: 数据缓存系统 ---
+    const DataCache = {
+        // 商品数据缓存 - 键为商品ID，值为商品数据
+        listings: new Map(),
+        
+        // 拥有状态缓存 - 键为商品ID，值为拥有状态对象
+        ownedStatus: new Map(),
+        
+        // 价格缓存 - 键为报价ID，值为价格信息对象
+        prices: new Map(),
+        
+        // 缓存时间戳 - 用于判断缓存是否过期
+        timestamps: {
+            listings: new Map(),
+            ownedStatus: new Map(),
+            prices: new Map()
+        },
+        
+        // 缓存有效期（毫秒）
+        TTL: 5 * 60 * 1000, // 5分钟
+        
+        // 检查缓存是否有效
+        isValid: function(type, key) {
+            const timestamp = this.timestamps[type].get(key);
+            return timestamp && (Date.now() - timestamp < this.TTL);
+        },
+        
+        // 保存商品数据到缓存
+        saveListings: function(items) {
+            if (!Array.isArray(items)) return;
+            
+            const now = Date.now();
+            items.forEach(item => {
+                if (item && item.uid) {
+                    this.listings.set(item.uid, item);
+                    this.timestamps.listings.set(item.uid, now);
+                }
+            });
+        },
+        
+        // 保存拥有状态到缓存
+        saveOwnedStatus: function(states) {
+            if (!Array.isArray(states)) return;
+            
+            const now = Date.now();
+            states.forEach(state => {
+                if (state && state.uid) {
+                    this.ownedStatus.set(state.uid, {
+                        acquired: !!state.acquired,
+                        lastUpdatedAt: state.lastUpdatedAt || new Date().toISOString(),
+                        uid: state.uid
+                    });
+                    this.timestamps.ownedStatus.set(state.uid, now);
+                }
+            });
+        },
+        
+        // 保存价格信息到缓存
+        savePrices: function(offers) {
+            if (!Array.isArray(offers)) return;
+            
+            const now = Date.now();
+            offers.forEach(offer => {
+                if (offer && offer.offerId) {
+                    this.prices.set(offer.offerId, {
+                        offerId: offer.offerId,
+                        price: offer.price || 0,
+                        currencyCode: offer.currencyCode || 'USD'
+                    });
+                    this.timestamps.prices.set(offer.offerId, now);
+                }
+            });
+        },
+        
+        // 获取商品数据，如果缓存有效则使用缓存
+        getListings: function(uids) {
+            const result = [];
+            const missing = [];
+            
+            uids.forEach(uid => {
+                if (this.isValid('listings', uid)) {
+                    result.push(this.listings.get(uid));
+                } else {
+                    missing.push(uid);
+                }
+            });
+            
+            return { result, missing };
+        },
+        
+        // 获取拥有状态，如果缓存有效则使用缓存
+        getOwnedStatus: function(uids) {
+            const result = [];
+            const missing = [];
+            
+            uids.forEach(uid => {
+                if (this.isValid('ownedStatus', uid)) {
+                    result.push(this.ownedStatus.get(uid));
+                } else {
+                    missing.push(uid);
+                }
+            });
+            
+            return { result, missing };
+        },
+        
+        // 获取价格信息，如果缓存有效则使用缓存
+        getPrices: function(offerIds) {
+            const result = [];
+            const missing = [];
+            
+            offerIds.forEach(offerId => {
+                if (this.isValid('prices', offerId)) {
+                    result.push(this.prices.get(offerId));
+                } else {
+                    missing.push(offerId);
+                }
+            });
+            
+            return { result, missing };
+        },
+        
+        // 清理过期缓存
+        cleanupExpired: function() {
+            try {
+                const now = Date.now();
+                
+                // 清理商品数据缓存
+                for (const [uid, timestamp] of this.timestamps.listings.entries()) {
+                    if (now - timestamp > this.TTL) {
+                        this.listings.delete(uid);
+                        this.timestamps.listings.delete(uid);
+                    }
+                }
+                
+                // 清理拥有状态缓存
+                for (const [uid, timestamp] of this.timestamps.ownedStatus.entries()) {
+                    if (now - timestamp > this.TTL) {
+                        this.ownedStatus.delete(uid);
+                        this.timestamps.ownedStatus.delete(uid);
+                    }
+                }
+                
+                // 清理价格信息缓存
+                for (const [offerId, timestamp] of this.timestamps.prices.entries()) {
+                    if (now - timestamp > this.TTL) {
+                        this.prices.delete(offerId);
+                        this.timestamps.prices.delete(offerId);
+                    }
+                }
+                
+                Utils.logger('debug', `[Cache] 清理完成，当前缓存大小: 商品=${this.listings.size}, 拥有状态=${this.ownedStatus.size}, 价格=${this.prices.size}`);
+            } catch (e) {
+                Utils.logger('error', `[Cache] 清理过期缓存时出错: ${e.message}`);
+            }
+        }
+    };
+
     // --- 模块四: 异步网络请求 (Promisified GM_xmlhttpRequest) ---
     const API = {
         gmFetch: (options) => {
@@ -392,6 +550,7 @@
                 });
             });
         },
+        
         // 新增API响应数据提取函数
         extractStateData: (rawData, source = '') => {
             // 记录原始数据格式
@@ -442,6 +601,114 @@
                 Utils.logger('debug', `[${source}] 无法序列化API响应: ${e.message}`);
             }
             return [];
+        },
+        
+        // 优化后的商品拥有状态检查函数
+        checkItemsOwnership: async function(uids) {
+            if (!uids || uids.length === 0) return [];
+            
+            try {
+                // 从缓存中获取已知的拥有状态
+                const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
+                
+                // 如果所有商品都有缓存，直接返回
+                if (missingUids.length === 0) {
+                    Utils.logger('info', `[优化] 使用缓存的拥有状态数据，避免API请求`);
+                    return cachedResults;
+                }
+                
+                // 对缺失的商品ID发送API请求
+                Utils.logger('info', `[优化] 对 ${missingUids.length} 个缺失的商品ID发送API请求`);
+                
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) {
+                    throw new Error("CSRF token not found");
+                }
+                
+                const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                missingUids.forEach(uid => statesUrl.searchParams.append('listing_ids', uid));
+                
+                const response = await this.gmFetch({
+                    method: 'GET',
+                    url: statesUrl.href,
+                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                });
+                
+                let statesData = [];
+                try {
+                    statesData = JSON.parse(response.responseText);
+                    
+                    // 如果不是数组，尝试提取数组数据
+                    if (!Array.isArray(statesData)) {
+                        Utils.logger('warn', '[优化] API返回的数据不是数组格式，尝试提取数据');
+                        statesData = this.extractStateData(statesData, 'OptimizedCheck');
+                    }
+                    
+                    // 更新缓存
+                    DataCache.saveOwnedStatus(statesData);
+                } catch (e) {
+                    Utils.logger('error', `[优化] 解析API响应失败: ${e.message}`);
+                }
+                
+                // 合并缓存结果和API结果
+                return [...cachedResults, ...statesData];
+            } catch (e) {
+                Utils.logger('error', `[优化] 检查拥有状态失败: ${e.message}`);
+                return []; // 出错时返回空数组
+            }
+        },
+        
+        // 优化后的价格验证函数
+        checkItemsPrices: async function(offerIds) {
+            if (!offerIds || offerIds.length === 0) return [];
+            
+            try {
+                // 从缓存中获取已知的价格信息
+                const { result: cachedResults, missing: missingOfferIds } = DataCache.getPrices(offerIds);
+                
+                // 如果所有报价都有缓存，直接返回
+                if (missingOfferIds.length === 0) {
+                    Utils.logger('info', `[优化] 使用缓存的价格数据，避免API请求`);
+                    return cachedResults;
+                }
+                
+                // 对缺失的报价ID发送API请求
+                Utils.logger('info', `[优化] 对 ${missingOfferIds.length} 个缺失的报价ID发送API请求`);
+                
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) {
+                    throw new Error("CSRF token not found");
+                }
+                
+                const pricesUrl = new URL('https://www.fab.com/i/listings/prices-infos');
+                missingOfferIds.forEach(offerId => pricesUrl.searchParams.append('offer_ids', offerId));
+                
+                const response = await this.gmFetch({
+                    method: 'GET',
+                    url: pricesUrl.href,
+                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                });
+                
+                try {
+                    const pricesData = JSON.parse(response.responseText);
+                    
+                    // 提取并缓存价格信息
+                    if (pricesData.offers && Array.isArray(pricesData.offers)) {
+                        DataCache.savePrices(pricesData.offers);
+                        
+                        // 合并缓存结果和API结果
+                        return [...cachedResults, ...pricesData.offers];
+                    }
+                } catch (e) {
+                    Utils.logger('error', `[优化] 解析价格API响应失败: ${e.message}`);
+                }
+                
+                // 出错时返回缓存结果
+                return cachedResults;
+            } catch (e) {
+                Utils.logger('error', `[优化] 获取价格信息失败: ${e.message}`);
+                return []; // 出错时返回空数组
+            }
         }
         // ... Other API-related functions will go here ...
     };
@@ -1827,12 +2094,11 @@
         reconWithApi: async (url = null) => {
             if (!State.isReconning) return;
 
-            let searchResponse = null;
-
-            // If no URL is provided, start from the beginning.
-            const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=24`;
-
             try {
+                // 如果没有提供URL，使用默认URL
+                const requestUrl = url || `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=24`;
+                
+                // 获取CSRF令牌
                 const csrfToken = Utils.getCookie('fab_csrftoken');
                 if (!csrfToken) {
                     Utils.logger('error', "CSRF token not found. Please ensure you are logged in.");
@@ -1840,9 +2106,8 @@
                     UI.update();
                     return;
                 }
-
+                
                 const langPath = State.lang === 'zh' ? '/zh-cn' : '';
-
                 const apiHeaders = {
                     'accept': 'application/json, text/plain, */*',
                     'x-csrftoken': csrfToken,
@@ -1850,136 +2115,124 @@
                     'Referer': window.location.href,
                     'User-Agent': navigator.userAgent
                 };
-
-                // --- Step 1: Initial Scan ---
+                
+                // 更新UI显示
                 const displayPage = Utils.getDisplayPageFromUrl(requestUrl);
-                // UX Improvement: Update the progress display.
                 if (State.UI.reconProgressDisplay) {
                     State.UI.reconProgressDisplay.textContent = `Page: ${displayPage}`;
                 }
-
-                Utils.logger('info', "Step 1: " + Utils.getText('log_api_request', {
-                    page: displayPage,
-                    scanned: State.totalTasks,
-                    owned: State.completedTasks
-                }));
-                searchResponse = await API.gmFetch({ method: 'GET', url: requestUrl, headers: apiHeaders });
-
+                
+                // 发送API请求
+                Utils.logger('info', `[优化] 正在扫描第 ${displayPage} 页...`);
+                const searchResponse = await API.gmFetch({ method: 'GET', url: requestUrl, headers: apiHeaders });
+                
+                // 检查重定向
                 if (searchResponse.finalUrl && new URL(searchResponse.finalUrl).pathname !== new URL(requestUrl).pathname) {
-                    Utils.logger('warn', `Request was redirected, which may indicate a login issue. Final URL: ${searchResponse.finalUrl}`);
+                    Utils.logger('warn', `请求被重定向，可能表示登录问题。最终URL: ${searchResponse.finalUrl}`);
                 }
-
+                
+                // 检查限速
                 if (searchResponse.status === 429) {
                     Utils.logger('error', Utils.getText('log_429_error'));
                     await new Promise(r => setTimeout(r, 15000));
-                    TaskRunner.reconWithApi(requestUrl); // Retry with the same URL
+                    TaskRunner.reconWithApi(requestUrl); // 使用相同的URL重试
                     return;
                 }
-
+                
+                // 解析响应
                 const searchData = JSON.parse(searchResponse.responseText);
-                const initialResultsCount = searchData.results.length;
+                
+                // 保存商品数据到缓存
+                if (searchData.results && Array.isArray(searchData.results)) {
+                    DataCache.saveListings(searchData.results);
+                }
+                
+                const initialResultsCount = searchData.results?.length || 0;
                 State.totalTasks += initialResultsCount;
-
+                
+                // 检查是否有结果
                 if (!searchData.results || initialResultsCount === 0) {
                     State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
+                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
                     Utils.logger('info', Utils.getText('log_recon_end'));
                     UI.update();
                     return;
                 }
-
-                // A much stricter filter to ensure we only process valid, complete item data from the API.
+                
+                // 过滤有效的商品数据
                 const validResults = searchData.results.filter(item => {
                     const hasUid = typeof item.uid === 'string' && item.uid.length > 5;
                     const hasTitle = typeof item.title === 'string' && item.title.length > 0;
                     const hasOffer = item.startingPrice && typeof item.startingPrice.offerId === 'string' && item.startingPrice.offerId.length > 0;
                     return hasUid && hasTitle && hasOffer;
                 });
-
+                
+                // 提取候选项
                 const candidates = validResults.map(item => ({
                     uid: item.uid,
-                    // The API structure changed. The offerId is now in startingPrice.
                     offerId: item.startingPrice?.offerId
                 })).filter(item => {
-                    // This secondary filter only checks against our local database.
                     const itemUrl = `${window.location.origin}${langPath}/listings/${item.uid}`;
                     const isFailed = State.db.failed.some(failedTask => failedTask.uid === item.uid);
                     return !Database.isDone(itemUrl) && !Database.isTodo(itemUrl) && !isFailed;
                 });
-
+                
                 const initiallySkippedCount = initialResultsCount - candidates.length;
                 State.completedTasks += initiallySkippedCount;
-
+                
+                // 如果没有候选项，继续下一页
                 if (candidates.length === 0) {
-                    // No new candidates on this page, go to next page
                     const nextUrl = searchData.next;
                     if (nextUrl && State.isReconning) {
                         await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
                         await new Promise(r => setTimeout(r, 300));
                         TaskRunner.reconWithApi(nextUrl);
                     } else {
-                         State.isReconning = false;
-                         await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
-                         Utils.logger('info', Utils.getText('log_recon_end'));
+                        State.isReconning = false;
+                        await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
+                        Utils.logger('info', Utils.getText('log_recon_end'));
                     }
                     UI.update();
                     return;
                 }
-
-                // --- Step 2: Ownership Check ---
-                Utils.logger('info', `Step 2: Checking ownership for ${candidates.length} candidates...`);
-                const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                candidates.forEach(item => statesUrl.searchParams.append('listing_ids', item.uid));
-                const statesResponse = await API.gmFetch({ method: 'GET', url: statesUrl.href, headers: apiHeaders });
-                let statesData;
-                try {
-                    statesData = JSON.parse(statesResponse.responseText);
-                    if (!Array.isArray(statesData)) {
-                        Utils.logger('warn', '列表状态API返回的数据不是数组格式，这可能是API变更导致的');
-                        // 尝试提取数组数据
-                        statesData = API.extractStateData(statesData, 'ReconWithApi');
-                    }
-                } catch (e) {
-                    Utils.logger('error', '解析列表状态API响应失败:', e.message);
-                    statesData = [];
-                }
-
-                // API returns an array, convert it to a Set for efficient lookup.
-                const ownedUids = new Set((Array.isArray(statesData) ? statesData : []).filter(s => s && s.acquired).map(s => s.uid));
-
-                const notOwnedItems = [];
-                candidates.forEach(item => {
-                    if (!ownedUids.has(item.uid)) {
-                        notOwnedItems.push(item);
-                    } else {
-                        // This item is already owned according to the API, so we increment the owned count.
-                        State.completedTasks++;
-                    }
-                });
-
+                
+                // 检查拥有状态
+                Utils.logger('info', `[优化] 正在检查 ${candidates.length} 个候选项的拥有状态...`);
+                const uids = candidates.map(item => item.uid);
+                const statesData = await API.checkItemsOwnership(uids);
+                
+                // 提取未拥有的商品
+                const ownedUids = new Set(statesData.filter(s => s && s.acquired).map(s => s.uid));
+                const notOwnedItems = candidates.filter(item => !ownedUids.has(item.uid));
+                
+                // 更新已拥有计数
+                State.completedTasks += candidates.length - notOwnedItems.length;
+                
                 if (notOwnedItems.length === 0) {
-                    Utils.logger('info', "No unowned items found in this batch.");
+                    Utils.logger('info', "本批次中没有发现未拥有的商品。");
                 } else {
-                    // --- Step 3: Price Verification ---
-                    Utils.logger('info', `Step 3: Verifying prices for ${notOwnedItems.length} unowned items...`);
-                    const pricesUrl = new URL('https://www.fab.com/i/listings/prices-infos');
-                    notOwnedItems.forEach(item => pricesUrl.searchParams.append('offer_ids', item.offerId));
-                    const pricesResponse = await API.gmFetch({ method: 'GET', url: pricesUrl.href, headers: apiHeaders });
-                    const pricesData = JSON.parse(pricesResponse.responseText);
-
-                    // API returns { offers: [...] }, convert it to a Map for efficient lookup.
+                    // 验证价格
+                    Utils.logger('info', `[优化] 正在验证 ${notOwnedItems.length} 个未拥有商品的价格...`);
+                    const offerIds = notOwnedItems.map(item => item.offerId).filter(Boolean);
+                    const pricesData = await API.checkItemsPrices(offerIds);
+                    
+                    // 创建价格映射
                     const priceMap = new Map();
-                    if (pricesData.offers && Array.isArray(pricesData.offers)) {
-                         pricesData.offers.forEach(offer => priceMap.set(offer.offerId, offer));
-                    }
-
+                    pricesData.forEach(offer => {
+                        if (offer && offer.offerId) {
+                            priceMap.set(offer.offerId, offer);
+                        }
+                    });
+                    
+                    // 添加免费商品到任务列表
                     const newTasks = [];
                     notOwnedItems.forEach(item => {
                         const priceInfo = priceMap.get(item.offerId);
-                        const originalItem = validResults.find(r => r.uid === item.uid); // Find original item to get the title
+                        const originalItem = validResults.find(r => r.uid === item.uid);
+                        
                         if (priceInfo && priceInfo.price === 0 && originalItem) {
                             const task = {
-                                name: originalItem.title, // Correctly get the title from the original API result
+                                name: originalItem.title,
                                 url: `${window.location.origin}${langPath}/listings/${item.uid}`,
                                 type: 'detail',
                                 uid: item.uid
@@ -1987,42 +2240,32 @@
                             newTasks.push(task);
                         }
                     });
-
+                    
                     if (newTasks.length > 0) {
                         Utils.logger('info', Utils.getText('log_api_owned_done', { newCount: newTasks.length }));
                         State.db.todo = State.db.todo.concat(newTasks);
-                        // No need to save the todo list anymore.
-                        // await Database.saveTodo();
                     } else {
-                        Utils.logger('info', "Found unowned items, but none were truly free after price check.");
+                        Utils.logger('info', "找到未拥有的商品，但价格验证后没有真正免费的商品。");
                     }
                 }
-
-
-                // --- Pagination ---
+                
+                // 处理分页
                 const nextUrl = searchData.next;
                 if (nextUrl && State.isReconning) {
                     await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
-                    await new Promise(r => setTimeout(r, 500)); // Rate limit
+                    await new Promise(r => setTimeout(r, 500)); // 限速保护
                     TaskRunner.reconWithApi(nextUrl);
                 } else {
                     State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL); // Recon is complete, delete the key.
+                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
                     Utils.logger('info', Utils.getText('log_recon_end'));
                 }
-
             } catch (error) {
-                Utils.logger('error', Utils.getText('log_recon_error'), error.message);
-
-                if (error instanceof SyntaxError && searchResponse?.responseText.trim().startsWith('<')) {
-                    const responseSample = searchResponse.responseText.replace(/</g, '&lt;').substring(0, 500);
-                    Utils.logger('error', "侦察失败：API没有返回有效数据，可能您已退出登录或网站正在维护。请尝试刷新页面或重新登录。");
-                    Utils.logger('error', "Recon failed: The API returned HTML instead of JSON. You might be logged out or the site could be under maintenance. Please try refreshing or logging in again.");
-                    Utils.logger('info', "API Response HTML (sample): " + responseSample);
+                Utils.logger('error', `API扫描出错: ${error.message}`);
+                if (error.message && error.message.includes('429')) {
+                    Utils.logger('warn', '检测到429错误，可能是请求过于频繁。将暂停扫描。');
+                    State.isReconning = false;
                 }
-
-                State.isReconning = false;
-            } finally {
                 UI.update();
             }
         },
@@ -2560,191 +2803,105 @@
         
         // 添加一个方法来批量检查当前页面上所有可见卡片的状态
         checkVisibleCardsStatus: async () => {
-            // 获取所有可见的卡片
-            const cards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
-                .filter(card => card.style.display !== 'none'); // 只处理可见的卡片
+            try {
+                // 获取所有可见卡片
+                const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
                 
-            if (cards.length === 0) {
-                Utils.logger('info', '[Fab DOM Refresh] 页面上没有找到可见的卡片。');
-                return;
-            }
-            
-            // 收集所有需要检查的项目
-            const itemsToCheck = [];
-            const visibleCount = cards.length;
-            
-            // 添加可见卡片
-            cards.forEach(card => {
-                // 如果卡片已经被判定为"已完成"，跳过
-                if (TaskRunner.isCardFinished(card)) {
+                // 如果没有可见卡片，直接返回
+                if (visibleCards.length === 0) {
+                    Utils.logger('info', '[Fab DOM Refresh] 没有可见的卡片需要刷新');
                     return;
                 }
                 
-                const link = card.querySelector(Config.SELECTORS.cardLink);
-                if (link) {
-                    const url = link.href.split('?')[0]; // 确保URL干净，不含参数
-                    const uid = url.split('/').pop();
-                    const name = card.querySelector('h3, h2')?.textContent?.trim() || '未知项目';
-                    
-                    // 如果不在已完成列表中，添加到检查列表
-                    if (!State.db.done.includes(url)) {
-                        itemsToCheck.push({ url, uid, name, element: card });
-                    }
-                }
-            });
-            
-            // 添加失败列表中的项目
-            State.db.failed.forEach(task => {
-                if (!itemsToCheck.some(item => item.uid === task.uid)) {
-                    itemsToCheck.push(task);
-                }
-            });
-            
-            if (itemsToCheck.length === 0) {
-                Utils.logger('info', `[Fab DOM Refresh] 所有${visibleCount}个可见卡片均已处理完毕，无需检查。`);
-                return;
-            }
-            
-            Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${itemsToCheck.length} 个项目（可见+失败）的状态...`);
-            
-            // 分批处理，每批最多30个，减少API负担
-            const batchSize = 30;
-            const batches = [];
-            for (let i = 0; i < itemsToCheck.length; i += batchSize) {
-                batches.push(itemsToCheck.slice(i, i + batchSize));
-            }
-            
-            let confirmedOwned = 0;
-            
-            // 首先检查是否处于限速状态
-            if (State.appStatus === 'RATE_LIMITED') {
-                Utils.logger('info', `[Fab DOM Refresh] 处于限速状态，仅使用本地数据和DOM检查。`);
+                // 提取卡片的UID和DOM元素
+                const allItems = [];
+                let confirmedOwned = 0;
                 
-                // 使用DOM方法再次检查卡片状态
-                for (const item of itemsToCheck) {
-                    if (item.element) {
-                        // 重新扫描元素，查找是否有"已拥有"标记
-                        const cardText = item.element.innerText || '';
-                        if (cardText.includes("已保存") || 
-                            cardText.includes("Saved") ||
-                            cardText.includes("In your library")) {
-                            if (!State.db.done.includes(item.url)) {
-                                State.db.done.push(item.url);
-                                confirmedOwned++;
+                visibleCards.forEach(card => {
+                    const link = card.querySelector(Config.SELECTORS.cardLink);
+                    const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
+                    
+                    if (uidMatch && uidMatch[1]) {
+                        const uid = uidMatch[1];
+                        const url = link.href.split('?')[0]; // 移除查询参数
+                        
+                        // 检查是否已经在已完成列表中
+                        if (State.db.done.includes(url)) {
+                            // 已经知道是已拥有的，不需要再次检查
+                            return;
+                        }
+                        
+                        allItems.push({ uid, url, element: card });
+                    }
+                });
+                
+                // 如果没有需要检查的项目，直接返回
+                if (allItems.length === 0) {
+                    Utils.logger('info', '[Fab DOM Refresh] 没有需要检查的卡片');
+                    return;
+                }
+                
+                Utils.logger('info', `[Fab DOM Refresh] 正在检查 ${allItems.length} 个项目的状态...`);
+                
+                // 提取所有需要检查的商品ID
+                const uids = allItems.map(item => item.uid);
+                
+                // 使用优化后的API函数检查拥有状态
+                const statesData = await API.checkItemsOwnership(uids);
+                
+                // 创建已拥有商品ID的集合，便于快速查找
+                const ownedUids = new Set(
+                    statesData
+                        .filter(state => state && state.acquired)
+                        .map(state => state.uid)
+                );
+                
+                // 处理结果
+                for (const item of allItems) {
+                    if (ownedUids.has(item.uid)) {
+                        // 如果不在已完成列表中，添加
+                        if (!State.db.done.includes(item.url)) {
+                            State.db.done.push(item.url);
+                            confirmedOwned++;
+                            
+                            // 如果有对应DOM元素，立即在UI上标记为已完成
+                            if (item.element) {
+                                // 尝试为卡片添加"已保存"标记
+                                const ownedElement = createOwnedElement();
+                                const infoSection = item.element.querySelector('.fabkit-Stack-root');
+                                if (infoSection) {
+                                    infoSection.appendChild(ownedElement);
+                                }
                             }
                         }
+                        
+                        // 从失败列表中移除
+                        State.db.failed = State.db.failed.filter(f => f.uid !== item.uid);
+                        
+                        // 从待办列表中移除
+                        State.db.todo = State.db.todo.filter(t => t.uid !== item.uid);
                     }
                 }
                 
-                // 如果找到了新的已拥有项目，保存并刷新UI
+                // 保存更改
                 if (confirmedOwned > 0) {
                     await Database.saveDone();
-                    Utils.logger('info', `[Fab DOM Refresh] DOM扫描完成，发现 ${confirmedOwned} 个已拥有项目。`);
+                    await Database.saveFailed();
+                    Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
+                    
+                    // 刷新DOM
                     TaskRunner.runHideOrShow();
+                    Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
+                } else {
+                    Utils.logger('info', '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。');
                 }
+            } catch (error) {
+                Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
                 
-                return;
-            }
-            
-            // 处理每一批
-            for (let i = 0; i < batches.length; i++) {
-                const batch = batches[i];
-                Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${i+1}/${batches.length}... (${batch.length}个项目)`);
-                
-                try {
-                    // 获取CSRF令牌
-                    const csrfToken = Utils.getCookie('fab_csrftoken');
-                    if (!csrfToken) {
-                        Utils.logger('error', '[Fab DOM Refresh] 无法获取CSRF令牌，无法检查项目状态。');
-                        return;
-                    }
-                    
-                    // 准备API请求
-                    const uids = batch.map(item => item.uid).join(',');
-                    const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
-                    statesUrl.searchParams.append('listing_ids', uids);
-                    
-                    // 发送请求
-                    const response = await API.gmFetch({
-                        method: 'GET',
-                        url: statesUrl.href,
-                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
-                    });
-                    
-                    // 解析响应
-                    let statesData;
-                    try {
-                        statesData = JSON.parse(response.responseText);
-                        if (!Array.isArray(statesData)) {
-                            Utils.logger('warn', '[Fab DOM Refresh] API返回的数据不是数组格式，这可能是API变更导致的');
-                            // 尝试提取数组数据
-                            statesData = API.extractStateData(statesData, 'FabDOMRefresh');
-                            
-                            // 记录原始响应内容以便调试
-                            try {
-                                const responsePreview = response.responseText.substring(0, 500);
-                                Utils.logger('debug', `[Fab DOM Refresh] 原始响应预览: ${responsePreview}...`);
-                            } catch (e) {
-                                Utils.logger('debug', `[Fab DOM Refresh] 无法记录原始响应: ${e.message}`);
-                            }
-                        }
-                    } catch (e) {
-                        Utils.logger('error', `[Fab DOM Refresh] 解析API响应失败: ${e.message}`);
-                        statesData = [];
-                    }
-                    
-                    // 处理结果
-                    for (const state of (Array.isArray(statesData) ? statesData : [])) {
-                        if (state && state.acquired) {
-                            // 找到对应的项目
-                            const item = batch.find(i => i.uid === state.uid);
-                            if (item) {
-                                // 如果不在已完成列表中，添加
-                                if (!State.db.done.includes(item.url)) {
-                                    State.db.done.push(item.url);
-                                    confirmedOwned++;
-                                    
-                                    // 如果有对应DOM元素，立即在UI上标记为已完成
-                                    if (item.element) {
-                                        // 尝试为卡片添加"已保存"标记
-                                        const ownedElement = createOwnedElement();
-                                        const infoSection = item.element.querySelector('.fabkit-Stack-root');
-                                        if (infoSection) {
-                                            infoSection.appendChild(ownedElement);
-                                        }
-                                    }
-                                }
-                                
-                                // 从失败列表中移除
-                                State.db.failed = State.db.failed.filter(f => f.uid !== state.uid);
-                                
-                                // 从待办列表中移除
-                                State.db.todo = State.db.todo.filter(t => t.uid !== state.uid);
-                            }
-                        }
-                    }
-                } catch (error) {
-                    Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
-                    
-                    // 如果是429错误，进入限速状态并退出
-                    if (error.message && error.message.includes('429')) {
-                        RateLimitManager.enterRateLimitedState('[Fab DOM Refresh] 429错误');
-                        return;
-                    }
+                // 如果是429错误，进入限速状态并退出
+                if (error.message && error.message.includes('429')) {
+                    RateLimitManager.enterRateLimitedState('[Fab DOM Refresh] 429错误');
                 }
-            }
-            
-            // 保存更改
-            if (confirmedOwned > 0) {
-                await Database.saveDone();
-                await Database.saveFailed();
-                Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
-                
-                // 刷新DOM
-                TaskRunner.runHideOrShow();
-                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
-            } else {
-                Utils.logger('info', '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。');
             }
         },
 
@@ -3749,6 +3906,9 @@
             Utils.logger('warn', `脚本启动时处于限速状态。限速已持续至少 ${previousDuration}s，来源: ${persistedStatus.source || '未知'}`);
         }
         
+        // 初始化请求拦截器
+        setupRequestInterceptors();
+        
         await PagePatcher.init();
         
         // 检查是否有临时保存的待办任务（从429恢复）
@@ -4205,7 +4365,25 @@
                 // 如果已经处于限速状态，不需要检查
                 if (State.appStatus !== 'NORMAL') return;
                 
-                // 发送HEAD请求检查当前页面的HTTP状态码
+                // 使用window.performance API检查最近的页面请求
+                if (window.performance && window.performance.getEntriesByType) {
+                    const navigationEntries = window.performance.getEntriesByType('navigation');
+                    if (navigationEntries && navigationEntries.length > 0) {
+                        const lastNavigation = navigationEntries[0];
+                        if (lastNavigation.responseStatus === 429) {
+                            Utils.logger('warn', `[HTTP状态检测] 检测到导航请求状态码为429！`);
+                            if (typeof window.enterRateLimitedState === 'function') {
+                                window.enterRateLimitedState();
+                            } else {
+                                const randomDelay = 5000 + Math.random() * 10000;
+                                countdownRefresh(randomDelay, 'HTTP状态检测');
+                            }
+                            return;
+                        }
+                    }
+                }
+                
+                // 如果Performance API没有提供有用信息，则发送HEAD请求
                 const response = await fetch(window.location.href, { 
                     method: 'HEAD',
                     cache: 'no-store',
@@ -4239,27 +4417,16 @@
         setInterval(checkHttpStatus, 10000);
 
         // 添加API请求监控，定期检查最近的API请求状态
-        const checkApiRequests = async () => {
+                const checkApiRequests = async () => {
             try {
                 // 如果已经处于限速状态，不需要检查
                 if (State.appStatus !== 'NORMAL') return;
                 
-                // 发送API请求检查状态
-                // 使用当前选择的排序方式
-                const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&cursor=` + 
-                               encodeURIComponent('bz02JnA9Tm9yZGljK0JlYWNoK0JvdWxkZXI=');
+                // 使用优化后的限速状态检查函数
+                const isNotLimited = await checkRateLimitStatus();
                 
-                const response = await fetch(apiUrl, { 
-                    method: 'HEAD',
-                    cache: 'no-store',
-                    credentials: 'same-origin',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
-                    Utils.logger('warn', `[API状态检测] 检测到API请求状态码为429！`);
+                if (!isNotLimited) {
+                    Utils.logger('warn', `[API状态检测] 检测到API可能处于限速状态`);
                     try {
                         // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                         if (typeof window.enterRateLimitedState === 'function') {
@@ -4274,8 +4441,12 @@
                         // 最后的备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
                         countdownRefresh(randomDelay, '错误恢复');
-        }
-    }
+                    }
+                } else {
+                    // 如果当前处于正常状态，记录一次成功的API检查
+                    Utils.logger('debug', `[API状态检测] API正常响应`);
+                    window.recordNetworkRequest('API状态检查', true);
+                }
             } catch (error) {
                 // 如果请求失败，可能也是限速导致的
                 Utils.logger('warn', `[API状态检测] API请求失败，可能是限速导致: ${error.message}`);
@@ -4412,22 +4583,45 @@
                 
                 // 每3秒重新检查一次条件
                 if (remainingSeconds % 3 === 0) {
-                    // 重新检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
-                    const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
-                    if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
-                        clearInterval(currentCountdownInterval);
-                        clearTimeout(currentRefreshTimeout);
-                        currentCountdownInterval = null;
-                        currentRefreshTimeout = null;
-                        
-                        if (visibleCount > 0) {
-                            Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
-                        } else {
-                            Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
+                    // 尝试使用优化后的API函数检查限速状态
+                    checkRateLimitStatus().then(isNotLimited => {
+                        if (isNotLimited) {
+                            Utils.logger('info', `⏱️ 检测到API限速已解除，取消刷新...`);
+                            clearInterval(currentCountdownInterval);
+                            currentCountdownInterval = null;
+                            
+                            if (currentRefreshTimeout) {
+                                clearTimeout(currentRefreshTimeout);
+                                currentRefreshTimeout = null;
+                            }
+                            
+                            // 恢复正常状态
+                            if (State.appStatus === 'RATE_LIMITED') {
+                                RateLimitManager.exitRateLimitedState();
+                            }
+                            
+                            return;
                         }
-                        Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
-                        return;
-                    }
+                        
+                        // 重新检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
+                        const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+                        if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+                            clearInterval(currentCountdownInterval);
+                            clearTimeout(currentRefreshTimeout);
+                            currentCountdownInterval = null;
+                            currentRefreshTimeout = null;
+                            
+                            if (visibleCount > 0) {
+                                Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
+                            } else {
+                                Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
+                            }
+                            Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
+                            return;
+                        }
+                    }).catch(e => {
+                        Utils.logger('debug', `检查限速状态出错: ${e.message}`);
+                    });
                 }
             }
         }, 1000);
@@ -4449,11 +4643,227 @@
             }
         }, delay);
     };
+    
+    // 优化后的限速状态检查函数
+    async function checkRateLimitStatus() {
+        try {
+            // 使用window.performance API检查最近的网络请求
+            if (window.performance && window.performance.getEntriesByType) {
+                const recentRequests = window.performance.getEntriesByType('resource')
+                    .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
+                    .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
+                
+                // 如果有最近成功的请求，则认为没有限速
+                const hasRecentSuccess = recentRequests.some(r => r.responseStatus === 200);
+                if (hasRecentSuccess) {
+                    Utils.logger('debug', `[优化] 检测到最近有成功的API请求，无需发送探测请求`);
+                    return true;
+                }
+            }
+            
+            // 如果没有最近的成功请求，发送一个轻量级的HEAD请求进行探测
+            const csrfToken = Utils.getCookie('fab_csrftoken');
+            if (!csrfToken) {
+                throw new Error("CSRF token not found for probe.");
+            }
+            
+            // 使用当前选择的排序方式
+            const apiUrl = `https://www.fab.com/i/listings/search?is_free=1&sort_by=${State.sortOptions[State.currentSortOption].value}&page_size=1`;
+            
+            const response = await fetch(apiUrl, { 
+                method: 'HEAD',
+                cache: 'no-store',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'x-csrftoken': csrfToken
+                }
+            });
+            
+            // 如果状态码是429，则仍然处于限速状态
+            if (response.status === 429) {
+                Utils.logger('debug', `[优化] 探测请求返回429，仍处于限速状态`);
+                return false;
+            }
+            
+            // 如果状态码是200-299，则认为限速已解除
+            if (response.status >= 200 && response.status < 300) {
+                Utils.logger('debug', `[优化] 探测请求成功，限速已解除`);
+                return true;
+            }
+            
+            // 其他状态码，可能仍有问题
+            Utils.logger('debug', `[优化] 探测请求返回未知状态码: ${response.status}`);
+            return false;
+        } catch (e) {
+            Utils.logger('error', `[优化] 检查限速状态出错: ${e.message}`);
+            return false;
+        }
+    };
 
     // 在页面卸载时清理实例
     window.addEventListener('beforeunload', () => {
         InstanceManager.cleanup();
         Utils.cleanup();
     });
+
+    // 添加请求拦截器设置函数
+    function setupRequestInterceptors() {
+        try {
+            // 设置XHR拦截器
+            setupXHRInterceptor();
+            
+            // 设置Fetch拦截器
+            setupFetchInterceptor();
+            
+            // 设置定期清理过期缓存的定时器
+            setInterval(() => DataCache.cleanupExpired(), 60000); // 每分钟清理一次
+            
+            Utils.logger('info', '[优化] 请求拦截和缓存系统已初始化');
+        } catch (e) {
+            Utils.logger('error', `[优化] 初始化请求拦截器失败: ${e.message}`);
+        }
+    }
+
+    // 设置XHR拦截器
+    function setupXHRInterceptor() {
+        const originalOpen = XMLHttpRequest.prototype.open;
+        const originalSend = XMLHttpRequest.prototype.send;
+        
+        XMLHttpRequest.prototype.open = function(...args) {
+            this._url = args[1]; // 保存URL以便后续使用
+            return originalOpen.apply(this, args);
+        };
+        
+        XMLHttpRequest.prototype.send = function(...args) {
+            const xhr = this;
+            
+            // 只拦截相关API请求
+            if (xhr._url && typeof xhr._url === 'string') {
+                // 添加加载完成事件监听器
+                xhr.addEventListener('load', function() {
+                    if (xhr.readyState === 4 && xhr.status === 200) {
+                        try {
+                            const responseData = JSON.parse(xhr.responseText);
+                            
+                            // 处理商品列表搜索响应
+                            if (xhr._url.includes('/i/listings/search')) {
+                                if (responseData.results && Array.isArray(responseData.results)) {
+                                    DataCache.saveListings(responseData.results);
+                                    Utils.logger('debug', `[Cache] 已缓存 ${responseData.results.length} 个商品数据`);
+                                }
+                            }
+                            
+                            // 处理拥有状态响应
+                            else if (xhr._url.includes('/i/users/me/listings-states')) {
+                                // 直接处理数组格式的响应
+                                if (Array.isArray(responseData)) {
+                                    DataCache.saveOwnedStatus(responseData);
+                                    Utils.logger('debug', `[Cache] 已缓存 ${responseData.length} 个商品拥有状态`);
+                                } 
+                                // 尝试处理非数组格式的响应
+                                else {
+                                    const extractedData = API.extractStateData(responseData, 'XHRInterceptor');
+                                    if (Array.isArray(extractedData) && extractedData.length > 0) {
+                                        DataCache.saveOwnedStatus(extractedData);
+                                        Utils.logger('debug', `[Cache] 已从非数组响应中提取并缓存 ${extractedData.length} 个商品拥有状态`);
+                                    }
+                                }
+                            }
+                            
+                            // 处理价格信息响应
+                            else if (xhr._url.includes('/i/listings/prices-infos')) {
+                                if (responseData.offers && Array.isArray(responseData.offers)) {
+                                    DataCache.savePrices(responseData.offers);
+                                    Utils.logger('debug', `[Cache] 已缓存 ${responseData.offers.length} 个价格信息`);
+                                }
+                            }
+                        } catch (e) {
+                            // 解析错误，忽略
+                            Utils.logger('debug', `[Cache] 解析响应失败: ${e.message}`);
+                        }
+                    }
+                });
+            }
+            
+            return originalSend.apply(this, args);
+        };
+        
+        Utils.logger('debug', '[优化] XHR拦截器已设置');
+    }
+
+    // 设置Fetch拦截器
+    function setupFetchInterceptor() {
+        const originalFetch = window.fetch;
+        
+        window.fetch = async function(...args) {
+            const url = args[0]?.toString() || '';
+            
+            // 只拦截相关API请求
+            if (url.includes('/i/listings/search') || 
+                url.includes('/i/users/me/listings-states') || 
+                url.includes('/i/listings/prices-infos')) {
+                
+                try {
+                    // 执行原始fetch请求
+                    const response = await originalFetch.apply(this, args);
+                    
+                    // 如果请求成功，处理响应数据
+                    if (response.ok) {
+                        // 克隆响应以避免消耗原始响应
+                        const clonedResponse = response.clone();
+                        
+                        // 异步处理响应数据
+                        clonedResponse.json().then(data => {
+                            // 处理商品列表搜索响应
+                            if (url.includes('/i/listings/search')) {
+                                if (data.results && Array.isArray(data.results)) {
+                                    DataCache.saveListings(data.results);
+                                    Utils.logger('debug', `[Cache] Fetch: 已缓存 ${data.results.length} 个商品数据`);
+                                }
+                            }
+                            
+                            // 处理拥有状态响应
+                            else if (url.includes('/i/users/me/listings-states')) {
+                                if (Array.isArray(data)) {
+                                    DataCache.saveOwnedStatus(data);
+                                    Utils.logger('debug', `[Cache] Fetch: 已缓存 ${data.length} 个商品拥有状态`);
+                                } else {
+                                    const extractedData = API.extractStateData(data, 'FetchInterceptor');
+                                    if (Array.isArray(extractedData) && extractedData.length > 0) {
+                                        DataCache.saveOwnedStatus(extractedData);
+                                        Utils.logger('debug', `[Cache] Fetch: 已从非数组响应中提取并缓存 ${extractedData.length} 个商品拥有状态`);
+                                    }
+                                }
+                            }
+                            
+                            // 处理价格信息响应
+                            else if (url.includes('/i/listings/prices-infos')) {
+                                if (data.offers && Array.isArray(data.offers)) {
+                                    DataCache.savePrices(data.offers);
+                                    Utils.logger('debug', `[Cache] Fetch: 已缓存 ${data.offers.length} 个价格信息`);
+                                }
+                            }
+                        }).catch((e) => {
+                            // 解析错误，忽略
+                            Utils.logger('debug', `[Cache] Fetch: 解析响应失败: ${e.message}`);
+                        });
+                    }
+                    
+                    // 返回原始响应
+                    return response;
+                } catch (e) {
+                    // 请求错误，继续使用原始fetch
+                    Utils.logger('error', `[Cache] Fetch拦截器错误: ${e.message}`);
+                    return originalFetch.apply(this, args);
+                }
+            }
+            
+            // 非相关API请求，直接使用原始fetch
+            return originalFetch.apply(this, args);
+        };
+        
+        Utils.logger('debug', '[优化] Fetch拦截器已设置');
+    }
 
 })();
