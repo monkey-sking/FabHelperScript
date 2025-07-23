@@ -1,21 +1,21 @@
 // ==UserScript==
 // @name         Fab Helper (优化版)
 // @namespace    https://www.fab.com/
-// @version      3.2.1-20250723
+// @version      3.2.2-20250723
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @author       RunKing
 // @match        https://www.fab.com/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=fab.com
+// @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_addValueChangeListener
 // @grant        GM_removeValueChangeListener
-// @grant        GM_xmlhttpRequest
 // @grant        GM_openInTab
-// @grant        window.close
 // @connect      fab.com
 // @connect      www.fab.com
-// @run-at       document-start
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -2567,7 +2567,8 @@
                 UI.update();
                 
                 // 检查是否所有卡片都被隐藏了，如果是且处于限速状态，则触发刷新
-                const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+                // 使用UI上显示的可见商品数量作为判断依据
+                const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
                 
                 // 更新真实的可见商品数量
                 Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${actualVisibleCount}，隐藏商品数: ${State.hiddenThisPageCount}`);
@@ -2576,7 +2577,7 @@
                     Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
                     setTimeout(() => {
                         // 最后检查一次，确保条件仍然满足
-                        const finalVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+                        const finalVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
                         
                         // 检查是否有待办任务或活动工作线程
                         if (State.db.todo.length > 0 || State.activeWorkers > 0) {
@@ -2586,7 +2587,8 @@
                         
                         if (finalVisibleCount === 0 && State.appStatus === 'RATE_LIMITED') {
                             Utils.logger('info', '🔄 执行刷新...');
-                            location.reload();
+                            // 使用更可靠的刷新方式
+                            window.location.href = window.location.href;
                         } else {
                             Utils.logger('info', `⏹️ 刷新取消，检测到 ${finalVisibleCount} 个可见商品`);
                         }
@@ -4443,38 +4445,38 @@
                             return;
                         }
                         
-                        // 重新检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
-                        const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
-                        
-                                        // 如果是429限速状态，则检查可见商品是否为0
-                if (State.appStatus === 'RATE_LIMITED') {
-                    // 检查实际可见的商品数量（考虑display:none的元素）
-                    const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
-                    
-                    // 只检查是否有待办任务或活动工作线程
-                    if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                        clearInterval(currentCountdownInterval);
-                        clearTimeout(currentRefreshTimeout);
-                        currentCountdownInterval = null;
-                        currentRefreshTimeout = null;
-                        Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
-                        Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
-                        return;
-                    }
-                    
-                    // 如果没有实际可见的商品，继续刷新
-                    if (actualVisibleCount === 0) {
-                        Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。`);
-                    } else {
-                        Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，暂不刷新。`);
-                        clearInterval(currentCountdownInterval);
-                        clearTimeout(currentRefreshTimeout);
-                        currentCountdownInterval = null;
-                        currentRefreshTimeout = null;
-                        return;
-                    }
-                } else {
+                        // 如果是429限速状态，则检查可见商品是否为0
+                        if (State.appStatus === 'RATE_LIMITED') {
+                            // 使用UI上显示的可见商品数量作为判断依据
+                            const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
+                            
+                            // 只检查是否有待办任务或活动工作线程
+                            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                                clearInterval(currentCountdownInterval);
+                                clearTimeout(currentRefreshTimeout);
+                                currentCountdownInterval = null;
+                                currentRefreshTimeout = null;
+                                Utils.logger('info', `⏹️ 检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
+                                Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
+                                return;
+                            }
+                            
+                            // 如果没有实际可见的商品，继续刷新
+                            if (actualVisibleCount === 0) {
+                                Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。`);
+                            } else {
+                                Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，暂不刷新。`);
+                                clearInterval(currentCountdownInterval);
+                                clearTimeout(currentRefreshTimeout);
+                                currentCountdownInterval = null;
+                                currentRefreshTimeout = null;
+                                return;
+                            }
+                        } else {
                             // 正常状态下，如果有可见商品、待办任务或活动工作线程，则取消刷新
+                            // 使用UI上显示的可见商品数量
+                            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
+                            
                             if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
                                 clearInterval(currentCountdownInterval);
                                 clearTimeout(currentRefreshTimeout);
@@ -4492,8 +4494,8 @@
                         }
                     }).catch(e => {
                         if (State.debugMode) {
-                Utils.logger('debug', `检查限速状态出错: ${e.message}`);
-            }
+                            Utils.logger('debug', `检查限速状态出错: ${e.message}`);
+                        }
                     });
                 }
             }
@@ -4502,12 +4504,13 @@
         // 设置刷新定时器
         currentRefreshTimeout = setTimeout(() => {
             // 最后一次检查条件，确保在刷新前条件仍然满足
-            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+            // 使用UI上显示的可见商品数量
+            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
             
             // 如果是429限速状态，检查实际可见商品
             if (State.appStatus === 'RATE_LIMITED') {
-                // 检查实际可见的商品数量（考虑display:none的元素）
-                const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+                // 使用UI上显示的可见商品数量
+                const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
                 
                 // 只检查是否有待办任务或活动工作线程
                 if (State.db.todo.length > 0 || State.activeWorkers > 0) {
@@ -4519,7 +4522,8 @@
                 // 如果没有实际可见的商品，执行刷新
                 if (actualVisibleCount === 0) {
                     Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将执行自动刷新。`);
-                    location.reload();
+                    // 使用更可靠的刷新方式
+                    window.location.href = window.location.href;
                 } else {
                     Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，取消自动刷新。`);
                     return;
@@ -4535,17 +4539,18 @@
                     Utils.logger('warn', '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。');
                 } else {
                     // 所有条件都满足，执行刷新
-                    location.reload();
+                    // 使用更可靠的刷新方式
+                    window.location.href = window.location.href;
                 }
             }
         }, delay);
     };
     
-        // 优化后的限速状态检查函数
+    // 优化后的限速状态检查函数
     async function checkRateLimitStatus() {
         try {
-            // 首先检查页面上是否有可见商品
-            const visibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+            // 使用UI上显示的可见商品数量
+            const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
             
             // 如果处于限速状态且没有可见商品，直接返回false触发刷新
             if (State.appStatus === 'RATE_LIMITED' && visibleCount === 0) {
@@ -4591,29 +4596,25 @@
             // 如果状态码是429，则仍然处于限速状态
             if (response.status === 429) {
                 if (State.debugMode) {
-                Utils.logger('debug', `[优化] 探测请求返回429，仍处于限速状态`);
-            }
+                    Utils.logger('debug', `[优化] 探测请求返回429，仍处于限速状态`);
+                }
                 return false;
             }
             
             // 如果状态码是200-299，则认为限速已解除
-            if (response.status >= 200 && response.status < 300) {
-                if (State.debugMode) {
-                Utils.logger('debug', `[优化] 探测请求成功，限速已解除`);
-            }
+            if (response.ok) {
                 return true;
             }
             
-            // 其他状态码，可能仍有问题
-            if (State.debugMode) {
-                Utils.logger('debug', `[优化] 探测请求返回未知状态码: ${response.status}`);
-            }
+            // 其他状态码，可能是其他错误
+            Utils.logger('warn', `[优化] 探测请求返回状态码 ${response.status}，视为限速仍然存在`);
             return false;
-        } catch (e) {
-            Utils.logger('error', `检查限速状态失败: ${e.message}`);
+        } catch (error) {
+            Utils.logger('error', `检查限速状态出错: ${error.message}`);
+            // 出错时保守处理，认为仍然处于限速状态
             return false;
         }
-    };
+    }
 
     // 在页面卸载时清理实例
     window.addEventListener('beforeunload', () => {
@@ -4767,5 +4768,38 @@
             Utils.logger('debug', '[优化] Fetch拦截器已设置');
         }
     }
+
+    // 添加一个函数，确保UI在刷新后能正确重新加载
+    function ensureUILoaded() {
+        // 检查UI是否已加载
+        if (!document.getElementById(Config.UI_CONTAINER_ID)) {
+            // 如果UI未加载，尝试重新初始化
+            Utils.logger('warn', '检测到UI未加载，尝试重新初始化...');
+            
+            // 延迟执行，确保页面已完全加载
+            setTimeout(() => {
+                try {
+                    // 重新执行初始化逻辑
+                    runDomDependentPart();
+                } catch (error) {
+                    Utils.logger('error', `UI重新初始化失败: ${error.message}`);
+                }
+            }, 1000);
+        }
+    }
+    
+    // 添加页面加载完成后的检查
+    window.addEventListener('load', () => {
+        // 延迟检查，确保所有脚本都有机会执行
+        setTimeout(ensureUILoaded, 2000);
+    });
+    
+    // 添加可见性变化检查，处理标签页切换回来的情况
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            // 页面变为可见时检查UI
+            setTimeout(ensureUILoaded, 500);
+        }
+    });
 
 })();
