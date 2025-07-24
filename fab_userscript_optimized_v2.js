@@ -2629,13 +2629,36 @@ const State = {
             }
         },
 
-        processDetailPage: async (task) => {
+        processDetailPage: async () => {
             // 工作标签页处理逻辑
             try {
+                // 从URL参数中获取workerId
+                const urlParams = new URLSearchParams(window.location.search);
+                const workerId = urlParams.get('workerId');
+                
+                if (!workerId) {
+                    Utils.logger('error', '工作标签页缺少workerId参数');
+                    setTimeout(closeWorkerTab, 2000);
+                    return;
+                }
+                
+                Utils.logger('info', `工作标签页启动，workerId: ${workerId}`);
+                
+                // 从存储中获取任务数据
+                const workerData = await GM_getValue(workerId);
+                
+                if (!workerData || !workerData.task) {
+                    Utils.logger('error', `无法获取任务数据，workerId: ${workerId}`);
+                    setTimeout(closeWorkerTab, 2000);
+                    return;
+                }
+                
+                const task = workerData.task;
+
                 // 确保任务有效
                 if (!task || !task.url) {
                     Utils.logger('error', '工作标签页收到无效任务');
-                    closeWorkerTab();
+                    setTimeout(closeWorkerTab, 2000);
                     return;
                 }
 
@@ -2645,16 +2668,58 @@ const State = {
                 State.workerTaskId = task.uid;
 
                 // 处理详情页面
-                // ... 详情页处理逻辑 ...
-
-                // 报告任务完成
-                await TaskRunner.reportTaskDone(task, true);
+                // 等待页面加载完成
+                await new Promise(resolve => {
+                    if (document.readyState === 'complete') {
+                        resolve();
+                    } else {
+                        window.addEventListener('load', resolve);
+                    }
+                });
+                
+                // 等待5秒，确保页面元素完全加载
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                
+                // 查找"添加到我的库"按钮
+                const acquisitionButton = [...document.querySelectorAll('button')].find(btn =>
+                    btn.textContent.includes('添加到我的库') || 
+                    btn.textContent.includes('Add to my library')
+                );
+                
+                if (!acquisitionButton) {
+                    Utils.logger('error', '未找到"添加到我的库"按钮，任务失败');
+                    await TaskRunner.reportTaskDone(task, false);
+                    setTimeout(closeWorkerTab, 2000);
+                    return;
+                }
+                
+                // 点击按钮
+                Utils.logger('info', '找到"添加到我的库"按钮，正在点击...');
+                Utils.deepClick(acquisitionButton);
+                
+                // 等待操作结果
+                await new Promise(resolve => setTimeout(resolve, 3000));
+                
+                // 检查是否成功添加
+                const successText = document.body.innerText || '';
+                const isSuccess = successText.includes('已保存在我的库中') || 
+                                 successText.includes('Saved in My Library') ||
+                                 successText.includes('在我的库中查看') ||
+                                 successText.includes('View in My Library');
+                
+                if (isSuccess) {
+                    Utils.logger('info', '成功添加到库中！');
+                    await TaskRunner.reportTaskDone(task, true);
+                } else {
+                    Utils.logger('error', '添加到库失败');
+                    await TaskRunner.reportTaskDone(task, false);
+                }
                 
                 // 关闭标签页
-                closeWorkerTab();
+                setTimeout(closeWorkerTab, 2000);
             } catch (error) {
                 Utils.logger('error', `Worker tab error: ${error.message}`);
-                closeWorkerTab();
+                setTimeout(closeWorkerTab, 2000);
             }
             
             // 关闭工作标签页的函数
@@ -4174,6 +4239,7 @@ const State = {
             
             // 初始化实例管理，但不检查返回值，工作标签页总是需要执行自己的任务
             await InstanceManager.init();
+            Utils.logger('info', `工作标签页初始化完成，开始处理任务...`);
             await TaskRunner.processDetailPage();
             return;
         }
@@ -4417,6 +4483,7 @@ const State = {
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('workerId')) {
             // 这里不需要再调用processDetailPage，因为main函数中已经处理了
+            Utils.logger('info', `工作标签页DOM部分初始化，跳过UI创建`);
             State.hasRunDomPart = true; // Mark as run to stop the launcher
             return; 
         }
