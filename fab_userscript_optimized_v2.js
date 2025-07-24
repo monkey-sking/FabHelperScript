@@ -2750,6 +2750,37 @@ const State = {
         // 添加一个计数器，用于跟踪实际隐藏的卡片数量
         let actuallyHidden = 0;
         
+        // 首先检查是否有未加载完成的卡片
+        let hasUnsettledCards = false;
+        const unsettledCards = [];
+        
+        // 检查卡片是否已加载完成的函数
+        const isCardSettled = (card) => {
+            // 检查卡片是否有价格、免费标签或已拥有标签
+            return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+        };
+        
+        // 检查是否有未加载完成的卡片
+        cards.forEach(card => {
+            if (!isCardSettled(card)) {
+                hasUnsettledCards = true;
+                unsettledCards.push(card);
+            }
+        });
+        
+        // 如果有未加载完成的卡片，延迟执行隐藏操作
+        if (hasUnsettledCards && unsettledCards.length > 0) {
+            Utils.logger('info', `检测到 ${unsettledCards.length} 张卡片尚未加载完成，延迟隐藏操作...`);
+            
+            // 设置一个较长的延迟，等待卡片加载完成
+            setTimeout(() => {
+                Utils.logger('info', `延迟后重新执行隐藏操作，确保卡片已加载完成`);
+                TaskRunner.runHideOrShow();
+            }, 2000); // 延迟2秒
+            
+            return; // 直接返回，等待下次执行
+        }
+        
         // 首先收集所有需要隐藏的卡片
         const cardsToHide = [];
         
@@ -2777,29 +2808,32 @@ const State = {
             }
         });
         
-        // 如果有需要隐藏的卡片，使用随机延迟隐藏它们
+        // 如果有需要隐藏的卡片，使用更长的初始延迟和更慢的隐藏速度
         if (cardsToHide.length > 0) {
-            Utils.logger('info', `准备隐藏 ${cardsToHide.length} 张卡片，将使用随机延迟...`);
+            Utils.logger('info', `准备隐藏 ${cardsToHide.length} 张卡片，将使用更长的延迟...`);
             
             // 随机打乱卡片顺序，使隐藏更加随机
             cardsToHide.sort(() => Math.random() - 0.5);
             
-            // 分批次隐藏卡片，每批次最多15张
-            const batchSize = 15;
+            // 分批次隐藏卡片，每批次最多10张（减少批次大小）
+            const batchSize = 10;
             const batches = Math.ceil(cardsToHide.length / batchSize);
+            
+            // 设置一个初始延迟，确保页面有足够时间加载
+            const initialDelay = 1000; // 1秒的初始延迟
             
             for (let i = 0; i < batches; i++) {
                 const start = i * batchSize;
                 const end = Math.min(start + batchSize, cardsToHide.length);
                 const currentBatch = cardsToHide.slice(start, end);
                 
-                // 为每个批次设置一个随机延迟，增加延迟时间
-                const batchDelay = i * 150 + Math.random() * 200;
+                // 为每个批次设置一个更长的延迟，增加延迟时间
+                const batchDelay = initialDelay + i * 300 + Math.random() * 300;
                 
                 setTimeout(() => {
                     currentBatch.forEach((card, index) => {
-                        // 为每张卡片设置一个额外的随机延迟，增加延迟时间
-                        const cardDelay = index * 20 + Math.random() * 50;
+                        // 为每张卡片设置一个更长的随机延迟
+                        const cardDelay = index * 50 + Math.random() * 100;
                         
                         setTimeout(() => {
                             card.style.display = 'none';
@@ -2813,7 +2847,7 @@ const State = {
                                     UI.update();
                                     // 隐藏完成后检查可见性并决定是否刷新
                                     TaskRunner.checkVisibilityAndRefresh();
-                                }, 200);
+                                }, 300);
                             }
                         }, cardDelay);
                     });
@@ -2925,10 +2959,10 @@ const State = {
                         State.isRefreshScheduled = false; // 重置刷新标记
                     }
                 }, 2000);
-            } else if (State.appStatus === 'NORMAL' && State.hideSaved) {
+            } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 // 正常状态下也没有可见商品，可能是全部隐藏了
-                // 只有在用户手动开启了隐藏功能时才提示
-                Utils.logger('info', `🔄 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品，建议刷新页面`);
+                // 只记录日志，不提示刷新，也不执行刷新
+                Utils.logger('info', `👁️ 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品`);
             }
         }
     },
@@ -2963,6 +2997,35 @@ const State = {
                 if (visibleCards.length === 0) {
                     Utils.logger('info', '[Fab DOM Refresh] 没有可见的卡片需要刷新');
                     return;
+                }
+                
+                // 首先检查是否有未加载完成的卡片
+                let hasUnsettledCards = false;
+                const unsettledCards = [];
+                
+                // 检查卡片是否已加载完成的函数
+                const isCardSettled = (card) => {
+                    // 检查卡片是否有价格、免费标签或已拥有标签
+                    return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+                };
+                
+                // 检查是否有未加载完成的卡片
+                visibleCards.forEach(card => {
+                    if (!isCardSettled(card)) {
+                        hasUnsettledCards = true;
+                        unsettledCards.push(card);
+                    }
+                });
+                
+                // 如果有未加载完成的卡片，等待一段时间后再检查
+                if (hasUnsettledCards && unsettledCards.length > 0) {
+                    Utils.logger('info', `[Fab DOM Refresh] 检测到 ${unsettledCards.length} 张卡片尚未加载完成，等待加载...`);
+                    
+                    // 等待一段时间后再次检查
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    // 重新获取所有可见卡片
+                    return TaskRunner.checkVisibleCardsStatus();
                 }
                 
                 // 提取卡片的UID和DOM元素
@@ -3033,8 +3096,7 @@ const State = {
                     await Database.saveFailed();
                     Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
                     
-                    // 刷新DOM
-                    TaskRunner.runHideOrShow();
+                    // 不立即执行隐藏，而是在调用方决定何时执行
                     Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
                 } else {
                     Utils.logger('info', '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。');
@@ -4614,35 +4676,45 @@ const State = {
                 )
             );
             if (hasNewContent) {
-                // 先立即执行一次隐藏，防止闪烁
-                if (State.hideSaved) {
-                    TaskRunner.runHideOrShow();
-                }
+                // 不再立即执行隐藏，而是等待一段时间，确保API请求完成
                 
-                // 然后延迟进行更彻底的处理
+                // 延迟进行处理
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
-                    Utils.logger('info', '[Observer] New content detected. Processing...');
+                    Utils.logger('info', '[Observer] 检测到新内容加载，等待API请求完成...');
                     
-                    // 执行一次状态检查，尝试更新卡片状态
-                    TaskRunner.checkVisibleCardsStatus().then(() => {
-                        // 状态检查后再次执行隐藏，确保新状态被应用
-                        // 使用延迟执行隐藏，确保DOM已完全更新
-                        setTimeout(() => {
-                            TaskRunner.runHideOrShow();
-                        }, 300);
+                    // 首先等待一段较长的时间，确保API请求有足够时间完成
+                    setTimeout(() => {
+                        Utils.logger('info', '[Observer] 开始处理新加载的内容...');
                         
-                        // 只在非限速状态下执行自动添加任务功能
-                        if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
-                            // 异步调用scanAndAddTasks
-                            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
-                                .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
-                        }
-                    }).catch(() => {
-                        // 即使状态检查失败也执行隐藏
-                        TaskRunner.runHideOrShow();
-                    });
-                }, 300);
+                        // 执行一次状态检查，尝试更新卡片状态
+                        TaskRunner.checkVisibleCardsStatus().then(() => {
+                            // 状态检查后再次执行隐藏，确保新状态被应用
+                            // 使用更长的延迟执行隐藏，确保DOM和API状态已完全更新
+                            setTimeout(() => {
+                                if (State.hideSaved) {
+                                    TaskRunner.runHideOrShow();
+                                }
+                            }, 1000);
+                            
+                            // 只在非限速状态下执行自动添加任务功能
+                            if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
+                                // 异步调用scanAndAddTasks，但也增加延迟
+                                setTimeout(() => {
+                                    TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                                        .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
+                                }, 500);
+                            }
+                        }).catch(() => {
+                            // 即使状态检查失败也执行隐藏，但延迟更长
+                            setTimeout(() => {
+                                if (State.hideSaved) {
+                                    TaskRunner.runHideOrShow();
+                                }
+                            }, 1500);
+                        });
+                    }, 2000); // 等待2秒，确保API请求完成
+                }, 500); // 增加防抖延迟
             }
         });
 
@@ -4868,26 +4940,23 @@ const State = {
                 State.hiddenThisPageCount = hiddenCards;
                 
                 // 如果处于限速状态且没有可见商品，考虑刷新
-                // 只有在用户手动开启了隐藏功能或启用了自动刷新时才触发
-                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && 
-                    (State.hideSaved || State.autoRefreshEmptyPage)) {
+                // 只有在明确开启了自动刷新功能时才触发
+                if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
                     // 如果已经有倒计时在运行，不要干扰它
                     if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
                         return;
                     }
                     
-                    Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品，准备刷新页面`);
+                    Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品且自动刷新已开启，准备刷新页面`);
                     const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
                     countdownRefresh(randomDelay, '限速状态无可见商品');
                     return;
                 }
                 
-                // 如果处于正常状态，但所有商品都被隐藏，也考虑刷新
-                // 只有在用户手动开启了隐藏功能时才触发自动刷新
-                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25 && State.hideSaved) {
-                    Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏，准备刷新页面`);
-                    const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
-                    countdownRefresh(randomDelay, '正常状态所有商品隐藏');
+                // 移除正常状态下因隐藏商品而自动刷新的逻辑
+                // 如果处于正常状态且所有商品都被隐藏，只记录日志，不触发刷新
+                if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
+                    Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏 (${hiddenCards}个)`);
                     return;
                 }
                 
