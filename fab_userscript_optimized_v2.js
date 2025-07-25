@@ -1,8 +1,12 @@
 // ==UserScript==
 // @name         Fab Helper (优化版)
+// @name:zh-CN   Fab Helper (优化版)
+// @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
 // @version      3.2.5-20250723
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
+// @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
+// @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
 // @author       RunKing
 // @match        https://www.fab.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=fab.com
@@ -2630,100 +2634,281 @@ const State = {
         },
 
         processDetailPage: async () => {
-            // 工作标签页处理逻辑
-            try {
-                // 从URL参数中获取workerId
-                const urlParams = new URLSearchParams(window.location.search);
-                const workerId = urlParams.get('workerId');
-                
-                if (!workerId) {
-                    Utils.logger('error', '工作标签页缺少workerId参数');
-                    setTimeout(closeWorkerTab, 2000);
-                    return;
-                }
-                
-                Utils.logger('info', `工作标签页启动，workerId: ${workerId}`);
-                
-                // 从存储中获取任务数据
-                const workerData = await GM_getValue(workerId);
-                
-                if (!workerData || !workerData.task) {
-                    Utils.logger('error', `无法获取任务数据，workerId: ${workerId}`);
-                    setTimeout(closeWorkerTab, 2000);
-                    return;
-                }
-                
-                const task = workerData.task;
+            const urlParams = new URLSearchParams(window.location.search);
+            const workerId = urlParams.get('workerId');
 
-                // 确保任务有效
-                if (!task || !task.url) {
-                    Utils.logger('error', '工作标签页收到无效任务');
-                    setTimeout(closeWorkerTab, 2000);
-                    return;
-                }
+            // If there's no workerId, this is not a worker tab, so we do nothing.
+            if (!workerId) return;
 
-                Utils.logger('info', `工作标签页处理任务: ${task.name || task.uid}`);
+            // 标记当前标签页为工作标签页，避免执行主脚本逻辑
+            State.isWorkerTab = true;
+            State.workerTaskId = workerId;
+            
+            // 记录工作标签页的启动时间
+            const startTime = Date.now();
+            let hasReported = false;
+            let closeAttempted = false;
 
-                // 设置当前任务ID
-                State.workerTaskId = task.uid;
-
-                // 处理详情页面
-                // 等待页面加载完成
-                await new Promise(resolve => {
-                    if (document.readyState === 'complete') {
-                        resolve();
-                    } else {
-                        window.addEventListener('load', resolve);
+            // 设置一个定时器，确保工作标签页最终会关闭
+            const forceCloseTimer = setTimeout(() => {
+                if (!closeAttempted) {
+                    console.log('强制关闭工作标签页');
+                    try {
+                        window.close();
+                    } catch (e) {
+                        console.error('关闭工作标签页失败:', e);
                     }
-                });
-                
-                // 等待5秒，确保页面元素完全加载
-                await new Promise(resolve => setTimeout(resolve, 5000));
-                
-                // 查找"添加到我的库"按钮
-                const acquisitionButton = [...document.querySelectorAll('button')].find(btn =>
-                    btn.textContent.includes('添加到我的库') || 
-                    btn.textContent.includes('Add to my library')
-                );
-                
-                if (!acquisitionButton) {
-                    Utils.logger('error', '未找到"添加到我的库"按钮，任务失败');
-                    await TaskRunner.reportTaskDone(task, false);
-                    setTimeout(closeWorkerTab, 2000);
+                }
+            }, 60000); // 60秒后强制关闭
+
+            try {
+                // This is a safety check. If the main tab stops execution, it might delete the task.
+                const payload = await GM_getValue(workerId);
+                if (!payload || !payload.task) {
+                    Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
+                    closeWorkerTab();
                     return;
                 }
                 
-                // 点击按钮
-                Utils.logger('info', '找到"添加到我的库"按钮，正在点击...');
-                Utils.deepClick(acquisitionButton);
-                
-                // 等待操作结果
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                
-                // 检查是否成功添加
-                const successText = document.body.innerText || '';
-                const isSuccess = successText.includes('已保存在我的库中') || 
-                                 successText.includes('Saved in My Library') ||
-                                 successText.includes('在我的库中查看') ||
-                                 successText.includes('View in My Library');
-                
-                if (isSuccess) {
-                    Utils.logger('info', '成功添加到库中！');
-                    await TaskRunner.reportTaskDone(task, true);
-                } else {
-                    Utils.logger('error', '添加到库失败');
-                    await TaskRunner.reportTaskDone(task, false);
+                // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
+                const activeInstance = await GM_getValue('fab_active_instance', null);
+                if (activeInstance && activeInstance.id !== payload.instanceId) {
+                    Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
+                    await GM_deleteValue(workerId); // 清理任务数据
+                    closeWorkerTab();
+                    return;
                 }
-                
-                // 关闭标签页
-                setTimeout(closeWorkerTab, 2000);
+
+                const currentTask = payload.task;
+                const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+                let success = false;
+
+                try {
+                    // API-First Ownership Check...
+                    try {
+                        const csrfToken = Utils.getCookie('fab_csrftoken');
+                        if (!csrfToken) throw new Error("CSRF token not found for API check.");
+                        const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                        statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                        const response = await API.gmFetch({
+                            method: 'GET',
+                            url: statesUrl.href,
+                            headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                        });
+                        
+                        let statesData;
+                        try {
+                            statesData = JSON.parse(response.responseText);
+                            if (!Array.isArray(statesData)) {
+                                logBuffer.push('API返回的数据不是数组格式，这可能是API变更导致的');
+                                // 尝试提取数组数据
+                                statesData = API.extractStateData(statesData, 'SingleItemCheck');
+                            }
+                        } catch (e) {
+                            logBuffer.push(`解析API响应失败: ${e.message}`);
+                            statesData = [];
+                        }
+                        
+                        const isOwned = Array.isArray(statesData) && statesData.some(s => s && s.uid === currentTask.uid && s.acquired);
+                        if (isOwned) {
+                            logBuffer.push(`API check confirms item is already owned.`);
+                            success = true;
+                        } else {
+                            logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+                        }
+                    } catch (apiError) {
+                        logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+                    }
+
+                    if (!success) {
+                        try {
+                            const isItemOwned = () => {
+                                const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                                const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+                                if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                                const successHeader = document.querySelector('h2');
+                                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                                const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                                const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                                if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                                return { owned: false };
+                            };
+
+                            const initialState = isItemOwned();
+                            if (initialState.owned) {
+                                logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                                success = true;
+                            } else {
+                                // 检查是否需要选择许可证
+                                const licenseButton = [...document.querySelectorAll('button')].find(btn => 
+                                    btn.textContent.includes('选择许可') || 
+                                    btn.textContent.includes('Select license')
+                                );
+                                
+                                if (licenseButton) {
+                                    logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                                    try {
+                                        await new Promise((resolve, reject) => {
+                                            const observer = new MutationObserver((mutationsList, obs) => {
+                                                for (const mutation of mutationsList) {
+                                                    if (mutation.addedNodes.length > 0) {
+                                                        for (const node of mutation.addedNodes) {
+                                                            if (node.nodeType !== 1) continue;
+                                                            // 查找"免费"或"个人"选项
+                                                            const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                                Array.from(el.childNodes).some(cn => 
+                                                                    cn.nodeType === 3 && 
+                                                                    (cn.textContent.trim() === '免费' || 
+                                                                     cn.textContent.trim() === 'Free' || 
+                                                                     cn.textContent.trim() === '个人' || 
+                                                                     cn.textContent.trim() === 'Personal')
+                                                                )
+                                                            );
+                                                            
+                                                            if (freeTextElement) {
+                                                                const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
+                                                                if (clickableParent) {
+                                                                    logBuffer.push(`Found free/personal license option, clicking it.`);
+                                                                    Utils.deepClick(clickableParent);
+                                                                    observer.disconnect();
+                                                                    resolve();
+                                                                    return;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                            
+                                            observer.observe(document.body, { childList: true, subtree: true });
+                                            logBuffer.push(`Clicking license button to open dropdown.`);
+                                            Utils.deepClick(licenseButton); // First click attempt
+                                            
+                                            // 有时第一次点击可能不成功，1.5秒后再试一次
+                                            setTimeout(() => {
+                                                logBuffer.push(`Second attempt to click license button.`);
+                                                Utils.deepClick(licenseButton);
+                                            }, 1500);
+                                            
+                                            // 如果5秒内没有出现下拉菜单，则超时
+                                            setTimeout(() => {
+                                                observer.disconnect();
+                                                reject(new Error('Timeout (5s): The free/personal option did not appear.'));
+                                            }, 5000);
+                                        });
+                                        
+                                        // 许可选择后等待UI更新
+                                        logBuffer.push(`License selected, waiting for UI update.`);
+                                        await new Promise(r => setTimeout(r, 1000));
+                                        
+                                        // 重新检查是否已拥有
+                                        if (isItemOwned().owned) {
+                                            logBuffer.push(`Item became owned after license selection.`);
+                                            success = true;
+                                        }
+                                    } catch (licenseError) {
+                                        logBuffer.push(`License selection failed: ${licenseError.message}`);
+                                    }
+                                }
+
+                                // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
+                                if (!success) {
+                                    const actionButton = [...document.querySelectorAll('button')].find(btn =>
+                                        btn.textContent.includes('添加到我的库') || 
+                                        btn.textContent.includes('Add to my library')
+                                    );
+
+                                    if (actionButton) {
+                                        logBuffer.push(`Found add button, clicking it.`);
+                                        Utils.deepClick(actionButton);
+                                        
+                                        // 等待添加操作完成
+                                        try {
+                                            await new Promise((resolve, reject) => {
+                                                const timeout = 25000; // 25秒超时
+                                                const interval = setInterval(() => {
+                                                    const currentState = isItemOwned();
+                                                    if (currentState.owned) {
+                                                        logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                                                        success = true;
+                                                        clearInterval(interval);
+                                                        resolve();
+                                                    }
+                                                }, 500); // 每500ms检查一次
+                                                
+                                                setTimeout(() => {
+                                                    clearInterval(interval);
+                                                    reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                                }, timeout);
+                                            });
+                                        } catch (timeoutError) {
+                                            logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                                        }
+                                    } else {
+                                        logBuffer.push(`Could not find an add button.`);
+                                    }
+                                }
+                            }
+                        } catch (uiError) {
+                            logBuffer.push(`UI interaction failed: ${uiError.message}`);
+                        }
+                    }
+                } catch (error) {
+                    logBuffer.push(`A critical error occurred: ${error.message}`);
+                    success = false;
+                } finally {
+                    try {
+                        // 标记为已报告
+                        hasReported = true;
+                        
+                        // 报告任务结果
+                        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: success,
+                            logs: logBuffer,
+                            task: currentTask,
+                            instanceId: payload.instanceId,
+                            executionTime: Date.now() - startTime
+                        });
+                    } catch (error) {
+                        console.error('Error setting worker done value:', error);
+                    }
+                    
+                    try {
+                        await GM_deleteValue(workerId); // 清理任务数据
+                    } catch (error) {
+                        console.error('Error deleting worker value:', error);
+                    }
+                    
+                    // 确保工作标签页在报告完成后关闭
+                    closeWorkerTab();
+                }
             } catch (error) {
                 Utils.logger('error', `Worker tab error: ${error.message}`);
-                setTimeout(closeWorkerTab, 2000);
+                closeWorkerTab();
             }
             
             // 关闭工作标签页的函数
             function closeWorkerTab() {
+                closeAttempted = true;
+                clearTimeout(forceCloseTimer);
+                
+                // 如果尚未报告结果，尝试报告失败
+                if (!hasReported && workerId) {
+                    try {
+                        GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: false,
+                            logs: ['Worker tab closed before completion'],
+                            task: payload?.task,
+                            instanceId: payload?.instanceId,
+                            executionTime: Date.now() - startTime
+                        });
+                    } catch (e) {
+                        // 忽略错误
+                    }
+                }
+                
                 try {
                     window.close();
                 } catch (error) {
