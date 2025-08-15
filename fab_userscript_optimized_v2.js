@@ -2504,6 +2504,7 @@ const State = {
                         // Map failed UID -> offerId (from cached listings)
                         const uidToOfferId = new Map();
                         let foundOfferIds = 0;
+                        const missingCacheUids = [];
 
                         failedTasksSnapshot.forEach(task => {
                             const listing = DataCache.listings.get(task.uid);
@@ -2512,11 +2513,66 @@ const State = {
                                 uidToOfferId.set(task.uid, offerId);
                                 foundOfferIds++;
                             } else {
+                                missingCacheUids.push(task.uid);
                                 Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 没有找到缓存的商品信息或价格ID`);
                             }
                         });
 
                         Utils.logger('info', `[Fab DB Sync] 在 ${failedTasksSnapshot.length} 个失败商品中找到了 ${foundOfferIds} 个有价格ID的商品`);
+
+                        // 对于没有缓存数据的商品，尝试重新获取信息
+                        if (missingCacheUids.length > 0) {
+                            Utils.logger('info', `[Fab DB Sync] 尝试为 ${missingCacheUids.length} 个缺失缓存的商品重新获取信息...`);
+
+                            try {
+                                const csrfToken = Utils.getCookie('fab_csrftoken');
+                                if (csrfToken) {
+                                    // 分批查询商品信息
+                                    const SEARCH_CHUNK_SIZE = 5; // 每次查询5个商品
+                                    for (let i = 0; i < missingCacheUids.length; i += SEARCH_CHUNK_SIZE) {
+                                        const chunk = missingCacheUids.slice(i, i + SEARCH_CHUNK_SIZE);
+
+                                        for (const uid of chunk) {
+                                            try {
+                                                const searchUrl = `https://www.fab.com/i/listings/search?q=${uid}`;
+                                                const response = await fetch(searchUrl, {
+                                                    headers: {
+                                                        'accept': 'application/json, text/plain, */*',
+                                                        'x-csrftoken': csrfToken,
+                                                        'x-requested-with': 'XMLHttpRequest'
+                                                    }
+                                                });
+
+                                                if (response.ok) {
+                                                    const searchData = await response.json();
+                                                    if (searchData.results && searchData.results.length > 0) {
+                                                        // 找到匹配的商品
+                                                        const matchedItem = searchData.results.find(item => item.uid === uid);
+                                                        if (matchedItem && matchedItem.startingPrice?.offerId) {
+                                                            // 缓存商品信息
+                                                            DataCache.saveListings([matchedItem]);
+                                                            // 添加到offerId映射
+                                                            uidToOfferId.set(uid, matchedItem.startingPrice.offerId);
+                                                            foundOfferIds++;
+                                                            Utils.logger('debug', `[Fab DB Sync] 成功获取商品 ${uid} 的价格ID: ${matchedItem.startingPrice.offerId}`);
+                                                        }
+                                                    }
+                                                }
+
+                                                // 添加延迟避免请求过快
+                                                await new Promise(r => setTimeout(r, 200));
+                                            } catch (e) {
+                                                Utils.logger('debug', `[Fab DB Sync] 获取商品 ${uid} 信息失败: ${e.message}`);
+                                            }
+                                        }
+                                    }
+
+                                    Utils.logger('info', `[Fab DB Sync] 重新获取完成，现在总共有 ${foundOfferIds} 个商品有价格ID`);
+                                }
+                            } catch (e) {
+                                Utils.logger('warn', `[Fab DB Sync] 重新获取商品信息时出错: ${e.message}`);
+                            }
+                        }
 
                         const offerIds = Array.from(uidToOfferId.values());
                         if (offerIds.length > 0) {
@@ -2631,7 +2687,7 @@ const State = {
         },
 
         // --- Core Logic Functions ---
-        reconWithApi: async (url = null) => {
+        reconWithApi: async () => {
             if (!State.isReconning) return;
 
             try {
