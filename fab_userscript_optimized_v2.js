@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.2.5-20250723
+// @version      3.3.0-20250815160009
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
