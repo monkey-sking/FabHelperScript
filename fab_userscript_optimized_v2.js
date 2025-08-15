@@ -61,8 +61,150 @@
             ownedStatus: '.cUUvxo_s'
         },
         TEXTS: {
-            en: { hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!', log_init: 'Assistant is online!', log_db_loaded: 'Reading archive...', log_exec_no_tasks: 'To-Do list is empty.', log_verify_success: 'Verified and added to library!', log_verify_fail: "Couldn't add. Will retry later.", log_429_error: 'Request limit hit! Taking a 15s break...', goto_page_label: 'Page:', goto_page_btn: 'Go', tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug' },
-            zh: { hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止', added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!', log_init: '助手已上线！', log_db_loaded: '正在读取存档...', log_exec_no_tasks: '"待办"清单是空的。', log_verify_success: '搞定！已成功入库。', log_verify_fail: '哎呀，这个没加上。稍后会自动重试！', log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...', goto_page_label: '页码:', goto_page_btn: '跳转', tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试' }
+            en: {
+                // 基础UI
+                hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop',
+                added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', visible: 'Visible',
+                clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!',
+                tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug',
+
+                // 应用标题和标签
+                app_title: 'Fab Helper',
+                free_label: 'Free',
+                operation_log: '📝 Operation Log',
+                position_indicator: '📍 ',
+
+                // 按钮文本
+                clear_all_data: '🗑️ Clear All Data',
+                debug_mode: 'Debug Mode',
+                page_diagnosis: 'Page Diagnosis',
+                copy_btn: 'Copy',
+                clear_btn: 'Clear',
+                copied_success: 'Copied!',
+
+                // 状态文本
+                status_history: 'Status Cycle History',
+                script_startup: 'Script Startup',
+                normal_period: 'Normal Operation',
+                rate_limited_period: 'Rate Limited',
+                current_normal: 'Current: Normal',
+                current_rate_limited: 'Current: Rate Limited',
+                no_history: 'No history records to display.',
+                no_saved_position: 'No saved position',
+
+                // 日志消息
+                log_init: 'Assistant is online!',
+                log_db_loaded: 'Reading archive...',
+                log_exec_no_tasks: 'To-Do list is empty.',
+                log_verify_success: 'Verified and added to library!',
+                log_verify_fail: "Couldn't add. Will retry later.",
+                log_429_error: 'Request limit hit! Taking a 15s break...',
+                log_recon_reset: 'Recon progress has been reset. Next scan will start from the beginning.',
+                log_recon_active: 'Cannot reset progress while recon is active.',
+                log_no_failed_tasks: 'No failed tasks to retry.',
+                log_requeuing_tasks: 'Re-queuing {0} failed tasks...',
+                log_detail_page: 'This is a detail or worker page. Halting main script execution.',
+                log_copy_failed: 'Failed to copy log:',
+
+                // 设置项
+                setting_auto_refresh: 'Auto refresh when no items visible',
+                setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
+
+                // 确认对话框
+                confirm_clear_data: 'Are you sure you want to clear all locally stored script data (completed, failed, to-do lists)? This action cannot be undone!',
+                confirm_open_failed: 'Are you sure you want to open {0} failed items in new tabs?',
+                confirm_clear_history: 'Are you sure you want to clear all status history records?',
+
+                // 错误提示
+                error_api_refresh: 'API refresh failed. Please check console for error details and confirm you are logged in.',
+
+                // 工具提示
+                tooltip_open_failed: 'Click to open all failed items',
+                tooltip_executing_progress: 'Executing: {0}/{1} ({2}%)',
+                tooltip_executing: 'Executing',
+                tooltip_start_tasks: 'Click to start executing tasks',
+
+                // 其他
+                goto_page_label: 'Page:',
+                goto_page_btn: 'Go',
+                page_reset: 'Page: 1',
+                untitled: 'Untitled',
+                cursor_mode: 'Cursor Mode',
+                using_native_requests: 'Using native web requests, waiting: {0}',
+                worker_closed: 'Worker tab closed before completion'
+            },
+            zh: {
+                // 基础UI
+                hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止',
+                added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', visible: '可见',
+                clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!',
+                tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试',
+
+                // 应用标题和标签
+                app_title: 'Fab Helper',
+                free_label: '免费',
+                operation_log: '📝 操作日志',
+                position_indicator: '📍 ',
+
+                // 按钮文本
+                clear_all_data: '🗑️ 清空所有存档',
+                debug_mode: '调试模式',
+                page_diagnosis: '页面诊断',
+                copy_btn: '复制',
+                clear_btn: '清空',
+                copied_success: '已复制!',
+
+                // 状态文本
+                status_history: '状态周期历史记录',
+                script_startup: '脚本启动',
+                normal_period: '正常运行期',
+                rate_limited_period: '限速期',
+                current_normal: '当前: 正常运行',
+                current_rate_limited: '当前: 限速中',
+                no_history: '没有可显示的历史记录。',
+                no_saved_position: '无保存位置',
+
+                // 日志消息
+                log_init: '助手已上线！',
+                log_db_loaded: '正在读取存档...',
+                log_exec_no_tasks: '"待办"清单是空的。',
+                log_verify_success: '搞定！已成功入库。',
+                log_verify_fail: '哎呀，这个没加上。稍后会自动重试！',
+                log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...',
+                log_recon_reset: '重置进度已完成。下次扫描将从头开始。',
+                log_recon_active: '扫描正在进行中，无法重置进度。',
+                log_no_failed_tasks: '没有失败的任务需要重试。',
+                log_requeuing_tasks: '正在重新排队 {0} 个失败任务...',
+                log_detail_page: '这是详情页或工作标签页。停止主脚本执行。',
+                log_copy_failed: '复制日志失败:',
+
+                // 设置项
+                setting_auto_refresh: '无商品可见时自动刷新',
+                setting_debug_tooltip: '启用详细日志记录，用于排查问题',
+
+                // 确认对话框
+                confirm_clear_data: '您确定要清空所有本地存储的脚本数据（已完成、失败、待办列表）吗？此操作不可逆！',
+                confirm_open_failed: '您确定要在新标签页中打开 {0} 个失败的项目吗？',
+                confirm_clear_history: '您确定要清空所有状态历史记录吗？',
+
+                // 错误提示
+                error_api_refresh: 'API 刷新失败。请检查控制台中的错误信息，并确认您已登录。',
+
+                // 工具提示
+                tooltip_open_failed: '点击打开所有失败的项目',
+                tooltip_executing_progress: '执行中: {0}/{1} ({2}%)',
+                tooltip_executing: '执行中',
+                tooltip_start_tasks: '点击开始执行任务',
+
+                // 其他
+                goto_page_label: '页码:',
+                goto_page_btn: '跳转',
+                page_reset: 'Page: 1',
+                untitled: 'Untitled',
+                cursor_mode: 'Cursor Mode',
+                using_native_requests: '使用网页原生请求，等待中: {0}',
+                worker_closed: '工作标签页在完成前关闭'
+            }
         },
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
         OWNED_SUCCESS_CRITERIA: {
@@ -95,6 +237,7 @@ const State = {
     autoResumeAfter429: false, // 是否在429后自动恢复
     autoRefreshEmptyPage: true, // 新增：无商品可见时自动刷新（默认开启）
     debugMode: false, // 是否启用调试模式
+    lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务
     isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
         isWorkerTab: false, // 是否是工作标签页
@@ -279,14 +422,14 @@ const State = {
             });
 
             console.log(`--- 价格信息 ---`);
-            Object.entries(report.priceInfo).forEach(([key, price]) => {
+            Object.entries(report.priceInfo).forEach(([, price]) => {
                 if (price.isVisible) {
                     console.log(`价格: "${price.text}"`);
                 }
             });
 
             console.log(`--- 拥有状态 ---`);
-            Object.entries(report.ownedStatus).forEach(([key, status]) => {
+            Object.entries(report.ownedStatus).forEach(([, status]) => {
                 if (status.isVisible) {
                     console.log(`状态: "${status.text}"`);
                 }
@@ -342,15 +485,37 @@ const State = {
                 }
             }
         },
-        getText: (key, replacements = {}) => {
-            let text = (Config.TEXTS[State.lang]?.[key]) || (Config.TEXTS['en']?.[key]) || '';
-            for (const placeholder in replacements) {
-                text = text.replace(`%${placeholder}%`, replacements[placeholder]);
+        getText: (key, ...args) => {
+            let text = (Config.TEXTS[State.lang]?.[key]) || (Config.TEXTS['en']?.[key]) || key;
+
+            // 支持两种格式的参数替换
+            if (args.length > 0) {
+                // 如果第一个参数是对象，使用 %placeholder% 格式
+                if (typeof args[0] === 'object' && args[0] !== null) {
+                    const replacements = args[0];
+                    for (const placeholder in replacements) {
+                        text = text.replace(`%${placeholder}%`, replacements[placeholder]);
+                    }
+                } else {
+                    // 否则使用 {0}, {1}, {2} 格式
+                    args.forEach((arg, index) => {
+                        text = text.replace(new RegExp(`\\{${index}\\}`, 'g'), arg);
+                    });
+                }
             }
+
             return text;
         },
         detectLanguage: () => {
+            const oldLang = State.lang;
             State.lang = window.location.href.includes('/zh-cn/') ? 'zh' : 'en';
+            Utils.logger('info', `语言检测: URL=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
+
+            // 如果语言发生了变化且UI已经创建，更新UI
+            if (oldLang !== State.lang && State.UI.container) {
+                Utils.logger('info', `语言已切换到${State.lang}，正在更新UI...`);
+                UI.update();
+            }
         },
         waitForElement: (selector, timeout = 5000) => {
             return new Promise((resolve, reject) => {
@@ -481,18 +646,7 @@ const State = {
     // --- DOM Creation Helpers (moved outside for broader scope) ---
     // 移除createOwnedElement函数，不再手动添加"已保存在我的库中"标记
 
-    const createFreeElement = () => {
-        const freeContainer = document.createElement('div');
-        freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
-        const innerStack = document.createElement('div');
-        innerStack.className = 'fabkit-Stack-root fabkit-scale--gapX-spacing-1 fabkit-scale--gapY-spacing-1 J9vFXlBh';
-        const freeText = document.createElement('div');
-        freeText.className = 'fabkit-Typography-root fabkit-Typography--align-start fabkit-Typography--intent-primary fabkit-Text--sm fabkit-Text--regular';
-        freeText.textContent = '免费';
-        innerStack.appendChild(freeText);
-        freeContainer.appendChild(innerStack);
-        return freeContainer;
-    };
+    // createFreeElement函数已移除，不再使用
 
     // --- 新增: 数据缓存系统 ---
     const DataCache = {
@@ -876,7 +1030,7 @@ const State = {
         saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
         resetAllData: async () => {
-            if (window.confirm('您确定要清空所有本地存储的脚本数据（已完成、失败、待办列表）吗？此操作不可逆！')) {
+            if (window.confirm(Utils.getText('confirm_clear_data'))) {
                 // 清除待办列表
                 await GM_deleteValue(Config.DB_KEYS.TODO);
                 await GM_deleteValue(Config.DB_KEYS.DONE);
@@ -960,13 +1114,7 @@ const State = {
         },
     };
 
-    // --- 模块六: 网络请求过滤器 (Network Filter) ---
-    const NetworkFilter = {
-        init: () => {
-            // 此模块的功能已完全被 MonkeyPatcher 取代，以确保在 document-start 时能立即生效。
-            Utils.logger('info', '网络过滤器(NetworkFilter)模块已弃用，功能由补丁程序(PagePatcher)处理。');
-        }
-    };
+
 
     // 集中处理限速状态的函数
     const RateLimitManager = {
@@ -1293,11 +1441,13 @@ const State = {
             // 使用MutationObserver监听URL变化
             if (typeof MutationObserver !== 'undefined') {
                 // 监听body变化，因为SPA应用可能不会触发popstate事件
-                const bodyObserver = new MutationObserver((mutations) => {
-                    // 如果URL发生变化，检查排序参数
+                const bodyObserver = new MutationObserver(() => {
+                    // 如果URL发生变化，检查排序参数和语言
                     if (window.location.href !== this._lastCheckedUrl) {
                         this._lastCheckedUrl = window.location.href;
                         this.checkCurrentSortFromUrl();
+                        // 重新检测语言
+                        Utils.detectLanguage();
                     }
                 });
 
@@ -1313,11 +1463,13 @@ const State = {
             // 监听popstate事件（浏览器前进/后退按钮）
             window.addEventListener('popstate', () => {
                 this.checkCurrentSortFromUrl();
+                Utils.detectLanguage();
             });
 
             // 监听hashchange事件
             window.addEventListener('hashchange', () => {
                 this.checkCurrentSortFromUrl();
+                Utils.detectLanguage();
             });
 
             // 保存当前URL作为初始状态
@@ -1355,7 +1507,7 @@ const State = {
                     State.savedCursor = null;
                     GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
                     if (State.UI.savedPositionDisplay) {
-                        State.UI.savedPositionDisplay.textContent = '无保存位置';
+                        State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
                     }
                     Utils.logger('info', '由于排序方式变更，已清除保存的浏览位置');
                 }
@@ -1511,7 +1663,9 @@ const State = {
                         GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
 
                         // 日志记录保存操作
-                        Utils.logger('info', `[Cursor] 保存新的恢复点: ${newCursor.substring(0, 30)}...`);
+                        if (State.debugMode) {
+                            Utils.logger('debug', `[Cursor] 保存新的恢复点: ${newCursor.substring(0, 30)}...`);
+                        }
 
                         // 更新UI中的位置显示
                         if (State.UI.savedPositionDisplay) {
@@ -1677,7 +1831,9 @@ const State = {
                 }
 
                 // NEW: Use [Debounce] tag for clarity
-                Utils.logger('info', `[Debounce] 🚦 Intercepted scroll request. Applying ${DEBOUNCE_DELAY_MS}ms delay...`);
+                if (State.debugMode) {
+                    Utils.logger('debug', `[Debounce] 🚦 Intercepted scroll request. Applying ${DEBOUNCE_DELAY_MS}ms delay...`);
+                }
 
                 // If there's a previously pending request, abort it.
                 if (self._pendingXhr) {
@@ -1692,7 +1848,9 @@ const State = {
 
                 // Set a timer to send the latest request after a period of inactivity.
                 self._debounceXhrTimer = setTimeout(() => {
-                    Utils.logger('info', `[Debounce] ▶️ Sending latest scroll request: ${this._url}`);
+                    if (State.debugMode) {
+                        Utils.logger('debug', `[Debounce] ▶️ Sending latest scroll request: ${this._url}`);
+                    }
                     listenerAwareSend.apply(self._pendingXhr, args);
                     self._pendingXhr = null; // Clear after sending
                 }, DEBOUNCE_DELAY_MS);
@@ -1730,7 +1888,8 @@ const State = {
                         // 检查429错误
                         if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                             // 克隆响应以避免"已消费"错误
-                            const clonedResponse = response.clone();
+                            // 克隆响应以避免"已消费"错误（但这里不需要使用）
+                            response.clone();
                             Utils.logger('warn', `[Fetch] 检测到429状态码: ${response.url}`);
                             // 使用RateLimitManager处理限速情况
                             RateLimitManager.enterRateLimitedState('Fetch响应429').catch(e =>
@@ -1966,7 +2125,7 @@ const State = {
                         return;
                     }
 
-                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                    const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
                     newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
                 });
 
@@ -2078,7 +2237,7 @@ const State = {
                             return;
                         }
 
-                        const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                        const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
                         newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
                     });
 
@@ -2228,15 +2387,15 @@ const State = {
         },
 
         resetReconProgress: async () => {
-            if (State.isReconquening) {
-                Utils.logger('warn', 'Cannot reset progress while recon is active.');
+            if (State.isReconning) {
+                Utils.logger('warn', Utils.getText('log_recon_active'));
                 return;
             }
             await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
             if (State.UI.reconProgressDisplay) {
-                State.UI.reconProgressDisplay.textContent = 'Page: 1';
+                State.UI.reconProgressDisplay.textContent = Utils.getText('page_reset');
             }
-            Utils.logger('info', 'Recon progress has been reset. Next scan will start from the beginning.');
+            Utils.logger('info', Utils.getText('log_recon_reset'));
         },
 
         refreshVisibleStates: async () => {
@@ -2339,47 +2498,84 @@ const State = {
                 // Step 3.5: Remove non-free items from the Failed list
                 try {
                     const failedTasksSnapshot = [...State.db.failed];
+                    Utils.logger('info', `[Fab DB Sync] 开始检查失败列表中的 ${failedTasksSnapshot.length} 个商品的价格状态...`);
+
                     if (failedTasksSnapshot.length > 0) {
                         // Map failed UID -> offerId (from cached listings)
                         const uidToOfferId = new Map();
+                        let foundOfferIds = 0;
+
                         failedTasksSnapshot.forEach(task => {
                             const listing = DataCache.listings.get(task.uid);
                             const offerId = listing?.startingPrice?.offerId;
-                            if (offerId) uidToOfferId.set(task.uid, offerId);
+                            if (offerId) {
+                                uidToOfferId.set(task.uid, offerId);
+                                foundOfferIds++;
+                            } else {
+                                Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 没有找到缓存的商品信息或价格ID`);
+                            }
                         });
+
+                        Utils.logger('info', `[Fab DB Sync] 在 ${failedTasksSnapshot.length} 个失败商品中找到了 ${foundOfferIds} 个有价格ID的商品`);
 
                         const offerIds = Array.from(uidToOfferId.values());
                         if (offerIds.length > 0) {
                             const CHUNK = 50;
                             const nonFreeOfferIds = new Set();
 
+                            Utils.logger('info', `[Fab DB Sync] 开始检查 ${offerIds.length} 个商品的价格...`);
+
                             for (let i = 0; i < offerIds.length; i += CHUNK) {
                                 const chunk = offerIds.slice(i, i + CHUNK);
+                                Utils.logger('info', `[Fab DB Sync] 检查价格批次 ${Math.floor(i / CHUNK) + 1}，包含 ${chunk.length} 个商品...`);
+
                                 const prices = await API.checkItemsPrices(chunk);
+                                Utils.logger('info', `[Fab DB Sync] 价格API返回了 ${prices.length} 个结果`);
+
                                 prices.forEach(offer => {
                                     if (offer && typeof offer.price === 'number' && offer.price > 0) {
                                         nonFreeOfferIds.add(offer.offerId);
+                                        Utils.logger('debug', `[Fab DB Sync] 发现付费商品: ${offer.offerId}, 价格: ${offer.price}`);
+                                    } else if (offer) {
+                                        Utils.logger('debug', `[Fab DB Sync] 发现免费商品: ${offer.offerId}, 价格: ${offer.price}`);
                                     }
                                 });
+
                                 // Gentle pacing to be safe
                                 if (offerIds.length > i + CHUNK) {
                                     await new Promise(r => setTimeout(r, 150));
                                 }
                             }
 
+                            Utils.logger('info', `[Fab DB Sync] 价格检查完成，发现 ${nonFreeOfferIds.size} 个付费商品`);
+
                             if (nonFreeOfferIds.size > 0) {
                                 const before = State.db.failed.length;
+                                const removedItems = [];
+
                                 State.db.failed = State.db.failed.filter(task => {
                                     const offerId = uidToOfferId.get(task.uid);
+                                    const shouldRemove = offerId && nonFreeOfferIds.has(offerId);
+                                    if (shouldRemove) {
+                                        removedItems.push(`${task.name || task.uid} (${offerId})`);
+                                    }
                                     // Remove only when we are sure it's not free (price > 0)
                                     return !offerId || !nonFreeOfferIds.has(offerId);
                                 });
+
                                 const removed = before - State.db.failed.length;
                                 if (removed > 0) {
                                     dbUpdated = true;
-                                    Utils.logger('info', `[Fab DB Sync] 从"失败"列表中移除了 ${removed} 个非免费商品。`);
+                                    Utils.logger('info', `[Fab DB Sync] 从"失败"列表中移除了 ${removed} 个非免费商品:`);
+                                    removedItems.forEach(item => Utils.logger('info', `  - ${item}`));
+                                } else {
+                                    Utils.logger('info', `[Fab DB Sync] 没有找到需要移除的付费商品`);
                                 }
+                            } else {
+                                Utils.logger('info', `[Fab DB Sync] 没有发现付费商品，失败列表保持不变`);
                             }
+                        } else {
+                            Utils.logger('info', `[Fab DB Sync] 失败列表中的商品都没有找到价格ID，跳过价格检查`);
                         }
                     }
                 } catch (e) {
@@ -2416,17 +2612,17 @@ const State = {
 
             } catch (e) {
                 Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
-                alert('API 刷新失败。请检查控制台中的错误信息，并确认您已登录。');
+                alert(Utils.getText('error_api_refresh'));
             }
         },
 
         retryFailedTasks: async () => {
             if (State.db.failed.length === 0) {
-                Utils.logger('info', 'No failed tasks to retry.');
+                Utils.logger('info', Utils.getText('log_no_failed_tasks'));
                 return;
             }
             const count = State.db.failed.length;
-            Utils.logger('info', `Re-queuing ${count} failed tasks...`);
+            Utils.logger('info', Utils.getText('log_requeuing_tasks', count));
             State.db.todo.push(...State.db.failed); // Append failed tasks to the end of the todo list
             State.db.failed = []; // Clear the failed list
             await Database.saveFailed();
@@ -2445,7 +2641,7 @@ const State = {
 
                 // 更新UI显示
                 if (State.UI.reconProgressDisplay) {
-                    State.UI.reconProgressDisplay.textContent = `使用网页原生请求，等待中: ${DataCache.waitingList.size}`;
+                    State.UI.reconProgressDisplay.textContent = Utils.getText('using_native_requests', DataCache.waitingList.size);
                 }
 
                 // 结束扫描
@@ -2455,127 +2651,9 @@ const State = {
                 UI.update();
                 return;
 
-                // 以下代码不再执行
-                const searchData = null;
 
-                // 保存商品数据到缓存
-                if (searchData.results && Array.isArray(searchData.results)) {
-                    DataCache.saveListings(searchData.results);
-                }
 
-                const initialResultsCount = searchData.results?.length || 0;
-                State.totalTasks += initialResultsCount;
 
-                // 检查是否有结果
-                if (!searchData.results || initialResultsCount === 0) {
-                    State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-                    Utils.logger('info', Utils.getText('log_recon_end'));
-                    UI.update();
-                    return;
-                }
-
-                // 过滤有效的商品数据
-                const validResults = searchData.results.filter(item => {
-                    const hasUid = typeof item.uid === 'string' && item.uid.length > 5;
-                    const hasTitle = typeof item.title === 'string' && item.title.length > 0;
-                    const hasOffer = item.startingPrice && typeof item.startingPrice.offerId === 'string' && item.startingPrice.offerId.length > 0;
-                    return hasUid && hasTitle && hasOffer;
-                });
-
-                // 提取候选项
-                const candidates = validResults.map(item => ({
-                    uid: item.uid,
-                    offerId: item.startingPrice?.offerId
-                })).filter(item => {
-                    const itemUrl = `${window.location.origin}${langPath}/listings/${item.uid}`;
-                    const isFailed = State.db.failed.some(failedTask => failedTask.uid === item.uid);
-                    return !Database.isDone(itemUrl) && !Database.isTodo(itemUrl) && !isFailed;
-                });
-
-                const initiallySkippedCount = initialResultsCount - candidates.length;
-                State.completedTasks += initiallySkippedCount;
-
-                // 如果没有候选项，继续下一页
-                if (candidates.length === 0) {
-                    const nextUrl = searchData.next;
-                    if (nextUrl && State.isReconning) {
-                        await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
-                        await new Promise(r => setTimeout(r, 300));
-                        TaskRunner.reconWithApi(nextUrl);
-                    } else {
-                        State.isReconning = false;
-                        await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-                        Utils.logger('info', Utils.getText('log_recon_end'));
-                    }
-                    UI.update();
-                    return;
-                }
-
-                // 检查拥有状态
-                Utils.logger('info', `[优化] 正在检查 ${candidates.length} 个候选项的拥有状态...`);
-                const uids = candidates.map(item => item.uid);
-                const statesData = await API.checkItemsOwnership(uids);
-
-                // 提取未拥有的商品
-                const ownedUids = new Set(statesData.filter(s => s && s.acquired).map(s => s.uid));
-                const notOwnedItems = candidates.filter(item => !ownedUids.has(item.uid));
-
-                // 更新已拥有计数
-                State.completedTasks += candidates.length - notOwnedItems.length;
-
-                if (notOwnedItems.length === 0) {
-                    Utils.logger('info', "本批次中没有发现未拥有的商品。");
-                } else {
-                    // 验证价格
-                    Utils.logger('info', `[优化] 正在验证 ${notOwnedItems.length} 个未拥有商品的价格...`);
-                    const offerIds = notOwnedItems.map(item => item.offerId).filter(Boolean);
-                    const pricesData = await API.checkItemsPrices(offerIds);
-
-                    // 创建价格映射
-                    const priceMap = new Map();
-                    pricesData.forEach(offer => {
-                        if (offer && offer.offerId) {
-                            priceMap.set(offer.offerId, offer);
-                        }
-                    });
-
-                    // 添加免费商品到任务列表
-                    const newTasks = [];
-                    notOwnedItems.forEach(item => {
-                        const priceInfo = priceMap.get(item.offerId);
-                        const originalItem = validResults.find(r => r.uid === item.uid);
-
-                        if (priceInfo && priceInfo.price === 0 && originalItem) {
-                            const task = {
-                                name: originalItem.title,
-                                url: `${window.location.origin}${langPath}/listings/${item.uid}`,
-                                type: 'detail',
-                                uid: item.uid
-                            };
-                            newTasks.push(task);
-                        }
-                    });
-
-                    if (newTasks.length > 0) {
-                        Utils.logger('info', Utils.getText('log_api_owned_done', { newCount: newTasks.length }));
-                        State.db.todo = State.db.todo.concat(newTasks);
-                    } else {
-                        Utils.logger('info', "找到未拥有的商品，但价格验证后没有真正免费的商品。");
-                    }
-                }
-
-                // 处理分页
-                const nextUrl = searchData.next;
-                if (nextUrl && State.isReconning) {
-                    await GM_setValue(Config.DB_KEYS.NEXT_URL, nextUrl);
-                    await new Promise(r => setTimeout(r, 500)); // 限速保护
-                    TaskRunner.reconWithApi(nextUrl);
-                } else {
-                    State.isReconning = false;
-                    await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-                    Utils.logger('info', Utils.getText('log_recon_end'));
-                }
             } catch (error) {
                 Utils.logger('error', `API扫描出错: ${error.message}`);
                 if (error.message && error.message.includes('429')) {
@@ -2748,7 +2826,7 @@ const State = {
 
                 State.activeWorkers++;
                     dispatchedCount++;
-                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
                     State.runningWorkers[workerId] = {
                         task,
                         startTime: Date.now(),
@@ -2875,7 +2953,7 @@ const State = {
                     });
 
                     // 记录价格信息
-                    Object.entries(diagnosticReport.priceInfo).forEach(([key, price]) => {
+                    Object.entries(diagnosticReport.priceInfo).forEach(([, price]) => {
                         if (price.isVisible) {
                             logBuffer.push(`价格显示: "${price.text}"`);
                         }
@@ -2954,7 +3032,7 @@ const State = {
                                     logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
                                     try {
                                         await new Promise((resolve, reject) => {
-                                            const observer = new MutationObserver((mutationsList, obs) => {
+                                            const observer = new MutationObserver((mutationsList) => {
                                                 for (const mutation of mutationsList) {
                                                     if (mutation.addedNodes.length > 0) {
                                                         for (const node of mutation.addedNodes) {
@@ -3119,7 +3197,7 @@ const State = {
                         GM_setValue(Config.DB_KEYS.WORKER_DONE, {
                             workerId: workerId,
                             success: false,
-                            logs: ['Worker tab closed before completion'],
+                            logs: [Utils.getText('worker_closed')],
                             task: payload?.task,
                             instanceId: payload?.instanceId,
                             executionTime: Date.now() - startTime
@@ -3215,7 +3293,9 @@ const State = {
 
         // 如果有需要隐藏的卡片，使用更长的初始延迟和更慢的隐藏速度
         if (cardsToHide.length > 0) {
-            Utils.logger('info', `准备隐藏 ${cardsToHide.length} 张卡片，将使用更长的延迟...`);
+            if (State.debugMode) {
+                Utils.logger('debug', `准备隐藏 ${cardsToHide.length} 张卡片，将使用更长的延迟...`);
+            }
 
             // 随机打乱卡片顺序，使隐藏更加随机
             cardsToHide.sort(() => Math.random() - 0.5);
@@ -3246,7 +3326,9 @@ const State = {
 
                             // 当所有卡片都隐藏后，更新UI
                             if (actuallyHidden === cardsToHide.length) {
-                                Utils.logger('info', `已完成所有 ${actuallyHidden} 张卡片的隐藏`);
+                                if (State.debugMode) {
+                                    Utils.logger('debug', `已完成所有 ${actuallyHidden} 张卡片的隐藏`);
+                                }
                                 // 延迟更新UI，确保DOM已经完全更新
                                 setTimeout(() => {
                                     UI.update();
@@ -3303,7 +3385,9 @@ const State = {
 
         // 如果发现未处理的卡片，重新执行隐藏逻辑
         if (needsReprocessing) {
-            Utils.logger('info', '检测到未处理的卡片，重新执行隐藏逻辑');
+            if (State.debugMode) {
+                Utils.logger('debug', '检测到未处理的卡片，重新执行隐藏逻辑');
+            }
             setTimeout(() => {
                 TaskRunner.runHideOrShow();
             }, 100);
@@ -3321,7 +3405,9 @@ const State = {
         }).length;
 
         // 更新真实的可见商品数量
-        Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
+        if (State.debugMode) {
+            Utils.logger('debug', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
+        }
 
         // 更新UI上显示的可见商品数
         const visibleCountElement = document.getElementById('fab-status-visible');
@@ -3542,7 +3628,9 @@ const State = {
             window._apiWaitStatus.pendingCards = [...cards];
             window._apiWaitStatus.lastApiActivity = Date.now();
 
-            Utils.logger('info', `[自动添加] 开始等待API响应，将在API活动停止后处理 ${cards.length} 张卡片...`);
+            if (State.debugMode) {
+                Utils.logger('debug', `[自动添加] 开始等待API响应，将在API活动停止后处理 ${cards.length} 张卡片...`);
+            }
 
             // 创建一个函数来检测API活动
             const waitForApiCompletion = () => {
@@ -3605,7 +3693,9 @@ const State = {
             window._apiWaitStatus.pendingCards = [];
             window._apiWaitStatus.isWaiting = false;
 
-            Utils.logger('info', `[自动添加] API等待完成，开始处理 ${cardsToProcess.length} 张卡片...`);
+            if (State.debugMode) {
+                Utils.logger('debug', `[自动添加] API等待完成，开始处理 ${cardsToProcess.length} 张卡片...`);
+            }
 
             // 现在处理卡片
             const newlyAddedList = [];
@@ -3670,7 +3760,7 @@ const State = {
                 }
 
                 // If it passes all checks, it's a valid new task.
-                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || 'Untitled';
+                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
                 newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
             });
 
@@ -4058,7 +4148,7 @@ const State = {
                 }
             `;
             const styleSheet = document.createElement("style");
-            styleSheet.type = "text/css";
+            // styleSheet.type = "text/css"; // 不再需要设置type属性
             styleSheet.innerText = styles;
             document.head.appendChild(styleSheet);
 
@@ -4070,7 +4160,7 @@ const State = {
             const header = document.createElement('div');
             header.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;';
             const title = document.createElement('span');
-            title.textContent = 'Fab Helper';
+            title.textContent = Utils.getText('app_title');
             title.style.fontWeight = '600';
             const version = document.createElement('span');
             version.textContent = `v${GM_info.script.version}`;
@@ -4112,18 +4202,18 @@ const State = {
                 item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
                 return item;
             };
-            State.UI.statusVisible = createStatusItem('fab-status-visible', '可见', '👁️');
+            State.UI.statusVisible = createStatusItem('fab-status-visible', Utils.getText('visible'), '👁️');
             State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
             State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅');
             State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌');
             State.UI.statusFailed.style.cursor = 'pointer';
-            State.UI.statusFailed.title = '点击打开所有失败的项目';
+            State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
             State.UI.statusFailed.onclick = () => {
                 if (State.db.failed.length === 0) {
                     Utils.logger('info', '失败列表为空，无需操作。');
                     return;
                 }
-                if (window.confirm(`您确定要在新标签页中打开 ${State.db.failed.length} 个失败的项目吗？`)) {
+                if (window.confirm(Utils.getText('confirm_open_failed', State.db.failed.length))) {
                     Utils.logger('info', `正在打开 ${State.db.failed.length} 个失败项目...`);
                     State.db.failed.forEach(task => {
                         GM_openInTab(task.url, { active: false });
@@ -4165,7 +4255,7 @@ const State = {
             const logHeader = document.createElement('div');
             logHeader.className = 'fab-log-header';
             const logTitle = document.createElement('span');
-            logTitle.textContent = '📝 操作日志';
+            logTitle.textContent = Utils.getText('operation_log');
             const logControls = document.createElement('div');
             logControls.className = 'fab-log-controls';
 
@@ -4199,7 +4289,7 @@ const State = {
             positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px;';
 
             const positionIcon = document.createElement('span');
-            positionIcon.textContent = '📍 ';
+            positionIcon.textContent = Utils.getText('position_indicator');
             positionIcon.style.marginRight = '4px';
 
             const positionInfo = document.createElement('span');
@@ -4274,11 +4364,11 @@ const State = {
             const autoResumeSetting = createSettingRow('429后自动恢复并继续', 'autoResumeAfter429');
             settingsContent.appendChild(autoResumeSetting);
 
-            const autoRefreshEmptySetting = createSettingRow('无商品可见时自动刷新', 'autoRefreshEmptyPage');
+            const autoRefreshEmptySetting = createSettingRow(Utils.getText('setting_auto_refresh'), 'autoRefreshEmptyPage');
             settingsContent.appendChild(autoRefreshEmptySetting);
 
             const resetButton = document.createElement('button');
-            resetButton.textContent = '🗑️ 清空所有存档';
+            resetButton.textContent = Utils.getText('clear_all_data');
             resetButton.style.cssText = 'width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;';
             resetButton.onclick = Database.resetAllData;
             settingsContent.appendChild(resetButton);
@@ -4286,11 +4376,11 @@ const State = {
             // 添加调试模式切换按钮 - 使用自定义行而不是createSettingRow
             const debugModeRow = document.createElement('div');
             debugModeRow.className = 'fab-setting-row';
-            debugModeRow.title = '启用详细日志记录，用于排查问题';
+            debugModeRow.title = Utils.getText('setting_debug_tooltip');
 
             const debugLabel = document.createElement('span');
             debugLabel.className = 'fab-setting-label';
-            debugLabel.textContent = '调试模式';
+            debugLabel.textContent = Utils.getText('debug_mode');
             debugLabel.style.color = '#ff9800';
 
             const switchContainer = document.createElement('label');
@@ -4334,14 +4424,14 @@ const State = {
             debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
 
             const debugTitle = document.createElement('h4');
-            debugTitle.textContent = '状态周期历史记录';
+            debugTitle.textContent = Utils.getText('status_history');
             debugTitle.style.margin = '0';
 
             const debugControls = document.createElement('div');
             debugControls.style.cssText = 'display: flex; gap: 8px;';
 
             const copyHistoryBtn = document.createElement('button');
-            copyHistoryBtn.textContent = '复制';
+            copyHistoryBtn.textContent = Utils.getText('copy_btn');
             copyHistoryBtn.title = '复制详细历史记录';
             copyHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
             copyHistoryBtn.onclick = () => {
@@ -4353,7 +4443,7 @@ const State = {
                     const date = new Date(entry.endTime).toLocaleString();
 
                     if (entry.type === 'STARTUP') {
-                        return `🚀 脚本启动\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
+                        return `🚀 ${Utils.getText('script_startup')}\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
                     } else {
                         const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
                         // 添加空值检查，防止toFixed错误
@@ -4367,17 +4457,17 @@ const State = {
                 const fullLog = State.statusHistory.map(formatEntry).join('\n\n');
                 navigator.clipboard.writeText(fullLog).then(() => {
                     const originalText = copyHistoryBtn.textContent;
-                    copyHistoryBtn.textContent = '已复制!';
+                    copyHistoryBtn.textContent = Utils.getText('copied_success');
                     setTimeout(() => { copyHistoryBtn.textContent = originalText; }, 2000);
-                }).catch(err => Utils.logger('error', '复制失败:', err));
+                }).catch(err => Utils.logger('error', Utils.getText('log_copy_failed'), err));
             };
 
             const clearHistoryBtn = document.createElement('button');
-            clearHistoryBtn.textContent = '清空';
+            clearHistoryBtn.textContent = Utils.getText('clear_btn');
             clearHistoryBtn.title = '清空历史记录';
             clearHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
             clearHistoryBtn.onclick = async () => {
-                if (window.confirm('您确定要清空所有状态历史记录吗？')) {
+                if (window.confirm(Utils.getText('confirm_clear_history'))) {
                     State.statusHistory = [];
                     await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
 
@@ -4398,7 +4488,7 @@ const State = {
 
             // 添加页面诊断按钮
             const diagnosisBtn = document.createElement('button');
-            diagnosisBtn.textContent = '页面诊断';
+            diagnosisBtn.textContent = Utils.getText('page_diagnosis');
             diagnosisBtn.className = 'fab-helper-btn';
             diagnosisBtn.style.cssText = 'margin-left: 10px; background: #2196F3; color: white;';
             diagnosisBtn.onclick = () => {
@@ -4435,6 +4525,27 @@ const State = {
         update: () => {
             if (!State.UI.container) return;
 
+            // --- Update Static Text Elements (for language switching) ---
+            // 更新应用标题
+            const titleElement = State.UI.container.querySelector('span[style*="font-weight: 600"]');
+            if (titleElement) {
+                titleElement.textContent = Utils.getText('app_title');
+            }
+
+            // 更新标签页文本
+            const tabs = ['dashboard', 'settings', 'debug'];
+            tabs.forEach((tabName) => {
+                const tabButton = State.UI.tabs[tabName];
+                if (tabButton) {
+                    tabButton.textContent = Utils.getText(`tab_${tabName}`);
+                }
+            });
+
+            // 更新同步按钮文本
+            if (State.UI.syncBtn) {
+                State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
+            }
+
             // --- Update Status Numbers ---
             const todoCount = State.db.todo.length;
             const doneCount = State.db.done.length;
@@ -4456,14 +4567,14 @@ const State = {
                 if (State.executionTotalTasks > 0) {
                     const progress = State.executionCompletedTasks + State.executionFailedTasks;
                     const percentage = Math.round((progress / State.executionTotalTasks) * 100);
-                    State.UI.execBtn.title = `执行中: ${progress}/${State.executionTotalTasks} (${percentage}%)`;
+                    State.UI.execBtn.title = Utils.getText('tooltip_executing_progress', progress, State.executionTotalTasks, percentage);
                 } else {
-                    State.UI.execBtn.title = '执行中';
+                    State.UI.execBtn.title = Utils.getText('tooltip_executing');
                 }
             } else {
                 State.UI.execBtn.textContent = Utils.getText('execute');
                 State.UI.execBtn.classList.remove('executing');
-                State.UI.execBtn.title = '点击开始执行任务';
+                State.UI.execBtn.title = Utils.getText('tooltip_start_tasks');
             }
 
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
@@ -4499,15 +4610,15 @@ const State = {
                 if (entry.type === 'STARTUP') {
                     icon = '🚀';
                     color = 'var(--blue)';
-                    titleText = '脚本启动';
+                    titleText = Utils.getText('script_startup');
                 } else if (entry.type === 'NORMAL') {
                     icon = '✅';
                     color = 'var(--green)';
-                    titleText = '正常运行期';
+                    titleText = Utils.getText('normal_period');
                 } else { // RATE_LIMITED
                     icon = '🚨';
                     color = 'var(--orange)';
-                    titleText = '限速期';
+                    titleText = Utils.getText('rate_limited_period');
                 }
 
                 header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
@@ -4552,7 +4663,7 @@ const State = {
 
                     const icon = State.appStatus === 'NORMAL' ? '✅' : '🚨';
                     const color = State.appStatus === 'NORMAL' ? 'var(--green)' : 'var(--orange)';
-                    const titleText = State.appStatus === 'NORMAL' ? '当前: 正常运行' : '当前: 限速中';
+                    const titleText = State.appStatus === 'NORMAL' ? Utils.getText('current_normal') : Utils.getText('current_rate_limited');
 
                     header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
 
@@ -4584,7 +4695,7 @@ const State = {
             if (State.statusHistory.length === 0) {
                 const emptyMessage = document.createElement('div');
                 emptyMessage.style.cssText = 'color: #888; text-align: center; padding: 20px;';
-                emptyMessage.textContent = '没有可显示的历史记录。';
+                emptyMessage.textContent = Utils.getText('no_history');
                 State.UI.historyContainer.appendChild(emptyMessage);
                 return;
             }
@@ -4974,7 +5085,7 @@ const State = {
         const uiCreated = UI.create();
 
         if (!uiCreated) {
-            Utils.logger('info', 'This is a detail or worker page. Halting main script execution.');
+            Utils.logger('info', Utils.getText('log_detail_page'));
             State.hasRunDomPart = true; // Mark as run to stop the launcher
             return;
         }
@@ -5101,11 +5212,15 @@ const State = {
                 // 延迟进行处理
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
-                    Utils.logger('info', '[Observer] 检测到新内容加载，等待API请求完成...');
+                    if (State.debugMode) {
+                        Utils.logger('debug', '[Observer] 检测到新内容加载，等待API请求完成...');
+                    }
 
                     // 首先等待一段较长的时间，确保API请求有足够时间完成
                     setTimeout(() => {
-                        Utils.logger('info', '[Observer] 开始处理新加载的内容...');
+                        if (State.debugMode) {
+                            Utils.logger('debug', '[Observer] 开始处理新加载的内容...');
+                        }
 
                         // 执行一次状态检查，尝试更新卡片状态
                         TaskRunner.checkVisibleCardsStatus().then(() => {
@@ -5176,7 +5291,9 @@ const State = {
 
                 // 如果有未处理的卡片，重新执行隐藏逻辑
                 if (unprocessedCount > 0) {
-                    Utils.logger('info', `检测到 ${unprocessedCount} 个未处理或状态不一致的卡片，重新执行隐藏逻辑`);
+                    if (State.debugMode) {
+                        Utils.logger('debug', `检测到 ${unprocessedCount} 个未处理或状态不一致的卡片，重新执行隐藏逻辑`);
+                    }
                     TaskRunner.runHideOrShow();
                 }
             }, 3000); // 每3秒检查一次
