@@ -92,6 +92,15 @@
                 no_history: 'No history records to display.',
                 no_saved_position: 'No saved position',
 
+                // 状态历史详细信息
+                time_label: 'Time',
+                info_label: 'Info',
+                ended_at: 'Ended at',
+                duration_label: 'Duration',
+                requests_label: 'Requests',
+                requests_unit: 'times',
+                unknown_duration: 'Unknown',
+
                 // 日志消息
                 log_init: 'Assistant is online!',
                 log_db_loaded: 'Reading archive...',
@@ -176,6 +185,15 @@
                 current_rate_limited: '当前: 限速中',
                 no_history: '没有可显示的历史记录。',
                 no_saved_position: '无保存位置',
+
+                // 状态历史详细信息
+                time_label: '时间',
+                info_label: '信息',
+                ended_at: '结束于',
+                duration_label: '持续',
+                requests_label: '请求',
+                requests_unit: '次',
+                unknown_duration: '未知',
 
                 // 日志消息
                 log_init: '助手已上线！',
@@ -4525,15 +4543,15 @@ const State = {
                     const date = new Date(entry.endTime).toLocaleString();
 
                     if (entry.type === 'STARTUP') {
-                        return `🚀 ${Utils.getText('script_startup')}\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
+                        return `🚀 ${Utils.getText('script_startup')}\n  - ${Utils.getText('time_label')}: ${date}\n  - ${Utils.getText('info_label')}: ${entry.message || ''}`;
                     } else {
-                        const type = entry.type === 'NORMAL' ? '✅ 正常运行' : '🚨 限速时期';
+                        const type = entry.type === 'NORMAL' ? `✅ ${Utils.getText('normal_period')}` : `🚨 ${Utils.getText('rate_limited_period')}`;
                         // 添加空值检查，防止toFixed错误
-            let details = `持续: ${entry.duration !== undefined && entry.duration !== null ? entry.duration.toFixed(2) : '未知'}s`;
+                        let details = `${Utils.getText('duration_label')}: ${entry.duration !== undefined && entry.duration !== null ? entry.duration.toFixed(2) : Utils.getText('unknown_duration')}s`;
                         if (entry.requests !== undefined) {
-                            details += `, 请求: ${entry.requests}次`;
+                            details += `, ${Utils.getText('requests_label')}: ${entry.requests}${Utils.getText('requests_unit')}`;
                         }
-                        return `${type}\n  - 结束于: ${date}\n  - ${details}`;
+                        return `${type}\n  - ${Utils.getText('ended_at')}: ${date}\n  - ${details}`;
                     }
                 };
                 const fullLog = State.statusHistory.map(formatEntry).join('\n\n');
