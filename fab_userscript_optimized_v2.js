@@ -3148,13 +3148,12 @@ const State = {
                                                             if (node.nodeType !== 1) continue;
                                                             // 查找"免费"或"个人"选项
                                                             const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                                Array.from(el.childNodes).some(cn =>
-                                                                    cn.nodeType === 3 &&
-                                                                    (cn.textContent.trim() === '免费' ||
-                                                                     cn.textContent.trim() === 'Free' ||
-                                                                     cn.textContent.trim() === '个人' ||
-                                                                     cn.textContent.trim() === 'Personal')
-                                                                )
+                                                                Array.from(el.childNodes).some(cn => {
+                                                                    if (cn.nodeType !== 3) return false;
+                                                                    const text = cn.textContent.trim();
+                                                                    return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
+                                                                           text === '个人' || text === 'Personal';
+                                                                })
                                                             );
 
                                                             if (freeTextElement) {
@@ -3207,18 +3206,19 @@ const State = {
                                 if (!success) {
                                     // 首先尝试找标准的添加按钮
                                     let actionButton = [...document.querySelectorAll('button')].find(btn =>
-                                        btn.textContent.includes('添加到我的库') ||
-                                        btn.textContent.includes('Add to my library')
+                                        [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
                                     );
 
                                     // 如果没有标准添加按钮，检查是否是限时免费商品
                                     if (!actionButton) {
-                                        // 查找包含"免费"和"-100%"的按钮（限时免费商品的许可按钮）
-                                        actionButton = [...document.querySelectorAll('button')].find(btn =>
-                                            btn.textContent.includes('免费') &&
-                                            btn.textContent.includes('-100%') &&
-                                            (btn.textContent.includes('个人') || btn.textContent.includes('Personal'))
-                                        );
+                                        // 查找包含"免费/Free"和"-100%"的按钮（限时免费商品的许可按钮）
+                                        actionButton = [...document.querySelectorAll('button')].find(btn => {
+                                            const text = btn.textContent;
+                                            const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+                                            const hasDiscount = text.includes('-100%');
+                                            const hasPersonal = text.includes('个人') || text.includes('Personal');
+                                            return hasFreeText && hasDiscount && hasPersonal;
+                                        });
 
                                         if (actionButton) {
                                             logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim()}"`);
@@ -3869,7 +3869,7 @@ const State = {
                 }
 
                 // If it passes all checks, it's a valid new task.
-                const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
+                const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
                 newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
             });
 
@@ -3946,8 +3946,9 @@ const State = {
             );
 
             // The "Download" button is another strong signal.
+            const downloadTexts = ['下载', 'Download'];
             const downloadButton = [...document.querySelectorAll('a[href*="/download/"], button')].find(btn =>
-                btn.textContent.includes('下载') || btn.textContent.includes('Download')
+                downloadTexts.some(text => btn.textContent.includes(text))
             );
 
             if (acquisitionButton || downloadButton) {
