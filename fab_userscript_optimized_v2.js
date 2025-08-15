@@ -105,10 +105,23 @@
                 log_requeuing_tasks: 'Re-queuing {0} failed tasks...',
                 log_detail_page: 'This is a detail or worker page. Halting main script execution.',
                 log_copy_failed: 'Failed to copy log:',
+                log_auto_add_enabled: '"Auto add" is enabled. Will process all tasks in the current "To-Do" queue.',
+                log_auto_add_toggle: 'Infinite scroll auto add tasks {0}.',
+                log_remember_pos_toggle: 'Remember waterfall browsing position {0}.',
+                log_auto_resume_toggle: '429 auto resume function {0}.',
+                log_auto_resume_start: '🔄 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...',
+                log_auto_resume_detect: '🔄 Detected 429 error, will auto refresh page in {0} seconds to attempt recovery...',
 
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
+                setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
+                setting_remember_position: 'Remember waterfall browsing position',
+                setting_auto_resume_429: 'Auto resume after 429 errors',
                 setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
+
+                // 状态文本
+                status_enabled: 'enabled',
+                status_disabled: 'disabled',
 
                 // 确认对话框
                 confirm_clear_data: 'Are you sure you want to clear all locally stored script data (completed, failed, to-do lists)? This action cannot be undone!',
@@ -177,10 +190,23 @@
                 log_requeuing_tasks: '正在重新排队 {0} 个失败任务...',
                 log_detail_page: '这是详情页或工作标签页。停止主脚本执行。',
                 log_copy_failed: '复制日志失败:',
+                log_auto_add_enabled: '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。',
+                log_auto_add_toggle: '无限滚动自动添加任务已{0}。',
+                log_remember_pos_toggle: '记住瀑布流浏览位置功能已{0}。',
+                log_auto_resume_toggle: '429后自动恢复功能已{0}。',
+                log_auto_resume_start: '🔄 429自动恢复启动！将在{0}秒后刷新页面尝试恢复...',
+                log_auto_resume_detect: '🔄 检测到429错误，将在{0}秒后自动刷新页面尝试恢复...',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
+                setting_auto_add_scroll: '无限滚动时自动添加任务',
+                setting_remember_position: '记住瀑布流浏览位置',
+                setting_auto_resume_429: '429后自动恢复并继续',
                 setting_debug_tooltip: '启用详细日志记录，用于排查问题',
+
+                // 状态文本
+                status_enabled: '开启',
+                status_disabled: '关闭',
 
                 // 确认对话框
                 confirm_clear_data: '您确定要清空所有本地存储的脚本数据（已完成、失败、待办列表）吗？此操作不可逆！',
@@ -1221,10 +1247,10 @@ const State = {
                 const randomDelay = 5000 + Math.random() * 2000;
                 if (State.autoResumeAfter429) {
                     // 添加空值检查，防止randomDelay为null
-            Utils.logger('info', '🔄 429自动恢复启动！将在 ' + (randomDelay ? (randomDelay/1000).toFixed(1) : '未知') + ' 秒后刷新页面尝试恢复...');
+                    Utils.logger('info', Utils.getText('log_auto_resume_start', randomDelay ? (randomDelay/1000).toFixed(1) : '未知'));
                 } else {
                     // 添加空值检查，防止randomDelay为null
-                    Utils.logger('info', '🔄 检测到429错误，将在 ' + (randomDelay ? (randomDelay/1000).toFixed(1) : '未知') + ' 秒后自动刷新页面尝试恢复...');
+                    Utils.logger('info', Utils.getText('log_auto_resume_detect', randomDelay ? (randomDelay/1000).toFixed(1) : '未知'));
                 }
                 countdownRefresh(randomDelay, '429自动恢复');
             }
@@ -2069,7 +2095,7 @@ const State = {
             // NEW: Divert logic if auto-add is on. The observer populates the list,
             // so the button should just act as a "start" signal.
             if (State.autoAddOnScroll) {
-                Utils.logger('info', '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。');
+                Utils.logger('info', Utils.getText('log_auto_add_enabled'));
 
                 // 先检查当前页面上的卡片状态，更新数据库
                 TaskRunner.checkVisibleCardsStatus().then(() => {
@@ -2283,7 +2309,7 @@ const State = {
 
             State.autoAddOnScroll = !State.autoAddOnScroll;
             await Database.saveAutoAddPref();
-            Utils.logger('info', `无限滚动自动添加任务已 ${State.autoAddOnScroll ? '开启' : '关闭'}.`);
+            Utils.logger('info', Utils.getText('log_auto_add_toggle', State.autoAddOnScroll ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
             // No need to call UI.update() as the visual state is handled by the component itself.
 
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
@@ -2295,7 +2321,7 @@ const State = {
 
             State.autoResumeAfter429 = !State.autoResumeAfter429;
             await Database.saveAutoResumePref();
-            Utils.logger('info', `429后自动恢复功能已 ${State.autoResumeAfter429 ? '开启' : '关闭'}.`);
+            Utils.logger('info', Utils.getText('log_auto_resume_toggle', State.autoResumeAfter429 ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
 
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
@@ -2306,7 +2332,7 @@ const State = {
 
             State.rememberScrollPosition = !State.rememberScrollPosition;
             await Database.saveRememberPosPref();
-            Utils.logger('info', `记住瀑布流浏览位置功能已 ${State.rememberScrollPosition ? '开启' : '关闭'}.`);
+            Utils.logger('info', Utils.getText('log_remember_pos_toggle', State.rememberScrollPosition ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
 
             if (!State.rememberScrollPosition) {
                 await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
@@ -4411,13 +4437,13 @@ const State = {
                 return row;
             };
 
-            const autoAddSetting = createSettingRow('无限滚动时自动添加任务', 'autoAddOnScroll');
+            const autoAddSetting = createSettingRow(Utils.getText('setting_auto_add_scroll'), 'autoAddOnScroll');
             settingsContent.appendChild(autoAddSetting);
 
-            const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
+            const rememberPosSetting = createSettingRow(Utils.getText('setting_remember_position'), 'rememberScrollPosition');
             settingsContent.appendChild(rememberPosSetting);
 
-            const autoResumeSetting = createSettingRow('429后自动恢复并继续', 'autoResumeAfter429');
+            const autoResumeSetting = createSettingRow(Utils.getText('setting_auto_resume_429'), 'autoResumeAfter429');
             settingsContent.appendChild(autoResumeSetting);
 
             const autoRefreshEmptySetting = createSettingRow(Utils.getText('setting_auto_refresh'), 'autoRefreshEmptyPage');
