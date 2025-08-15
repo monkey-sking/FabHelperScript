@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.3.0-20250815191604
+// @version      3.3.0-20250815192216
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -210,6 +210,13 @@
                 startup_rate_limited: 'Script started in rate limited state. Rate limit has lasted at least {0}s, source: {1}',
                 status_unknown_source: 'Unknown',
 
+                // 请求成功来源
+                request_source_search_response: 'Search Response Success',
+                request_source_xhr_search: 'XHR Search Success',
+                request_source_xhr_item: 'XHR Item Request',
+                consecutive_success_exit: 'Consecutive {0} successful requests ({1})',
+                search_response_parse_failed: 'Search response parsing failed: {0}',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -392,6 +399,13 @@
                 // 启动时状态检测
                 startup_rate_limited: '脚本启动时处于限速状态。限速已持续至少 {0}s，来源: {1}',
                 status_unknown_source: '未知',
+
+                // 请求成功来源
+                request_source_search_response: '搜索响应成功',
+                request_source_xhr_search: 'XHR搜索成功',
+                request_source_xhr_item: 'XHR商品请求',
+                consecutive_success_exit: '连续{0}次成功请求 ({1})',
+                search_response_parse_failed: '搜索响应解析失败: {0}',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -1508,7 +1522,7 @@ const State = {
 
             // 如果达到所需的连续成功数，退出限速状态
             if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
-                await this.exitRateLimitedState(`连续${State.consecutiveSuccessCount}次成功请求 (${source})`);
+                await this.exitRateLimitedState(Utils.getText('consecutive_success_exit', State.consecutiveSuccessCount, source));
             }
         },
 
@@ -1760,10 +1774,10 @@ const State = {
                         const hasResults = data && data.results && data.results.length > 0;
 
                         // 记录成功请求，并传递是否有结果的信息
-                        await RateLimitManager.recordSuccessfulRequest('搜索响应成功', hasResults);
+                        await RateLimitManager.recordSuccessfulRequest(Utils.getText('request_source_search_response'), hasResults);
                     }
                 } catch (e) {
-                    Utils.logger('warn', `搜索响应解析失败: ${e.message}`);
+                    Utils.logger('warn', Utils.getText('search_response_parse_failed', e.message));
                 }
             }
         },
@@ -1930,7 +1944,7 @@ const State = {
                     if (request.status >= 200 && request.status < 300 &&
                         request._url && self.isDebounceableSearch(request._url)) {
                         // 只记录商品卡片相关请求
-                        window.recordNetworkRequest('XHR商品请求', true);
+                        window.recordNetworkRequest(Utils.getText('request_source_xhr_item'), true);
                     }
 
                     // 对所有请求检查429错误
@@ -2012,7 +2026,7 @@ const State = {
 
                                     // 如果是搜索请求且有结果，记录成功请求
                                     if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
-                                        RateLimitManager.recordSuccessfulRequest('XHR搜索成功', true);
+                                        RateLimitManager.recordSuccessfulRequest(Utils.getText('request_source_xhr_search'), true);
                                     }
                                 } catch (jsonError) {
                                     // JSON解析错误，忽略
