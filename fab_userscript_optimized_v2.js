@@ -3018,10 +3018,25 @@ const State = {
 
                                 // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
                                 if (!success) {
-                                    const actionButton = [...document.querySelectorAll('button')].find(btn =>
+                                    // 首先尝试找标准的添加按钮
+                                    let actionButton = [...document.querySelectorAll('button')].find(btn =>
                                         btn.textContent.includes('添加到我的库') ||
                                         btn.textContent.includes('Add to my library')
                                     );
+
+                                    // 如果没有标准添加按钮，检查是否是限时免费商品
+                                    if (!actionButton) {
+                                        // 查找包含"免费"和"-100%"的按钮（限时免费商品的许可按钮）
+                                        actionButton = [...document.querySelectorAll('button')].find(btn =>
+                                            btn.textContent.includes('免费') &&
+                                            btn.textContent.includes('-100%') &&
+                                            (btn.textContent.includes('个人') || btn.textContent.includes('Personal'))
+                                        );
+
+                                        if (actionButton) {
+                                            logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim()}"`);
+                                        }
+                                    }
 
                                     if (actionButton) {
                                         logBuffer.push(`Found add button, clicking it.`);
