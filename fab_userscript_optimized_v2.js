@@ -54,7 +54,7 @@
         SELECTORS: {
             card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
             cardLink: 'a[href*="/listings/"]',
-            addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"]',
+            addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"], button[aria-label*="Library"]',
             rootElement: '#root',
             successBanner: 'div[class*="Toast-root"]',
             freeStatus: '.csZFzinF',
@@ -259,11 +259,11 @@
             // Check for the temporary success popup (snackbar).
             snackbarText: ['产品已添加至您的库中', 'Product added to your library'],
         },
-        ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library']),
+        ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library', 'Add to Library', 'Add to Cart']),
 
         // Kept for backward compatibility with recon logic.
-        SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library']),
-        FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费']),
+        SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library', 'In Library', 'Owned', 'Downloaded']),
+        FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费', 'Personal Use', 'Personal License']),
         // 添加一个实例ID，用于防止多实例运行
         INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
     };
@@ -3152,7 +3152,8 @@ const State = {
                                                                     if (cn.nodeType !== 3) return false;
                                                                     const text = cn.textContent.trim();
                                                                     return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
-                                                                           text === '个人' || text === 'Personal';
+                                                                           text === '个人' || text === 'Personal' ||
+                                                                           text === 'Personal Use' || text === 'Personal License';
                                                                 })
                                                             );
 
@@ -3216,7 +3217,8 @@ const State = {
                                             const text = btn.textContent;
                                             const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
                                             const hasDiscount = text.includes('-100%');
-                                            const hasPersonal = text.includes('个人') || text.includes('Personal');
+                                            const hasPersonal = text.includes('个人') || text.includes('Personal') ||
+                                                              text.includes('Personal Use') || text.includes('Personal License');
                                             return hasFreeText && hasDiscount && hasPersonal;
                                         });
 
