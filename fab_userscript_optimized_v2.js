@@ -175,7 +175,128 @@ const State = {
         currentSortOption: 'title_desc', // 默认排序方式
     };
 
-    // --- 模块三: 日志与工具函数 (Logger & Utilities) ---
+    // --- 模块三: 页面状态诊断工具 (Page Diagnostics) ---
+    const PageDiagnostics = {
+        // 诊断商品详情页面状态
+        diagnoseDetailPage: () => {
+            const report = {
+                timestamp: new Date().toISOString(),
+                url: window.location.href,
+                pageTitle: document.title,
+                buttons: [],
+                licenseOptions: [],
+                priceInfo: {},
+                ownedStatus: {},
+                dynamicContent: {}
+            };
+
+            // 检测所有按钮
+            const buttons = document.querySelectorAll('button');
+            buttons.forEach((btn, index) => {
+                const text = btn.textContent?.trim();
+                const isVisible = btn.offsetParent !== null;
+                const isDisabled = btn.disabled;
+                const classes = btn.className;
+
+                if (text) {
+                    report.buttons.push({
+                        index,
+                        text,
+                        isVisible,
+                        isDisabled,
+                        classes,
+                        hasClickHandler: btn.onclick !== null
+                    });
+                }
+            });
+
+            // 检测许可选择相关元素
+            const licenseElements = document.querySelectorAll('[class*="license"], [class*="License"], [role="option"]');
+            licenseElements.forEach((elem, index) => {
+                const text = elem.textContent?.trim();
+                const isVisible = elem.offsetParent !== null;
+
+                if (text) {
+                    report.licenseOptions.push({
+                        index,
+                        text,
+                        isVisible,
+                        tagName: elem.tagName,
+                        classes: elem.className,
+                        role: elem.getAttribute('role')
+                    });
+                }
+            });
+
+            // 检测价格信息
+            const priceElements = document.querySelectorAll('[class*="price"], [class*="Price"]');
+            priceElements.forEach((elem, index) => {
+                const text = elem.textContent?.trim();
+                if (text) {
+                    report.priceInfo[`price_${index}`] = {
+                        text,
+                        isVisible: elem.offsetParent !== null,
+                        classes: elem.className
+                    };
+                }
+            });
+
+            // 检测拥有状态相关元素
+            const ownedElements = document.querySelectorAll('h2, [class*="owned"], [class*="library"]');
+            ownedElements.forEach((elem, index) => {
+                const text = elem.textContent?.trim();
+                if (text && (text.includes('库') || text.includes('Library') || text.includes('拥有') || text.includes('Owned'))) {
+                    report.ownedStatus[`owned_${index}`] = {
+                        text,
+                        isVisible: elem.offsetParent !== null,
+                        tagName: elem.tagName,
+                        classes: elem.className
+                    };
+                }
+            });
+
+            return report;
+        },
+
+        // 输出诊断报告到日志
+        logDiagnosticReport: (report) => {
+            console.log('=== 页面状态诊断报告 ===');
+            console.log(`页面: ${report.url}`);
+            console.log(`标题: ${report.pageTitle}`);
+
+            console.log(`--- 按钮信息 (${report.buttons.length}个) ---`);
+            report.buttons.forEach(btn => {
+                if (btn.isVisible) {
+                    console.log(`按钮: "${btn.text}" (可见: ${btn.isVisible}, 禁用: ${btn.isDisabled})`);
+                }
+            });
+
+            console.log(`--- 许可选项 (${report.licenseOptions.length}个) ---`);
+            report.licenseOptions.forEach(opt => {
+                if (opt.isVisible) {
+                    console.log(`许可: "${opt.text}" (可见: ${opt.isVisible}, 角色: ${opt.role})`);
+                }
+            });
+
+            console.log(`--- 价格信息 ---`);
+            Object.entries(report.priceInfo).forEach(([key, price]) => {
+                if (price.isVisible) {
+                    console.log(`价格: "${price.text}"`);
+                }
+            });
+
+            console.log(`--- 拥有状态 ---`);
+            Object.entries(report.ownedStatus).forEach(([key, status]) => {
+                if (status.isVisible) {
+                    console.log(`状态: "${status.text}"`);
+                }
+            });
+
+            console.log('=== 诊断报告结束 ===');
+        }
+    };
+
+    // --- 模块四: 日志与工具函数 (Logger & Utilities) ---
     const Utils = {
         logger: (type, ...args) => {
             // 支持debug级别日志
@@ -2735,6 +2856,39 @@ const State = {
                 let success = false;
 
                 try {
+                    // 等待页面加载完成
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+
+                    // 执行页面状态诊断
+                    logBuffer.push(`=== 页面状态诊断开始 ===`);
+                    const diagnosticReport = PageDiagnostics.diagnoseDetailPage();
+
+                    // 记录关键信息到日志缓冲区
+                    logBuffer.push(`页面标题: ${diagnosticReport.pageTitle}`);
+                    logBuffer.push(`可见按钮数量: ${diagnosticReport.buttons.filter(btn => btn.isVisible).length}`);
+
+                    // 记录所有可见按钮
+                    diagnosticReport.buttons.forEach(btn => {
+                        if (btn.isVisible) {
+                            logBuffer.push(`按钮: "${btn.text}" (禁用: ${btn.isDisabled})`);
+                        }
+                    });
+
+                    // 记录价格信息
+                    Object.entries(diagnosticReport.priceInfo).forEach(([key, price]) => {
+                        if (price.isVisible) {
+                            logBuffer.push(`价格显示: "${price.text}"`);
+                        }
+                    });
+
+                    // 记录许可选项
+                    diagnosticReport.licenseOptions.forEach(opt => {
+                        if (opt.isVisible) {
+                            logBuffer.push(`许可选项: "${opt.text}"`);
+                        }
+                    });
+
+                    logBuffer.push(`=== 页面状态诊断结束 ===`);
                     // API-First Ownership Check...
                     try {
                         const csrfToken = Utils.getCookie('fab_csrftoken');
@@ -4227,7 +4381,22 @@ const State = {
                 }
             };
 
-            debugControls.append(copyHistoryBtn, clearHistoryBtn);
+            // 添加页面诊断按钮
+            const diagnosisBtn = document.createElement('button');
+            diagnosisBtn.textContent = '页面诊断';
+            diagnosisBtn.className = 'fab-helper-btn';
+            diagnosisBtn.style.cssText = 'margin-left: 10px; background: #2196F3; color: white;';
+            diagnosisBtn.onclick = () => {
+                try {
+                    const report = PageDiagnostics.diagnoseDetailPage();
+                    PageDiagnostics.logDiagnosticReport(report);
+                    Utils.logger('info', '页面诊断完成，请查看控制台输出');
+                } catch (error) {
+                    Utils.logger('error', `页面诊断失败: ${error.message}`);
+                }
+            };
+
+            debugControls.append(copyHistoryBtn, clearHistoryBtn, diagnosisBtn);
             debugHeader.append(debugTitle, debugControls);
 
             const historyListContainer = document.createElement('div');
