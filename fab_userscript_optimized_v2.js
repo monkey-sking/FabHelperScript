@@ -166,6 +166,10 @@
                 last_moment_check_cancelled: '⚠️ Last moment check: refresh conditions not met, auto refresh cancelled.',
                 refresh_cancelled_visible_items: '⏹️ Detected {0} visible items on page before refresh, auto refresh cancelled.',
 
+                // 限速检测来源
+                rate_limit_source_page_content: 'Page Content Detection',
+                rate_limit_source_global_call: 'Global Call',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -304,6 +308,10 @@
                 page_content_rate_limit_detected: '[页面内容检测] 检测到页面显示限速错误信息！',
                 last_moment_check_cancelled: '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。',
                 refresh_cancelled_visible_items: '⏹️ 刷新前检测到页面上有 {0} 个可见商品，已取消自动刷新。',
+
+                // 限速检测来源
+                rate_limit_source_page_content: '页面内容检测',
+                rate_limit_source_global_call: '全局调用',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -5301,7 +5309,7 @@ const State = {
 
         // --- Dead on Arrival Check for initial 429 page load ---
         // 使enterRateLimitedState函数全局可访问，以便其他部分可以调用
-        window.enterRateLimitedState = function(source = '全局调用') {
+        window.enterRateLimitedState = function(source = Utils.getText('rate_limit_source_global_call')) {
             // 使用统一的限速管理器进入限速状态
             RateLimitManager.enterRateLimitedState(source);
         };
@@ -5325,7 +5333,7 @@ const State = {
                     pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
 
                     Utils.logger('warn', Utils.getText('page_content_rate_limit_detected'));
-                    RateLimitManager.enterRateLimitedState('页面内容检测');
+                    RateLimitManager.enterRateLimitedState(Utils.getText('rate_limit_source_page_content'));
                 }
             }
         }, 5000); // 每5秒检查一次
