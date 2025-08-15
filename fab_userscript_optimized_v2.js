@@ -155,6 +155,17 @@
                 cursor_injecting: 'Injecting cursor. Original',
                 page_patcher_match: '-> ✅ MATCH! URL will be patched',
 
+                // 自动刷新相关
+                auto_refresh_countdown: '⏱️ Auto refresh countdown: {0} seconds...',
+                rate_limit_success_request: 'Successful request during rate limit +1, current consecutive: {0}/{1}, source: {2}',
+                rate_limit_no_visible_continue: '🔄 No visible items on page and in rate limit state, will continue auto refresh.',
+                rate_limit_no_visible_suggest: '🔄 In rate limit state with no visible items, suggest refreshing page',
+                status_check_summary: '📊 Status check - Actually visible: {0}, Total cards: {1}, Hidden items: {2}',
+                refresh_plan_exists: 'Refresh plan already in progress, not scheduling new refresh (429 auto recovery)',
+                page_content_rate_limit_detected: '[Page Content Detection] Detected page showing rate limit error message!',
+                last_moment_check_cancelled: '⚠️ Last moment check: refresh conditions not met, auto refresh cancelled.',
+                refresh_cancelled_visible_items: '⏹️ Detected {0} visible items on page before refresh, auto refresh cancelled.',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -282,6 +293,17 @@
                 cursor_patched_url: 'Patched URL',
                 cursor_injecting: 'Injecting cursor. Original',
                 page_patcher_match: '-> ✅ MATCH! URL will be patched',
+
+                // 自动刷新相关
+                auto_refresh_countdown: '⏱️ 自动刷新倒计时: {0} 秒...',
+                rate_limit_success_request: '限速状态下成功请求 +1，当前连续成功: {0}/{1}，来源: {2}',
+                rate_limit_no_visible_continue: '🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。',
+                rate_limit_no_visible_suggest: '🔄 处于限速状态且没有可见商品，建议刷新页面',
+                status_check_summary: '📊 状态检查 - 实际可见: {0}, 总卡片: {1}, 隐藏商品数: {2}',
+                refresh_plan_exists: '已有刷新计划正在进行中，不再安排新的刷新 (429自动恢复)',
+                page_content_rate_limit_detected: '[页面内容检测] 检测到页面显示限速错误信息！',
+                last_moment_check_cancelled: '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。',
+                refresh_cancelled_visible_items: '⏹️ 刷新前检测到页面上有 {0} 个可见商品，已取消自动刷新。',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -1394,7 +1416,7 @@ const State = {
             // 增加连续成功计数
             State.consecutiveSuccessCount++;
 
-            Utils.logger('info', `限速状态下成功请求 +1，当前连续成功: ${State.consecutiveSuccessCount}/${State.requiredSuccessCount}，来源: ${source}`);
+            Utils.logger('info', Utils.getText('rate_limit_success_request', State.consecutiveSuccessCount, State.requiredSuccessCount, source));
 
             // 如果达到所需的连续成功数，退出限速状态
             if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
@@ -3597,7 +3619,7 @@ const State = {
             if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
                 // 如果已经安排了刷新，不要重复安排
                 if (State.isRefreshScheduled) {
-                    Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (无商品可见)`);
+                    Utils.logger('info', Utils.getText('refresh_plan_exists').replace('(429自动恢复)', '(无商品可见)'));
                     return;
                 }
 
@@ -5302,7 +5324,7 @@ const State = {
                     pageText.includes('rate limit') ||
                     pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
 
-                    Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
+                    Utils.logger('warn', Utils.getText('page_content_rate_limit_detected'));
                     RateLimitManager.enterRateLimitedState('页面内容检测');
                 }
             }
@@ -5548,7 +5570,7 @@ const State = {
                 pageText.includes('Too many requests') ||
                 pageText.includes('rate limit')) {
 
-                Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
+                Utils.logger('warn', Utils.getText('page_content_rate_limit_detected'));
                 try {
                     // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                     if (typeof window.enterRateLimitedState === 'function') {
@@ -5791,7 +5813,7 @@ const State = {
     const countdownRefresh = (delay, reason = '备选方案') => {
         // 如果已经安排了刷新，不要重复安排
         if (State.isRefreshScheduled) {
-            Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (${reason})`);
+            Utils.logger('info', Utils.getText('refresh_plan_exists').replace('(429自动恢复)', `(${reason})`));
             return;
         }
 
@@ -5823,7 +5845,7 @@ const State = {
                 currentCountdownInterval = null;
                                     Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
                 } else {
-                    Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
+                    Utils.logger('info', Utils.getText('auto_refresh_countdown', remainingSeconds));
 
                     // 如果用户手动取消了刷新标记
                     if (!State.isRefreshScheduled) {
@@ -5883,7 +5905,7 @@ const State = {
 
                             // 如果没有实际可见的商品，继续刷新
                             if (actualVisibleCount === 0) {
-                                Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。`);
+                                Utils.logger('info', Utils.getText('rate_limit_no_visible_continue'));
                             } else {
                                 Utils.logger('info', `⏹️ 虽然处于限速状态，但页面上有 ${actualVisibleCount} 个可见商品，暂不刷新。`);
                                 clearInterval(currentCountdownInterval);
@@ -5988,11 +6010,11 @@ const State = {
             // 使用实际DOM状态更新全局状态
             State.hiddenThisPageCount = hiddenCards;
 
-            Utils.logger('info', `📊 状态检查 - 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${hiddenCards}`);
+            Utils.logger('info', Utils.getText('status_check_summary', actualVisibleCards, totalCards, hiddenCards));
 
             // 如果处于限速状态且没有可见商品，直接返回false触发刷新
             if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
-                Utils.logger('info', `🔄 处于限速状态且没有可见商品，建议刷新页面`);
+                Utils.logger('info', Utils.getText('rate_limit_no_visible_suggest'));
                 return false;
             }
 
