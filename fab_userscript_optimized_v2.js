@@ -198,7 +198,7 @@ const State = {
                 }
                 return;
             }
-            
+
             // 在工作标签页中，只记录关键日志
             if (State.isWorkerTab) {
                 if (type === 'error' || args.some(arg => typeof arg === 'string' && arg.includes('Worker'))) {
@@ -206,7 +206,7 @@ const State = {
                 }
                 return;
             }
-            
+
             console[type](`${Config.SCRIPT_NAME}`, ...args);
             // The actual logging to screen will be handled by the UI module
             // to keep modules decoupled.
@@ -332,7 +332,7 @@ const State = {
             try {
                 // Base64解码
                 const decoded = atob(cursor);
-                
+
                 // cursor通常格式为: o=1&p=Item+Name
                 // 或者: p=Item+Name
                 // 我们主要提取p参数的值，它通常包含项目名称
@@ -342,13 +342,13 @@ const State = {
                 } else if (decoded.startsWith('p=')) {
                     match = decoded.match(/p=([^&]+)/);
                 }
-                
+
                 if (match && match[1]) {
                     // 解码URI组件并替换+为空格
                     const itemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
                     return `位置: "${itemName}"`;
                 }
-                
+
                 return `位置: (已保存，但无法读取名称)`;
             } catch (e) {
                 Utils.logger('error', `Cursor解码失败: ${e.message}`);
@@ -359,7 +359,7 @@ const State = {
 
     // --- DOM Creation Helpers (moved outside for broader scope) ---
     // 移除createOwnedElement函数，不再手动添加"已保存在我的库中"标记
-    
+
     const createFreeElement = () => {
         const freeContainer = document.createElement('div');
         freeContainer.className = 'fabkit-Stack-root fabkit-Stack--align_center fabkit-scale--gapX-spacing-2 fabkit-scale--gapY-spacing-2 csZFzinF';
@@ -377,36 +377,36 @@ const State = {
     const DataCache = {
         // 商品数据缓存 - 键为商品ID，值为商品数据
         listings: new Map(),
-        
+
         // 拥有状态缓存 - 键为商品ID，值为拥有状态对象
         ownedStatus: new Map(),
-        
+
         // 价格缓存 - 键为报价ID，值为价格信息对象
         prices: new Map(),
-        
+
         // 等待网页原生请求更新的UID列表
         waitingList: new Set(),
-        
+
         // 缓存时间戳 - 用于判断缓存是否过期
         timestamps: {
             listings: new Map(),
             ownedStatus: new Map(),
             prices: new Map()
         },
-        
+
         // 缓存有效期（毫秒）
         TTL: 5 * 60 * 1000, // 5分钟
-        
+
         // 检查缓存是否有效
         isValid: function(type, key) {
             const timestamp = this.timestamps[type].get(key);
             return timestamp && (Date.now() - timestamp < this.TTL);
         },
-        
+
         // 保存商品数据到缓存
         saveListings: function(items) {
             if (!Array.isArray(items)) return;
-            
+
             const now = Date.now();
             items.forEach(item => {
                 if (item && item.uid) {
@@ -415,18 +415,18 @@ const State = {
                 }
             });
         },
-        
+
         // 添加到等待列表
         addToWaitingList: function(uids) {
             if (!uids || !Array.isArray(uids)) return;
             uids.forEach(uid => this.waitingList.add(uid));
             Utils.logger('debug', `[Cache] 添加 ${uids.length} 个商品ID到等待列表，当前等待列表大小: ${this.waitingList.size}`);
         },
-        
+
         // 检查并从等待列表中移除
         checkWaitingList: function() {
             if (this.waitingList.size === 0) return;
-            
+
             // 检查等待列表中的UID是否已经有了拥有状态
             let removedCount = 0;
             for (const uid of this.waitingList) {
@@ -435,16 +435,16 @@ const State = {
                     removedCount++;
                 }
             }
-            
+
             if (removedCount > 0) {
                 Utils.logger('info', `[Cache] 从等待列表中移除了 ${removedCount} 个已更新的商品ID，剩余: ${this.waitingList.size}`);
             }
         },
-        
+
         // 保存拥有状态到缓存
         saveOwnedStatus: function(states) {
             if (!Array.isArray(states)) return;
-            
+
             const now = Date.now();
             states.forEach(state => {
                 if (state && state.uid) {
@@ -454,24 +454,24 @@ const State = {
                         uid: state.uid
                     });
                     this.timestamps.ownedStatus.set(state.uid, now);
-                    
+
                     // 如果在等待列表中，从等待列表移除
                     if (this.waitingList.has(state.uid)) {
                         this.waitingList.delete(state.uid);
                     }
                 }
             });
-            
+
             // 如果有更新，检查等待列表
             if (states.length > 0) {
                 this.checkWaitingList();
             }
         },
-        
+
         // 保存价格信息到缓存
         savePrices: function(offers) {
             if (!Array.isArray(offers)) return;
-            
+
             const now = Date.now();
             offers.forEach(offer => {
                 if (offer && offer.offerId) {
@@ -484,12 +484,12 @@ const State = {
                 }
             });
         },
-        
+
         // 获取商品数据，如果缓存有效则使用缓存
         getListings: function(uids) {
             const result = [];
             const missing = [];
-            
+
             uids.forEach(uid => {
                 if (this.isValid('listings', uid)) {
                     result.push(this.listings.get(uid));
@@ -497,15 +497,15 @@ const State = {
                     missing.push(uid);
                 }
             });
-            
+
             return { result, missing };
         },
-        
+
         // 获取拥有状态，如果缓存有效则使用缓存
         getOwnedStatus: function(uids) {
             const result = [];
             const missing = [];
-            
+
             uids.forEach(uid => {
                 if (this.isValid('ownedStatus', uid)) {
                     result.push(this.ownedStatus.get(uid));
@@ -513,15 +513,15 @@ const State = {
                     missing.push(uid);
                 }
             });
-            
+
             return { result, missing };
         },
-        
+
         // 获取价格信息，如果缓存有效则使用缓存
         getPrices: function(offerIds) {
             const result = [];
             const missing = [];
-            
+
             offerIds.forEach(offerId => {
                 if (this.isValid('prices', offerId)) {
                     result.push(this.prices.get(offerId));
@@ -529,16 +529,16 @@ const State = {
                     missing.push(offerId);
                 }
             });
-            
+
             return { result, missing };
         },
-        
+
         // 清理过期缓存
         cleanupExpired: function() {
             try {
                 const now = Date.now();
                 const cacheTypes = ['listings', 'ownedStatus', 'prices'];
-                
+
                 // 统一清理所有类型的缓存
                 for (const type of cacheTypes) {
                     for (const [key, timestamp] of this.timestamps[type].entries()) {
@@ -548,7 +548,7 @@ const State = {
                         }
                     }
                 }
-                
+
                 if (State.debugMode) {
                     Utils.logger('debug', `[Cache] 清理完成，当前缓存大小: 商品=${this.listings.size}, 拥有状态=${this.ownedStatus.size}, 价格=${this.prices.size}`);
                 }
@@ -572,7 +572,7 @@ const State = {
                 });
             });
         },
-        
+
         // 新增API响应数据提取函数
         extractStateData: (rawData, source = '') => {
             // 记录原始数据格式
@@ -580,12 +580,12 @@ const State = {
             if (State.debugMode) {
                 Utils.logger('debug', `[${source}] API返回数据类型: ${dataType}`);
             }
-            
+
             // 如果是数组，直接返回
             if (Array.isArray(rawData)) {
                 return rawData;
             }
-            
+
             // 如果是对象，尝试提取可能的数组字段
             if (rawData && typeof rawData === 'object') {
                 // 记录对象的顶级键
@@ -593,7 +593,7 @@ const State = {
                 if (State.debugMode) {
                     Utils.logger('debug', `[${source}] API返回对象键: ${keys.join(', ')}`);
                 }
-                
+
                 // 尝试常见的数组字段名
                 const possibleArrayFields = ['data', 'results', 'items', 'listings', 'states'];
                 for (const field of possibleArrayFields) {
@@ -602,7 +602,7 @@ const State = {
                         return rawData[field];
                     }
                 }
-                
+
                 // 如果没有找到预定义字段，查找任何数组类型的字段
                 for (const key of keys) {
                     if (Array.isArray(rawData[key])) {
@@ -610,14 +610,14 @@ const State = {
                         return rawData[key];
                     }
                 }
-                
+
                 // 如果对象中有uid和acquired字段，可能是单个项目
                 if (rawData.uid && 'acquired' in rawData) {
                     Utils.logger('info', `[${source}] 返回的是单个项目数据，转换为数组`);
                     return [rawData];
                 }
             }
-            
+
             // 如果无法提取，记录详细信息并返回空数组
             Utils.logger('warn', `[${source}] 无法从API响应中提取数组数据`);
             if (State.debugMode) {
@@ -630,22 +630,22 @@ const State = {
             }
             return [];
         },
-        
+
         // 优化后的商品拥有状态检查函数 - 只使用缓存和网页原生请求的数据
         checkItemsOwnership: async function(uids) {
             if (!uids || uids.length === 0) return [];
-            
+
             try {
                 // 从缓存中获取已知的拥有状态
                 const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
-                
+
                 // 如果有缺失的UID，记录但不主动请求
                 if (missingUids.length > 0) {
                     Utils.logger('info', `有 ${missingUids.length} 个商品状态未知，等待网页原生请求更新`);
                     // 将这些UID添加到等待列表，等待网页原生请求更新
                     DataCache.addToWaitingList(missingUids);
                 }
-                
+
                 // 只返回缓存中已有的结果
                 return cachedResults;
             } catch (e) {
@@ -653,15 +653,15 @@ const State = {
                 return []; // 出错时返回空数组
             }
         },
-        
+
         // 优化后的价格验证函数
         checkItemsPrices: async function(offerIds) {
             if (!offerIds || offerIds.length === 0) return [];
-            
+
             try {
                 // 从缓存中获取已知的价格信息
                 const { result: cachedResults, missing: missingOfferIds } = DataCache.getPrices(offerIds);
-                
+
                 // 如果所有报价都有缓存，直接返回
                 if (missingOfferIds.length === 0) {
                     if (State.debugMode) {
@@ -669,40 +669,40 @@ const State = {
             }
                     return cachedResults;
                 }
-                
+
                 // 对缺失的报价ID发送API请求
                 if (State.debugMode) {
                 Utils.logger('info', `对 ${missingOfferIds.length} 个缺失的报价ID发送API请求`);
             }
-                
+
                 const csrfToken = Utils.getCookie('fab_csrftoken');
                 if (!csrfToken) {
                     throw new Error("CSRF token not found");
                 }
-                
+
                 const pricesUrl = new URL('https://www.fab.com/i/listings/prices-infos');
                 missingOfferIds.forEach(offerId => pricesUrl.searchParams.append('offer_ids', offerId));
-                
+
                 const response = await this.gmFetch({
                     method: 'GET',
                     url: pricesUrl.href,
                     headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
                 });
-                
+
                 try {
                     const pricesData = JSON.parse(response.responseText);
-                    
+
                     // 提取并缓存价格信息
                     if (pricesData.offers && Array.isArray(pricesData.offers)) {
                         DataCache.savePrices(pricesData.offers);
-                        
+
                         // 合并缓存结果和API结果
                         return [...cachedResults, ...pricesData.offers];
                     }
                 } catch (e) {
                     Utils.logger('error', `[优化] 解析价格API响应失败: ${e.message}`);
                 }
-                
+
                 // 出错时返回缓存结果
                 return cachedResults;
             } catch (e) {
@@ -735,7 +735,7 @@ const State = {
                 State.appStatus = 'RATE_LIMITED';
                 State.rateLimitStartTime = persistedStatus.startTime;
                 // 添加空值检查，防止persistedStatus.startTime为null
-                const previousDuration = persistedStatus && persistedStatus.startTime ? 
+                const previousDuration = persistedStatus && persistedStatus.startTime ?
                     ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
                 Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
             }
@@ -793,7 +793,7 @@ const State = {
             const initialTodoCount = State.db.todo.length;
 
             State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-            
+
             // 如果待办列表发生了变化，保存到存储
             if (State.db.todo.length !== initialTodoCount) {
                 Database.saveTodo();
@@ -853,7 +853,7 @@ const State = {
         _lastLogTime: 0,
         _lastLogType: null,
         _duplicateLogCount: 0,
-        
+
         // 进入限速状态
         enterRateLimitedState: async function(source = '未知来源') {
             // 如果已经处于限速状态，不需要重复处理
@@ -861,20 +861,20 @@ const State = {
                 Utils.logger('info', `已处于限速状态，来源: ${State.lastLimitSource}，忽略新的限速触发: ${source}`);
                 return false;
             }
-            
+
             // 重置连续成功计数
             State.consecutiveSuccessCount = 0;
             State.lastLimitSource = source;
-            
+
             // 记录正常运行期的统计信息
             // 添加空值检查，防止normalStartTime为null
             const normalDuration = State.normalStartTime ? ((Date.now() - State.normalStartTime) / 1000).toFixed(2) : '0.00';
-            
+
             // 检查是否是短时间内重复的日志记录
             const now = Date.now();
             const isSameType = this._lastLogType === 'NORMAL';
             const isWithinTimeThreshold = (now - this._lastLogTime) < 2000; // 2秒内的重复记录视为重复
-            
+
             if (isSameType && isWithinTimeThreshold) {
                 // 增加重复计数，但不记录日志
                 this._duplicateLogCount++;
@@ -887,15 +887,15 @@ const State = {
                     requests: State.successfulSearchCount,
                     endTime: new Date().toISOString()
                 };
-                
+
                 // 保存到历史记录
                 State.statusHistory.push(logEntry);
                 await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                
+
                 // 更新日志记录状态
                 this._lastLogTime = now;
                 this._lastLogType = 'NORMAL';
-                
+
                 // 如果有累积的重复记录，一并提示
                 if (this._duplicateLogCount > 0) {
                     Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests. (已合并 ${this._duplicateLogCount} 条重复记录)`);
@@ -904,36 +904,36 @@ const State = {
                     Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
                 }
             }
-            
+
             // 切换到限速状态
             State.appStatus = 'RATE_LIMITED';
             State.rateLimitStartTime = Date.now();
-            
+
             // 保存状态到存储
-            await GM_setValue(Config.DB_KEYS.APP_STATUS, { 
-                status: 'RATE_LIMITED', 
+            await GM_setValue(Config.DB_KEYS.APP_STATUS, {
+                status: 'RATE_LIMITED',
                 startTime: State.rateLimitStartTime,
                 source: source
             });
-            
+
             // 更新UI
             UI.updateDebugTab();
             UI.update();
-            
+
             // 重新计算实际可见的商品数量，确保与DOM状态同步
             const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
             const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
             const actualVisibleCards = totalCards - hiddenCards;
-            
+
             // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
             const visibleCountElement = document.getElementById('fab-status-visible');
             if (visibleCountElement) {
                 visibleCountElement.textContent = actualVisibleCards.toString();
             }
-            
+
             // 更新全局状态
             State.hiddenThisPageCount = hiddenCards;
-            
+
             // 检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
             if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
                 if (actualVisibleCards > 0) {
@@ -943,7 +943,7 @@ const State = {
                     Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，暂不自动刷新页面。`);
                     Utils.logger('info', '请手动完成或取消这些任务后再刷新页面。');
                 }
-                
+
                 // 显示明显提示
                 Utils.logger('warn', '⚠️ 处于限速状态，但不满足自动刷新条件，请在需要时手动刷新页面。');
             } else {
@@ -959,10 +959,10 @@ const State = {
                 }
                 countdownRefresh(randomDelay, '429自动恢复');
             }
-            
+
             return true;
         },
-        
+
         // 记录成功请求
         recordSuccessfulRequest: async function(source = '未知来源', hasResults = true) {
             // 无论在什么状态下，总是增加成功请求计数 - 修复统计问题
@@ -970,30 +970,30 @@ const State = {
                 State.successfulSearchCount++;
                 UI.updateDebugTab();
             }
-            
+
             // 只有在限速状态下才需要记录连续成功
             if (State.appStatus !== 'RATE_LIMITED') {
                 return;
             }
-            
+
             // 如果请求没有返回有效结果，不计入连续成功
             if (!hasResults) {
                 Utils.logger('info', `请求成功但没有返回有效结果，不计入连续成功计数。来源: ${source}`);
                 State.consecutiveSuccessCount = 0;
                 return;
             }
-            
+
             // 增加连续成功计数
             State.consecutiveSuccessCount++;
-            
+
             Utils.logger('info', `限速状态下成功请求 +1，当前连续成功: ${State.consecutiveSuccessCount}/${State.requiredSuccessCount}，来源: ${source}`);
-            
+
             // 如果达到所需的连续成功数，退出限速状态
             if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
                 await this.exitRateLimitedState(`连续${State.consecutiveSuccessCount}次成功请求 (${source})`);
             }
         },
-        
+
         // 退出限速状态
         exitRateLimitedState: async function(source = '未知来源') {
             // 如果当前不是限速状态，不需要处理
@@ -1001,16 +1001,16 @@ const State = {
                 Utils.logger('info', `当前不是限速状态，忽略退出限速请求: ${source}`);
                 return false;
             }
-            
+
             // 记录限速期的统计信息
             // 添加空值检查，防止rateLimitStartTime为null
             const rateLimitDuration = State.rateLimitStartTime ? ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2) : '0.00';
-            
+
             // 检查是否是短时间内重复的日志记录
             const now = Date.now();
             const isSameType = this._lastLogType === 'RATE_LIMITED';
             const isWithinTimeThreshold = (now - this._lastLogTime) < 2000; // 2秒内的重复记录视为重复
-            
+
             if (isSameType && isWithinTimeThreshold) {
                 // 增加重复计数，但不记录日志
                 this._duplicateLogCount++;
@@ -1023,15 +1023,15 @@ const State = {
                     endTime: new Date().toISOString(),
                     source: source
                 };
-                
+
                 // 保存到历史记录
                 State.statusHistory.push(logEntry);
                 await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                
+
                 // 更新日志记录状态
                 this._lastLogTime = now;
                 this._lastLogType = 'RATE_LIMITED';
-                
+
                 // 如果有累积的重复记录，一并提示
                 if (this._duplicateLogCount > 0) {
                     Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s. (已合并 ${this._duplicateLogCount} 条重复记录)`);
@@ -1040,22 +1040,22 @@ const State = {
                     Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s.`);
                 }
             }
-            
+
             // 恢复到正常状态
             State.appStatus = 'NORMAL';
             State.rateLimitStartTime = null;
             State.normalStartTime = Date.now();
             // 不重置请求计数，保留累计值，这样每个正常期的请求数会累加起来
-            // State.successfulSearchCount = 0;  
+            // State.successfulSearchCount = 0;
             State.consecutiveSuccessCount = 0;
-            
+
             // 删除存储的限速状态
             await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
-            
+
             // 更新UI
             UI.updateDebugTab();
             UI.update();
-            
+
             // 如果有待办任务，继续执行
             if (State.db.todo.length > 0 && !State.isExecuting) {
                 Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
@@ -1063,10 +1063,10 @@ const State = {
                 Database.saveExecutingState();
                 TaskRunner.executeBatch();
             }
-            
+
             return true;
         },
-        
+
         // 检查限速状态
         checkRateLimitStatus: async function() {
             // 如果已经在检查中，避免重复检查
@@ -1074,31 +1074,31 @@ const State = {
                 Utils.logger('info', '已有限速状态检查正在进行，跳过本次检查');
                 return false;
             }
-            
+
             State.isCheckingRateLimit = true;
-            
+
             try {
                 Utils.logger('info', '开始检查限速状态...');
-                
+
                 // 首先检查页面内容是否包含限速信息
                 const pageText = document.body.innerText || '';
-                if (pageText.includes('Too many requests') || 
-                    pageText.includes('rate limit') || 
+                if (pageText.includes('Too many requests') ||
+                    pageText.includes('rate limit') ||
                     pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                    
+
                     Utils.logger('warn', '页面内容包含限速信息，确认仍处于限速状态');
                     await this.enterRateLimitedState('页面内容检测');
                     return false;
                 }
-                
+
                 // 使用Performance API检查最近的网络请求，而不是主动发送API请求
                 Utils.logger('info', '使用Performance API检查最近的网络请求，不再主动发送API请求');
-                
+
                 if (window.performance && window.performance.getEntriesByType) {
                     const recentRequests = window.performance.getEntriesByType('resource')
                         .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
                         .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
-                    
+
                     // 如果有最近的请求，检查它们的状态
                     if (recentRequests.length > 0) {
                         // 检查是否有429状态码的请求
@@ -1108,7 +1108,7 @@ const State = {
                             await this.enterRateLimitedState('Performance API检测429');
                             return false;
                         }
-                        
+
                         // 检查是否有成功的请求
                         const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
                         if (hasSuccess) {
@@ -1118,7 +1118,7 @@ const State = {
                         }
                     }
                 }
-                
+
                 // 如果没有足够的信息判断，保持当前状态
                 Utils.logger('info', `没有足够的信息判断限速状态，保持当前状态`);
                 return State.appStatus === 'NORMAL';
@@ -1159,16 +1159,16 @@ const State = {
             // 应用拦截器
             this.applyPatches();
             Utils.logger('info', '[Cursor] Network interceptors applied.');
-            
+
             // 监听URL变化，检测排序方式变更
             this.setupSortMonitor();
         },
-        
+
         // 添加监听URL变化的方法，检测排序方式变更
         setupSortMonitor() {
             // 初始检查当前URL中的排序参数
             this.checkCurrentSortFromUrl();
-            
+
             // 使用MutationObserver监听URL变化
             if (typeof MutationObserver !== 'undefined') {
                 // 监听body变化，因为SPA应用可能不会触发popstate事件
@@ -1179,38 +1179,38 @@ const State = {
                         this.checkCurrentSortFromUrl();
                     }
                 });
-                
-                bodyObserver.observe(document.body, { 
-                    childList: true, 
-                    subtree: true 
+
+                bodyObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
                 });
-                
+
                 // 保存引用以便后续可以断开
                 this._bodyObserver = bodyObserver;
             }
-            
+
             // 监听popstate事件（浏览器前进/后退按钮）
             window.addEventListener('popstate', () => {
                 this.checkCurrentSortFromUrl();
             });
-            
+
             // 监听hashchange事件
             window.addEventListener('hashchange', () => {
                 this.checkCurrentSortFromUrl();
             });
-            
+
             // 保存当前URL作为初始状态
             this._lastCheckedUrl = window.location.href;
         },
-        
+
         // 从URL中检查当前排序方式并更新设置
         checkCurrentSortFromUrl() {
             try {
                 const url = new URL(window.location.href);
                 const sortParam = url.searchParams.get('sort_by');
-                
+
                 if (!sortParam) return; // 如果URL中没有排序参数，不做任何更改
-                
+
                 // 查找匹配的排序选项
                 let matchedOption = null;
                 for (const [key, option] of Object.entries(State.sortOptions)) {
@@ -1219,17 +1219,17 @@ const State = {
                         break;
                     }
                 }
-                
+
                 // 如果找到匹配的排序选项，且与当前选项不同，则更新
                 if (matchedOption && matchedOption !== State.currentSortOption) {
                     const previousSort = State.currentSortOption;
                     State.currentSortOption = matchedOption;
                     GM_setValue('fab_helper_sort_option', State.currentSortOption);
-                    
+
                                          // 排序选择器UI已移除，不需要更新
-                    
+
                     Utils.logger('info', `检测到URL排序参数变更，排序方式已从"${State.sortOptions[previousSort].name}"更改为"${State.sortOptions[State.currentSortOption].name}"`);
-                    
+
                     // 清除已保存的浏览位置
                     State.savedCursor = null;
                     GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
@@ -1254,7 +1254,7 @@ const State = {
                     if (responseText) {
                         const data = JSON.parse(responseText);
                         const hasResults = data && data.results && data.results.length > 0;
-                        
+
                         // 记录成功请求，并传递是否有结果的信息
                         await RateLimitManager.recordSuccessfulRequest('搜索响应成功', hasResults);
                     }
@@ -1307,30 +1307,30 @@ const State = {
                     // 解码cursor，检查是否是有效的浏览位置
                     let isValidPosition = true;
                     let decodedCursor = '';
-                    
+
                     try {
                         decodedCursor = atob(newCursor);
-                        
+
                         // 1. 检查特定的过滤关键词列表
                         const filterKeywords = [
                             "Nude+Tennis+Racket",
-                            "Nordic+Beach+Boulder", 
+                            "Nordic+Beach+Boulder",
                             "Nordic+Beach+Rock"
                         ];
-                        
+
                         // 检查是否包含任何需要过滤的关键词
                         if (filterKeywords.some(keyword => decodedCursor.includes(keyword))) {
                             Utils.logger('info', `[Cursor] 跳过已知位置的保存: ${decodedCursor}`);
                             isValidPosition = false;
                         }
-                        
+
                         // 2. 检查是否是已经滚动过的前面位置（直接检测首字母）
                         if (isValidPosition && this._lastSeenCursor) {
                             try {
                                 // 从解码的cursor中提取物品名称
                                 let newItemName = '';
                                 let lastItemName = '';
-                                
+
                                 // 提取当前cursor中的物品名
                                 if (decodedCursor.includes("p=")) {
                                     const match = decodedCursor.match(/p=([^&]+)/);
@@ -1338,7 +1338,7 @@ const State = {
                                         newItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
                                     }
                                 }
-                                
+
                                 // 提取上次保存cursor中的物品名
                                 const lastDecoded = atob(this._lastSeenCursor);
                                 if (lastDecoded.includes("p=")) {
@@ -1347,7 +1347,7 @@ const State = {
                                         lastItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
                                     }
                                 }
-                                
+
                                 // 提取首字母或首个单词进行比较
                                 if (newItemName && lastItemName) {
                                     // 获取首个单词或首字母
@@ -1355,19 +1355,19 @@ const State = {
                                         // 优先获取前三个字母，如果不足三个则获取全部
                                         return text.trim().substring(0, 3);
                                     };
-                                    
+
                                     const newFirstWord = getFirstWord(newItemName);
                                     const lastFirstWord = getFirstWord(lastItemName);
-                                    
+
                                     // 检查URL中的排序参数
                                     const sortParam = urlObj.searchParams.get('sort_by') || '';
                                     const isReverseSort = sortParam.startsWith('-');
-                                    
+
                                     // 根据排序方向决定比较逻辑
                                     // 如果是按标题排序：
                                     // - 升序排列(title)：如果新位置的首字母在字母表中排在当前位置前面，说明是回退了
                                     // - 降序排列(-title)：如果新位置的首字母在字母表中排在当前位置后面，说明是回退了
-                                    if ((isReverseSort && sortParam.includes('title') && newFirstWord > lastFirstWord) || 
+                                    if ((isReverseSort && sortParam.includes('title') && newFirstWord > lastFirstWord) ||
                                         (!isReverseSort && sortParam.includes('title') && newFirstWord < lastFirstWord)) {
                                         Utils.logger('info', `[Cursor] 跳过回退位置: ${newItemName} (当前位置: ${lastItemName}), 排序: ${isReverseSort ? '降序' : '升序'}`);
                                         isValidPosition = false;
@@ -1388,10 +1388,10 @@ const State = {
 
                         // 持久化保存cursor供下次页面加载使用
                         GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
-                        
+
                         // 日志记录保存操作
                         Utils.logger('info', `[Cursor] 保存新的恢复点: ${newCursor.substring(0, 30)}...`);
-                        
+
                         // 更新UI中的位置显示
                         if (State.UI.savedPositionDisplay) {
                             State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
@@ -1414,19 +1414,19 @@ const State = {
                 // 为所有请求添加监听器
                 const onLoad = () => {
                     request.removeEventListener("load", onLoad);
-                    
+
                     // 记录所有网络活动
                     if (typeof window.recordNetworkActivity === 'function') {
                         window.recordNetworkActivity();
                     }
-                    
+
                     // 只统计商品相关的请求，保持原有逻辑
-                    if (request.status >= 200 && request.status < 300 && 
+                    if (request.status >= 200 && request.status < 300 &&
                         request._url && self.isDebounceableSearch(request._url)) {
                         // 只记录商品卡片相关请求
                         window.recordNetworkRequest('XHR商品请求', true);
                     }
-                    
+
                     // 对所有请求检查429错误
                     if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
                         Utils.logger('warn', `[XHR] 检测到429状态码: ${request.responseURL || request._url}`);
@@ -1434,47 +1434,47 @@ const State = {
                         RateLimitManager.enterRateLimitedState(request.responseURL || request._url || 'XHR响应429');
                         return;
                     }
-                    
+
                     // 检查其他可能的限速情况（返回空结果或错误信息）
                     if (request.status >= 200 && request.status < 300) {
                         try {
                             const responseText = request.responseText;
                             if (responseText) {
                                 // 先检查原始文本是否包含限速相关的关键词
-                                if (responseText.includes("Too many requests") || 
+                                if (responseText.includes("Too many requests") ||
                                     responseText.includes("rate limit") ||
                                     responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
                                     Utils.logger('warn', `[XHR限速检测] 检测到限速情况，原始响应: ${responseText}`);
                                     RateLimitManager.enterRateLimitedState('XHR响应内容限速');
                                     return;
                                 }
-                                
+
                                 // 尝试解析JSON
                                 try {
                                     const data = JSON.parse(responseText);
-                                    
+
                                     // 检查是否返回了空结果或错误信息
                                     if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                                         Utils.logger('warn', `[隐性限速检测] 检测到限速错误信息: ${JSON.stringify(data)}`);
                                         RateLimitManager.enterRateLimitedState('XHR响应限速错误');
                                         return;
                                     }
-                                    
+
                                     // 检查是否返回了空结果
                                     if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
                                         // 情况1: 到达列表末尾的正常情况（next为null但previous不为null）
                                         const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
-                                        
+
                                         // 情况2: 完全空的结果集，但可能是正常的搜索结果为空
                                         const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
-                                        
+
                                         // 获取当前URL的参数
                                         const urlObj = new URL(request._url, window.location.origin);
                                         const params = urlObj.searchParams;
-                                        
+
                                         // 检查是否有特殊的搜索参数（如果有特殊过滤条件，空结果可能是正常的）
                                         const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
-                                        
+
                                         if (isEndOfList) {
                                             Utils.logger('info', `[列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                                             // 记录成功请求，虽然没有结果，但这是正常情况
@@ -1503,7 +1503,7 @@ const State = {
                                             return;
                                         }
                                     }
-                                    
+
                                     // 如果是搜索请求且有结果，记录成功请求
                                     if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
                                         RateLimitManager.recordSuccessfulRequest('XHR搜索成功', true);
@@ -1516,17 +1516,17 @@ const State = {
                             // 解析错误，忽略
                         }
                     }
-                    
+
                     // 处理搜索请求的特殊逻辑（429检测等）
                     if (self.isDebounceableSearch(request._url)) {
                         self.handleSearchResponse(request);
                     }
                 };
                 request.addEventListener("load", onLoad);
-                
+
                 return originalXhrSend.apply(request, args);
             };
-            
+
             XMLHttpRequest.prototype.open = function(method, url, ...args) {
                 let modifiedUrl = url;
                 // Priority 1: Handle the "remember position" patch, which should not be debounced.
@@ -1591,7 +1591,7 @@ const State = {
                     } else {
                     self.saveLatestCursorFromUrl(url);
                     }
-                
+
                 // 拦截响应以检测429错误
                 return originalFetch.apply(this, [modifiedInput, init])
                     .then(async response => {
@@ -1599,71 +1599,71 @@ const State = {
                         if (typeof window.recordNetworkActivity === 'function') {
                             window.recordNetworkActivity();
                         }
-                        
+
                         // 只统计商品相关的请求
-                        if (response.status >= 200 && response.status < 300 && 
+                        if (response.status >= 200 && response.status < 300 &&
                             typeof url === 'string' && self.isDebounceableSearch(url)) {
                             window.recordNetworkRequest('Fetch商品请求', true);
                         }
-                        
+
                         // 检查429错误
                         if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                             // 克隆响应以避免"已消费"错误
                             const clonedResponse = response.clone();
                             Utils.logger('warn', `[Fetch] 检测到429状态码: ${response.url}`);
                             // 使用RateLimitManager处理限速情况
-                            RateLimitManager.enterRateLimitedState('Fetch响应429').catch(e => 
+                            RateLimitManager.enterRateLimitedState('Fetch响应429').catch(e =>
                                 Utils.logger('error', `处理限速时出错: ${e.message}`)
                             );
                         }
-                        
+
                         // 检查其他可能的限速情况（返回空结果或错误信息）
                         if (response.status >= 200 && response.status < 300) {
                             try {
                                 // 克隆响应以避免"已消费"错误
                                 const clonedResponse = response.clone();
-                                
+
                                 // 先检查原始文本
                                 const text = await clonedResponse.text();
-                                if (text.includes("Too many requests") || 
+                                if (text.includes("Too many requests") ||
                                     text.includes("rate limit") ||
                                     text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
                                     Utils.logger('warn', `[Fetch限速检测] 检测到限速情况，原始响应: ${text.substring(0, 100)}...`);
-                                    RateLimitManager.enterRateLimitedState('Fetch响应内容限速').catch(e => 
+                                    RateLimitManager.enterRateLimitedState('Fetch响应内容限速').catch(e =>
                                         Utils.logger('error', `处理限速时出错: ${e.message}`)
                                     );
                                     return response;
                                 }
-                                
+
                                         // 尝试解析JSON - 增强版
         try {
             const data = JSON.parse(text);
-            
+
             // 检查明确的限速信息
             if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                 Utils.logger('warn', `[限速检测] 检测到API限速响应`);
-                RateLimitManager.enterRateLimitedState('API限速响应').catch(e => 
+                RateLimitManager.enterRateLimitedState('API限速响应').catch(e =>
                     Utils.logger('error', `处理限速时出错: ${e.message}`)
                 );
                 return;
             }
-            
+
             // 检查是否返回了空结果
             const responseUrl = response.url || '';
             if (data.results && data.results.length === 0 && responseUrl.includes('/i/listings/search')) {
                 // 情况1: 到达列表末尾的正常情况（next为null但previous不为null）
                 const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
-                
+
                 // 情况2: 完全空的结果集，但可能是正常的搜索结果为空
                 const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
-                
+
                 // 获取当前URL的参数
                 const urlObj = new URL(responseUrl, window.location.origin);
                 const params = urlObj.searchParams;
-                
+
                 // 检查是否有特殊的搜索参数（如果有特殊过滤条件，空结果可能是正常的）
                 const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
-                
+
                 if (isEndOfList) {
                     Utils.logger('info', `[Fetch列表末尾] 检测到已到达列表末尾，这是正常情况，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                     // 记录成功请求，虽然没有结果，但这是正常情况
@@ -1683,7 +1683,7 @@ const State = {
                     Utils.logger('info', `[Fetch空搜索结果] 页面刚刚加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
                 } else {
                     Utils.logger('warn', `[Fetch隐性限速] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
-                    RateLimitManager.enterRateLimitedState('Fetch响应空结果').catch(e => 
+                    RateLimitManager.enterRateLimitedState('Fetch响应空结果').catch(e =>
                         Utils.logger('error', `处理限速时出错: ${e.message}`)
                     );
                 }
@@ -1700,7 +1700,7 @@ const State = {
                                 // 解析错误，忽略
                             }
                         }
-                        
+
                         return response;
                 });
             };
@@ -1715,29 +1715,29 @@ const State = {
             // If there's no link, we can't get a URL to check against the DB.
             // In this case, rely only on visual cues.
             const url = link ? link.href.split('?')[0] : null;
-            
+
             // 如果没有链接，无法获取UID，则只能依赖视觉提示
             if (!link) {
                 // 检查是否有"已拥有"样式标记（绿色对勾图标）
                 const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
                 if (icons.length > 0) return true;
-                
+
                 // 检查是否有"已保存"文本
                 const text = card.textContent || '';
-                return text.includes("已保存在我的库中") || 
-                       text.includes("已保存") || 
+                return text.includes("已保存在我的库中") ||
+                       text.includes("已保存") ||
                        text.includes("Saved to My Library") ||
                        text.includes("In your library");
             }
-            
+
             // 从链接中提取UID
             const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
             if (!uidMatch || !uidMatch[1]) {
                 return false;
             }
-            
+
             const uid = uidMatch[1];
-            
+
             // 优先使用缓存的API数据判断
             if (DataCache.ownedStatus.has(uid)) {
                 const status = DataCache.ownedStatus.get(uid);
@@ -1745,7 +1745,7 @@ const State = {
                     return true;
                 }
             }
-            
+
             // 如果缓存中没有，则检查网页元素
             if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) {
                 // 找到了，将状态保存到缓存
@@ -1758,7 +1758,7 @@ const State = {
                 }
                 return true;
             }
-            
+
             // 最后检查本地数据库
             if (url) {
                 if (Database.isDone(url)) return true;
@@ -1790,7 +1790,7 @@ const State = {
             // so the button should just act as a "start" signal.
             if (State.autoAddOnScroll) {
                 Utils.logger('info', '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。');
-                
+
                 // 先检查当前页面上的卡片状态，更新数据库
                 TaskRunner.checkVisibleCardsStatus().then(() => {
                     // 然后开始执行任务
@@ -1863,7 +1863,7 @@ const State = {
                     if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
                          Utils.logger('info', `本页的 ${alreadyInQueueCount} 个可领取商品已全部在待办或失败队列中。`);
                 }
-                    
+
                     // 先检查当前页面上的卡片状态，更新数据库
                     TaskRunner.checkVisibleCardsStatus().then(() => {
                         // 然后开始执行任务
@@ -1903,10 +1903,10 @@ const State = {
             State.executionTotalTasks = State.db.todo.length;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
-            
+
             // 立即更新UI，确保按钮状态与执行状态一致
             UI.update();
-            
+
             TaskRunner.executeBatch();
         },
 
@@ -1974,11 +1974,11 @@ const State = {
                         Utils.logger('info', `本页没有可领取的新商品 (已拥有: ${ownedCount} 个, 已跳过: ${skippedCount} 个)。`);
                     }
                 }
-                
+
                 // 然后开始执行
                 TaskRunner.startExecution();
             }
-            
+
             // 立即更新UI，确保按钮状态与执行状态一致
             UI.update();
         },
@@ -1986,14 +1986,14 @@ const State = {
             State.hideSaved = !State.hideSaved;
             await Database.saveHidePref();
             TaskRunner.runHideOrShow();
-            
+
             // 如果关闭了隐藏功能，确保更新可见商品计数
             if (!State.hideSaved) {
                 // 重新计算实际可见的商品数量
                 const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
                 Utils.logger('info', `👁️ 显示模式已切换，当前页面有 ${actualVisibleCount} 个可见商品`);
             }
-            
+
             UI.update();
         },
 
@@ -2035,7 +2035,7 @@ const State = {
                 PagePatcher._lastSeenCursor = null;
                 State.savedCursor = null;
                 Utils.logger('info', '已清除已保存的浏览位置。');
-                
+
                 // 更新UI中的位置显示
                 if (State.UI.savedPositionDisplay) {
                     State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
@@ -2044,20 +2044,20 @@ const State = {
                 // 如果开启功能，更新显示当前保存的位置
                 State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
             }
-            
+
             setTimeout(() => { State.isTogglingSetting = false; }, 200);
         },
-        
+
         // 停止执行任务
         stop: () => {
             if (!State.isExecuting) return;
-            
+
             State.isExecuting = false;
             // 保存执行状态
             Database.saveExecutingState();
             // 保存待办列表
             Database.saveTodo();
-            
+
             // 清理任务和工作线程
             GM_deleteValue(Config.DB_KEYS.TASK);
             State.runningWorkers = {};
@@ -2065,9 +2065,9 @@ const State = {
             State.executionTotalTasks = 0;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
-            
+
             Utils.logger('info', '执行已由用户手动停止。');
-            
+
             // 立即更新UI，确保按钮状态与执行状态一致
             UI.update();
         },
@@ -2148,7 +2148,7 @@ const State = {
 
                 // 收集已经入库失败的商品
                 const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
-                
+
                 // 合并两类商品ID
                 const allUidsToCheck = Array.from(new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
 
@@ -2177,15 +2177,15 @@ const State = {
                     }
 
                     const rawData = await response.json();
-                    
+
                     // 使用API.extractStateData处理可能的不同格式的响应
                     const data = API.extractStateData(rawData, 'RefreshStates');
-                    
+
                     if (!data || !Array.isArray(data)) {
                         Utils.logger('warn', `API返回的数据格式异常: ${JSON.stringify(rawData).substring(0, 200)}...`);
                         continue; // Skip to next chunk if data format is unexpected
                     }
-                    
+
                     data.filter(item => item.acquired).forEach(item => ownedUids.add(item.uid));
 
                     // Add a small delay between chunks to be safe
@@ -2214,6 +2214,57 @@ const State = {
                         Utils.logger('info', `[Fab DB Sync] 从"失败"列表中清除了 ${initialFailedCount - State.db.failed.length} 个已手动完成的商品。`);
                     }
                 }
+
+                // Step 3.5: Remove non-free items from the Failed list
+                try {
+                    const failedTasksSnapshot = [...State.db.failed];
+                    if (failedTasksSnapshot.length > 0) {
+                        // Map failed UID -> offerId (from cached listings)
+                        const uidToOfferId = new Map();
+                        failedTasksSnapshot.forEach(task => {
+                            const listing = DataCache.listings.get(task.uid);
+                            const offerId = listing?.startingPrice?.offerId;
+                            if (offerId) uidToOfferId.set(task.uid, offerId);
+                        });
+
+                        const offerIds = Array.from(uidToOfferId.values());
+                        if (offerIds.length > 0) {
+                            const CHUNK = 50;
+                            const nonFreeOfferIds = new Set();
+
+                            for (let i = 0; i < offerIds.length; i += CHUNK) {
+                                const chunk = offerIds.slice(i, i + CHUNK);
+                                const prices = await API.checkItemsPrices(chunk);
+                                prices.forEach(offer => {
+                                    if (offer && typeof offer.price === 'number' && offer.price > 0) {
+                                        nonFreeOfferIds.add(offer.offerId);
+                                    }
+                                });
+                                // Gentle pacing to be safe
+                                if (offerIds.length > i + CHUNK) {
+                                    await new Promise(r => setTimeout(r, 150));
+                                }
+                            }
+
+                            if (nonFreeOfferIds.size > 0) {
+                                const before = State.db.failed.length;
+                                State.db.failed = State.db.failed.filter(task => {
+                                    const offerId = uidToOfferId.get(task.uid);
+                                    // Remove only when we are sure it's not free (price > 0)
+                                    return !offerId || !nonFreeOfferIds.has(offerId);
+                                });
+                                const removed = before - State.db.failed.length;
+                                if (removed > 0) {
+                                    dbUpdated = true;
+                                    Utils.logger('info', `[Fab DB Sync] 从"失败"列表中移除了 ${removed} 个非免费商品。`);
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {
+                    Utils.logger('warn', `[Fab DB Sync] 检查失败项价格失败: ${e.message}`);
+                }
+
 
                 // Step 4: Update UI for visible cards
                 const uidToCardMap = new Map([...document.querySelectorAll(Config.SELECTORS.card)]
@@ -2270,30 +2321,30 @@ const State = {
                 // 不再主动发送API请求，而是使用网页原生请求的数据
                 Utils.logger('info', `[优化] 不再主动发送API请求，而是使用网页原生请求的数据`);
                 Utils.logger('info', `[优化] 当前等待列表中有 ${DataCache.waitingList.size} 个商品ID等待更新`);
-                
+
                 // 更新UI显示
                 if (State.UI.reconProgressDisplay) {
                     State.UI.reconProgressDisplay.textContent = `使用网页原生请求，等待中: ${DataCache.waitingList.size}`;
                 }
-                
+
                 // 结束扫描
                 State.isReconning = false;
                 await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
                 Utils.logger('info', Utils.getText('log_recon_end'));
                 UI.update();
                 return;
-                
+
                 // 以下代码不再执行
                 const searchData = null;
-                
+
                 // 保存商品数据到缓存
                 if (searchData.results && Array.isArray(searchData.results)) {
                     DataCache.saveListings(searchData.results);
                 }
-                
+
                 const initialResultsCount = searchData.results?.length || 0;
                 State.totalTasks += initialResultsCount;
-                
+
                 // 检查是否有结果
                 if (!searchData.results || initialResultsCount === 0) {
                     State.isReconning = false;
@@ -2302,7 +2353,7 @@ const State = {
                     UI.update();
                     return;
                 }
-                
+
                 // 过滤有效的商品数据
                 const validResults = searchData.results.filter(item => {
                     const hasUid = typeof item.uid === 'string' && item.uid.length > 5;
@@ -2310,7 +2361,7 @@ const State = {
                     const hasOffer = item.startingPrice && typeof item.startingPrice.offerId === 'string' && item.startingPrice.offerId.length > 0;
                     return hasUid && hasTitle && hasOffer;
                 });
-                
+
                 // 提取候选项
                 const candidates = validResults.map(item => ({
                     uid: item.uid,
@@ -2320,10 +2371,10 @@ const State = {
                     const isFailed = State.db.failed.some(failedTask => failedTask.uid === item.uid);
                     return !Database.isDone(itemUrl) && !Database.isTodo(itemUrl) && !isFailed;
                 });
-                
+
                 const initiallySkippedCount = initialResultsCount - candidates.length;
                 State.completedTasks += initiallySkippedCount;
-                
+
                 // 如果没有候选项，继续下一页
                 if (candidates.length === 0) {
                     const nextUrl = searchData.next;
@@ -2339,19 +2390,19 @@ const State = {
                     UI.update();
                     return;
                 }
-                
+
                 // 检查拥有状态
                 Utils.logger('info', `[优化] 正在检查 ${candidates.length} 个候选项的拥有状态...`);
                 const uids = candidates.map(item => item.uid);
                 const statesData = await API.checkItemsOwnership(uids);
-                
+
                 // 提取未拥有的商品
                 const ownedUids = new Set(statesData.filter(s => s && s.acquired).map(s => s.uid));
                 const notOwnedItems = candidates.filter(item => !ownedUids.has(item.uid));
-                
+
                 // 更新已拥有计数
                 State.completedTasks += candidates.length - notOwnedItems.length;
-                
+
                 if (notOwnedItems.length === 0) {
                     Utils.logger('info', "本批次中没有发现未拥有的商品。");
                 } else {
@@ -2359,7 +2410,7 @@ const State = {
                     Utils.logger('info', `[优化] 正在验证 ${notOwnedItems.length} 个未拥有商品的价格...`);
                     const offerIds = notOwnedItems.map(item => item.offerId).filter(Boolean);
                     const pricesData = await API.checkItemsPrices(offerIds);
-                    
+
                     // 创建价格映射
                     const priceMap = new Map();
                     pricesData.forEach(offer => {
@@ -2367,13 +2418,13 @@ const State = {
                             priceMap.set(offer.offerId, offer);
                         }
                     });
-                    
+
                     // 添加免费商品到任务列表
                     const newTasks = [];
                     notOwnedItems.forEach(item => {
                         const priceInfo = priceMap.get(item.offerId);
                         const originalItem = validResults.find(r => r.uid === item.uid);
-                        
+
                         if (priceInfo && priceInfo.price === 0 && originalItem) {
                             const task = {
                                 name: originalItem.title,
@@ -2384,7 +2435,7 @@ const State = {
                             newTasks.push(task);
                         }
                     });
-                    
+
                     if (newTasks.length > 0) {
                         Utils.logger('info', Utils.getText('log_api_owned_done', { newCount: newTasks.length }));
                         State.db.todo = State.db.todo.concat(newTasks);
@@ -2392,7 +2443,7 @@ const State = {
                         Utils.logger('info', "找到未拥有的商品，但价格验证后没有真正免费的商品。");
                     }
                 }
-                
+
                 // 处理分页
                 const nextUrl = searchData.next;
                 if (nextUrl && State.isReconning) {
@@ -2421,7 +2472,7 @@ const State = {
             State.watchdogTimer = setInterval(async () => {
                 // 如果当前实例不是活跃实例，不执行监控
                 if (!InstanceManager.isActive) return;
-                
+
                 if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
@@ -2435,10 +2486,10 @@ const State = {
                 // 先收集所有超时的工作标签页，避免在循环中修改对象
                 for (const workerId in State.runningWorkers) {
                     const workerInfo = State.runningWorkers[workerId];
-                    
+
                     // 只处理由当前实例创建的工作标签页
                     if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
-                    
+
                     if (now - workerInfo.startTime > STALL_TIMEOUT) {
                         stalledWorkers.push({
                             workerId,
@@ -2446,15 +2497,15 @@ const State = {
                         });
                     }
                 }
-                
+
                 // 如果有超时的工作标签页，处理它们
                 if (stalledWorkers.length > 0) {
                     Utils.logger('warn', `发现 ${stalledWorkers.length} 个超时的工作标签页，正在清理...`);
-                    
+
                     // 逐个处理超时的工作标签页
                     for (const stalledWorker of stalledWorkers) {
                         const { workerId, task } = stalledWorker;
-                        
+
                         Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
 
                         // 1. Remove from To-Do
@@ -2475,12 +2526,12 @@ const State = {
                         // 删除任务数据
                         await GM_deleteValue(workerId);
                     }
-                    
+
                     Utils.logger('info', `已清理 ${stalledWorkers.length} 个超时的工作标签页。剩余活动工作标签页: ${State.activeWorkers}`);
 
                     // 4. Update UI
                     UI.update();
-                    
+
                     // 5. 延迟一段时间后继续派发任务
                     setTimeout(() => {
                         if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
@@ -2497,7 +2548,7 @@ const State = {
                 Utils.logger('warn', '当前实例不是活跃实例，不执行任务。');
                 return;
             }
-            
+
             if (!State.isExecuting) return;
 
             // 防止重复执行
@@ -2505,7 +2556,7 @@ const State = {
                 Utils.logger('info', '正在派发任务中，请稍候...');
                 return;
             }
-            
+
             // 设置派发任务标志
             State.isDispatchingTasks = true;
 
@@ -2522,10 +2573,10 @@ const State = {
                     clearInterval(State.watchdogTimer);
                     State.watchdogTimer = null;
                 }
-                    
+
                     // 关闭所有可能残留的工作标签页
                     TaskRunner.closeAllWorkerTabs();
-                    
+
                 UI.update();
                     State.isDispatchingTasks = false;
                     return;
@@ -2546,17 +2597,17 @@ const State = {
             // --- DISPATCHER FOR DETAIL TASKS ---
                 // 创建一个当前正在执行的任务UID集合，用于防止重复派发
                 const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
-                
+
                 // 创建一个副本，避免在迭代过程中修改原数组
                 const todoList = [...State.db.todo];
                 let dispatchedCount = 0;
-                
+
                 // 创建一个集合，记录本次派发的任务UID
                 const dispatchedUIDs = new Set();
 
                 for (const task of todoList) {
                     if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
-                    
+
                     // 如果任务已经在执行中，跳过
                     if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
                         Utils.logger('info', `任务 ${task.name} 已在执行中，跳过。`);
@@ -2570,36 +2621,36 @@ const State = {
                         Database.saveTodo();
                         continue;
                     }
-                    
+
                     // 记录本次派发的任务
                     dispatchedUIDs.add(task.uid);
 
                 State.activeWorkers++;
                     dispatchedCount++;
                 const workerId = `worker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    State.runningWorkers[workerId] = { 
-                        task, 
+                    State.runningWorkers[workerId] = {
+                        task,
                         startTime: Date.now(),
                         instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
                     };
 
                 Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
 
-                    await GM_setValue(workerId, { 
+                    await GM_setValue(workerId, {
                         task,
                         instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
                     });
 
                 const workerUrl = new URL(task.url);
                 workerUrl.searchParams.set('workerId', workerId);
-                    
+
                     // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
                     GM_openInTab(workerUrl.href, { active: false, insert: true });
 
                     // 等待一小段时间再派发下一个任务，避免浏览器同时打开太多标签页
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
-                
+
                 if (dispatchedCount > 0) {
                     Utils.logger('info', `本批次派发了 ${dispatchedCount} 个任务。`);
                 }
@@ -2607,14 +2658,14 @@ const State = {
                 if (!State.watchdogTimer && State.activeWorkers > 0) {
                     TaskRunner.runWatchdog();
                 }
-                
+
             UI.update();
             } finally {
                 // 无论如何都要重置派发任务标志
                 State.isDispatchingTasks = false;
             }
         },
-        
+
         // 添加一个方法来关闭所有工作标签页
         closeAllWorkerTabs: () => {
             // 目前没有直接的方法可以关闭由GM_openInTab打开的标签页
@@ -2622,11 +2673,11 @@ const State = {
             const workerIds = Object.keys(State.runningWorkers);
             if (workerIds.length > 0) {
                 Utils.logger('info', `正在清理 ${workerIds.length} 个工作标签页的状态...`);
-                
+
                 for (const workerId of workerIds) {
                     GM_deleteValue(workerId);
                 }
-                
+
                 State.runningWorkers = {};
                 State.activeWorkers = 0;
                 Utils.logger('info', '已清理所有工作标签页的状态。');
@@ -2643,7 +2694,7 @@ const State = {
             // 标记当前标签页为工作标签页，避免执行主脚本逻辑
             State.isWorkerTab = true;
             State.workerTaskId = workerId;
-            
+
             // 记录工作标签页的启动时间
             const startTime = Date.now();
             let hasReported = false;
@@ -2669,7 +2720,7 @@ const State = {
                     closeWorkerTab();
                     return;
                 }
-                
+
                 // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
                 const activeInstance = await GM_getValue('fab_active_instance', null);
                 if (activeInstance && activeInstance.id !== payload.instanceId) {
@@ -2695,7 +2746,7 @@ const State = {
                             url: statesUrl.href,
                             headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
                         });
-                        
+
                         let statesData;
                         try {
                             statesData = JSON.parse(response.responseText);
@@ -2708,7 +2759,7 @@ const State = {
                             logBuffer.push(`解析API响应失败: ${e.message}`);
                             statesData = [];
                         }
-                        
+
                         const isOwned = Array.isArray(statesData) && statesData.some(s => s && s.uid === currentTask.uid && s.acquired);
                         if (isOwned) {
                             logBuffer.push(`API check confirms item is already owned.`);
@@ -2740,11 +2791,11 @@ const State = {
                                 success = true;
                             } else {
                                 // 检查是否需要选择许可证
-                                const licenseButton = [...document.querySelectorAll('button')].find(btn => 
-                                    btn.textContent.includes('选择许可') || 
+                                const licenseButton = [...document.querySelectorAll('button')].find(btn =>
+                                    btn.textContent.includes('选择许可') ||
                                     btn.textContent.includes('Select license')
                                 );
-                                
+
                                 if (licenseButton) {
                                     logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
                                     try {
@@ -2756,15 +2807,15 @@ const State = {
                                                             if (node.nodeType !== 1) continue;
                                                             // 查找"免费"或"个人"选项
                                                             const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                                Array.from(el.childNodes).some(cn => 
-                                                                    cn.nodeType === 3 && 
-                                                                    (cn.textContent.trim() === '免费' || 
-                                                                     cn.textContent.trim() === 'Free' || 
-                                                                     cn.textContent.trim() === '个人' || 
+                                                                Array.from(el.childNodes).some(cn =>
+                                                                    cn.nodeType === 3 &&
+                                                                    (cn.textContent.trim() === '免费' ||
+                                                                     cn.textContent.trim() === 'Free' ||
+                                                                     cn.textContent.trim() === '个人' ||
                                                                      cn.textContent.trim() === 'Personal')
                                                                 )
                                                             );
-                                                            
+
                                                             if (freeTextElement) {
                                                                 const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
                                                                 if (clickableParent) {
@@ -2779,28 +2830,28 @@ const State = {
                                                     }
                                                 }
                                             });
-                                            
+
                                             observer.observe(document.body, { childList: true, subtree: true });
                                             logBuffer.push(`Clicking license button to open dropdown.`);
                                             Utils.deepClick(licenseButton); // First click attempt
-                                            
+
                                             // 有时第一次点击可能不成功，1.5秒后再试一次
                                             setTimeout(() => {
                                                 logBuffer.push(`Second attempt to click license button.`);
                                                 Utils.deepClick(licenseButton);
                                             }, 1500);
-                                            
+
                                             // 如果5秒内没有出现下拉菜单，则超时
                                             setTimeout(() => {
                                                 observer.disconnect();
                                                 reject(new Error('Timeout (5s): The free/personal option did not appear.'));
                                             }, 5000);
                                         });
-                                        
+
                                         // 许可选择后等待UI更新
                                         logBuffer.push(`License selected, waiting for UI update.`);
                                         await new Promise(r => setTimeout(r, 1000));
-                                        
+
                                         // 重新检查是否已拥有
                                         if (isItemOwned().owned) {
                                             logBuffer.push(`Item became owned after license selection.`);
@@ -2814,14 +2865,14 @@ const State = {
                                 // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
                                 if (!success) {
                                     const actionButton = [...document.querySelectorAll('button')].find(btn =>
-                                        btn.textContent.includes('添加到我的库') || 
+                                        btn.textContent.includes('添加到我的库') ||
                                         btn.textContent.includes('Add to my library')
                                     );
 
                                     if (actionButton) {
                                         logBuffer.push(`Found add button, clicking it.`);
                                         Utils.deepClick(actionButton);
-                                        
+
                                         // 等待添加操作完成
                                         try {
                                             await new Promise((resolve, reject) => {
@@ -2835,7 +2886,7 @@ const State = {
                                                         resolve();
                                                     }
                                                 }, 500); // 每500ms检查一次
-                                                
+
                                                 setTimeout(() => {
                                                     clearInterval(interval);
                                                     reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
@@ -2860,7 +2911,7 @@ const State = {
                     try {
                         // 标记为已报告
                         hasReported = true;
-                        
+
                         // 报告任务结果
                         await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
                             workerId: workerId,
@@ -2873,13 +2924,13 @@ const State = {
                     } catch (error) {
                         console.error('Error setting worker done value:', error);
                     }
-                    
+
                     try {
                         await GM_deleteValue(workerId); // 清理任务数据
                     } catch (error) {
                         console.error('Error deleting worker value:', error);
                     }
-                    
+
                     // 确保工作标签页在报告完成后关闭
                     closeWorkerTab();
                 }
@@ -2887,12 +2938,12 @@ const State = {
                 Utils.logger('error', `Worker tab error: ${error.message}`);
                 closeWorkerTab();
             }
-            
+
             // 关闭工作标签页的函数
             function closeWorkerTab() {
                 closeAttempted = true;
                 clearTimeout(forceCloseTimer);
-                
+
                 // 如果尚未报告结果，尝试报告失败
                 if (!hasReported && workerId) {
                     try {
@@ -2908,7 +2959,7 @@ const State = {
                         // 忽略错误
                     }
                 }
-                
+
                 try {
                     window.close();
                 } catch (error) {
@@ -2931,20 +2982,20 @@ const State = {
         // 无论是否在限速状态下，都应该执行隐藏功能
         State.hiddenThisPageCount = 0;
         const cards = document.querySelectorAll(Config.SELECTORS.card);
-        
+
         // 添加一个计数器，用于跟踪实际隐藏的卡片数量
         let actuallyHidden = 0;
-        
+
         // 首先检查是否有未加载完成的卡片
         let hasUnsettledCards = false;
         const unsettledCards = [];
-        
+
         // 检查卡片是否已加载完成的函数
         const isCardSettled = (card) => {
             // 检查卡片是否有价格、免费标签或已拥有标签
             return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
         };
-        
+
         // 检查是否有未加载完成的卡片
         cards.forEach(card => {
             if (!isCardSettled(card)) {
@@ -2952,39 +3003,39 @@ const State = {
                 unsettledCards.push(card);
             }
         });
-        
+
         // 如果有未加载完成的卡片，延迟执行隐藏操作
         if (hasUnsettledCards && unsettledCards.length > 0) {
             Utils.logger('info', `检测到 ${unsettledCards.length} 张卡片尚未加载完成，延迟隐藏操作...`);
-            
+
             // 设置一个较长的延迟，等待卡片加载完成
             setTimeout(() => {
                 Utils.logger('info', `延迟后重新执行隐藏操作，确保卡片已加载完成`);
                 TaskRunner.runHideOrShow();
             }, 2000); // 延迟2秒
-            
+
             return; // 直接返回，等待下次执行
         }
-        
+
         // 首先收集所有需要隐藏的卡片
         const cardsToHide = [];
-        
+
         // 添加一个数据属性来标记已处理的卡片，避免重复处理
         cards.forEach(card => {
             // 检查卡片是否已经被处理过
             const isProcessed = card.getAttribute('data-fab-processed') === 'true';
-            
+
             // 如果卡片已经被处理且已经隐藏，则不需要再次处理
             if (isProcessed && card.style.display === 'none') {
                 State.hiddenThisPageCount++;
                 return;
             }
-            
+
             const isFinished = TaskRunner.isCardFinished(card);
             if (State.hideSaved && isFinished) {
                 cardsToHide.push(card);
                 State.hiddenThisPageCount++;
-                
+
                 // 标记卡片为已处理
                 card.setAttribute('data-fab-processed', 'true');
             } else {
@@ -2992,38 +3043,38 @@ const State = {
                 card.setAttribute('data-fab-processed', 'true');
             }
         });
-        
+
         // 如果有需要隐藏的卡片，使用更长的初始延迟和更慢的隐藏速度
         if (cardsToHide.length > 0) {
             Utils.logger('info', `准备隐藏 ${cardsToHide.length} 张卡片，将使用更长的延迟...`);
-            
+
             // 随机打乱卡片顺序，使隐藏更加随机
             cardsToHide.sort(() => Math.random() - 0.5);
-            
+
             // 分批次隐藏卡片，每批次最多10张（减少批次大小）
             const batchSize = 10;
             const batches = Math.ceil(cardsToHide.length / batchSize);
-            
+
             // 设置一个初始延迟，确保页面有足够时间加载
             const initialDelay = 1000; // 1秒的初始延迟
-            
+
             for (let i = 0; i < batches; i++) {
                 const start = i * batchSize;
                 const end = Math.min(start + batchSize, cardsToHide.length);
                 const currentBatch = cardsToHide.slice(start, end);
-                
+
                 // 为每个批次设置一个更长的延迟，增加延迟时间
                 const batchDelay = initialDelay + i * 300 + Math.random() * 300;
-                
+
                 setTimeout(() => {
                     currentBatch.forEach((card, index) => {
                         // 为每张卡片设置一个更长的随机延迟
                         const cardDelay = index * 50 + Math.random() * 100;
-                        
+
                         setTimeout(() => {
                             card.style.display = 'none';
                             actuallyHidden++;
-                            
+
                             // 当所有卡片都隐藏后，更新UI
                             if (actuallyHidden === cardsToHide.length) {
                                 Utils.logger('info', `已完成所有 ${actuallyHidden} 张卡片的隐藏`);
@@ -3039,7 +3090,7 @@ const State = {
                 }, batchDelay);
             }
         }
-        
+
         // 确保所有不应该隐藏的卡片都是可见的
         if (State.hideSaved) {
             // 找出所有不应该隐藏的卡片
@@ -3047,12 +3098,12 @@ const State = {
                 // 不隐藏未完成的卡片
                 return !TaskRunner.isCardFinished(card);
             });
-            
+
             // 显示这些卡片（如果它们之前被隐藏了）
             visibleCards.forEach(card => {
                 card.style.display = '';
             });
-            
+
             // 只有在没有需要隐藏的卡片时才立即更新UI和检查可见性
             if (cardsToHide.length === 0) {
                 UI.update();
@@ -3066,12 +3117,12 @@ const State = {
             UI.update();
         }
     },
-    
+
     // 新增：检查可见性并决定是否刷新的方法
     checkVisibilityAndRefresh: () => {
         // 计算实际可见的商品数量
         const cards = document.querySelectorAll(Config.SELECTORS.card);
-        
+
         // 重新检查所有卡片，确保隐藏状态正确
         let needsReprocessing = false;
         cards.forEach(card => {
@@ -3080,7 +3131,7 @@ const State = {
                 needsReprocessing = true;
             }
         });
-        
+
         // 如果发现未处理的卡片，重新执行隐藏逻辑
         if (needsReprocessing) {
             Utils.logger('info', '检测到未处理的卡片，重新执行隐藏逻辑');
@@ -3089,26 +3140,26 @@ const State = {
             }, 100);
             return;
         }
-        
+
         // 使用更准确的方式检查元素是否可见
         const visibleCards = Array.from(cards).filter(card => {
             // 检查元素自身的display属性
             if (card.style.display === 'none') return false;
-            
+
             // 检查是否被CSS规则隐藏
             const computedStyle = window.getComputedStyle(card);
             return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
         }).length;
-        
+
         // 更新真实的可见商品数量
         Utils.logger('info', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
-        
+
         // 更新UI上显示的可见商品数
         const visibleCountElement = document.getElementById('fab-status-visible');
         if (visibleCountElement) {
             visibleCountElement.textContent = visibleCards.toString();
         }
-        
+
         if (visibleCards === 0) {
             // 无可见商品，根据状态决定是否刷新
             if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
@@ -3117,24 +3168,24 @@ const State = {
                     Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (无商品可见)`);
                     return;
                 }
-                
+
                 Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
-                
+
                 // 标记已安排刷新
                 State.isRefreshScheduled = true;
-                
+
                 setTimeout(() => {
                     // 再次检查实际可见的商品数量
                     const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
                         .filter(card => card.style.display !== 'none').length;
-                    
+
                     // 检查是否有待办任务或活动工作线程
                     if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                         Utils.logger('info', `⏹️ 刷新取消，检测到 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程`);
                         State.isRefreshScheduled = false; // 重置刷新标记
                         return;
                     }
-                    
+
                     if (currentVisibleCards === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
                         Utils.logger('info', '🔄 执行刷新...');
                         // 使用更可靠的刷新方式
@@ -3151,12 +3202,12 @@ const State = {
             }
         }
     },
-        
+
         // 添加一个方法来检查并确保待办任务被执行
         ensureTasksAreExecuted: () => {
             // 如果没有待办任务，不需要执行
             if (State.db.todo.length === 0) return;
-            
+
             // 如果已经在执行中，不需要重新启动
             if (State.isExecuting) {
                 // 如果有待办任务但没有活动工作线程，可能是执行卡住了，尝试重新执行
@@ -3166,34 +3217,34 @@ const State = {
                 }
                 return;
             }
-            
+
             // 如果有待办任务但没有执行，自动开始执行
             Utils.logger('info', `检测到有 ${State.db.todo.length} 个待办任务但未执行，自动开始执行...`);
             TaskRunner.startExecution();
         },
-        
+
         // 添加一个方法来批量检查当前页面上所有可见卡片的状态
         checkVisibleCardsStatus: async () => {
             try {
                 // 获取所有可见卡片
                 const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
-                
+
                 // 如果没有可见卡片，直接返回
                 if (visibleCards.length === 0) {
                     Utils.logger('info', '[Fab DOM Refresh] 没有可见的卡片需要刷新');
                     return;
                 }
-                
+
                 // 首先检查是否有未加载完成的卡片
                 let hasUnsettledCards = false;
                 const unsettledCards = [];
-                
+
                 // 检查卡片是否已加载完成的函数
                 const isCardSettled = (card) => {
                     // 检查卡片是否有价格、免费标签或已拥有标签
                     return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
                 };
-                
+
                 // 检查是否有未加载完成的卡片
                 visibleCards.forEach(card => {
                     if (!isCardSettled(card)) {
@@ -3201,61 +3252,61 @@ const State = {
                         unsettledCards.push(card);
                     }
                 });
-                
+
                 // 如果有未加载完成的卡片，等待一段时间后再检查
                 if (hasUnsettledCards && unsettledCards.length > 0) {
                     Utils.logger('info', `[Fab DOM Refresh] 检测到 ${unsettledCards.length} 张卡片尚未加载完成，等待加载...`);
-                    
+
                     // 等待一段时间后再次检查
                     await new Promise(resolve => setTimeout(resolve, 3000));
-                    
+
                     // 重新获取所有可见卡片
                     return TaskRunner.checkVisibleCardsStatus();
                 }
-                
+
                 // 提取卡片的UID和DOM元素
                 const allItems = [];
                 let confirmedOwned = 0;
-                
+
                 visibleCards.forEach(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
-                    
+
                     if (uidMatch && uidMatch[1]) {
                         const uid = uidMatch[1];
                         const url = link.href.split('?')[0]; // 移除查询参数
-                        
+
                         // 检查是否已经在已完成列表中
                         if (State.db.done.includes(url)) {
                             // 已经知道是已拥有的，不需要再次检查
                             return;
                         }
-                        
+
                         allItems.push({ uid, url, element: card });
                     }
                 });
-                
+
                 // 如果没有需要检查的项目，直接返回
                 if (allItems.length === 0) {
                     Utils.logger('info', '[Fab DOM Refresh] 没有需要检查的卡片');
                     return;
                 }
-                
+
                 Utils.logger('info', `[Fab DOM Refresh] 正在检查 ${allItems.length} 个项目的状态...`);
-                
+
                 // 提取所有需要检查的商品ID
                 const uids = allItems.map(item => item.uid);
-                
+
                 // 使用优化后的API函数检查拥有状态
                 const statesData = await API.checkItemsOwnership(uids);
-                
+
                 // 创建已拥有商品ID的集合，便于快速查找
                 const ownedUids = new Set(
                     statesData
                         .filter(state => state && state.acquired)
                         .map(state => state.uid)
                 );
-                
+
                 // 处理结果
                 for (const item of allItems) {
                     if (ownedUids.has(item.uid)) {
@@ -3263,24 +3314,24 @@ const State = {
                         if (!State.db.done.includes(item.url)) {
                             State.db.done.push(item.url);
                             confirmedOwned++;
-                            
+
                             // 不再手动添加"已保存"标记，网页会自动更新
                         }
-                        
+
                         // 从失败列表中移除
                         State.db.failed = State.db.failed.filter(f => f.uid !== item.uid);
-                        
+
                         // 从待办列表中移除
                         State.db.todo = State.db.todo.filter(t => t.uid !== item.uid);
                     }
                 }
-                
+
                 // 保存更改
                 if (confirmedOwned > 0) {
                     await Database.saveDone();
                     await Database.saveFailed();
                     Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
-                    
+
                     // 不立即执行隐藏，而是在调用方决定何时执行
                     Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
                 } else {
@@ -3288,7 +3339,7 @@ const State = {
                 }
             } catch (error) {
                 Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
-                
+
                 // 如果是429错误，进入限速状态并退出
                 if (error.message && error.message.includes('429')) {
                     RateLimitManager.enterRateLimitedState('[Fab DOM Refresh] 429错误');
@@ -3299,7 +3350,7 @@ const State = {
                 scanAndAddTasks: async (cards) => {
             // This function should ONLY ever run if auto-add is enabled.
             if (!State.autoAddOnScroll) return;
-            
+
             // 创建一个状态追踪对象
             if (!window._apiWaitStatus) {
                 window._apiWaitStatus = {
@@ -3309,21 +3360,21 @@ const State = {
                     apiCheckInterval: null
                 };
             }
-            
+
             // 如果已经有等待过程在进行，将当前卡片加入队列
             if (window._apiWaitStatus.isWaiting) {
                 window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
                 Utils.logger('info', `[自动添加] 已有API等待过程在进行，将当前 ${cards.length} 张卡片加入等待队列。`);
                 return;
             }
-            
+
             // 标记开始等待API
             window._apiWaitStatus.isWaiting = true;
             window._apiWaitStatus.pendingCards = [...cards];
             window._apiWaitStatus.lastApiActivity = Date.now();
-            
+
             Utils.logger('info', `[自动添加] 开始等待API响应，将在API活动停止后处理 ${cards.length} 张卡片...`);
-            
+
             // 创建一个函数来检测API活动
             const waitForApiCompletion = () => {
                 return new Promise((resolve) => {
@@ -3331,11 +3382,11 @@ const State = {
                     if (window._apiWaitStatus.apiCheckInterval) {
                         clearInterval(window._apiWaitStatus.apiCheckInterval);
                     }
-                    
+
                     // 设置一个最大等待时间（10秒）
                     const maxWaitTime = 10000;
                     const startTime = Date.now();
-                    
+
                     // 监听网络请求
                     const originalFetch = window.fetch;
                     window.fetch = function(...args) {
@@ -3347,51 +3398,51 @@ const State = {
                         }
                         return originalFetch.apply(this, args);
                     };
-                    
+
                     // 检查API活动的间隔
                     window._apiWaitStatus.apiCheckInterval = setInterval(() => {
                         const now = Date.now();
                         const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
                         const totalWaitTime = now - startTime;
-                        
+
                         // 如果超过最大等待时间，或者API活动停止超过2秒，则认为API已完成
                         if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2000) {
                             clearInterval(window._apiWaitStatus.apiCheckInterval);
-                            
+
                             // 恢复原始的fetch函数
                             window.fetch = originalFetch;
-                            
+
                             if (totalWaitTime > maxWaitTime) {
                                 Utils.logger('warn', `[自动添加] API等待超时，已等待 ${totalWaitTime}ms，将继续处理卡片。`);
                             } else {
                                 Utils.logger('info', `[自动添加] API活动已停止 ${timeSinceLastActivity}ms，继续处理卡片。`);
                             }
-                            
+
                             resolve();
                         }
                     }, 200); // 每200ms检查一次
                 });
             };
-            
+
             // 等待API完成
             try {
                 await waitForApiCompletion();
             } catch (error) {
                 Utils.logger('error', `[自动添加] 等待API时出错: ${error.message}`);
             }
-            
+
             // 处理卡片
             const cardsToProcess = [...window._apiWaitStatus.pendingCards];
             window._apiWaitStatus.pendingCards = [];
             window._apiWaitStatus.isWaiting = false;
-            
+
             Utils.logger('info', `[自动添加] API等待完成，开始处理 ${cardsToProcess.length} 张卡片...`);
-            
+
             // 现在处理卡片
             const newlyAddedList = [];
             let skippedAlreadyOwned = 0;
             let skippedInTodo = 0;
-            
+
             cardsToProcess.forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 const url = link ? link.href.split('?')[0] : null;
@@ -3399,36 +3450,36 @@ const State = {
 
                 // 1. 检查是否已经入库或在待办列表中
                 // 更严格的检查，确保已入库的商品不会被添加到待办列表
-                
+
                 // 检查URL是否在完成列表中
                 if (Database.isDone(url)) {
                     skippedAlreadyOwned++;
                     return;
                 }
-                
+
                 // 检查URL是否在待办列表中
                 if (Database.isTodo(url)) {
                     skippedInTodo++;
                     return;
                 }
-                
+
                 // 检查卡片是否有"已保存"标记
                 const text = card.textContent || '';
-                if (text.includes("已保存在我的库中") || 
-                    text.includes("已保存") || 
+                if (text.includes("已保存在我的库中") ||
+                    text.includes("已保存") ||
                     text.includes("Saved to My Library") ||
                     text.includes("In your library")) {
                     skippedAlreadyOwned++;
                     return;
                 }
-                
+
                 // 检查卡片是否有成功图标
                 const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
                 if (icons.length > 0) {
                     skippedAlreadyOwned++;
                     return;
                 }
-                
+
                 // 从链接中提取UID并检查缓存
                 const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
                 if (uidMatch && uidMatch[1]) {
@@ -3458,16 +3509,16 @@ const State = {
                 if (newlyAddedList.length > 0) {
                     State.db.todo.push(...newlyAddedList);
                     Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
-                    
+
                     // 保存待办列表到存储
                     Database.saveTodo();
                 }
-                
+
                 // 添加详细的过滤信息日志
                 if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
                     Utils.logger('info', `[自动添加] 过滤掉 ${skippedAlreadyOwned} 个已入库商品和 ${skippedInTodo} 个已在待办列表中的商品。`);
                 }
-                
+
                 // 如果已经在执行，只更新总数
                 if (State.isExecuting) {
                     State.executionTotalTasks = State.db.todo.length;
@@ -3477,7 +3528,7 @@ const State = {
                     // 如果启用了自动添加但尚未开始执行，自动开始执行
                     TaskRunner.startExecution();
                 }
-                
+
                 UI.update();
             }
         },
@@ -3729,7 +3780,7 @@ const State = {
                     scrollbar-width: thin;
                     scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
                 }
-                
+
                 /* 自定义滚动条样式 */
                 #${Config.UI_LOG_ID}::-webkit-scrollbar {
                     width: 8px;
@@ -3746,32 +3797,32 @@ const State = {
                 #${Config.UI_LOG_ID}::-webkit-scrollbar-thumb:hover {
                     background: rgba(255,255,255,0.5);
                 }
-                
+
                 /* 添加状态周期历史记录的滚动条样式 */
                 #${Config.UI_DEBUG_HISTORY_ID},
                 .fab-debug-history-container {
                     scrollbar-width: thin;
                     scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
                 }
-                
+
                 #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar,
                 .fab-debug-history-container::-webkit-scrollbar {
                     width: 8px;
                     height: 8px;
                 }
-                
+
                 #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-track,
                 .fab-debug-history-container::-webkit-scrollbar-track {
                     background: rgba(0,0,0,0.2);
                     border-radius: 4px;
                 }
-                
+
                 #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-thumb,
                 .fab-debug-history-container::-webkit-scrollbar-thumb {
                     background: rgba(255,255,255,0.3);
                     border-radius: 4px;
                 }
-                
+
                 #${Config.UI_DEBUG_HISTORY_ID}::-webkit-scrollbar-thumb:hover,
                 .fab-debug-history-container::-webkit-scrollbar-thumb:hover {
                     background: rgba(255,255,255,0.5);
@@ -3916,7 +3967,7 @@ const State = {
             State.UI.execBtn = document.createElement('button');
             State.UI.execBtn.className = 'fab-helper-execute-btn';
             State.UI.execBtn.onclick = TaskRunner.toggleExecution;
-            
+
             // 根据State.isExecuting设置按钮初始状态
             if (State.isExecuting) {
                 State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
@@ -3970,9 +4021,9 @@ const State = {
 
             State.UI.logPanel = document.createElement('div');
             State.UI.logPanel.id = Config.UI_LOG_ID;
-            
+
             logContainer.append(logHeader, State.UI.logPanel);
-            
+
             // 添加当前保存的浏览位置显示
             const positionContainer = document.createElement('div');
             positionContainer.className = 'fab-helper-position-container';
@@ -3984,13 +4035,13 @@ const State = {
 
             const positionInfo = document.createElement('span');
             positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
-            
+
             // 保存引用以便后续更新
             State.UI.savedPositionDisplay = positionInfo;
-            
+
             positionContainer.appendChild(positionIcon);
             positionContainer.appendChild(positionInfo);
-            
+
             // Reorder elements for the new layout: Log first, then position, status, then buttons
             dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
 
@@ -3999,7 +4050,7 @@ const State = {
             // --- Settings Tab ---
             const settingsContent = document.createElement('div');
             settingsContent.className = 'fab-helper-tab-content';
-            
+
             const createSettingRow = (labelText, stateKey) => {
                 const row = document.createElement('div');
                 row.className = 'fab-setting-row';
@@ -4010,7 +4061,7 @@ const State = {
 
                 const switchContainer = document.createElement('label');
                 switchContainer.className = 'fab-toggle-switch';
-                
+
                 const input = document.createElement('input');
                 input.type = 'checkbox';
                 input.checked = State[stateKey];
@@ -4037,17 +4088,17 @@ const State = {
 
                 switchContainer.append(input, slider);
                 row.append(label, switchContainer);
-                
+
                 // 所有设置行都使用相同的布局
                 row.appendChild(label);
                 row.appendChild(switchContainer);
-                
+
                 return row;
             };
 
             const autoAddSetting = createSettingRow('无限滚动时自动添加任务', 'autoAddOnScroll');
             settingsContent.appendChild(autoAddSetting);
-            
+
             const rememberPosSetting = createSettingRow('记住瀑布流浏览位置', 'rememberScrollPosition');
             settingsContent.appendChild(rememberPosSetting);
 
@@ -4067,15 +4118,15 @@ const State = {
             const debugModeRow = document.createElement('div');
             debugModeRow.className = 'fab-setting-row';
             debugModeRow.title = '启用详细日志记录，用于排查问题';
-            
+
             const debugLabel = document.createElement('span');
             debugLabel.className = 'fab-setting-label';
             debugLabel.textContent = '调试模式';
             debugLabel.style.color = '#ff9800';
-            
+
             const switchContainer = document.createElement('label');
             switchContainer.className = 'fab-toggle-switch';
-            
+
             const input = document.createElement('input');
             input.type = 'checkbox';
             input.checked = State.debugMode;
@@ -4085,20 +4136,20 @@ const State = {
                 Utils.logger('info', `调试模式已${State.debugMode ? '开启' : '关闭'}。${State.debugMode ? '将显示详细日志信息' : ''}`);
                 GM_setValue('fab_helper_debug_mode', State.debugMode);
             };
-            
+
             const slider = document.createElement('span');
             slider.className = 'fab-toggle-slider';
-            
+
             switchContainer.append(input, slider);
             debugModeRow.append(debugLabel, switchContainer);
             debugModeRow.classList.toggle('active', State.debugMode);
             settingsContent.appendChild(debugModeRow);
 
                             // 排序选择已移除，改为自动从URL获取
-                
+
               State.UI.tabContents.settings = settingsContent;
               container.appendChild(settingsContent);
-            
+
             // 确保设置标签页默认隐藏
             settingsContent.style.display = 'none';
 
@@ -4109,7 +4160,7 @@ const State = {
             debugContent.style.display = 'none';
             // 初始化调试内容容器
             State.UI.debugContent = debugContent;
-            
+
             const debugHeader = document.createElement('div');
             debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
 
@@ -4131,7 +4182,7 @@ const State = {
                 }
                 const formatEntry = (entry) => {
                     const date = new Date(entry.endTime).toLocaleString();
-                    
+
                     if (entry.type === 'STARTUP') {
                         return `🚀 脚本启动\n  - 时间: ${date}\n  - 信息: ${entry.message || ''}`;
                     } else {
@@ -4160,7 +4211,7 @@ const State = {
                 if (window.confirm('您确定要清空所有状态历史记录吗？')) {
                     State.statusHistory = [];
                     await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
-                    
+
                     // 添加一个新的"当前会话"记录
                     const currentSessionEntry = {
                         type: 'STARTUP',
@@ -4170,12 +4221,12 @@ const State = {
                     };
                     State.statusHistory.push(currentSessionEntry);
                     await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-                    
+
                     UI.updateDebugTab();
                     Utils.logger('info', '状态历史记录已清空。');
                 }
             };
-            
+
             debugControls.append(copyHistoryBtn, clearHistoryBtn);
             debugHeader.append(debugTitle, debugControls);
 
@@ -4211,7 +4262,7 @@ const State = {
             State.UI.statusFailed.querySelector('span').textContent = failedCount;
             State.UI.statusHidden.querySelector('span').textContent = State.hiddenThisPageCount;
             State.UI.statusVisible.querySelector('span').textContent = visibleCount;
-            
+
             // --- Update Button States ---
             // 确保按钮状态与State.isExecuting一致
             if (State.isExecuting) {
@@ -4230,7 +4281,7 @@ const State = {
                 State.UI.execBtn.classList.remove('executing');
                 State.UI.execBtn.title = '点击开始执行任务';
             }
-            
+
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
         },
         removeAllOverlays: () => {
@@ -4250,17 +4301,17 @@ const State = {
             // 使用historyContainer而不是debugContent
             if (!State.UI.historyContainer) return;
             State.UI.historyContainer.innerHTML = ''; // Clear previous entries
-            
+
             // 创建历史记录项
             const createHistoryItem = (entry) => {
                 const item = document.createElement('div');
                 item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color);';
-                
+
                 const header = document.createElement('div');
                 header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
-                
+
                 let icon, color, titleText;
-                
+
                 if (entry.type === 'STARTUP') {
                     icon = '🚀';
                     color = 'var(--blue)';
@@ -4276,12 +4327,12 @@ const State = {
                 }
 
                 header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
-                
+
                 const details = document.createElement('div');
                 details.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;';
-                
+
                 let detailsHtml = '';
-                
+
                 if (entry.type === 'STARTUP') {
                     detailsHtml = `<div>时间: ${new Date(entry.endTime).toLocaleString()}</div>`;
                     if (entry.message) {
@@ -4289,7 +4340,7 @@ const State = {
                     }
                 } else {
                     // 添加空值检查，防止toFixed错误
-                    const duration = entry.duration !== undefined && entry.duration !== null ? 
+                    const duration = entry.duration !== undefined && entry.duration !== null ?
                         entry.duration.toFixed(2) : '未知';
                     detailsHtml = `<div>持续时间: <strong>${duration}s</strong></div>`;
                     if (entry.requests !== undefined) {
@@ -4299,13 +4350,13 @@ const State = {
                     const endTime = entry.endTime ? new Date(entry.endTime).toLocaleString() : '未知时间';
                     detailsHtml += `<div>结束于: ${endTime}</div>`;
                 }
-                
+
                 details.innerHTML = detailsHtml;
 
                 item.append(header, details);
                 return item;
             };
-            
+
             // 创建当前状态项（即使没有历史记录也会显示）
             const createCurrentStatusItem = () => {
                 if(State.appStatus === 'NORMAL' || State.appStatus === 'RATE_LIMITED') {
@@ -4314,11 +4365,11 @@ const State = {
 
                     const header = document.createElement('div');
                     header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
-                    
+
                     const icon = State.appStatus === 'NORMAL' ? '✅' : '🚨';
                     const color = State.appStatus === 'NORMAL' ? 'var(--green)' : 'var(--orange)';
                     const titleText = State.appStatus === 'NORMAL' ? '当前: 正常运行' : '当前: 限速中';
-                    
+
                     header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
 
                     const details = document.createElement('div');
@@ -4327,7 +4378,7 @@ const State = {
                     const startTime = State.appStatus === 'NORMAL' ? State.normalStartTime : State.rateLimitStartTime;
                     // 添加空值检查，防止startTime为null或undefined
                     const duration = startTime ? ((Date.now() - startTime) / 1000).toFixed(2) : '未知';
-                    
+
                     let detailsHtml = `<div>已持续: <strong>${duration}s</strong></div>`;
                     if (State.appStatus === 'NORMAL') {
                          detailsHtml += `<div>期间请求数: <strong>${State.successfulSearchCount}</strong></div>`;
@@ -4341,10 +4392,10 @@ const State = {
                     State.UI.historyContainer.appendChild(item);
                 }
             };
-            
+
             // 添加当前状态项（始终显示）
             createCurrentStatusItem();
-            
+
             // 如果没有历史记录，显示提示信息
             if (State.statusHistory.length === 0) {
                 const emptyMessage = document.createElement('div');
@@ -4366,13 +4417,13 @@ const State = {
         isActive: false,
         lastPingTime: 0,
         pingInterval: null,
-        
+
         // 初始化实例管理
         init: async function() {
             try {
                 // 检查当前页面是否是搜索页面
-                const isSearchPage = window.location.href.includes('/search') || 
-                                    window.location.pathname === '/' || 
+                const isSearchPage = window.location.href.includes('/search') ||
+                                    window.location.pathname === '/' ||
                                     window.location.pathname === '/zh-cn/' ||
                                     window.location.pathname === '/en/';
 
@@ -4381,16 +4432,16 @@ const State = {
                     this.isActive = true;
                     await this.registerAsActive();
                     Utils.logger('info', `当前是搜索页面，实例 [${Config.INSTANCE_ID}] 已激活。`);
-                    
+
                     // 启动ping机制，每3秒更新一次活跃状态
                     this.pingInterval = setInterval(() => this.ping(), 3000);
                     return true;
                 }
-                
+
                 // 如果是工作标签页，检查是否有活跃实例
                 const activeInstance = await GM_getValue('fab_active_instance', null);
                 const currentTime = Date.now();
-                
+
                 if (activeInstance && (currentTime - activeInstance.lastPing < 10000)) {
                     // 如果有活跃实例且在10秒内有ping，则当前实例不活跃
                     Utils.logger('info', `检测到活跃的脚本实例 [${activeInstance.id}]，当前工作标签页将与之协作。`);
@@ -4401,7 +4452,7 @@ const State = {
                     this.isActive = true;
                     await this.registerAsActive();
                     Utils.logger('info', `没有检测到活跃实例，当前实例 [${Config.INSTANCE_ID}] 已激活。`);
-                    
+
                     // 启动ping机制，每3秒更新一次活跃状态
                     this.pingInterval = setInterval(() => this.ping(), 3000);
                     return true;
@@ -4413,7 +4464,7 @@ const State = {
                 return true;
             }
         },
-        
+
         // 注册为活跃实例
         registerAsActive: async function() {
             await GM_setValue('fab_active_instance', {
@@ -4425,15 +4476,15 @@ const State = {
         // 定期更新活跃状态
         ping: async function() {
             if (!this.isActive) return;
-            
+
             this.lastPingTime = Date.now();
             await this.registerAsActive();
         },
-        
+
         // 检查是否可以接管
         checkTakeover: async function() {
             if (this.isActive) return;
-            
+
             try {
                 const activeInstance = await GM_getValue('fab_active_instance', null);
                 const currentTime = Date.now();
@@ -4446,7 +4497,7 @@ const State = {
 
                     // 启动ping机制
                     this.pingInterval = setInterval(() => this.ping(), 3000);
-                    
+
                     // 刷新页面以确保正确加载
                     location.reload();
                     } else {
@@ -4459,7 +4510,7 @@ const State = {
                 setTimeout(() => this.checkTakeover(), 5000);
             }
         },
-        
+
         // 清理实例
         cleanup: function() {
             if (this.pingInterval) {
@@ -4472,10 +4523,10 @@ const State = {
     async function main() {
         // 记录页面加载时间
         window.pageLoadTime = Date.now();
-        
+
         Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
-        
+
         // 检查是否是工作标签页
         const urlParams = new URLSearchParams(window.location.search);
         const workerId = urlParams.get('workerId');
@@ -4483,43 +4534,43 @@ const State = {
             // 如果是工作标签页，只执行工作标签页的逻辑，不执行主脚本逻辑
             State.isWorkerTab = true;
             State.workerTaskId = workerId;
-            
+
             // 初始化实例管理，但不检查返回值，工作标签页总是需要执行自己的任务
             await InstanceManager.init();
             Utils.logger('info', `工作标签页初始化完成，开始处理任务...`);
             await TaskRunner.processDetailPage();
             return;
         }
-        
+
         // 初始化实例管理
         await InstanceManager.init();
-        
+
         // 主页面总是继续执行，不需要检查isActiveInstance
         await Database.load();
-        
+
         // 确保执行状态与存储状态一致
         const storedExecutingState = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
         if (State.isExecuting !== storedExecutingState) {
             Utils.logger('info', `执行状态不一致，从存储中恢复：${storedExecutingState ? '执行中' : '已停止'}`);
             State.isExecuting = storedExecutingState;
         }
-        
+
         // 从存储中恢复限速状态
         const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
         if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
             State.appStatus = 'RATE_LIMITED';
             State.rateLimitStartTime = persistedStatus.startTime;
             // 添加空值检查，防止persistedStatus.startTime为null
-            const previousDuration = persistedStatus && persistedStatus.startTime ? 
+            const previousDuration = persistedStatus && persistedStatus.startTime ?
                 ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
             Utils.logger('warn', `脚本启动时处于限速状态。限速已持续至少 ${previousDuration}s，来源: ${persistedStatus.source || '未知'}`);
         }
-        
+
         // 初始化请求拦截器
         setupRequestInterceptors();
-        
+
         await PagePatcher.init();
-        
+
         // 检查是否有临时保存的待办任务（从429恢复）
         const tempTasks = await GM_getValue('temp_todo_tasks', null);
         if (tempTasks && tempTasks.length > 0) {
@@ -4531,13 +4582,13 @@ const State = {
         // 添加工作标签页完成任务的监听器
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
             if (!newValue) return; // 如果值被删除，忽略此事件
-            
+
             try {
                 // 删除值，防止重复处理
                 await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
-                
+
                 const { workerId, success, task, logs, instanceId, executionTime } = newValue;
-                
+
                 // 检查是否由当前实例处理
                 if (instanceId !== Config.INSTANCE_ID) {
                     Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
@@ -4548,32 +4599,32 @@ const State = {
                     Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
                     return;
                 }
-                
+
                 // 记录执行时间（如果有）
                 if (executionTime) {
                     // 添加空值检查，防止executionTime为null
                     Utils.logger('info', `任务执行时间: ${executionTime ? (executionTime / 1000).toFixed(2) : '未知'}秒`);
                 }
-                
+
                 // 移除此工作标签页的记录
                 if (State.runningWorkers[workerId]) {
                     delete State.runningWorkers[workerId];
                     State.activeWorkers--;
                 }
-                
+
                 // 记录工作标签页的日志
                 if (logs && logs.length) {
                     logs.forEach(log => Utils.logger('info', log));
                 }
-                
+
                 // 处理任务结果
                 if (success) {
                     Utils.logger('info', `✅ 任务完成: ${task.name}`);
-                    
+
                     // 从待办列表中移除此任务
                     const initialTodoCount = State.db.todo.length;
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                    
+
                     // 检查是否实际移除了任务
                     if (State.db.todo.length < initialTodoCount) {
                         Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
@@ -4583,46 +4634,46 @@ const State = {
 
                     // 保存待办列表
                     await Database.saveTodo();
-                    
+
                     // 如果尚未在完成列表中，则添加
                     if (!State.db.done.includes(task.url)) {
                         State.db.done.push(task.url);
                         await Database.saveDone();
                     }
-                    
+
                     // 更新会话状态
                     State.sessionCompleted.add(task.url);
-                    
+
                     // 更新执行统计
                     State.executionCompletedTasks++;
                 } else {
                     Utils.logger('warn', `❌ 任务失败: ${task.name}`);
-                    
+
                     // 从待办列表中移除此任务
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                    
+
                     // 保存待办列表
                     await Database.saveTodo();
-                    
+
                     // 添加到失败列表（如果尚未存在）
                     if (!State.db.failed.some(f => f.uid === task.uid)) {
                         State.db.failed.push(task);
                         await Database.saveFailed();
                     }
-                    
+
                     // 更新执行统计
                     State.executionFailedTasks++;
                 }
-                
+
                 // 更新UI
                 UI.update();
-                
+
                 // 如果还有待办任务，继续执行
                 if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
                     // 延迟一小段时间再派发新任务，避免同时打开太多标签页
                     setTimeout(() => TaskRunner.executeBatch(), 1000);
                             }
-                
+
                 // 如果所有任务都已完成，停止执行
                 if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
                     Utils.logger('info', '所有任务已完成。');
@@ -4631,24 +4682,24 @@ const State = {
                     Database.saveExecutingState();
                     // 保存待办列表（虽然为空，但仍需保存以更新存储）
                     await Database.saveTodo();
-                    
+
                     // 如果处于限速状态且待办任务为0，触发页面刷新
                     if (State.appStatus === 'RATE_LIMITED') {
                         Utils.logger('info', '所有任务已完成，且处于限速状态，将刷新页面尝试恢复...');
                         const randomDelay = 3000 + Math.random() * 5000;
                         countdownRefresh(randomDelay, '任务完成后限速恢复');
                     }
-                    
+
             UI.update();
                 }
-                
+
                 // 更新隐藏状态
             TaskRunner.runHideOrShow();
             } catch (error) {
                 Utils.logger('error', `处理工作报告时出错: ${error.message}`);
             }
         }));
-        
+
         // 添加执行状态变化监听器，确保UI状态与存储状态一致
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
             // 如果当前不是工作标签页，且存储状态与当前状态不一致，则更新当前状态
@@ -4664,10 +4715,10 @@ const State = {
         // It will persistently try to launch the DOM-dependent part of the script.
         // 使用一个全局变量来防止多次初始化
         window._fabHelperLauncherActive = window._fabHelperLauncherActive || false;
-        
+
         if (!window._fabHelperLauncherActive) {
             window._fabHelperLauncherActive = true;
-            
+
             const launcherInterval = setInterval(() => {
                 if (document.readyState === 'interactive' || document.readyState === 'complete') {
                     if (!State.hasRunDomPart) {
@@ -4687,19 +4738,19 @@ const State = {
 
         // 添加无活动超时刷新功能
         let lastNetworkActivityTime = Date.now();
-        
+
         // 记录网络活动的函数
         // 记录网络活动时间
         window.recordNetworkActivity = function() {
             lastNetworkActivityTime = Date.now();
         };
-        
+
         // 记录网络请求
         window.recordNetworkRequest = function(source, isSuccess) {
             // 记录网络活动
             window.recordNetworkActivity();
         };
-        
+
         // 定期检查是否长时间无活动
         setInterval(() => {
             // 只有在限速状态下才考虑无活动刷新
@@ -4719,7 +4770,7 @@ const State = {
 
         async function runDomDependentPart() {
         if (State.hasRunDomPart) return;
-        
+
         // 如果是工作标签页，不执行主脚本的DOM相关逻辑
         if (State.isWorkerTab) {
             State.hasRunDomPart = true; // 标记为已运行，避免重复检查
@@ -4732,7 +4783,7 @@ const State = {
             // 这里不需要再调用processDetailPage，因为main函数中已经处理了
             Utils.logger('info', `工作标签页DOM部分初始化，跳过UI创建`);
             State.hasRunDomPart = true; // Mark as run to stop the launcher
-            return; 
+            return;
         }
 
         // --- NEW FLOW: Create the UI FIRST for immediate user feedback ---
@@ -4743,7 +4794,7 @@ const State = {
             State.hasRunDomPart = true; // Mark as run to stop the launcher
             return;
         }
-        
+
         // 初始化完成后，确保UI状态与执行状态一致
             UI.update();
 
@@ -4751,7 +4802,7 @@ const State = {
         UI.update();
         UI.updateDebugTab();
         UI.switchTab('dashboard'); // 设置初始标签页
-        
+
         State.hasRunDomPart = true; // Mark as run *after* successful UI creation
 
         // --- Dead on Arrival Check for initial 429 page load ---
@@ -4760,7 +4811,7 @@ const State = {
             // 使用统一的限速管理器进入限速状态
             RateLimitManager.enterRateLimitedState(source);
         };
-        
+
         // 添加全局函数用于记录所有网络请求 - 简化版
         window.recordNetworkRequest = function(source = '网络请求', hasResults = true) {
             // 只记录成功请求，不再进行复杂的计数
@@ -4768,17 +4819,17 @@ const State = {
                 RateLimitManager.recordSuccessfulRequest(source, hasResults);
             }
         };
-        
+
         // 添加页面内容检测功能，定期检查页面是否显示了限速错误信息
         setInterval(() => {
             // 如果已经处于限速状态，不需要检查
             if (State.appStatus === 'NORMAL') {
                 // 检查页面内容是否包含限速错误信息
                 const pageText = document.body.innerText || '';
-                if (pageText.includes('Too many requests') || 
-                    pageText.includes('rate limit') || 
+                if (pageText.includes('Too many requests') ||
+                    pageText.includes('rate limit') ||
                     pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                    
+
                     Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
                     RateLimitManager.enterRateLimitedState('页面内容检测');
                 }
@@ -4787,9 +4838,9 @@ const State = {
 
         const checkIsErrorPage = (title, text) => {
             const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-            const is429Text = text.includes('429') || 
-                              text.includes('Too Many Requests') || 
-                              text.includes('Too many requests') || 
+            const is429Text = text.includes('429') ||
+                              text.includes('Too Many Requests') ||
+                              text.includes('Too many requests') ||
                               text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i);
             if (isCloudflareTitle || is429Text) {
                 Utils.logger('warn', `[页面加载] 检测到429错误页面: ${document.location.href}`);
@@ -4798,7 +4849,7 @@ const State = {
             }
             return false;
         };
-        
+
         // 如果检测到错误页面，不要立即返回，而是继续尝试恢复
         const isErrorPage = checkIsErrorPage(document.title, document.body.innerText || '');
         // 不要在这里return，让代码继续执行到自动恢复部分
@@ -4806,13 +4857,13 @@ const State = {
         // The auto-resume logic is preserved - always try to recover from 429
         if (State.appStatus === 'RATE_LIMITED') {
             Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
-            
+
             // 使用统一的限速状态检查
             const isRecovered = await RateLimitManager.checkRateLimitStatus();
-            
+
             if (isRecovered) {
                 Utils.logger('info', '✅ 恢复探测成功！限速已解除，继续正常操作。');
-                
+
                 // 如果有待办任务，继续执行
                 if (State.db.todo.length > 0 && !State.isExecuting) {
                     Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
@@ -4823,7 +4874,7 @@ const State = {
             } else {
                 // 仍然处于限速状态，继续随机刷新
                 Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
-                
+
                 // 如果有活动任务，等待它们完成
                 if (State.activeWorkers > 0) {
                     Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
@@ -4862,16 +4913,16 @@ const State = {
             );
             if (hasNewContent) {
                 // 不再立即执行隐藏，而是等待一段时间，确保API请求完成
-                
+
                 // 延迟进行处理
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
                     Utils.logger('info', '[Observer] 检测到新内容加载，等待API请求完成...');
-                    
+
                     // 首先等待一段较长的时间，确保API请求有足够时间完成
                     setTimeout(() => {
                         Utils.logger('info', '[Observer] 开始处理新加载的内容...');
-                        
+
                         // 执行一次状态检查，尝试更新卡片状态
                         TaskRunner.checkVisibleCardsStatus().then(() => {
                             // 状态检查后再次执行隐藏，确保新状态被应用
@@ -4881,7 +4932,7 @@ const State = {
                                     TaskRunner.runHideOrShow();
                                 }
                             }, 1000);
-                            
+
                             // 只在非限速状态下执行自动添加任务功能
                             if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
                                 // 异步调用scanAndAddTasks，但也增加延迟
@@ -4908,19 +4959,19 @@ const State = {
             subtree: true
         });
         Utils.logger('info', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
-        
+
         // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
             TaskRunner.runHideOrShow();
-            
+
             // 添加定期检查功能，确保所有卡片都被正确处理
             setInterval(() => {
                 // 如果没有开启隐藏功能，不需要检查
                 if (!State.hideSaved) return;
-                
+
                 // 检查是否有未处理的卡片
                 const cards = document.querySelectorAll(Config.SELECTORS.card);
                 let unprocessedCount = 0;
-                
+
                 cards.forEach(card => {
                     const isProcessed = card.getAttribute('data-fab-processed') === 'true';
                     if (!isProcessed) {
@@ -4930,7 +4981,7 @@ const State = {
                         const isFinished = TaskRunner.isCardFinished(card);
                         const shouldBeHidden = isFinished && State.hideSaved;
                         const isHidden = card.style.display === 'none';
-                        
+
                         // 如果状态不一致，重置处理标记
                         if (shouldBeHidden !== isHidden) {
                             card.removeAttribute('data-fab-processed');
@@ -4938,19 +4989,19 @@ const State = {
                         }
                     }
                 });
-                
+
                 // 如果有未处理的卡片，重新执行隐藏逻辑
                 if (unprocessedCount > 0) {
                     Utils.logger('info', `检测到 ${unprocessedCount} 个未处理或状态不一致的卡片，重新执行隐藏逻辑`);
                     TaskRunner.runHideOrShow();
                 }
             }, 3000); // 每3秒检查一次
-        
+
         // 添加定期检查功能，每10秒检查一次待办列表中的任务是否已经完成
         setInterval(() => {
             // 如果待办列表为空，不需要检查
             if (State.db.todo.length === 0) return;
-            
+
             // 检查待办列表中的每个任务，看是否已经在"完成"列表中
             const initialTodoCount = State.db.todo.length;
             State.db.todo = State.db.todo.filter(task => {
@@ -4965,23 +5016,23 @@ const State = {
                 UI.update();
             }
         }, 10000);
-        
+
         // 添加定期检查功能，检测是否请求不出新商品（隐性限速）
         let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
         let noNewCardsCounter = 0;
         let lastScrollY = window.scrollY;
-        
+
         setInterval(() => {
             // 如果已经处于限速状态，不需要检查
             if (State.appStatus !== 'NORMAL') return;
-            
+
             // 获取当前卡片数量
             const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
-            
+
             // 如果滚动了但卡片数量没有增加，可能是隐性限速
             if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
                 noNewCardsCounter++;
-                
+
                 // 如果连续3次检查都没有新卡片，认为是隐性限速
                 if (noNewCardsCounter >= 3) {
                     Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况：连续${noNewCardsCounter}次滚动后卡片数量未增加。`);
@@ -5000,7 +5051,7 @@ const State = {
                 // 有新卡片，重置计数器
                 noNewCardsCounter = 0;
             }
-            
+
             // 更新上次卡片数量和滚动位置
             lastCardCount = currentCardCount;
             lastScrollY = window.scrollY;
@@ -5010,15 +5061,15 @@ const State = {
         setInterval(() => {
             // 如果已经处于限速状态，不需要检查
             if (State.appStatus !== 'NORMAL') return;
-            
+
             // 检查页面内容是否包含限速错误信息
             const pageText = document.body.innerText || '';
             const jsonPattern = /\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i;
-            
-            if (pageText.match(jsonPattern) || 
-                pageText.includes('Too many requests') || 
+
+            if (pageText.match(jsonPattern) ||
+                pageText.includes('Too many requests') ||
                 pageText.includes('rate limit')) {
-                
+
                 Utils.logger('warn', '[页面内容检测] 检测到页面显示限速错误信息！');
                 try {
                     // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
@@ -5043,7 +5094,7 @@ const State = {
             try {
                 // 如果已经处于限速状态，不需要检查
                 if (State.appStatus !== 'NORMAL') return;
-                
+
                 // 使用window.performance API检查最近的页面请求
                 if (window.performance && window.performance.getEntriesByType) {
                     const navigationEntries = window.performance.getEntriesByType('navigation');
@@ -5061,16 +5112,16 @@ const State = {
                         }
                     }
                 }
-                
+
                 // 不再发送HEAD请求，只使用Performance API
                 Utils.logger('info', `[HTTP状态检测] 使用Performance API检查，不再发送HEAD请求`);
-                
+
                 // 检查页面内容是否包含限速信息
                 const pageText = document.body.innerText || '';
-                if (pageText.includes('Too many requests') || 
-                    pageText.includes('rate limit') || 
+                if (pageText.includes('Too many requests') ||
+                    pageText.includes('rate limit') ||
                     pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                    
+
                     Utils.logger('warn', `[HTTP状态检测] 页面内容包含限速信息，判断为429状态`);
                     try {
                         // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
@@ -5101,29 +5152,29 @@ const State = {
             try {
                 // 重新计算实际可见的商品数量，确保与DOM状态同步
                 const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-                
+
                 // 使用更准确的方式检查元素是否可见
                 const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter(card => {
                     // 检查元素自身的display属性
                     if (card.style.display === 'none') return false;
-                    
+
                     // 检查是否被CSS规则隐藏
                     const computedStyle = window.getComputedStyle(card);
                     return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
                 });
-                
+
                 const actualVisibleCards = visibleCards.length;
                 const hiddenCards = totalCards - actualVisibleCards;
-                
+
                 // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
                 const visibleCountElement = document.getElementById('fab-status-visible');
                 if (visibleCountElement) {
                     visibleCountElement.textContent = actualVisibleCards.toString();
                 }
-                
+
                 // 更新全局状态
                 State.hiddenThisPageCount = hiddenCards;
-                
+
                 // 如果处于限速状态且没有可见商品，考虑刷新
                 // 只有在明确开启了自动刷新功能时才触发
                 if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
@@ -5131,26 +5182,26 @@ const State = {
                     if (window._pendingZeroVisibleRefresh || currentCountdownInterval || currentRefreshTimeout) {
                         return;
                     }
-                    
+
                     Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品且自动刷新已开启，准备刷新页面`);
                     const randomDelay = 3000 + Math.random() * 2000; // 3-5秒的短延迟
                     countdownRefresh(randomDelay, '限速状态无可见商品');
                     return;
                 }
-                
+
                 // 移除正常状态下因隐藏商品而自动刷新的逻辑
                 // 如果处于正常状态且所有商品都被隐藏，只记录日志，不触发刷新
                 if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
                     Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏 (${hiddenCards}个)`);
                     return;
                 }
-                
+
                 // 使用window.performance API检查最近的API请求
                 if (window.performance && window.performance.getEntriesByType) {
                     const recentRequests = window.performance.getEntriesByType('resource')
                         .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
                         .filter(r => Date.now() - r.startTime < 15000); // 最近15秒内的请求
-                    
+
                     // 检查是否有429状态码的请求
                     const has429 = recentRequests.some(r => r.responseStatus === 429);
                     if (has429 && State.appStatus === 'NORMAL') {
@@ -5160,7 +5211,7 @@ const State = {
                         }
                         return;
                     }
-                    
+
                     // 检查是否有成功的请求
                     const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
                     if (hasSuccess && State.appStatus === 'RATE_LIMITED' && State.consecutiveSuccessCount >= 2) {
@@ -5174,15 +5225,15 @@ const State = {
                 Utils.logger('error', `页面状态检查出错: ${error.message}`);
             }
         };
-        
+
         // 每10秒检查一次页面状态
         setInterval(checkPageStatus, 10000);
-        
+
         // 添加定期检查功能，确保待办任务能被执行
         setInterval(() => {
             // 如果没有待办任务，不需要检查
             if (State.db.todo.length === 0) return;
-            
+
             // 确保任务被执行
             TaskRunner.ensureTasksAreExecuted();
         }, 5000); // 每5秒检查一次
@@ -5191,7 +5242,7 @@ const State = {
         const originalXMLHttpRequestSend = XMLHttpRequest.prototype.send;
         XMLHttpRequest.prototype.send = function(...args) {
             const xhr = this;
-            
+
             // 添加额外的事件监听器，专门用于检测429错误
             xhr.addEventListener('load', function() {
                 // 只检查listings/search相关的请求
@@ -5216,12 +5267,12 @@ const State = {
                         }
                         return;
                     }
-                    
+
                     // 检查响应内容
                     try {
                         const responseText = xhr.responseText;
                         if (responseText && (
-                            responseText.includes('Too many requests') || 
+                            responseText.includes('Too many requests') ||
                             responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)
                         )) {
                             Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
@@ -5247,7 +5298,7 @@ const State = {
                     }
                 }
             });
-            
+
             return originalXMLHttpRequestSend.apply(this, args);
         };
     }
@@ -5258,17 +5309,17 @@ const State = {
     // 使用一个全局变量来跟踪当前的倒计时，避免多个倒计时同时运行
     let currentCountdownInterval = null;
     let currentRefreshTimeout = null;
-    
+
     const countdownRefresh = (delay, reason = '备选方案') => {
         // 如果已经安排了刷新，不要重复安排
         if (State.isRefreshScheduled) {
             Utils.logger('info', `已有刷新计划正在进行中，不再安排新的刷新 (${reason})`);
             return;
         }
-        
+
         // 标记已安排刷新
         State.isRefreshScheduled = true;
-        
+
         // 如果已经有倒计时在运行，先清除它
         if (currentCountdownInterval) {
             clearInterval(currentCountdownInterval);
@@ -5278,13 +5329,13 @@ const State = {
             clearTimeout(currentRefreshTimeout);
             currentRefreshTimeout = null;
         }
-        
+
         // 添加空值检查，防止delay为null
         const seconds = delay ? (delay/1000).toFixed(1) : '未知';
-        
+
         // 添加明显的倒计时日志
         Utils.logger('info', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
-        
+
         // 每秒更新倒计时日志
         let remainingSeconds = Math.ceil(delay/1000);
         currentCountdownInterval = setInterval(() => {
@@ -5295,20 +5346,20 @@ const State = {
                                     Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
                 } else {
                     Utils.logger('info', `⏱️ 自动刷新倒计时: ${remainingSeconds} 秒...`);
-                    
+
                     // 如果用户手动取消了刷新标记
                     if (!State.isRefreshScheduled) {
                         Utils.logger('info', `⏹️ 检测到刷新已被取消，停止倒计时`);
                         clearInterval(currentCountdownInterval);
                         currentCountdownInterval = null;
-                        
+
                         if (currentRefreshTimeout) {
                             clearTimeout(currentRefreshTimeout);
                             currentRefreshTimeout = null;
                         }
                         return;
                     }
-                
+
                 // 每3秒重新检查一次条件
                 if (remainingSeconds % 3 === 0) {
                     // 尝试使用优化后的API函数检查限速状态
@@ -5317,28 +5368,28 @@ const State = {
                             Utils.logger('info', `⏱️ 检测到API限速已解除，取消刷新...`);
                             clearInterval(currentCountdownInterval);
                             currentCountdownInterval = null;
-                            
+
                             if (currentRefreshTimeout) {
                                 clearTimeout(currentRefreshTimeout);
                                 currentRefreshTimeout = null;
                             }
-                            
+
                             // 重置刷新标记
                             State.isRefreshScheduled = false;
-                            
+
                             // 恢复正常状态
                             if (State.appStatus === 'RATE_LIMITED') {
                                 RateLimitManager.exitRateLimitedState();
                             }
-                            
+
                             return;
                         }
-                        
+
                         // 如果是429限速状态，则检查可见商品是否为0
                         if (State.appStatus === 'RATE_LIMITED') {
                             // 使用UI上显示的可见商品数量作为判断依据
                             const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                            
+
                             // 只检查是否有待办任务或活动工作线程
                             if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                                 clearInterval(currentCountdownInterval);
@@ -5351,7 +5402,7 @@ const State = {
                                 Utils.logger('warn', '⚠️ 刷新条件已变化，自动刷新已取消。');
                                 return;
                             }
-                            
+
                             // 如果没有实际可见的商品，继续刷新
                             if (actualVisibleCount === 0) {
                                 Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将继续自动刷新。`);
@@ -5367,7 +5418,7 @@ const State = {
                             // 正常状态下，如果有可见商品、待办任务或活动工作线程，则取消刷新
                             // 使用UI上显示的可见商品数量
                             const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                            
+
                             if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
                                 clearInterval(currentCountdownInterval);
                                 clearTimeout(currentRefreshTimeout);
@@ -5375,7 +5426,7 @@ const State = {
                                 currentRefreshTimeout = null;
                                 // 重置刷新标记
                                 State.isRefreshScheduled = false;
-                                
+
                                 if (visibleCount > 0) {
                                     Utils.logger('info', `⏹️ 检测到页面上有 ${visibleCount} 个可见商品，已取消自动刷新。`);
                                 } else {
@@ -5393,18 +5444,18 @@ const State = {
                 }
             }
         }, 1000);
-        
+
         // 设置刷新定时器
         currentRefreshTimeout = setTimeout(() => {
             // 最后一次检查条件，确保在刷新前条件仍然满足
             // 使用UI上显示的可见商品数量
             const visibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-            
+
             // 如果是429限速状态，检查实际可见商品
             if (State.appStatus === 'RATE_LIMITED') {
                 // 使用UI上显示的可见商品数量
                 const actualVisibleCount = parseInt(document.getElementById('fab-status-visible')?.textContent || '0');
-                
+
                 // 只检查是否有待办任务或活动工作线程
                 if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                     Utils.logger('info', `⏹️ 刷新前检测到有 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程，已取消自动刷新。`);
@@ -5412,7 +5463,7 @@ const State = {
                     State.isRefreshScheduled = false; // 重置刷新标记
                     return;
                 }
-                
+
                 // 如果没有实际可见的商品，执行刷新
                 if (actualVisibleCount === 0) {
                     Utils.logger('info', `🔄 页面上没有可见商品且处于限速状态，将执行自动刷新。`);
@@ -5441,7 +5492,7 @@ const State = {
             }
         }, delay);
     };
-    
+
     // 优化后的限速状态检查函数 - 完全依赖网站自身请求流量
     async function checkRateLimitStatus() {
         try {
@@ -5449,36 +5500,36 @@ const State = {
             const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
             const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
             const actualVisibleCards = totalCards - hiddenCards;
-            
+
             // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
             const visibleCountElement = document.getElementById('fab-status-visible');
             if (visibleCountElement) {
                 visibleCountElement.textContent = actualVisibleCards.toString();
             }
-            
+
             // 使用实际DOM状态更新全局状态
             State.hiddenThisPageCount = hiddenCards;
-            
+
             Utils.logger('info', `📊 状态检查 - 实际可见: ${actualVisibleCards}, 总卡片: ${totalCards}, 隐藏商品数: ${hiddenCards}`);
-            
+
             // 如果处于限速状态且没有可见商品，直接返回false触发刷新
             if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
                 Utils.logger('info', `🔄 处于限速状态且没有可见商品，建议刷新页面`);
                 return false;
             }
-            
+
             // 即使在正常状态下，如果所有商品都被隐藏且隐藏的商品数量超过25个，也建议刷新
             if (actualVisibleCards === 0 && hiddenCards > 25) {
                 Utils.logger('info', `🔄 检测到页面上有 ${hiddenCards} 个隐藏商品，但没有可见商品，建议刷新页面`);
                 return false;
             }
-            
+
             // 使用window.performance API检查最近的网络请求
             if (window.performance && window.performance.getEntriesByType) {
                 const recentRequests = window.performance.getEntriesByType('resource')
                     .filter(r => r.name.includes('/i/listings/search') || r.name.includes('/i/users/me/listings-states'))
                     .filter(r => Date.now() - r.startTime < 10000); // 最近10秒内的请求
-                
+
                 // 如果有最近的请求，检查它们的状态
                 if (recentRequests.length > 0) {
                     // 检查是否有429状态码的请求
@@ -5487,7 +5538,7 @@ const State = {
                         Utils.logger('info', `📊 检测到最近10秒内有429状态码的请求，判断为限速状态`);
                         return false;
                     }
-                    
+
                     // 检查是否有成功的请求
                     const hasSuccess = recentRequests.some(r => r.responseStatus >= 200 && r.responseStatus < 300);
                     if (hasSuccess) {
@@ -5495,11 +5546,11 @@ const State = {
                         return true;
                     }
                 }
-                
+
                 // 如果没有最近的请求或者没有明确的成功/失败状态，保持当前状态
                 return State.appStatus === 'NORMAL';
             }
-            
+
             // 如果无法使用Performance API，根据当前状态返回
             // 在限速状态下返回false，表示需要刷新
             // 在正常状态下返回true，表示不需要刷新
@@ -5522,13 +5573,13 @@ const State = {
         try {
             // 设置XHR拦截器
             setupXHRInterceptor();
-            
+
             // 设置Fetch拦截器
             setupFetchInterceptor();
-            
+
             // 设置定期清理过期缓存的定时器
             setInterval(() => DataCache.cleanupExpired(), 60000); // 每分钟清理一次
-            
+
             Utils.logger('info', '请求拦截和缓存系统已初始化');
         } catch (e) {
             Utils.logger('error', `初始化请求拦截器失败: ${e.message}`);
@@ -5539,15 +5590,15 @@ const State = {
     function setupXHRInterceptor() {
         const originalOpen = XMLHttpRequest.prototype.open;
         const originalSend = XMLHttpRequest.prototype.send;
-        
+
         XMLHttpRequest.prototype.open = function(...args) {
             this._url = args[1]; // 保存URL以便后续使用
             return originalOpen.apply(this, args);
         };
-        
+
         XMLHttpRequest.prototype.send = function(...args) {
             const xhr = this;
-            
+
             // 只拦截相关API请求
             if (xhr._url && typeof xhr._url === 'string') {
                 // 添加加载完成事件监听器
@@ -5555,7 +5606,7 @@ const State = {
                     if (xhr.readyState === 4 && xhr.status === 200) {
                         try {
                             const responseData = JSON.parse(xhr.responseText);
-                            
+
                             // 处理商品列表搜索响应
                             if (xhr._url.includes('/i/listings/search') && responseData.results && Array.isArray(responseData.results)) {
                                 DataCache.saveListings(responseData.results);
@@ -5587,10 +5638,10 @@ const State = {
                     }
                 });
             }
-            
+
             return originalSend.apply(this, args);
         };
-        
+
         if (State.debugMode) {
             Utils.logger('debug', '[优化] XHR拦截器已设置');
         }
@@ -5599,24 +5650,24 @@ const State = {
     // 设置Fetch拦截器
     function setupFetchInterceptor() {
         const originalFetch = window.fetch;
-        
+
         window.fetch = async function(...args) {
             const url = args[0]?.toString() || '';
-            
+
             // 只拦截相关API请求
-            if (url.includes('/i/listings/search') || 
-                url.includes('/i/users/me/listings-states') || 
+            if (url.includes('/i/listings/search') ||
+                url.includes('/i/users/me/listings-states') ||
                 url.includes('/i/listings/prices-infos')) {
-                
+
                 try {
                     // 执行原始fetch请求
                     const response = await originalFetch.apply(this, args);
-                    
+
                     // 如果请求成功，处理响应数据
                     if (response.ok) {
                         // 克隆响应以避免消耗原始响应
                         const clonedResponse = response.clone();
-                        
+
                         // 异步处理响应数据
                         clonedResponse.json().then(data => {
                             // 处理商品列表搜索响应 - 简化版
@@ -5647,7 +5698,7 @@ const State = {
                             }
                         });
                     }
-                    
+
                     // 返回原始响应
                     return response;
                 } catch (e) {
@@ -5656,11 +5707,11 @@ const State = {
                     return originalFetch.apply(this, args);
                 }
             }
-            
+
             // 非相关API请求，直接使用原始fetch
             return originalFetch.apply(this, args);
         };
-        
+
         if (State.debugMode) {
             Utils.logger('debug', '[优化] Fetch拦截器已设置');
         }
@@ -5672,7 +5723,7 @@ const State = {
         if (!document.getElementById(Config.UI_CONTAINER_ID)) {
             // 如果UI未加载，尝试重新初始化
             Utils.logger('warn', '检测到UI未加载，尝试重新初始化...');
-            
+
             // 延迟执行，确保页面已完全加载
             setTimeout(() => {
                 try {
@@ -5684,13 +5735,13 @@ const State = {
             }, 1000);
         }
     }
-    
+
     // 添加页面加载完成后的检查
     window.addEventListener('load', () => {
         // 延迟检查，确保所有脚本都有机会执行
         setTimeout(ensureUILoaded, 2000);
     });
-    
+
     // 添加可见性变化检查，处理标签页切换回来的情况
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {

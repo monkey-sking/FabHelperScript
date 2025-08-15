@@ -4,8 +4,9 @@ Fab Helper 是一个用于辅助 Fab.com 网站使用的脚本工具，提供自
 
 ## 版本
 
-- **标准版**: `fab_userscript_refactored.js` - 基础功能版本
-- **优化版**: `fab_userscript_optimized.js` - 性能优化版本，减少API请求，提高稳定性
+- 当前优化版: `fab_userscript_optimized_v2.js`（根目录，仅保留当前版本）
+- 历史优化版: `scripts/fab_userscript_optimized.js`
+- 标准版: `scripts/fab_userscript_refactored.js` - 基础功能版本
 
 ## 优化版特性
 
@@ -38,6 +39,7 @@ Fab Helper 是一个用于辅助 Fab.com 网站使用的脚本工具，提供自
 - [架构说明](docs/ARCHITECTURE.md)
 - [更新日志](docs/CHANGELOG.md)
 - [故障排除](docs/TROUBLESHOOTING.md)
+- [开发需求文档](docs/specs/Fab Helper 脚本开发需求.md)
 
 ## 贡献
 
