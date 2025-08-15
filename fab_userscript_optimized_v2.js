@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.3.0-20250815192216
+// @version      3.3.0-20250815192707
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -217,6 +217,28 @@
                 consecutive_success_exit: 'Consecutive {0} successful requests ({1})',
                 search_response_parse_failed: 'Search response parsing failed: {0}',
 
+                // 缓存清理和Fab DOM相关
+                cache_cleanup_complete: '[Cache] Cleanup complete, current cache size: items={0}, owned status={1}, prices={2}',
+                fab_dom_no_new_owned: '[Fab DOM Refresh] API query completed, no new owned items found.',
+
+                // 状态报告UI标签
+                status_time_label: 'Time',
+                status_info_label: 'Info',
+
+                // 隐性限速检测和API监控
+                implicit_rate_limit_detection: '[Implicit Rate Limit Detection]',
+                scroll_api_monitoring: '[Scroll API Monitoring]',
+                task_execution_time: 'Task execution time: {0} seconds',
+                detected_rate_limit_error: 'Detected rate limit error info: {0}',
+                detected_possible_rate_limit_empty: 'Detected possible rate limit situation (empty result): {0}',
+                detected_possible_rate_limit_scroll: 'Detected possible rate limit situation: no card count increase after {0} consecutive scrolls.',
+                detected_api_429_status: 'Detected API request status code 429: {0}',
+                detected_api_rate_limit_content: 'Detected API response content contains rate limit info: {0}',
+
+                // 限速来源标识
+                source_implicit_rate_limit: 'Implicit Rate Limit Detection',
+                source_scroll_api_monitoring: 'Scroll API Monitoring',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -406,6 +428,28 @@
                 request_source_xhr_item: 'XHR商品请求',
                 consecutive_success_exit: '连续{0}次成功请求 ({1})',
                 search_response_parse_failed: '搜索响应解析失败: {0}',
+
+                // 缓存清理和Fab DOM相关
+                cache_cleanup_complete: '[Cache] 清理完成，当前缓存大小: 商品={0}, 拥有状态={1}, 价格={2}',
+                fab_dom_no_new_owned: '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。',
+
+                // 状态报告UI标签
+                status_time_label: '时间',
+                status_info_label: '信息',
+
+                // 隐性限速检测和API监控
+                implicit_rate_limit_detection: '[隐性限速检测]',
+                scroll_api_monitoring: '[滚动API监控]',
+                task_execution_time: '任务执行时间: {0}秒',
+                detected_rate_limit_error: '检测到限速错误信息: {0}',
+                detected_possible_rate_limit_empty: '检测到可能的限速情况(空结果): {0}',
+                detected_possible_rate_limit_scroll: '检测到可能的限速情况：连续{0}次滚动后卡片数量未增加。',
+                detected_api_429_status: '检测到API请求状态码为429: {0}',
+                detected_api_rate_limit_content: '检测到API响应内容包含限速信息: {0}',
+
+                // 限速来源标识
+                source_implicit_rate_limit: '隐性限速检测',
+                source_scroll_api_monitoring: '滚动API监控',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -1060,7 +1104,7 @@ const State = {
                 }
 
                 if (State.debugMode) {
-                    Utils.logger('debug', `[Cache] 清理完成，当前缓存大小: 商品=${this.listings.size}, 拥有状态=${this.ownedStatus.size}, 价格=${this.prices.size}`);
+                    Utils.logger('debug', Utils.getText('cache_cleanup_complete', this.listings.size, this.ownedStatus.size, this.prices.size));
                 }
             } catch (e) {
                 Utils.logger('error', `缓存清理失败: ${e.message}`);
@@ -1975,7 +2019,7 @@ const State = {
 
                                     // 检查是否返回了空结果或错误信息
                                     if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
-                                        Utils.logger('warn', `[隐性限速检测] 检测到限速错误信息: ${JSON.stringify(data)}`);
+                                        Utils.logger('warn', `${Utils.getText('implicit_rate_limit_detection')} ${Utils.getText('detected_rate_limit_error', JSON.stringify(data))}`);
                                         RateLimitManager.enterRateLimitedState('XHR响应限速错误');
                                         return;
                                     }
@@ -2018,7 +2062,7 @@ const State = {
                                             Utils.logger('info', `[空搜索结果] ${Utils.getText('empty_search_initial')}: ${JSON.stringify(data).substring(0, 200)}...`);
                                             return;
                                         } else {
-                                            Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
+                                            Utils.logger('warn', `${Utils.getText('implicit_rate_limit_detection')} ${Utils.getText('detected_possible_rate_limit_empty', JSON.stringify(data).substring(0, 200) + '...')}`);
                                             RateLimitManager.enterRateLimitedState('XHR响应空结果');
                                             return;
                                         }
@@ -3891,7 +3935,7 @@ const State = {
                     // 不立即执行隐藏，而是在调用方决定何时执行
                     Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
                 } else {
-                    Utils.logger('info', '[Fab DOM Refresh] API查询完成，没有发现新的已拥有项目。');
+                    Utils.logger('info', Utils.getText('fab_dom_no_new_owned'));
                 }
             } catch (error) {
                 Utils.logger('error', `[Fab DOM Refresh] 检查项目状态时出错: ${error.message}`);
@@ -4930,9 +4974,9 @@ const State = {
                 let detailsHtml = '';
 
                 if (entry.type === 'STARTUP') {
-                    detailsHtml = `<div>时间: ${new Date(entry.endTime).toLocaleString()}</div>`;
+                    detailsHtml = `<div>${Utils.getText('status_time_label')}: ${new Date(entry.endTime).toLocaleString()}</div>`;
                     if (entry.message) {
-                        detailsHtml += `<div>信息: <strong>${entry.message}</strong></div>`;
+                        detailsHtml += `<div>${Utils.getText('status_info_label')}: <strong>${entry.message}</strong></div>`;
                     }
                 } else {
                     // 添加空值检查，防止toFixed错误
@@ -5199,7 +5243,7 @@ const State = {
                 // 记录执行时间（如果有）
                 if (executionTime) {
                     // 添加空值检查，防止executionTime为null
-                    Utils.logger('info', `任务执行时间: ${executionTime ? (executionTime / 1000).toFixed(2) : '未知'}秒`);
+                    Utils.logger('info', Utils.getText('task_execution_time', executionTime ? (executionTime / 1000).toFixed(2) : Utils.getText('status_unknown_duration')));
                 }
 
                 // 移除此工作标签页的记录
@@ -5637,15 +5681,15 @@ const State = {
 
                 // 如果连续3次检查都没有新卡片，认为是隐性限速
                 if (noNewCardsCounter >= 3) {
-                    Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况：连续${noNewCardsCounter}次滚动后卡片数量未增加。`);
+                    Utils.logger('warn', `${Utils.getText('implicit_rate_limit_detection')} ${Utils.getText('detected_possible_rate_limit_scroll', noNewCardsCounter)}`);
                     try {
                         // 使用RateLimitManager处理限速
-                        RateLimitManager.enterRateLimitedState('隐性限速检测');
+                        RateLimitManager.enterRateLimitedState(Utils.getText('source_implicit_rate_limit'));
                     } catch (error) {
                         Utils.logger('error', `处理限速出错: ${error.message}`);
                         // 备选方案：直接刷新页面
                         const randomDelay = 5000 + Math.random() * 10000;
-                        countdownRefresh(randomDelay, '隐性限速检测');
+                        countdownRefresh(randomDelay, Utils.getText('source_implicit_rate_limit'));
                     }
                     noNewCardsCounter = 0;
                 }
@@ -5851,7 +5895,7 @@ const State = {
                 if (xhr._url && xhr._url.includes('/i/listings/search')) {
                     // 检查状态码
                     if (xhr.status === 429 || xhr.status === '429' || xhr.status.toString() === '429') {
-                        Utils.logger('warn', `[滚动API监控] 检测到API请求状态码为429: ${xhr._url}`);
+                        Utils.logger('warn', `${Utils.getText('scroll_api_monitoring')} ${Utils.getText('detected_api_429_status', xhr._url)}`);
                         try {
                             // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                             if (typeof window.enterRateLimitedState === 'function') {
@@ -5859,7 +5903,7 @@ const State = {
                             } else {
                                 // 最后的备选方案：直接刷新页面
                                 const randomDelay = 5000 + Math.random() * 10000;
-                                countdownRefresh(randomDelay, '滚动API监控');
+                                countdownRefresh(randomDelay, Utils.getText('source_scroll_api_monitoring'));
                             }
                         } catch (error) {
                             Utils.logger('error', `处理限速出错: ${error.message}`);
@@ -5877,7 +5921,7 @@ const State = {
                             responseText.includes('Too many requests') ||
                             responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)
                         )) {
-                            Utils.logger('warn', `[滚动API监控] 检测到API响应内容包含限速信息: ${responseText}`);
+                            Utils.logger('warn', `${Utils.getText('scroll_api_monitoring')} ${Utils.getText('detected_api_rate_limit_content', responseText)}`);
                             try {
                                 // 直接使用全局函数，避免使用PagePatcher.handleRateLimit
                                 if (typeof window.enterRateLimitedState === 'function') {
@@ -5885,7 +5929,7 @@ const State = {
                                 } else {
                                     // 最后的备选方案：直接刷新页面
                                     const randomDelay = 5000 + Math.random() * 10000;
-                                    countdownRefresh(randomDelay, '滚动API监控');
+                                    countdownRefresh(randomDelay, Utils.getText('source_scroll_api_monitoring'));
                                 }
                             } catch (error) {
                                 Utils.logger('error', `处理限速出错: ${error.message}`);
