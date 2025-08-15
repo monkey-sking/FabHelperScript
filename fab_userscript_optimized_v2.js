@@ -54,7 +54,7 @@
         SELECTORS: {
             card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
             cardLink: 'a[href*="/listings/"]',
-            addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"], button[aria-label*="Library"]',
+            addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"]',
             rootElement: '#root',
             successBanner: 'div[class*="Toast-root"]',
             freeStatus: '.csZFzinF',
@@ -120,6 +120,23 @@
                 log_auto_resume_toggle: '429 auto resume function {0}.',
                 log_auto_resume_start: '🔄 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...',
                 log_auto_resume_detect: '🔄 Detected 429 error, will auto refresh page in {0} seconds to attempt recovery...',
+
+                // 调试日志消息
+                debug_save_cursor: 'Saving new recovery point: {0}',
+                debug_prepare_hide: 'Preparing to hide {0} cards, will use longer delay...',
+                debug_unprocessed_cards: 'Detected {0} unprocessed or inconsistent cards, re-executing hide logic',
+                debug_new_content_loading: 'Detected new content loading, waiting for API requests to complete...',
+                debug_process_new_content: 'Starting to process newly loaded content...',
+                debug_unprocessed_cards_simple: 'Detected unprocessed cards, re-executing hide logic',
+                debug_hide_completed: 'Completed hiding all {0} cards',
+                debug_visible_after_hide: '👁️ Actual visible items after hiding: {0}, hidden items: {1}',
+                debug_filter_owned: 'Filtered out {0} owned items and {1} items already in todo list.',
+                debug_api_wait_complete: 'API wait completed, starting to process {0} cards...',
+                debug_api_stopped: 'API activity stopped for {0}ms, continuing to process cards.',
+                debug_wait_api_response: 'Starting to wait for API response, will process {0} cards after API activity stops...',
+                debug_api_wait_in_progress: 'API wait process already in progress, adding current {0} cards to wait queue.',
+                debug_cached_items: 'Cached {0} item data',
+                debug_no_cards_to_check: 'No cards need to be checked',
 
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
@@ -215,6 +232,23 @@
                 log_auto_resume_start: '🔄 429自动恢复启动！将在{0}秒后刷新页面尝试恢复...',
                 log_auto_resume_detect: '🔄 检测到429错误，将在{0}秒后自动刷新页面尝试恢复...',
 
+                // 调试日志消息
+                debug_save_cursor: '保存新的恢复点: {0}',
+                debug_prepare_hide: '准备隐藏 {0} 张卡片，将使用更长的延迟...',
+                debug_unprocessed_cards: '检测到 {0} 个未处理或状态不一致的卡片，重新执行隐藏逻辑',
+                debug_new_content_loading: '检测到新内容加载，等待API请求完成...',
+                debug_process_new_content: '开始处理新加载的内容...',
+                debug_unprocessed_cards_simple: '检测到未处理的卡片，重新执行隐藏逻辑',
+                debug_hide_completed: '已完成所有 {0} 张卡片的隐藏',
+                debug_visible_after_hide: '👁️ 隐藏后实际可见商品数: {0}，隐藏商品数: {1}',
+                debug_filter_owned: '过滤掉 {0} 个已入库商品和 {1} 个已在待办列表中的商品。',
+                debug_api_wait_complete: 'API等待完成，开始处理 {0} 张卡片...',
+                debug_api_stopped: 'API活动已停止 {0}ms，继续处理卡片。',
+                debug_wait_api_response: '开始等待API响应，将在API活动停止后处理 {0} 张卡片...',
+                debug_api_wait_in_progress: '已有API等待过程在进行，将当前 {0} 张卡片加入等待队列。',
+                debug_cached_items: '已缓存 {0} 个商品数据',
+                debug_no_cards_to_check: '没有需要检查的卡片',
+
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
                 setting_auto_add_scroll: '无限滚动时自动添加任务',
@@ -259,11 +293,11 @@
             // Check for the temporary success popup (snackbar).
             snackbarText: ['产品已添加至您的库中', 'Product added to your library'],
         },
-        ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library', 'Add to Library', 'Add to Cart']),
+        ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library']),
 
         // Kept for backward compatibility with recon logic.
-        SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library', 'In Library', 'Owned', 'Downloaded']),
-        FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费', 'Personal Use', 'Personal License']),
+        SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library']),
+        FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费']),
         // 添加一个实例ID，用于防止多实例运行
         INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
     };
@@ -1717,7 +1751,7 @@ const State = {
 
                         // 日志记录保存操作
                         if (State.debugMode) {
-                            Utils.logger('debug', `[Cursor] 保存新的恢复点: ${newCursor.substring(0, 30)}...`);
+                            Utils.logger('debug', `[Cursor] ${Utils.getText('debug_save_cursor', newCursor.substring(0, 30) + '...')}`);
                         }
 
                         // 更新UI中的位置显示
@@ -3152,8 +3186,7 @@ const State = {
                                                                     if (cn.nodeType !== 3) return false;
                                                                     const text = cn.textContent.trim();
                                                                     return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
-                                                                           text === '个人' || text === 'Personal' ||
-                                                                           text === 'Personal Use' || text === 'Personal License';
+                                                                           text === '个人' || text === 'Personal';
                                                                 })
                                                             );
 
@@ -3217,8 +3250,7 @@ const State = {
                                             const text = btn.textContent;
                                             const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
                                             const hasDiscount = text.includes('-100%');
-                                            const hasPersonal = text.includes('个人') || text.includes('Personal') ||
-                                                              text.includes('Personal Use') || text.includes('Personal License');
+                                            const hasPersonal = text.includes('个人') || text.includes('Personal');
                                             return hasFreeText && hasDiscount && hasPersonal;
                                         });
 
@@ -3405,7 +3437,7 @@ const State = {
         // 如果有需要隐藏的卡片，使用更长的初始延迟和更慢的隐藏速度
         if (cardsToHide.length > 0) {
             if (State.debugMode) {
-                Utils.logger('debug', `准备隐藏 ${cardsToHide.length} 张卡片，将使用更长的延迟...`);
+                Utils.logger('debug', Utils.getText('debug_prepare_hide', cardsToHide.length));
             }
 
             // 随机打乱卡片顺序，使隐藏更加随机
@@ -3438,7 +3470,7 @@ const State = {
                             // 当所有卡片都隐藏后，更新UI
                             if (actuallyHidden === cardsToHide.length) {
                                 if (State.debugMode) {
-                                    Utils.logger('debug', `已完成所有 ${actuallyHidden} 张卡片的隐藏`);
+                                    Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
                                 }
                                 // 延迟更新UI，确保DOM已经完全更新
                                 setTimeout(() => {
@@ -3497,7 +3529,7 @@ const State = {
         // 如果发现未处理的卡片，重新执行隐藏逻辑
         if (needsReprocessing) {
             if (State.debugMode) {
-                Utils.logger('debug', '检测到未处理的卡片，重新执行隐藏逻辑');
+                Utils.logger('debug', Utils.getText('debug_unprocessed_cards_simple'));
             }
             setTimeout(() => {
                 TaskRunner.runHideOrShow();
@@ -3517,7 +3549,7 @@ const State = {
 
         // 更新真实的可见商品数量
         if (State.debugMode) {
-            Utils.logger('debug', `👁️ 隐藏后实际可见商品数: ${visibleCards}，隐藏商品数: ${State.hiddenThisPageCount}`);
+            Utils.logger('debug', Utils.getText('debug_visible_after_hide', visibleCards, State.hiddenThisPageCount));
         }
 
         // 更新UI上显示的可见商品数
@@ -3654,7 +3686,7 @@ const State = {
 
                 // 如果没有需要检查的项目，直接返回
                 if (allItems.length === 0) {
-                    Utils.logger('debug', '[Fab DOM Refresh] 没有需要检查的卡片');
+                    Utils.logger('debug', `[Fab DOM Refresh] ${Utils.getText('debug_no_cards_to_check')}`);
                     return;
                 }
 
@@ -3730,7 +3762,7 @@ const State = {
             // 如果已经有等待过程在进行，将当前卡片加入队列
             if (window._apiWaitStatus.isWaiting) {
                 window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
-                Utils.logger('info', `[自动添加] 已有API等待过程在进行，将当前 ${cards.length} 张卡片加入等待队列。`);
+                Utils.logger('info', `[自动添加] ${Utils.getText('debug_api_wait_in_progress', cards.length)}`);
                 return;
             }
 
@@ -3740,7 +3772,7 @@ const State = {
             window._apiWaitStatus.lastApiActivity = Date.now();
 
             if (State.debugMode) {
-                Utils.logger('debug', `[自动添加] 开始等待API响应，将在API活动停止后处理 ${cards.length} 张卡片...`);
+                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_wait_api_response', cards.length)}`);
             }
 
             // 创建一个函数来检测API活动
@@ -3783,7 +3815,7 @@ const State = {
                             if (totalWaitTime > maxWaitTime) {
                                 Utils.logger('warn', `[自动添加] API等待超时，已等待 ${totalWaitTime}ms，将继续处理卡片。`);
                             } else {
-                                Utils.logger('debug', `[自动添加] API活动已停止 ${timeSinceLastActivity}ms，继续处理卡片。`);
+                                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_api_stopped', timeSinceLastActivity)}`);
                             }
 
                             resolve();
@@ -3805,7 +3837,7 @@ const State = {
             window._apiWaitStatus.isWaiting = false;
 
             if (State.debugMode) {
-                Utils.logger('debug', `[自动添加] API等待完成，开始处理 ${cardsToProcess.length} 张卡片...`);
+                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_api_wait_complete', cardsToProcess.length)}`);
             }
 
             // 现在处理卡片
@@ -3886,7 +3918,7 @@ const State = {
 
                 // 添加详细的过滤信息日志
                 if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-                    Utils.logger('debug', `[自动添加] 过滤掉 ${skippedAlreadyOwned} 个已入库商品和 ${skippedInTodo} 个已在待办列表中的商品。`);
+                    Utils.logger('debug', `[自动添加] ${Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo)}`);
                 }
 
                 // 如果已经在执行，只更新总数
@@ -5324,13 +5356,13 @@ const State = {
                 clearTimeout(State.observerDebounceTimer);
                 State.observerDebounceTimer = setTimeout(() => {
                     if (State.debugMode) {
-                        Utils.logger('debug', '[Observer] 检测到新内容加载，等待API请求完成...');
+                        Utils.logger('debug', `[Observer] ${Utils.getText('debug_new_content_loading')}`);
                     }
 
                     // 首先等待一段较长的时间，确保API请求有足够时间完成
                     setTimeout(() => {
                         if (State.debugMode) {
-                            Utils.logger('debug', '[Observer] 开始处理新加载的内容...');
+                            Utils.logger('debug', `[Observer] ${Utils.getText('debug_process_new_content')}`);
                         }
 
                         // 执行一次状态检查，尝试更新卡片状态
@@ -5403,7 +5435,7 @@ const State = {
                 // 如果有未处理的卡片，重新执行隐藏逻辑
                 if (unprocessedCount > 0) {
                     if (State.debugMode) {
-                        Utils.logger('debug', `检测到 ${unprocessedCount} 个未处理或状态不一致的卡片，重新执行隐藏逻辑`);
+                        Utils.logger('debug', Utils.getText('debug_unprocessed_cards', unprocessedCount));
                     }
                     TaskRunner.runHideOrShow();
                 }
@@ -6023,7 +6055,7 @@ const State = {
                             if (xhr._url.includes('/i/listings/search') && responseData.results && Array.isArray(responseData.results)) {
                                 DataCache.saveListings(responseData.results);
                                 if (State.debugMode) {
-                                    Utils.logger('debug', `[Cache] 已缓存 ${responseData.results.length} 个商品数据`);
+                                    Utils.logger('debug', `[Cache] ${Utils.getText('debug_cached_items', responseData.results.length)}`);
                                 }
                             }
                             // 处理拥有状态响应
