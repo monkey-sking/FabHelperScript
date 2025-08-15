@@ -138,6 +138,23 @@
                 debug_cached_items: 'Cached {0} item data',
                 debug_no_cards_to_check: 'No cards need to be checked',
 
+                // Fab DOM Refresh 相关
+                fab_dom_api_complete: 'API query completed, confirmed {0} owned items.',
+                fab_dom_checking_status: 'Checking status of {0} items...',
+                fab_dom_add_to_waitlist: 'Added {0} item IDs to wait list, current wait list size: {0}',
+                fab_dom_unknown_status: '{0} items have unknown status, waiting for native web requests to update',
+
+                // 状态监控
+                status_monitor_all_hidden: 'Detected all items hidden in normal state ({0} items)',
+
+                // 空搜索结果
+                empty_search_initial: 'Page just loaded, might be initial request, not triggering rate limit',
+
+                // 游标相关
+                cursor_patched_url: 'Patched URL',
+                cursor_injecting: 'Injecting cursor. Original',
+                page_patcher_match: '-> ✅ MATCH! URL will be patched',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -248,6 +265,23 @@
                 debug_api_wait_in_progress: '已有API等待过程在进行，将当前 {0} 张卡片加入等待队列。',
                 debug_cached_items: '已缓存 {0} 个商品数据',
                 debug_no_cards_to_check: '没有需要检查的卡片',
+
+                // Fab DOM Refresh 相关
+                fab_dom_api_complete: 'API查询完成，共确认 {0} 个已拥有的项目。',
+                fab_dom_checking_status: '正在检查 {0} 个项目的状态...',
+                fab_dom_add_to_waitlist: '添加 {0} 个商品ID到等待列表，当前等待列表大小: {0}',
+                fab_dom_unknown_status: '有 {0} 个商品状态未知，等待网页原生请求更新',
+
+                // 状态监控
+                status_monitor_all_hidden: '检测到正常状态下所有商品都被隐藏 ({0}个)',
+
+                // 空搜索结果
+                empty_search_initial: '页面刚刚加载，可能是初始请求，不触发限速',
+
+                // 游标相关
+                cursor_patched_url: 'Patched URL',
+                cursor_injecting: 'Injecting cursor. Original',
+                page_patcher_match: '-> ✅ MATCH! URL will be patched',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -772,7 +806,7 @@ const State = {
         addToWaitingList: function(uids) {
             if (!uids || !Array.isArray(uids)) return;
             uids.forEach(uid => this.waitingList.add(uid));
-            Utils.logger('debug', `[Cache] 添加 ${uids.length} 个商品ID到等待列表，当前等待列表大小: ${this.waitingList.size}`);
+            Utils.logger('debug', `[Cache] ${Utils.getText('fab_dom_add_to_waitlist', uids.length, this.waitingList.size)}`);
         },
 
         // 检查并从等待列表中移除
@@ -993,7 +1027,7 @@ const State = {
 
                 // 如果有缺失的UID，记录但不主动请求
                 if (missingUids.length > 0) {
-                    Utils.logger('debug', `有 ${missingUids.length} 个商品状态未知，等待网页原生请求更新`);
+                    Utils.logger('debug', Utils.getText('fab_dom_unknown_status', missingUids.length));
                     // 将这些UID添加到等待列表，等待网页原生请求更新
                     DataCache.addToWaitingList(missingUids);
                 }
@@ -1857,7 +1891,7 @@ const State = {
                                             return;
                                         } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5000) {
                                             // 如果页面刚刚加载不到5秒，可能是初始请求，不要立即触发限速
-                                            Utils.logger('info', `[空搜索结果] 页面刚刚加载，可能是初始请求，不触发限速: ${JSON.stringify(data).substring(0, 200)}...`);
+                                            Utils.logger('info', `[空搜索结果] ${Utils.getText('empty_search_initial')}: ${JSON.stringify(data).substring(0, 200)}...`);
                                             return;
                                         } else {
                                             Utils.logger('warn', `[隐性限速检测] 检测到可能的限速情况(空结果): ${JSON.stringify(data).substring(0, 200)}...`);
@@ -2561,7 +2595,7 @@ const State = {
                     }
                 }
 
-                Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${ownedUids.size} 个已拥有的项目。`);
+                Utils.logger('info', `[Fab DOM Refresh] ${Utils.getText('fab_dom_api_complete', ownedUids.size)}`);
 
                 // Step 3: Update database based on all results
                 let dbUpdated = false;
@@ -3690,7 +3724,7 @@ const State = {
                     return;
                 }
 
-                Utils.logger('info', `[Fab DOM Refresh] 正在检查 ${allItems.length} 个项目的状态...`);
+                Utils.logger('info', `[Fab DOM Refresh] ${Utils.getText('fab_dom_checking_status', allItems.length)}`);
 
                 // 提取所有需要检查的商品ID
                 const uids = allItems.map(item => item.uid);
@@ -3728,7 +3762,7 @@ const State = {
                 if (confirmedOwned > 0) {
                     await Database.saveDone();
                     await Database.saveFailed();
-                    Utils.logger('info', `[Fab DOM Refresh] API查询完成，共确认 ${confirmedOwned} 个已拥有的项目。`);
+                    Utils.logger('info', `[Fab DOM Refresh] ${Utils.getText('fab_dom_api_complete', confirmedOwned)}`);
 
                     // 不立即执行隐藏，而是在调用方决定何时执行
                     Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
@@ -5636,7 +5670,7 @@ const State = {
                 // 移除正常状态下因隐藏商品而自动刷新的逻辑
                 // 如果处于正常状态且所有商品都被隐藏，只记录日志，不触发刷新
                 if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && hiddenCards > 25) {
-                    Utils.logger('info', `[状态监控] 检测到正常状态下所有商品都被隐藏 (${hiddenCards}个)`);
+                    Utils.logger('info', `[状态监控] ${Utils.getText('status_monitor_all_hidden', hiddenCards)}`);
                     return;
                 }
 
