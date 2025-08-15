@@ -178,6 +178,13 @@
                 auto_add_api_error: 'Error while waiting for API: {0}',
                 auto_add_new_tasks: 'Added {0} new tasks to queue.',
 
+                // HTTP状态检测
+                http_status_check_performance_api: 'Using Performance API check, no longer sending HEAD requests',
+
+                // 页面状态检测
+                page_status_hidden_no_visible: '👁️ Detected {0} hidden items on page, but no visible items',
+                page_status_suggest_refresh: '🔄 Detected {0} hidden items on page, but no visible items, suggest refreshing page',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -328,6 +335,13 @@
                 auto_add_api_timeout: 'API等待超时，已等待 {0}ms，将继续处理卡片。',
                 auto_add_api_error: '等待API时出错: {0}',
                 auto_add_new_tasks: '新增 {0} 个任务到队列。',
+
+                // HTTP状态检测
+                http_status_check_performance_api: '使用Performance API检查，不再发送HEAD请求',
+
+                // 页面状态检测
+                page_status_hidden_no_visible: '👁️ 检测到页面上有 {0} 个隐藏商品，但没有可见商品',
+                page_status_suggest_refresh: '🔄 检测到页面上有 {0} 个隐藏商品，但没有可见商品，建议刷新页面',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -3676,7 +3690,7 @@ const State = {
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 // 正常状态下也没有可见商品，可能是全部隐藏了
                 // 只记录日志，不提示刷新，也不执行刷新
-                Utils.logger('info', `👁️ 检测到页面上有 ${State.hiddenThisPageCount} 个隐藏商品，但没有可见商品`);
+                Utils.logger('info', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
             }
         }
     },
@@ -5638,7 +5652,7 @@ const State = {
                 }
 
                 // 不再发送HEAD请求，只使用Performance API
-                Utils.logger('debug', `[HTTP状态检测] 使用Performance API检查，不再发送HEAD请求`);
+                Utils.logger('debug', `[HTTP状态检测] ${Utils.getText('http_status_check_performance_api')}`);
 
                 // 检查页面内容是否包含限速信息
                 const pageText = document.body.innerText || '';
@@ -6044,7 +6058,7 @@ const State = {
 
             // 即使在正常状态下，如果所有商品都被隐藏且隐藏的商品数量超过25个，也建议刷新
             if (actualVisibleCards === 0 && hiddenCards > 25) {
-                Utils.logger('info', `🔄 检测到页面上有 ${hiddenCards} 个隐藏商品，但没有可见商品，建议刷新页面`);
+                Utils.logger('info', Utils.getText('page_status_suggest_refresh', hiddenCards));
                 return false;
             }
 
