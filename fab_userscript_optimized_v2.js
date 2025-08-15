@@ -1167,6 +1167,52 @@ const State = {
         _lastLogType: null,
         _duplicateLogCount: 0,
 
+        // 检查是否与最后一条记录重复
+        isDuplicateRecord: function(newEntry) {
+            if (State.statusHistory.length === 0) return false;
+
+            const lastEntry = State.statusHistory[State.statusHistory.length - 1];
+
+            // 检查类型是否相同
+            if (lastEntry.type !== newEntry.type) return false;
+
+            // 检查时间是否过于接近（10秒内）
+            const lastTime = new Date(lastEntry.endTime).getTime();
+            const newTime = new Date(newEntry.endTime).getTime();
+            const timeDiff = Math.abs(newTime - lastTime);
+
+            if (timeDiff < 10000) { // 10秒内
+                // 如果是相同类型且时间很接近，检查持续时间是否相似
+                const durationDiff = Math.abs((lastEntry.duration || 0) - (newEntry.duration || 0));
+                if (durationDiff < 5) { // 持续时间差异小于5秒
+                    return true;
+                }
+            }
+
+            return false;
+        },
+
+        // 添加记录到历史，带去重检查
+        addToHistory: async function(entry) {
+            // 检查是否重复
+            if (this.isDuplicateRecord(entry)) {
+                Utils.logger('debug', `检测到重复的状态记录，跳过: ${entry.type} - ${entry.endTime}`);
+                return false;
+            }
+
+            // 添加到历史记录
+            State.statusHistory.push(entry);
+
+            // 限制历史记录数量，保留最近50条
+            if (State.statusHistory.length > 50) {
+                State.statusHistory = State.statusHistory.slice(-50);
+            }
+
+            // 保存到存储
+            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+            return true;
+        },
+
         // 进入限速状态
         enterRateLimitedState: async function(source = '未知来源') {
             // 如果已经处于限速状态，不需要重复处理
@@ -1183,39 +1229,21 @@ const State = {
             // 添加空值检查，防止normalStartTime为null
             const normalDuration = State.normalStartTime ? ((Date.now() - State.normalStartTime) / 1000).toFixed(2) : '0.00';
 
-            // 检查是否是短时间内重复的日志记录
-            const now = Date.now();
-            const isSameType = this._lastLogType === 'NORMAL';
-            const isWithinTimeThreshold = (now - this._lastLogTime) < 2000; // 2秒内的重复记录视为重复
+            // 创建正常运行期的记录
+            const logEntry = {
+                type: 'NORMAL',
+                duration: parseFloat(normalDuration),
+                requests: State.successfulSearchCount,
+                endTime: new Date().toISOString()
+            };
 
-            if (isSameType && isWithinTimeThreshold) {
-                // 增加重复计数，但不记录日志
-                this._duplicateLogCount++;
-                Utils.logger('debug', `检测到重复的正常状态记录 (${this._duplicateLogCount}次)，跳过日志记录`);
+            // 使用新的去重方法添加到历史记录
+            const wasAdded = await this.addToHistory(logEntry);
+
+            if (wasAdded) {
+                Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
             } else {
-                // 不是重复记录，正常记录日志
-                const logEntry = {
-                    type: 'NORMAL',
-                    duration: parseFloat(normalDuration),
-                    requests: State.successfulSearchCount,
-                    endTime: new Date().toISOString()
-                };
-
-                // 保存到历史记录
-                State.statusHistory.push(logEntry);
-                await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-
-                // 更新日志记录状态
-                this._lastLogTime = now;
-                this._lastLogType = 'NORMAL';
-
-                // 如果有累积的重复记录，一并提示
-                if (this._duplicateLogCount > 0) {
-                    Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests. (已合并 ${this._duplicateLogCount} 条重复记录)`);
-                    this._duplicateLogCount = 0; // 重置计数
-                } else {
-                    Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
-                }
+                Utils.logger('debug', `检测到重复的正常状态记录，来源: ${source}`);
             }
 
             // 切换到限速状态
@@ -1319,39 +1347,21 @@ const State = {
             // 添加空值检查，防止rateLimitStartTime为null
             const rateLimitDuration = State.rateLimitStartTime ? ((Date.now() - State.rateLimitStartTime) / 1000).toFixed(2) : '0.00';
 
-            // 检查是否是短时间内重复的日志记录
-            const now = Date.now();
-            const isSameType = this._lastLogType === 'RATE_LIMITED';
-            const isWithinTimeThreshold = (now - this._lastLogTime) < 2000; // 2秒内的重复记录视为重复
+            // 创建限速期的记录
+            const logEntry = {
+                type: 'RATE_LIMITED',
+                duration: parseFloat(rateLimitDuration),
+                endTime: new Date().toISOString(),
+                source: source
+            };
 
-            if (isSameType && isWithinTimeThreshold) {
-                // 增加重复计数，但不记录日志
-                this._duplicateLogCount++;
-                Utils.logger('debug', `检测到重复的限速状态记录 (${this._duplicateLogCount}次)，跳过日志记录`);
+            // 使用新的去重方法添加到历史记录
+            const wasAdded = await this.addToHistory(logEntry);
+
+            if (wasAdded) {
+                Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s.`);
             } else {
-                // 不是重复记录，正常记录日志
-                const logEntry = {
-                    type: 'RATE_LIMITED',
-                    duration: parseFloat(rateLimitDuration),
-                    endTime: new Date().toISOString(),
-                    source: source
-                };
-
-                // 保存到历史记录
-                State.statusHistory.push(logEntry);
-                await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
-
-                // 更新日志记录状态
-                this._lastLogTime = now;
-                this._lastLogType = 'RATE_LIMITED';
-
-                // 如果有累积的重复记录，一并提示
-                if (this._duplicateLogCount > 0) {
-                    Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s. (已合并 ${this._duplicateLogCount} 条重复记录)`);
-                    this._duplicateLogCount = 0; // 重置计数
-                } else {
-                    Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s.`);
-                }
+                Utils.logger('debug', `检测到重复的限速状态记录，来源: ${source}`);
             }
 
             // 恢复到正常状态
@@ -4578,8 +4588,7 @@ const State = {
                         endTime: new Date().toISOString(),
                         message: '历史记录已清空，新会话开始'
                     };
-                    State.statusHistory.push(currentSessionEntry);
-                    await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+                    await RateLimitManager.addToHistory(currentSessionEntry);
 
                     UI.updateDebugTab();
                     Utils.logger('info', '状态历史记录已清空。');
