@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.3.0-20250815185341
+// @version      3.3.0-20250815185846
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -189,6 +189,14 @@
                 rate_limit_already_active: 'Already in rate limit state, source: {0}, ignoring new rate limit trigger: {1}',
                 xhr_detected_429: '[XHR] Detected 429 status code: {0}',
 
+                // 状态历史消息
+                history_cleared_new_session: 'History cleared, new session started',
+                status_history_cleared: 'Status history cleared.',
+                duplicate_normal_status_detected: 'Detected duplicate normal status record, source: {0}',
+                execution_status_changed: 'Detected execution status change: {0}',
+                status_executing: 'Executing',
+                status_stopped: 'Stopped',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -350,6 +358,14 @@
                 // 限速状态相关
                 rate_limit_already_active: '已处于限速状态，来源: {0}，忽略新的限速触发: {1}',
                 xhr_detected_429: '[XHR] 检测到429状态码: {0}',
+
+                // 状态历史消息
+                history_cleared_new_session: '历史记录已清空，新会话开始',
+                status_history_cleared: '状态历史记录已清空。',
+                duplicate_normal_status_detected: '检测到重复的正常状态记录，来源: {0}',
+                execution_status_changed: '检测到执行状态变化：{0}',
+                status_executing: '执行中',
+                status_stopped: '已停止',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -1378,7 +1394,7 @@ const State = {
             if (wasAdded) {
                 Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
             } else {
-                Utils.logger('debug', `检测到重复的正常状态记录，来源: ${source}`);
+                Utils.logger('debug', Utils.getText('duplicate_normal_status_detected', source));
             }
 
             // 切换到限速状态
@@ -4722,12 +4738,12 @@ const State = {
                         type: 'STARTUP',
                         duration: 0,
                         endTime: new Date().toISOString(),
-                        message: '历史记录已清空，新会话开始'
+                        message: Utils.getText('history_cleared_new_session')
                     };
                     await RateLimitManager.addToHistory(currentSessionEntry);
 
                     UI.updateDebugTab();
-                    Utils.logger('info', '状态历史记录已清空。');
+                    Utils.logger('info', Utils.getText('status_history_cleared'));
                 }
             };
 
@@ -5244,7 +5260,7 @@ const State = {
         State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
             // 如果当前不是工作标签页，且存储状态与当前状态不一致，则更新当前状态
             if (!State.isWorkerTab && State.isExecuting !== newValue) {
-                Utils.logger('info', `检测到执行状态变化：${newValue ? '执行中' : '已停止'}`);
+                Utils.logger('info', Utils.getText('execution_status_changed', newValue ? Utils.getText('status_executing') : Utils.getText('status_stopped')));
                 State.isExecuting = newValue;
             UI.update();
             }
