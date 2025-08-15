@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.3.0-20250815185846
+// @version      3.3.0-20250815191604
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -197,6 +197,19 @@
                 status_executing: 'Executing',
                 status_stopped: 'Stopped',
 
+                // 状态历史UI文本
+                status_duration_label: 'Duration: ',
+                status_requests_label: 'Requests: ',
+                status_ended_at_label: 'Ended at: ',
+                status_started_at_label: 'Started at: ',
+                status_ongoing_label: 'Ongoing: ',
+                status_unknown_time: 'Unknown time',
+                status_unknown_duration: 'Unknown',
+
+                // 启动时状态检测
+                startup_rate_limited: 'Script started in rate limited state. Rate limit has lasted at least {0}s, source: {1}',
+                status_unknown_source: 'Unknown',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -366,6 +379,19 @@
                 execution_status_changed: '检测到执行状态变化：{0}',
                 status_executing: '执行中',
                 status_stopped: '已停止',
+
+                // 状态历史UI文本
+                status_duration_label: '持续时间: ',
+                status_requests_label: '期间请求数: ',
+                status_ended_at_label: '结束于: ',
+                status_started_at_label: '开始于: ',
+                status_ongoing_label: '已持续: ',
+                status_unknown_time: '未知时间',
+                status_unknown_duration: '未知',
+
+                // 启动时状态检测
+                startup_rate_limited: '脚本启动时处于限速状态。限速已持续至少 {0}s，来源: {1}',
+                status_unknown_source: '未知',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -4897,14 +4923,14 @@ const State = {
                 } else {
                     // 添加空值检查，防止toFixed错误
                     const duration = entry.duration !== undefined && entry.duration !== null ?
-                        entry.duration.toFixed(2) : '未知';
-                    detailsHtml = `<div>持续时间: <strong>${duration}s</strong></div>`;
+                        entry.duration.toFixed(2) : Utils.getText('status_unknown_duration');
+                    detailsHtml = `<div>${Utils.getText('status_duration_label')}<strong>${duration}s</strong></div>`;
                     if (entry.requests !== undefined) {
-                        detailsHtml += `<div>期间请求数: <strong>${entry.requests}</strong></div>`;
+                        detailsHtml += `<div>${Utils.getText('status_requests_label')}<strong>${entry.requests}</strong></div>`;
                     }
                     // 添加空值检查，防止日期错误
-                    const endTime = entry.endTime ? new Date(entry.endTime).toLocaleString() : '未知时间';
-                    detailsHtml += `<div>结束于: ${endTime}</div>`;
+                    const endTime = entry.endTime ? new Date(entry.endTime).toLocaleString() : Utils.getText('status_unknown_time');
+                    detailsHtml += `<div>${Utils.getText('status_ended_at_label')}${endTime}</div>`;
                 }
 
                 details.innerHTML = detailsHtml;
@@ -4933,15 +4959,15 @@ const State = {
 
                     const startTime = State.appStatus === 'NORMAL' ? State.normalStartTime : State.rateLimitStartTime;
                     // 添加空值检查，防止startTime为null或undefined
-                    const duration = startTime ? ((Date.now() - startTime) / 1000).toFixed(2) : '未知';
+                    const duration = startTime ? ((Date.now() - startTime) / 1000).toFixed(2) : Utils.getText('status_unknown_duration');
 
-                    let detailsHtml = `<div>已持续: <strong>${duration}s</strong></div>`;
+                    let detailsHtml = `<div>${Utils.getText('status_ongoing_label')}<strong>${duration}s</strong></div>`;
                     if (State.appStatus === 'NORMAL') {
-                         detailsHtml += `<div>期间请求数: <strong>${State.successfulSearchCount}</strong></div>`;
+                         detailsHtml += `<div>${Utils.getText('status_requests_label')}<strong>${State.successfulSearchCount}</strong></div>`;
                     }
                      // 添加空值检查，防止startTime为null
-                     const startTimeDisplay = startTime ? new Date(startTime).toLocaleString() : '未知时间';
-                     detailsHtml += `<div>开始于: ${startTimeDisplay}</div>`;
+                     const startTimeDisplay = startTime ? new Date(startTime).toLocaleString() : Utils.getText('status_unknown_time');
+                     detailsHtml += `<div>${Utils.getText('status_started_at_label')}${startTimeDisplay}</div>`;
                     details.innerHTML = detailsHtml;
 
                     item.append(header, details);
@@ -5119,7 +5145,7 @@ const State = {
             // 添加空值检查，防止persistedStatus.startTime为null
             const previousDuration = persistedStatus && persistedStatus.startTime ?
                 ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
-            Utils.logger('warn', `脚本启动时处于限速状态。限速已持续至少 ${previousDuration}s，来源: ${persistedStatus.source || '未知'}`);
+            Utils.logger('warn', Utils.getText('startup_rate_limited', previousDuration, persistedStatus.source || Utils.getText('status_unknown_source')));
         }
 
         // 初始化请求拦截器
