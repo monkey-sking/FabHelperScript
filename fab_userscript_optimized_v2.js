@@ -960,7 +960,7 @@ const State = {
 
                 // 如果有缺失的UID，记录但不主动请求
                 if (missingUids.length > 0) {
-                    Utils.logger('info', `有 ${missingUids.length} 个商品状态未知，等待网页原生请求更新`);
+                    Utils.logger('debug', `有 ${missingUids.length} 个商品状态未知，等待网页原生请求更新`);
                     // 将这些UID添加到等待列表，等待网页原生请求更新
                     DataCache.addToWaitingList(missingUids);
                 }
@@ -1415,7 +1415,7 @@ const State = {
                 }
 
                 // 使用Performance API检查最近的网络请求，而不是主动发送API请求
-                Utils.logger('info', '使用Performance API检查最近的网络请求，不再主动发送API请求');
+                Utils.logger('debug', '使用Performance API检查最近的网络请求，不再主动发送API请求');
 
                 if (window.performance && window.performance.getEntriesByType) {
                     const recentRequests = window.performance.getEntriesByType('resource')
@@ -2227,7 +2227,7 @@ const State = {
 
             // Case 2: Starting a new execution from an idle state.
             if (State.db.todo.length === 0) {
-                Utils.logger('info', Utils.getText('log_exec_no_tasks'));
+                Utils.logger('debug', Utils.getText('log_exec_no_tasks'));
                 return;
             }
             Utils.logger('info', `队列中有 ${State.db.todo.length} 个任务，即将开始执行...`);
@@ -2716,7 +2716,7 @@ const State = {
                     await Database.saveDone();
                 }
 
-                Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${updatedCount} visible card states.`);
+                Utils.logger('debug', `[Fab DOM Refresh] Complete. Updated ${updatedCount} visible card states.`);
 
                 TaskRunner.runHideOrShow();
 
@@ -3653,7 +3653,7 @@ const State = {
 
                 // 如果没有需要检查的项目，直接返回
                 if (allItems.length === 0) {
-                    Utils.logger('info', '[Fab DOM Refresh] 没有需要检查的卡片');
+                    Utils.logger('debug', '[Fab DOM Refresh] 没有需要检查的卡片');
                     return;
                 }
 
@@ -3782,7 +3782,7 @@ const State = {
                             if (totalWaitTime > maxWaitTime) {
                                 Utils.logger('warn', `[自动添加] API等待超时，已等待 ${totalWaitTime}ms，将继续处理卡片。`);
                             } else {
-                                Utils.logger('info', `[自动添加] API活动已停止 ${timeSinceLastActivity}ms，继续处理卡片。`);
+                                Utils.logger('debug', `[自动添加] API活动已停止 ${timeSinceLastActivity}ms，继续处理卡片。`);
                             }
 
                             resolve();
@@ -3885,7 +3885,7 @@ const State = {
 
                 // 添加详细的过滤信息日志
                 if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-                    Utils.logger('info', `[自动添加] 过滤掉 ${skippedAlreadyOwned} 个已入库商品和 ${skippedInTodo} 个已在待办列表中的商品。`);
+                    Utils.logger('debug', `[自动添加] 过滤掉 ${skippedAlreadyOwned} 个已入库商品和 ${skippedInTodo} 个已在待办列表中的商品。`);
                 }
 
                 // 如果已经在执行，只更新总数
@@ -5132,7 +5132,7 @@ const State = {
                     if (State.hasRunDomPart) {
                         clearInterval(launcherInterval);
                         window._fabHelperLauncherActive = false;
-                        Utils.logger('info', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
+                        Utils.logger('debug', '[Launcher] Main logic has been launched or skipped. Launcher is now idle.');
                     }
                 }
             }, 500); // 增加间隔到500ms，减少频繁检查
@@ -5366,7 +5366,7 @@ const State = {
             childList: true,
             subtree: true
         });
-        Utils.logger('info', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
+        Utils.logger('debug', `✅ Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
 
         // 初始化时运行一次隐藏逻辑，确保页面加载时已有的内容能被正确处理
             TaskRunner.runHideOrShow();
@@ -5524,7 +5524,7 @@ const State = {
                 }
 
                 // 不再发送HEAD请求，只使用Performance API
-                Utils.logger('info', `[HTTP状态检测] 使用Performance API检查，不再发送HEAD请求`);
+                Utils.logger('debug', `[HTTP状态检测] 使用Performance API检查，不再发送HEAD请求`);
 
                 // 检查页面内容是否包含限速信息
                 const pageText = document.body.innerText || '';
