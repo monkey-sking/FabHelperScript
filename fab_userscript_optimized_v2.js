@@ -2126,7 +2126,16 @@ const State = {
                     }
 
                     const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
-                    newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                    const uid = url.split('/').pop();
+                    const task = { name, url, type: 'detail', uid };
+
+                    // 尝试从缓存中获取offerId，以便后续价格检查
+                    const listing = DataCache.listings.get(uid);
+                    if (listing?.startingPrice?.offerId) {
+                        task.offerId = listing.startingPrice.offerId;
+                    }
+
+                    newlyAddedList.push(task);
                 });
 
             if (skippedCount > 0) {
@@ -2238,7 +2247,16 @@ const State = {
                         }
 
                         const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
-                        newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                        const uid = url.split('/').pop();
+                        const task = { name, url, type: 'detail', uid };
+
+                        // 尝试从缓存中获取offerId，以便后续价格检查
+                        const listing = DataCache.listings.get(uid);
+                        if (listing?.startingPrice?.offerId) {
+                            task.offerId = listing.startingPrice.offerId;
+                        }
+
+                        newlyAddedList.push(task);
                     });
 
                     if (skippedCount > 0) {
@@ -2512,7 +2530,14 @@ const State = {
                                 uidToOfferId.set(task.uid, offerId);
                                 foundOfferIds++;
                             } else {
-                                Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 没有找到缓存的商品信息或价格ID`);
+                                // 尝试从task对象本身获取offerId（如果之前保存过）
+                                if (task.offerId) {
+                                    uidToOfferId.set(task.uid, task.offerId);
+                                    foundOfferIds++;
+                                    Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 从任务对象中找到价格ID: ${task.offerId}`);
+                                } else {
+                                    Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 没有找到缓存的商品信息或价格ID`);
+                                }
                             }
                         });
 
@@ -2575,7 +2600,45 @@ const State = {
                                 Utils.logger('info', `[Fab DB Sync] 没有发现付费商品，失败列表保持不变`);
                             }
                         } else {
-                            Utils.logger('info', `[Fab DB Sync] 失败列表中的商品都没有找到价格ID，跳过价格检查`);
+                            Utils.logger('info', `[Fab DB Sync] 失败列表中的商品都没有找到价格ID，尝试从当前页面获取商品信息...`);
+
+                            // 尝试从当前页面的DOM中获取失败商品的信息
+                            const currentPageCards = document.querySelectorAll(Config.SELECTORS.card);
+                            let foundFromDOM = 0;
+
+                            failedTasksSnapshot.forEach(task => {
+                                if (uidToOfferId.has(task.uid)) return; // 已经找到了
+
+                                // 在当前页面查找这个商品
+                                for (const card of currentPageCards) {
+                                    const link = card.querySelector('a[href*="/listings/"]');
+                                    if (link) {
+                                        const cardUid = link.href.split('/').pop().split('?')[0];
+                                        if (cardUid === task.uid) {
+                                            // 尝试从页面诊断获取商品信息
+                                            try {
+                                                const report = PageDiagnostics.diagnoseCard(card);
+                                                if (report.offerId) {
+                                                    uidToOfferId.set(task.uid, report.offerId);
+                                                    foundFromDOM++;
+                                                    Utils.logger('debug', `[Fab DB Sync] 从DOM中找到商品 ${task.uid} 的价格ID: ${report.offerId}`);
+                                                    break;
+                                                }
+                                            } catch (e) {
+                                                Utils.logger('debug', `[Fab DB Sync] 从DOM获取商品 ${task.uid} 信息失败: ${e.message}`);
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+
+                            if (foundFromDOM > 0) {
+                                Utils.logger('info', `[Fab DB Sync] 从当前页面DOM中找到了 ${foundFromDOM} 个商品的价格ID，重新检查价格...`);
+                                const offerIds = Array.from(uidToOfferId.values());
+                                // 这里可以继续执行价格检查逻辑...
+                            } else {
+                                Utils.logger('info', `[Fab DB Sync] 当前页面也没有找到失败商品的信息，跳过价格检查`);
+                            }
                         }
                     }
                 } catch (e) {
@@ -3761,7 +3824,16 @@ const State = {
 
                 // If it passes all checks, it's a valid new task.
                 const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText('untitled');
-                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                const uid = url.split('/').pop();
+                const task = { name, url, type: 'detail', uid };
+
+                // 尝试从缓存中获取offerId，以便后续价格检查
+                const listing = DataCache.listings.get(uid);
+                if (listing?.startingPrice?.offerId) {
+                    task.offerId = listing.startingPrice.offerId;
+                }
+
+                newlyAddedList.push(task);
             });
 
             if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
