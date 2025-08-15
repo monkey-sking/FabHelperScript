@@ -170,6 +170,14 @@
                 rate_limit_source_page_content: 'Page Content Detection',
                 rate_limit_source_global_call: 'Global Call',
 
+                // 日志标签
+                log_tag_auto_add: 'Auto Add',
+
+                // 自动添加相关消息
+                auto_add_api_timeout: 'API wait timeout, waited {0}ms, will continue processing cards.',
+                auto_add_api_error: 'Error while waiting for API: {0}',
+                auto_add_new_tasks: 'Added {0} new tasks to queue.',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -312,6 +320,14 @@
                 // 限速检测来源
                 rate_limit_source_page_content: '页面内容检测',
                 rate_limit_source_global_call: '全局调用',
+
+                // 日志标签
+                log_tag_auto_add: '自动添加',
+
+                // 自动添加相关消息
+                auto_add_api_timeout: 'API等待超时，已等待 {0}ms，将继续处理卡片。',
+                auto_add_api_error: '等待API时出错: {0}',
+                auto_add_new_tasks: '新增 {0} 个任务到队列。',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -3826,7 +3842,7 @@ const State = {
             // 如果已经有等待过程在进行，将当前卡片加入队列
             if (window._apiWaitStatus.isWaiting) {
                 window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
-                Utils.logger('info', `[自动添加] ${Utils.getText('debug_api_wait_in_progress', cards.length)}`);
+                Utils.logger('info', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('debug_api_wait_in_progress', cards.length)}`);
                 return;
             }
 
@@ -3836,7 +3852,7 @@ const State = {
             window._apiWaitStatus.lastApiActivity = Date.now();
 
             if (State.debugMode) {
-                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_wait_api_response', cards.length)}`);
+                Utils.logger('debug', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('debug_wait_api_response', cards.length)}`);
             }
 
             // 创建一个函数来检测API活动
@@ -3877,9 +3893,9 @@ const State = {
                             window.fetch = originalFetch;
 
                             if (totalWaitTime > maxWaitTime) {
-                                Utils.logger('warn', `[自动添加] API等待超时，已等待 ${totalWaitTime}ms，将继续处理卡片。`);
+                                Utils.logger('warn', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('auto_add_api_timeout', totalWaitTime)}`);
                             } else {
-                                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_api_stopped', timeSinceLastActivity)}`);
+                                Utils.logger('debug', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('debug_api_stopped', timeSinceLastActivity)}`);
                             }
 
                             resolve();
@@ -3892,7 +3908,7 @@ const State = {
             try {
                 await waitForApiCompletion();
             } catch (error) {
-                Utils.logger('error', `[自动添加] 等待API时出错: ${error.message}`);
+                Utils.logger('error', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('auto_add_api_error', error.message)}`);
             }
 
             // 处理卡片
@@ -3901,7 +3917,7 @@ const State = {
             window._apiWaitStatus.isWaiting = false;
 
             if (State.debugMode) {
-                Utils.logger('debug', `[自动添加] ${Utils.getText('debug_api_wait_complete', cardsToProcess.length)}`);
+                Utils.logger('debug', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('debug_api_wait_complete', cardsToProcess.length)}`);
             }
 
             // 现在处理卡片
@@ -3974,7 +3990,7 @@ const State = {
             if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
                 if (newlyAddedList.length > 0) {
                     State.db.todo.push(...newlyAddedList);
-                    Utils.logger('info', `[自动添加] 新增 ${newlyAddedList.length} 个任务到队列。`);
+                    Utils.logger('info', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('auto_add_new_tasks', newlyAddedList.length)}`);
 
                     // 保存待办列表到存储
                     Database.saveTodo();
@@ -3982,7 +3998,7 @@ const State = {
 
                 // 添加详细的过滤信息日志
                 if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-                    Utils.logger('debug', `[自动添加] ${Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo)}`);
+                    Utils.logger('debug', `[${Utils.getText('log_tag_auto_add')}] ${Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo)}`);
                 }
 
                 // 如果已经在执行，只更新总数
