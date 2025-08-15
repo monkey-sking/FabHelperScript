@@ -25,31 +25,31 @@
 (function () {
     'use strict';
 
-    // --- 模块一: 配置与常量 (Config & Constants) ---
+    // --- 模块一: 配置与常量 ---
     const Config = {
         SCRIPT_NAME: 'Fab Helper (优化版)',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
         MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
-        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量 - 提高到7个，增加并行处理能力
-        WORKER_TIMEOUT: 30000, // 工作标签页超时时间，30秒
+        MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
+        WORKER_TIMEOUT: 30000, // 工作标签页超时时间
         UI_CONTAINER_ID: 'fab-helper-container',
         UI_LOG_ID: 'fab-helper-log',
         DB_KEYS: {
             DONE: 'fab_done_v8',
             FAILED: 'fab_failed_v8',
-            TODO: 'fab_todo_v1', // 新增：用于永久存储待办列表
+            TODO: 'fab_todo_v1', // 用于永久存储待办列表
             HIDE: 'fab_hide_v8',
-            AUTO_ADD: 'fab_autoAdd_v8', // Key for the new setting
+            AUTO_ADD: 'fab_autoAdd_v8', // 自动添加设置键
             REMEMBER_POS: 'fab_rememberPos_v8',
             LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
             WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
             APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
-            STATUS_HISTORY: 'fab_status_history_v1', // For persisting the history log
-            AUTO_RESUME: 'fab_auto_resume_v1', // For the new auto-recovery feature
-            IS_EXECUTING: 'fab_is_executing_v1', // For saving the "一键开刷" state
-            AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 新增：无商品可见时自动刷新
-            // All other keys are either session-based or for main-tab persistence.
+            STATUS_HISTORY: 'fab_status_history_v1', // 状态历史记录持久化
+            AUTO_RESUME: 'fab_auto_resume_v1', // 自动恢复功能设置
+            IS_EXECUTING: 'fab_is_executing_v1', // 执行状态保存
+            AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 无商品可见时自动刷新
+            // 其他键值用于会话或主标签页持久化
         },
         SELECTORS: {
             card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
@@ -268,7 +268,7 @@
         INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
     };
 
-    // --- 模块二: 全局状态管理 (Global State) ---
+    // --- 模块二: 全局状态管理 ---
 const State = {
     db: {
         todo: [],   // 待办任务列表
@@ -362,7 +362,7 @@ const State = {
         currentSortOption: 'title_desc', // 默认排序方式
     };
 
-    // --- 模块三: 页面状态诊断工具 (Page Diagnostics) ---
+    // --- 模块三: 页面状态诊断工具 ---
     const PageDiagnostics = {
         // 诊断商品详情页面状态
         diagnoseDetailPage: () => {
@@ -483,7 +483,7 @@ const State = {
         }
     };
 
-    // --- 模块四: 日志与工具函数 (Logger & Utilities) ---
+    // --- 模块四: 日志与工具函数 ---
     const Utils = {
         logger: (type, ...args) => {
             // 支持debug级别日志
@@ -553,11 +553,11 @@ const State = {
         detectLanguage: () => {
             const oldLang = State.lang;
             State.lang = window.location.href.includes('/zh-cn/') ? 'zh' : 'en';
-            Utils.logger('info', `语言检测: URL=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
+            Utils.logger('info', `语言检测: 地址=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
 
             // 如果语言发生了变化且UI已经创建，更新UI
             if (oldLang !== State.lang && State.UI.container) {
-                Utils.logger('info', `语言已切换到${State.lang}，正在更新UI...`);
+                Utils.logger('info', `语言已切换到${State.lang}，正在更新界面...`);
                 UI.update();
             }
         },
@@ -656,16 +656,15 @@ const State = {
             });
             State.valueChangeListeners = [];
         },
-        // 在Utils对象中添加一个新函数来解码cursor
+        // 添加游标解码函数
         decodeCursor: (cursor) => {
             if (!cursor) return '无保存位置';
             try {
                 // Base64解码
                 const decoded = atob(cursor);
 
-                // cursor通常格式为: o=1&p=Item+Name
-                // 或者: p=Item+Name
-                // 我们主要提取p参数的值，它通常包含项目名称
+                // 游标通常格式为: o=1&p=Item+Name 或 p=Item+Name
+                // 主要提取p参数的值，通常包含项目名称
                 let match;
                 if (decoded.includes('&p=')) {
                     match = decoded.match(/&p=([^&]+)/);
@@ -681,7 +680,7 @@ const State = {
 
                 return `位置: (已保存，但无法读取名称)`;
             } catch (e) {
-                Utils.logger('error', `Cursor解码失败: ${e.message}`);
+                Utils.logger('error', `游标解码失败: ${e.message}`);
                 return '位置: (格式无法解析)';
             }
         },
@@ -877,7 +876,7 @@ const State = {
         }
     };
 
-    // --- 模块四: 异步网络请求 (Promisified GM_xmlhttpRequest) ---
+    // --- 模块四: 异步网络请求 ---
     const API = {
         gmFetch: (options) => {
             return new Promise((resolve, reject) => {
@@ -892,12 +891,12 @@ const State = {
             });
         },
 
-        // 新增API响应数据提取函数
+        // 接口响应数据提取函数
         extractStateData: (rawData, source = '') => {
             // 记录原始数据格式
             const dataType = Array.isArray(rawData) ? 'Array' : typeof rawData;
             if (State.debugMode) {
-                Utils.logger('debug', `[${source}] API返回数据类型: ${dataType}`);
+                Utils.logger('debug', `[${source}] 接口返回数据类型: ${dataType}`);
             }
 
             // 如果是数组，直接返回
@@ -910,7 +909,7 @@ const State = {
                 // 记录对象的顶级键
                 const keys = Object.keys(rawData);
                 if (State.debugMode) {
-                    Utils.logger('debug', `[${source}] API返回对象键: ${keys.join(', ')}`);
+                    Utils.logger('debug', `[${source}] 接口返回对象键: ${keys.join(', ')}`);
                 }
 
                 // 尝试常见的数组字段名
@@ -1033,10 +1032,10 @@ const State = {
     };
 
 
-    // --- 模块五: 数据库交互 (Database Interaction) ---
+    // --- 模块五: 数据库交互 ---
     const Database = {
         load: async () => {
-            // 从存储中加载待办列表，不再是session-only
+            // 从存储中加载待办列表
             State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
             State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
             State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
