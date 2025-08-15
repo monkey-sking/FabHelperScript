@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper (优化版)
 // @name:en      Fab Helper (Optimized)
 // @namespace    https://www.fab.com/
-// @version      3.3.0-20250815160009
+// @version      3.3.0-20250815185341
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -185,6 +185,10 @@
                 page_status_hidden_no_visible: '👁️ Detected {0} hidden items on page, but no visible items',
                 page_status_suggest_refresh: '🔄 Detected {0} hidden items on page, but no visible items, suggest refreshing page',
 
+                // 限速状态相关
+                rate_limit_already_active: 'Already in rate limit state, source: {0}, ignoring new rate limit trigger: {1}',
+                xhr_detected_429: '[XHR] Detected 429 status code: {0}',
+
                 // 设置项
                 setting_auto_refresh: 'Auto refresh when no items visible',
                 setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
@@ -342,6 +346,10 @@
                 // 页面状态检测
                 page_status_hidden_no_visible: '👁️ 检测到页面上有 {0} 个隐藏商品，但没有可见商品',
                 page_status_suggest_refresh: '🔄 检测到页面上有 {0} 个隐藏商品，但没有可见商品，建议刷新页面',
+
+                // 限速状态相关
+                rate_limit_already_active: '已处于限速状态，来源: {0}，忽略新的限速触发: {1}',
+                xhr_detected_429: '[XHR] 检测到429状态码: {0}',
 
                 // 设置项
                 setting_auto_refresh: '无商品可见时自动刷新',
@@ -1344,7 +1352,7 @@ const State = {
         enterRateLimitedState: async function(source = '未知来源') {
             // 如果已经处于限速状态，不需要重复处理
             if (State.appStatus === 'RATE_LIMITED') {
-                Utils.logger('info', `已处于限速状态，来源: ${State.lastLimitSource}，忽略新的限速触发: ${source}`);
+                Utils.logger('info', Utils.getText('rate_limit_already_active', State.lastLimitSource, source));
                 return false;
             }
 
@@ -1885,7 +1893,7 @@ const State = {
 
                     // 对所有请求检查429错误
                     if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
-                        Utils.logger('warn', `[XHR] 检测到429状态码: ${request.responseURL || request._url}`);
+                        Utils.logger('warn', Utils.getText('xhr_detected_429', request.responseURL || request._url));
                         // 调用handleRateLimit函数处理限速情况
                         RateLimitManager.enterRateLimitedState(request.responseURL || request._url || 'XHR响应429');
                         return;
