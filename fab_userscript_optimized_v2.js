@@ -920,6 +920,27 @@ const State = {
                 return '位置: (格式无法解析)';
             }
         },
+        // 账号验证函数
+        checkAuthentication: () => {
+            const csrfToken = Utils.getCookie('fab_csrftoken');
+            if (!csrfToken) {
+                Utils.logger('error', '账号失效：未找到 CSRF token，请重新登录');
+                // 停止执行状态
+                if (State.isExecuting) {
+                    State.isExecuting = false;
+                    GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+                }
+                // 更新UI显示
+                if (State.UI.startStopButton) {
+                    State.UI.startStopButton.textContent = Utils.getText('start_execution');
+                    State.UI.startStopButton.disabled = true;
+                }
+                // 显示警告信息
+                alert('账号失效：请重新登录后再使用脚本');
+                return false;
+            }
+            return true;
+        },
     };
 
     // --- DOM Creation Helpers (moved outside for broader scope) ---
@@ -1231,6 +1252,7 @@ const State = {
 
                 const csrfToken = Utils.getCookie('fab_csrftoken');
                 if (!csrfToken) {
+                    Utils.checkAuthentication();
                     throw new Error("CSRF token not found");
                 }
 
@@ -2340,6 +2362,11 @@ const State = {
         // --- Toggles ---
         // This is the new main execution function, triggered by the "一键开刷" button.
         toggleExecution: () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
             if (State.isExecuting) {
                 // If it's running, stop it.
                 State.isExecuting = false;
@@ -2481,6 +2508,11 @@ const State = {
 
         // 执行按钮的点击处理函数
         toggleExecution: () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
             if (State.isExecuting) {
                 TaskRunner.stop();
             } else {
@@ -2649,7 +2681,10 @@ const State = {
                 Utils.logger('info', `[Auto-Recovery] Probing connection...`);
                 try {
                     const csrfToken = Utils.getCookie('fab_csrftoken');
-                    if (!csrfToken) throw new Error("CSRF token not found for probe.");
+                    if (!csrfToken) {
+                        Utils.checkAuthentication();
+                        throw new Error("CSRF token not found for probe.");
+                    }
                     // Use a lightweight, known-good endpoint for the probe
                     const probeResponse = await API.gmFetch({
                         method: 'GET',
@@ -2699,7 +2734,10 @@ const State = {
 
             try {
                 const csrfToken = Utils.getCookie('fab_csrftoken');
-                if (!csrfToken) throw new Error('CSRF token not found. Are you logged in?');
+                if (!csrfToken) {
+                    Utils.checkAuthentication();
+                    throw new Error('CSRF token not found. Are you logged in?');
+                }
 
                 // Step 1: Gather all unique UIDs to check
                 // 只收集可见的未入库商品
@@ -3087,6 +3125,11 @@ const State = {
         },
 
         executeBatch: async () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
             // 只有主页面才需要检查是否是活跃实例
             if (!State.isWorkerTab && !InstanceManager.isActive) {
                 Utils.logger('warn', '当前实例不是活跃实例，不执行任务。');
@@ -3229,6 +3272,11 @@ const State = {
         },
 
         processDetailPage: async () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
             const urlParams = new URLSearchParams(window.location.search);
             const workerId = urlParams.get('workerId');
 
@@ -3315,7 +3363,10 @@ const State = {
                     // API-First Ownership Check...
                     try {
                         const csrfToken = Utils.getCookie('fab_csrftoken');
-                        if (!csrfToken) throw new Error("CSRF token not found for API check.");
+                        if (!csrfToken) {
+                            Utils.checkAuthentication();
+                            throw new Error("CSRF token not found for API check.");
+                        }
                         const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
                         statesUrl.searchParams.append('listing_ids', currentTask.uid);
                         const response = await API.gmFetch({
@@ -5166,6 +5217,12 @@ const State = {
 
         Utils.logger('info', '脚本开始运行...');
         Utils.detectLanguage();
+
+        // 检查账号状态
+        if (!Utils.checkAuthentication()) {
+            Utils.logger('error', '账号未登录，脚本停止执行');
+            return;
+        }
 
         // 检查是否是工作标签页
         const urlParams = new URLSearchParams(window.location.search);
