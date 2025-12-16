@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         Fab Helper (优化版)
-// @name:zh-CN   Fab Helper (优化版)
-// @name:en      Fab Helper (Optimized)
+// @name         Fab Helper
+// @name:zh-CN   Fab Helper
+// @name:en      Fab Helper
 // @namespace    https://www.fab.com/
 // @version      3.4.0-20251213122352
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
@@ -1759,8 +1759,8 @@
 
                 // 显示明显提示
                 Utils.logger('warn', '⚠️ 处于限速状态，但不满足自动刷新条件，请在需要时手动刷新页面。');
-            } else {
-                // 无任务情况下，开始随机刷新
+            } else if (State.autoRefreshEmptyPage) {
+                // 只有在开启了自动刷新功能时才触发刷新
                 // 缩短延迟时间为5-7秒，使恢复更快
                 const randomDelay = 5000 + Math.random() * 2000;
                 if (State.autoResumeAfter429) {
@@ -1771,6 +1771,9 @@
                     Utils.logger('info', Utils.getText('log_auto_resume_detect', randomDelay ? (randomDelay / 1000).toFixed(1) : '未知'));
                 }
                 countdownRefresh(randomDelay, '429自动恢复');
+            } else {
+                // 自动刷新功能已关闭
+                Utils.logger('info', '⚠️ 处于限速状态，自动刷新功能已关闭，请在需要时手动刷新页面。');
             }
 
             return true;
