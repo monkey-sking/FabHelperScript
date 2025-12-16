@@ -4953,14 +4953,14 @@
             State.UI.debugContent = debugContent;
 
             const debugHeader = document.createElement('div');
-            debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+            debugHeader.style.cssText = 'display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;';
 
             const debugTitle = document.createElement('h4');
             debugTitle.textContent = Utils.getText('status_history');
-            debugTitle.style.margin = '0';
+            debugTitle.style.cssText = 'margin: 0; font-size: 14px; white-space: nowrap;';
 
             const debugControls = document.createElement('div');
-            debugControls.style.cssText = 'display: flex; gap: 8px;';
+            debugControls.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap;';
 
             const copyHistoryBtn = document.createElement('button');
             copyHistoryBtn.textContent = Utils.getText('copy_btn');
@@ -5020,8 +5020,7 @@
             // 添加页面诊断按钮
             const diagnosisBtn = document.createElement('button');
             diagnosisBtn.textContent = Utils.getText('page_diagnosis');
-            diagnosisBtn.className = 'fab-helper-btn';
-            diagnosisBtn.style.cssText = 'margin-left: 10px; background: #2196F3; color: white;';
+            diagnosisBtn.style.cssText = 'background: #2196F3; border: 1px solid #1976D2; color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;';
             diagnosisBtn.onclick = () => {
                 try {
                     const report = PageDiagnostics.diagnoseDetailPage();
