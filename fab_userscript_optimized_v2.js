@@ -32,7 +32,6 @@
         SCRIPT_NAME: 'Fab Helper (优化版)',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
         MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
         WORKER_TIMEOUT: 30000, // 工作标签页超时时间
         UI_CONTAINER_ID: 'fab-helper-container',
@@ -110,9 +109,7 @@
                 log_verify_success: 'Verified and added to library!',
                 log_verify_fail: "Couldn't add. Will retry later.",
                 log_429_error: 'Request limit hit! Taking a 15s break...',
-                log_recon_reset: 'Recon progress has been reset. Next scan will start from the beginning.',
-                log_recon_active: 'Cannot reset progress while recon is active.',
-                log_recon_end: 'Recon has completed.',
+
                 log_no_failed_tasks: 'No failed tasks to retry.',
                 log_requeuing_tasks: 'Re-queuing {0} failed tasks...',
                 log_detail_page: 'This is a detail or worker page. Halting main script execution.',
@@ -428,9 +425,7 @@
                 log_verify_success: '搞定！已成功入库。',
                 log_verify_fail: '哎呀，这个没加上。稍后会自动重试！',
                 log_429_error: '请求太快被服务器限速了！休息15秒后自动重试...',
-                log_recon_reset: '重置进度已完成。下次扫描将从头开始。',
-                log_recon_active: '扫描正在进行中，无法重置进度。',
-                log_recon_end: '扫描已完成。',
+
                 log_no_failed_tasks: '没有失败的任务需要重试。',
                 log_requeuing_tasks: '正在重新排队 {0} 个失败任务...',
                 log_detail_page: '这是详情页或工作标签页。停止主脚本执行。',
@@ -736,8 +731,7 @@
         isExecuting: false, // 是否正在执行任务
         isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
         isWorkerTab: false, // 是否是工作标签页
-        isReconning: false, // 是否正在进行API扫描
-        lastReconUrl: '', // 最后一次API扫描的URL
+
         totalTasks: 0, // API扫描的总任务数
         completedTasks: 0, // API扫描的已完成任务数
         isDispatchingTasks: false, // 新增：标记是否正在派发任务
@@ -789,7 +783,7 @@
             statusBarContainer: null,
             statusItems: {},
             savedPositionDisplay: null, // 新增：保存位置显示元素的引用
-            // 排序选择器已移除
+
         },
         valueChangeListeners: [],
         sessionCompleted: new Set(), // Phase15: URLs completed this session
@@ -1159,9 +1153,6 @@
     };
 
     // --- DOM Creation Helpers (moved outside for broader scope) ---
-    // 移除createOwnedElement函数，不再手动添加"已保存在我的库中"标记
-
-    // createFreeElement函数已移除，不再使用
 
     // --- 新增: 数据缓存系统 ---
     const DataCache = {
@@ -1929,7 +1920,7 @@
     const PagePatcher = {
         _patchHasBeenApplied: false,
         _lastSeenCursor: null,
-        // REMOVED: This state variable was the source of the bug.
+        
         // _secondToLastSeenCursor: null,
 
         // --- NEW: State for request debouncing ---
@@ -2025,7 +2016,7 @@
                     State.currentSortOption = matchedOption;
                     GM_setValue('fab_helper_sort_option', State.currentSortOption);
 
-                    // 排序选择器UI已移除，不需要更新
+                         
 
                     Utils.logger('info', `检测到URL排序参数变更，排序方式已从"${State.sortOptions[previousSort].name}"更改为"${State.sortOptions[State.currentSortOption].name}"`);
 
@@ -2732,19 +2723,1223 @@
                     }
                 },
 
-                // This function starts the execution loop without scanning.
-                startExecution: () => {
-                    // Case 1: Execution is already running. We just need to update the total task count.
-                    if (State.isExecuting) {
-                        const newTotal = State.db.todo.length;
-                        if (newTotal > State.executionTotalTasks) {
-                            Utils.logger('info', `任务执行中，新任务已添加。总任务数更新为: ${newTotal}`);
-                            State.executionTotalTasks = newTotal;
-                            UI.update(); // Update the UI to reflect the new total.
+                // 然后开始执行
+                TaskRunner.startExecution();
+            }
+
+            // 立即更新UI，确保按钮状态与执行状态一致
+            UI.update();
+        },
+        toggleHideSaved: async () => {
+            State.hideSaved = !State.hideSaved;
+            await Database.saveHidePref();
+            TaskRunner.runHideOrShow();
+
+            // 如果关闭了隐藏功能，确保更新可见商品计数
+            if (!State.hideSaved) {
+                // 重新计算实际可见的商品数量
+                const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+                Utils.logger('info', `👁️ 显示模式已切换，当前页面有 ${actualVisibleCount} 个可见商品`);
+            }
+
+            UI.update();
+        },
+
+        toggleAutoAdd: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.autoAddOnScroll = !State.autoAddOnScroll;
+            await Database.saveAutoAddPref();
+            Utils.logger('info', Utils.getText('log_auto_add_toggle', State.autoAddOnScroll ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
+            // No need to call UI.update() as the visual state is handled by the component itself.
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+
+        toggleAutoResume: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.autoResumeAfter429 = !State.autoResumeAfter429;
+            await Database.saveAutoResumePref();
+            Utils.logger('info', Utils.getText('log_auto_resume_toggle', State.autoResumeAfter429 ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+
+        toggleRememberPosition: async () => {
+            if (State.isTogglingSetting) return;
+            State.isTogglingSetting = true;
+
+            State.rememberScrollPosition = !State.rememberScrollPosition;
+            await Database.saveRememberPosPref();
+            Utils.logger('info', Utils.getText('log_remember_pos_toggle', State.rememberScrollPosition ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
+
+            if (!State.rememberScrollPosition) {
+                await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                // 重置PagePatcher中的状态
+                PagePatcher._patchHasBeenApplied = false;
+                PagePatcher._lastSeenCursor = null;
+                State.savedCursor = null;
+                Utils.logger('info', '已清除已保存的浏览位置。');
+
+                // 更新UI中的位置显示
+                if (State.UI.savedPositionDisplay) {
+                    State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
+                }
+            } else if (State.UI.savedPositionDisplay) {
+                // 如果开启功能，更新显示当前保存的位置
+                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+            }
+
+            setTimeout(() => { State.isTogglingSetting = false; }, 200);
+        },
+
+        // 停止执行任务
+        stop: () => {
+            if (!State.isExecuting) return;
+
+            State.isExecuting = false;
+            // 保存执行状态
+            Database.saveExecutingState();
+            // 保存待办列表
+            Database.saveTodo();
+
+            // 清理任务和工作线程
+            GM_deleteValue(Config.DB_KEYS.TASK);
+            State.runningWorkers = {};
+            State.activeWorkers = 0;
+            State.executionTotalTasks = 0;
+            State.executionCompletedTasks = 0;
+            State.executionFailedTasks = 0;
+
+            Utils.logger('info', '执行已由用户手动停止。');
+
+            // 立即更新UI，确保按钮状态与执行状态一致
+            UI.update();
+        },
+
+        runRecoveryProbe: async () => {
+            const randomDelay = Math.floor(Math.random() * (30000 - 15000 + 1) + 15000); // 15-30 seconds
+            Utils.logger('info', `[Auto-Recovery] In recovery mode. Probing connection in ${(randomDelay / 1000).toFixed(1)} seconds...`);
+
+            setTimeout(async () => {
+                Utils.logger('info', `[Auto-Recovery] Probing connection...`);
+                try {
+                    const csrfToken = Utils.getCookie('fab_csrftoken');
+                    if (!csrfToken) {
+                        Utils.checkAuthentication();
+                        throw new Error("CSRF token not found for probe.");
+                    }
+                    // Use a lightweight, known-good endpoint for the probe
+                    const probeResponse = await API.gmFetch({
+                        method: 'GET',
+                        url: 'https://www.fab.com/i/users/context',
+                        headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+
+                    if (probeResponse.status === 429) {
+                        throw new Error("Probe failed with 429. Still rate-limited.");
+                    } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
+                        // SUCCESS!
+                        // Manually create a fake request object to reuse the recovery logic in handleSearchResponse
+                        await PagePatcher.handleSearchResponse({ status: 200 });
+                        Utils.logger('info', `[Auto-Recovery] ✅ Connection restored! Auto-resuming operations...`);
+                        TaskRunner.toggleExecution(); // Auto-start the process!
+                    } else {
+                        throw new Error(`Probe failed with unexpected status: ${probeResponse.status}`);
+                    }
+                } catch (e) {
+                    Utils.logger('error', `[Auto-Recovery] ❌ ${e.message}. Scheduling next refresh...`);
+                    setTimeout(() => location.reload(), 2000); // Wait 2s before next refresh
+                }
+            }, randomDelay);
+        },
+
+
+
+        refreshVisibleStates: async () => {
+            const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
+            const API_CHUNK_SIZE = 24; // Server-side limit
+
+            const isElementInViewport = (el) => {
+                if (!el) return false;
+                const rect = el.getBoundingClientRect();
+                return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
+            };
+
+            try {
+                const csrfToken = Utils.getCookie('fab_csrftoken');
+                if (!csrfToken) {
+                    Utils.checkAuthentication();
+                    throw new Error('CSRF token not found. Are you logged in?');
+                }
+
+                // Step 1: Gather all unique UIDs to check
+                // 只收集可见的未入库商品
+                const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)]
+                    .filter(isElementInViewport)
+                    .filter(card => {
+                        // 过滤掉已经确认入库的商品
+                        const link = card.querySelector(Config.SELECTORS.cardLink);
+                        if (!link) return false;
+                        const url = link.href.split('?')[0];
+                        return !Database.isDone(url);
+                    })
+                    .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
+                    .filter(Boolean));
+
+                // 收集已经入库失败的商品
+                const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
+
+                // 合并两类商品ID
+                const allUidsToCheck = Array.from(new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
+
+                if (allUidsToCheck.length === 0) {
+                    Utils.logger('info', '[Fab DOM Refresh] 没有未入库的可见商品或入库失败的商品需要检查。');
+                    return;
+                }
+                Utils.logger('info', `[Fab DOM Refresh] 正在分批检查 ${uidsFromVisibleCards.size} 个未入库的可见商品和 ${uidsFromFailedList.size} 个入库失败的商品...`);
+
+                // Step 2: Process UIDs in chunks
+                const ownedUids = new Set();
+                for (let i = 0; i < allUidsToCheck.length; i += API_CHUNK_SIZE) {
+                    const chunk = allUidsToCheck.slice(i, i + API_CHUNK_SIZE);
+                const apiUrl = new URL(API_ENDPOINT);
+                    chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
+
+                    Utils.logger('info', `[Fab DOM Refresh] 正在处理批次 ${Math.floor(i / API_CHUNK_SIZE) + 1}... (${chunk.length}个项目)`);
+
+                                    const response = await fetch(apiUrl.href, {
+                        headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                    });
+
+                    if (!response.ok) {
+                         Utils.logger('warn', `批次处理失败，状态码: ${response.status}。将跳过此批次。`);
+                         continue; // Skip to next chunk
+                    }
+
+                    const rawData = await response.json();
+
+                    // 使用API.extractStateData处理可能的不同格式的响应
+                    const data = API.extractStateData(rawData, 'RefreshStates');
+
+                    if (!data || !Array.isArray(data)) {
+                        Utils.logger('warn', `API返回的数据格式异常: ${JSON.stringify(rawData).substring(0, 200)}...`);
+                        continue; // Skip to next chunk if data format is unexpected
+                    }
+
+                    data.filter(item => item.acquired).forEach(item => ownedUids.add(item.uid));
+
+                    // Add a small delay between chunks to be safe
+                    if (allUidsToCheck.length > i + API_CHUNK_SIZE) {
+                       await new Promise(r => setTimeout(r, 250));
+                    }
+                }
+
+                Utils.logger('info', `[Fab DOM Refresh] ${Utils.getText('fab_dom_api_complete', ownedUids.size)}`);
+
+                // Step 3: Update database based on all results
+                let dbUpdated = false;
+                const langPath = State.lang === 'zh' ? '/zh-cn' : '';
+                if (ownedUids.size > 0) {
+                    const initialFailedCount = State.db.failed.length;
+                    State.db.failed = State.db.failed.filter(failedTask => !ownedUids.has(failedTask.uid));
+
+                    if (State.db.failed.length < initialFailedCount) {
+                        dbUpdated = true;
+                        ownedUids.forEach(uid => {
+                            const url = `${window.location.origin}${langPath}/listings/${uid}`;
+                            if (!Database.isDone(url)) {
+                                State.db.done.push(url);
+                            }
+                        });
+                        Utils.logger('info', `[Fab DB Sync] 从"失败"列表中清除了 ${initialFailedCount - State.db.failed.length} 个已手动完成的商品。`);
+                    }
+                }
+
+                // Step 3.5: Remove non-free items from the Failed list
+                try {
+                    const failedTasksSnapshot = [...State.db.failed];
+                    Utils.logger('info', `[Fab DB Sync] 开始检查失败列表中的 ${failedTasksSnapshot.length} 个商品的价格状态...`);
+
+                    if (failedTasksSnapshot.length > 0) {
+                        // Map failed UID -> offerId (from cached listings)
+                        const uidToOfferId = new Map();
+                        let foundOfferIds = 0;
+                        const missingCacheUids = [];
+
+                        failedTasksSnapshot.forEach(task => {
+                            const listing = DataCache.listings.get(task.uid);
+                            const offerId = listing?.startingPrice?.offerId;
+                            if (offerId) {
+                                uidToOfferId.set(task.uid, offerId);
+                                foundOfferIds++;
+                            } else {
+                                missingCacheUids.push(task.uid);
+                                Utils.logger('debug', `[Fab DB Sync] 商品 ${task.uid} 没有找到缓存的商品信息或价格ID`);
+                            }
+                        });
+
+                        Utils.logger('info', `[Fab DB Sync] 在 ${failedTasksSnapshot.length} 个失败商品中找到了 ${foundOfferIds} 个有价格ID的商品`);
+
+                        // 对于没有缓存数据的商品，尝试重新获取信息
+                        if (missingCacheUids.length > 0) {
+                            Utils.logger('info', `[Fab DB Sync] 尝试为 ${missingCacheUids.length} 个缺失缓存的商品重新获取信息...`);
+
+                            try {
+                                const csrfToken = Utils.getCookie('fab_csrftoken');
+                                if (csrfToken) {
+                                    // 分批查询商品信息
+                                    const SEARCH_CHUNK_SIZE = 5; // 每次查询5个商品
+                                    for (let i = 0; i < missingCacheUids.length; i += SEARCH_CHUNK_SIZE) {
+                                        const chunk = missingCacheUids.slice(i, i + SEARCH_CHUNK_SIZE);
+
+                                        for (const uid of chunk) {
+                                            try {
+                                                const searchUrl = `https://www.fab.com/i/listings/search?q=${uid}`;
+                                                const response = await fetch(searchUrl, {
+                                                    headers: {
+                                                        'accept': 'application/json, text/plain, */*',
+                                                        'x-csrftoken': csrfToken,
+                                                        'x-requested-with': 'XMLHttpRequest'
+                                                    }
+                                                });
+
+                                                if (response.ok) {
+                                                    const searchData = await response.json();
+                                                    if (searchData.results && searchData.results.length > 0) {
+                                                        // 找到匹配的商品
+                                                        const matchedItem = searchData.results.find(item => item.uid === uid);
+                                                        if (matchedItem && matchedItem.startingPrice?.offerId) {
+                                                            // 缓存商品信息
+                                                            DataCache.saveListings([matchedItem]);
+                                                            // 添加到offerId映射
+                                                            uidToOfferId.set(uid, matchedItem.startingPrice.offerId);
+                                                            foundOfferIds++;
+                                                            Utils.logger('debug', `[Fab DB Sync] 成功获取商品 ${uid} 的价格ID: ${matchedItem.startingPrice.offerId}`);
+                                                        }
+                                                    }
+                                                }
+
+                                                // 添加延迟避免请求过快
+                                                await new Promise(r => setTimeout(r, 200));
+                                            } catch (e) {
+                                                Utils.logger('debug', `[Fab DB Sync] 获取商品 ${uid} 信息失败: ${e.message}`);
+                                            }
+                                        }
+                                    }
+
+                                    Utils.logger('info', `[Fab DB Sync] 重新获取完成，现在总共有 ${foundOfferIds} 个商品有价格ID`);
+                                }
+                            } catch (e) {
+                                Utils.logger('warn', `[Fab DB Sync] 重新获取商品信息时出错: ${e.message}`);
+                            }
+                        }
+
+                        const offerIds = Array.from(uidToOfferId.values());
+                        if (offerIds.length > 0) {
+                            const CHUNK = 50;
+                            const nonFreeOfferIds = new Set();
+
+                            Utils.logger('info', `[Fab DB Sync] 开始检查 ${offerIds.length} 个商品的价格...`);
+
+                            for (let i = 0; i < offerIds.length; i += CHUNK) {
+                                const chunk = offerIds.slice(i, i + CHUNK);
+                                Utils.logger('info', `[Fab DB Sync] 检查价格批次 ${Math.floor(i / CHUNK) + 1}，包含 ${chunk.length} 个商品...`);
+
+                                const prices = await API.checkItemsPrices(chunk);
+                                Utils.logger('info', `[Fab DB Sync] 价格API返回了 ${prices.length} 个结果`);
+
+                                prices.forEach(offer => {
+                                    if (offer && typeof offer.price === 'number' && offer.price > 0) {
+                                        nonFreeOfferIds.add(offer.offerId);
+                                        Utils.logger('debug', `[Fab DB Sync] 发现付费商品: ${offer.offerId}, 价格: ${offer.price}`);
+                                    } else if (offer) {
+                                        Utils.logger('debug', `[Fab DB Sync] 发现免费商品: ${offer.offerId}, 价格: ${offer.price}`);
+                                    }
+                                });
+
+                                // Gentle pacing to be safe
+                                if (offerIds.length > i + CHUNK) {
+                                    await new Promise(r => setTimeout(r, 150));
+                                }
+                            }
+
+                            Utils.logger('info', `[Fab DB Sync] 价格检查完成，发现 ${nonFreeOfferIds.size} 个付费商品`);
+
+                            if (nonFreeOfferIds.size > 0) {
+                                const before = State.db.failed.length;
+                                const removedItems = [];
+
+                                State.db.failed = State.db.failed.filter(task => {
+                                    const offerId = uidToOfferId.get(task.uid);
+                                    const shouldRemove = offerId && nonFreeOfferIds.has(offerId);
+                                    if (shouldRemove) {
+                                        removedItems.push(`${task.name || task.uid} (${offerId})`);
+                                    }
+                                    // Remove only when we are sure it's not free (price > 0)
+                                    return !offerId || !nonFreeOfferIds.has(offerId);
+                                });
+
+                                const removed = before - State.db.failed.length;
+                                if (removed > 0) {
+                                    dbUpdated = true;
+                                    Utils.logger('info', `[Fab DB Sync] 从"失败"列表中移除了 ${removed} 个非免费商品:`);
+                                    removedItems.forEach(item => Utils.logger('info', `  - ${item}`));
+                                } else {
+                                    Utils.logger('info', `[Fab DB Sync] 没有找到需要移除的付费商品`);
+                                }
+                            } else {
+                                Utils.logger('info', `[Fab DB Sync] 没有发现付费商品，失败列表保持不变`);
+                            }
                         } else {
                             Utils.logger('info', '执行器已在运行中，新任务已加入队列等待处理。');
                         }
-                        // IMPORTANT: Do not start a new execution loop. The current one will pick up the new tasks.
+                    }
+                } catch (e) {
+                    Utils.logger('warn', `[Fab DB Sync] 检查失败项价格失败: ${e.message}`);
+                }
+
+
+                // Step 4: Update UI for visible cards
+                const uidToCardMap = new Map([...document.querySelectorAll(Config.SELECTORS.card)]
+                     .filter(isElementInViewport)
+                     .map(card => {
+                         const uid = card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1];
+                         return uid ? [uid, card] : null;
+                     }).filter(Boolean));
+
+                let updatedCount = 0;
+                uidToCardMap.forEach((card, uid) => {
+                    const isOwned = ownedUids.has(uid);
+
+                    // 不再手动修改DOM元素，只更新计数
+                    if (isOwned) {
+                        updatedCount++;
+                    }
+                });
+
+                if (dbUpdated) {
+                    await Database.saveFailed();
+                    await Database.saveDone();
+                }
+
+                Utils.logger('debug', `[Fab DOM Refresh] Complete. Updated ${updatedCount} visible card states.`);
+
+                TaskRunner.runHideOrShow();
+
+            } catch (e) {
+                Utils.logger('error', '[Fab DOM Refresh] An error occurred:', e);
+                alert(Utils.getText('error_api_refresh'));
+            }
+        },
+
+        retryFailedTasks: async () => {
+            if (State.db.failed.length === 0) {
+                Utils.logger('info', Utils.getText('log_no_failed_tasks'));
+                return;
+            }
+            const count = State.db.failed.length;
+            Utils.logger('info', Utils.getText('log_requeuing_tasks', count));
+            State.db.todo.push(...State.db.failed); // Append failed tasks to the end of the todo list
+            State.db.failed = []; // Clear the failed list
+            await Database.saveFailed();
+            Utils.logger('info', `${count} tasks moved from Failed to To-Do list.`);
+            UI.update(); // Force immediate UI update
+        },
+
+        // --- Core Logic Functions ---
+
+
+        // This is the watchdog timer that patrols for stalled workers.
+        runWatchdog: () => {
+            if (State.watchdogTimer) clearInterval(State.watchdogTimer); // Clear any existing timer
+
+            State.watchdogTimer = setInterval(async () => {
+                // 如果当前实例不是活跃实例，不执行监控
+                if (!InstanceManager.isActive) return;
+
+                if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
+                    clearInterval(State.watchdogTimer);
+                    State.watchdogTimer = null;
+                    return;
+                }
+
+                const now = Date.now();
+                const STALL_TIMEOUT = Config.WORKER_TIMEOUT; // 使用配置的超时时间
+                const stalledWorkers = [];
+
+                // 先收集所有超时的工作标签页，避免在循环中修改对象
+                for (const workerId in State.runningWorkers) {
+                    const workerInfo = State.runningWorkers[workerId];
+
+                    // 只处理由当前实例创建的工作标签页
+                    if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
+
+                    if (now - workerInfo.startTime > STALL_TIMEOUT) {
+                        stalledWorkers.push({
+                            workerId,
+                            task: workerInfo.task
+                        });
+                    }
+                }
+
+                // 如果有超时的工作标签页，处理它们
+                if (stalledWorkers.length > 0) {
+                    Utils.logger('warn', `发现 ${stalledWorkers.length} 个超时的工作标签页，正在清理...`);
+
+                    // 逐个处理超时的工作标签页
+                    for (const stalledWorker of stalledWorkers) {
+                        const { workerId, task } = stalledWorker;
+
+                        Utils.logger('error', `🚨 WATCHDOG: Worker [${workerId.substring(0,12)}] has stalled!`);
+
+                        // 1. Remove from To-Do
+                        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                        await Database.saveTodo();
+
+                        // 2. Add to Failed
+                        if (!State.db.failed.some(f => f.uid === task.uid)) {
+                            State.db.failed.push(task);
+                            await Database.saveFailed();
+                        }
+                        State.executionFailedTasks++;
+
+                        // 3. Clean up worker
+                        delete State.runningWorkers[workerId];
+                        State.activeWorkers--;
+
+                        // 删除任务数据
+                        await GM_deleteValue(workerId);
+                    }
+
+                    Utils.logger('info', `已清理 ${stalledWorkers.length} 个超时的工作标签页。剩余活动工作标签页: ${State.activeWorkers}`);
+
+                    // 4. Update UI
+                    UI.update();
+
+                    // 5. 延迟一段时间后继续派发任务
+                    setTimeout(() => {
+                        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+                        TaskRunner.executeBatch();
+                    }
+                    }, 2000);
+                }
+            }, 5000); // Check every 5 seconds
+        },
+
+        executeBatch: async () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
+            // 只有主页面才需要检查是否是活跃实例
+            if (!State.isWorkerTab && !InstanceManager.isActive) {
+                Utils.logger('warn', '当前实例不是活跃实例，不执行任务。');
+                return;
+            }
+
+            if (!State.isExecuting) return;
+
+            // 防止重复执行
+            if (State.isDispatchingTasks) {
+                Utils.logger('info', '正在派发任务中，请稍候...');
+                return;
+            }
+
+            // 设置派发任务标志
+            State.isDispatchingTasks = true;
+
+            try {
+            // Stop condition for the entire execution process
+            if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                Utils.logger('info', '✅ 🎉 All tasks have been completed!');
+                State.isExecuting = false;
+                    // 保存执行状态
+                    Database.saveExecutingState();
+                    // 保存待办列表（虽然为空，但仍需保存以更新存储）
+                    Database.saveTodo();
+                if (State.watchdogTimer) {
+                    clearInterval(State.watchdogTimer);
+                    State.watchdogTimer = null;
+                }
+
+                    // 关闭所有可能残留的工作标签页
+                    TaskRunner.closeAllWorkerTabs();
+
+                UI.update();
+                    State.isDispatchingTasks = false;
+                    return;
+                }
+
+                // 如果处于限速状态，记录日志但继续执行任务
+                if (State.appStatus === 'RATE_LIMITED') {
+                    Utils.logger('info', '当前处于限速状态，但仍将继续执行待办任务...');
+                }
+
+                // 限制最大活动工作标签页数量
+                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
+                    Utils.logger('info', `已达到最大并发工作标签页数量 (${Config.MAX_CONCURRENT_WORKERS})，等待现有任务完成...`);
+                    State.isDispatchingTasks = false;
+                return;
+            }
+
+            // --- DISPATCHER FOR DETAIL TASKS ---
+                // 创建一个当前正在执行的任务UID集合，用于防止重复派发
+                const inFlightUIDs = new Set(Object.values(State.runningWorkers).map(w => w.task.uid));
+
+                // 创建一个副本，避免在迭代过程中修改原数组
+                const todoList = [...State.db.todo];
+                let dispatchedCount = 0;
+
+                // 创建一个集合，记录本次派发的任务UID
+                const dispatchedUIDs = new Set();
+
+                for (const task of todoList) {
+                    if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+
+                    // 如果任务已经在执行中，跳过
+                    if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
+                        Utils.logger('info', `任务 ${task.name} 已在执行中，跳过。`);
+                        continue;
+                    }
+
+                    // 如果任务已经在完成列表中，从待办列表移除并跳过
+                    if (Database.isDone(task.url)) {
+                        Utils.logger('info', `任务 ${task.name} 已完成，从待办列表中移除。`);
+                        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+                        Database.saveTodo();
+                        continue;
+                    }
+
+                    // 记录本次派发的任务
+                    dispatchedUIDs.add(task.uid);
+
+                State.activeWorkers++;
+                    dispatchedCount++;
+                const workerId = `worker_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+                    State.runningWorkers[workerId] = {
+                        task,
+                        startTime: Date.now(),
+                        instanceId: Config.INSTANCE_ID // 记录创建此工作标签页的实例ID
+                    };
+
+                Utils.logger('info', `🚀 Dispatching Worker [${workerId.substring(0, 12)}...] for: ${task.name}`);
+
+                    await GM_setValue(workerId, {
+                        task,
+                        instanceId: Config.INSTANCE_ID // 在任务数据中也记录实例ID
+                    });
+
+                const workerUrl = new URL(task.url);
+                workerUrl.searchParams.set('workerId', workerId);
+
+                    // 使用active:false确保标签页在后台打开，并使用insert:true确保标签页在当前标签页之后打开
+                    GM_openInTab(workerUrl.href, { active: false, insert: true });
+
+                    // 等待一小段时间再派发下一个任务，避免浏览器同时打开太多标签页
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+
+                if (dispatchedCount > 0) {
+                    Utils.logger('info', `本批次派发了 ${dispatchedCount} 个任务。`);
+                }
+
+                if (!State.watchdogTimer && State.activeWorkers > 0) {
+                    TaskRunner.runWatchdog();
+                }
+
+            UI.update();
+            } finally {
+                // 无论如何都要重置派发任务标志
+                State.isDispatchingTasks = false;
+            }
+        },
+
+        // 添加一个方法来关闭所有工作标签页
+        closeAllWorkerTabs: () => {
+            // 目前没有直接的方法可以关闭由GM_openInTab打开的标签页
+            // 但我们可以清理相关的状态
+            const workerIds = Object.keys(State.runningWorkers);
+            if (workerIds.length > 0) {
+                Utils.logger('info', `正在清理 ${workerIds.length} 个工作标签页的状态...`);
+
+                for (const workerId of workerIds) {
+                    GM_deleteValue(workerId);
+                }
+
+                State.runningWorkers = {};
+                State.activeWorkers = 0;
+                Utils.logger('info', '已清理所有工作标签页的状态。');
+            }
+        },
+
+        processDetailPage: async () => {
+            // 检查账号状态
+            if (!Utils.checkAuthentication()) {
+                return;
+            }
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const workerId = urlParams.get('workerId');
+
+            // If there's no workerId, this is not a worker tab, so we do nothing.
+            if (!workerId) return;
+
+            // 标记当前标签页为工作标签页，避免执行主脚本逻辑
+            State.isWorkerTab = true;
+            State.workerTaskId = workerId;
+
+            // 记录工作标签页的启动时间
+            const startTime = Date.now();
+            let hasReported = false;
+            let closeAttempted = false;
+
+            // 设置一个定时器，确保工作标签页最终会关闭
+            const forceCloseTimer = setTimeout(() => {
+                if (!closeAttempted) {
+                    console.log('强制关闭工作标签页');
+                    try {
+                        window.close();
+                    } catch (e) {
+                        console.error('关闭工作标签页失败:', e);
+                    }
+                }
+            }, 60000); // 60秒后强制关闭
+
+            try {
+                // This is a safety check. If the main tab stops execution, it might delete the task.
+                const payload = await GM_getValue(workerId);
+                if (!payload || !payload.task) {
+                    Utils.logger('info', '任务数据已被清理，工作标签页将关闭。');
+                    closeWorkerTab();
+                    return;
+                }
+
+                // 检查创建此工作标签页的实例ID是否与当前活跃实例一致
+                const activeInstance = await GM_getValue('fab_active_instance', null);
+                if (activeInstance && activeInstance.id !== payload.instanceId) {
+                    Utils.logger('warn', `此工作标签页由实例 [${payload.instanceId}] 创建，但当前活跃实例是 [${activeInstance.id}]。将关闭此标签页。`);
+                    await GM_deleteValue(workerId); // 清理任务数据
+                    closeWorkerTab();
+                    return;
+                }
+
+                const currentTask = payload.task;
+                const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+                let success = false;
+
+                try {
+                    // 等待页面加载完成
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+
+                    // 执行页面状态诊断
+                    logBuffer.push(`=== 页面状态诊断开始 ===`);
+                    const diagnosticReport = PageDiagnostics.diagnoseDetailPage();
+
+                    // 记录关键信息到日志缓冲区
+                    logBuffer.push(`页面标题: ${diagnosticReport.pageTitle}`);
+                    logBuffer.push(`可见按钮数量: ${diagnosticReport.buttons.filter(btn => btn.isVisible).length}`);
+
+                    // 记录所有可见按钮
+                    diagnosticReport.buttons.forEach(btn => {
+                        if (btn.isVisible) {
+                            logBuffer.push(`按钮: "${btn.text}" (禁用: ${btn.isDisabled})`);
+                        }
+                    });
+
+                    // 记录价格信息
+                    Object.entries(diagnosticReport.priceInfo).forEach(([, price]) => {
+                        if (price.isVisible) {
+                            logBuffer.push(`价格显示: "${price.text}"`);
+                        }
+                    });
+
+                    // 记录许可选项
+                    diagnosticReport.licenseOptions.forEach(opt => {
+                        if (opt.isVisible) {
+                            logBuffer.push(`许可选项: "${opt.text}"`);
+                        }
+                    });
+
+                    logBuffer.push(`=== 页面状态诊断结束 ===`);
+                    // API-First Ownership Check...
+                    try {
+                        const csrfToken = Utils.getCookie('fab_csrftoken');
+                        if (!csrfToken) {
+                            Utils.checkAuthentication();
+                            throw new Error("CSRF token not found for API check.");
+                        }
+                        const statesUrl = new URL('https://www.fab.com/i/users/me/listings-states');
+                        statesUrl.searchParams.append('listing_ids', currentTask.uid);
+                        const response = await API.gmFetch({
+                            method: 'GET',
+                            url: statesUrl.href,
+                            headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                        });
+
+                        let statesData;
+                        try {
+                            statesData = JSON.parse(response.responseText);
+                            if (!Array.isArray(statesData)) {
+                                logBuffer.push('API返回的数据不是数组格式，这可能是API变更导致的');
+                                // 尝试提取数组数据
+                                statesData = API.extractStateData(statesData, 'SingleItemCheck');
+                            }
+                        } catch (e) {
+                            logBuffer.push(`解析API响应失败: ${e.message}`);
+                            statesData = [];
+                        }
+
+                        const isOwned = Array.isArray(statesData) && statesData.some(s => s && s.uid === currentTask.uid && s.acquired);
+                        if (isOwned) {
+                            logBuffer.push(`API check confirms item is already owned.`);
+                            success = true;
+                        } else {
+                            logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+                        }
+                    } catch (apiError) {
+                        logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+                    }
+
+                    if (!success) {
+                        try {
+                            const isItemOwned = () => {
+                                const criteria = Config.OWNED_SUCCESS_CRITERIA;
+                                const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+                                if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+                                const successHeader = document.querySelector('h2');
+                                if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+                                const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
+                                const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                                if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+                                return { owned: false };
+                            };
+
+                            const initialState = isItemOwned();
+                            if (initialState.owned) {
+                                logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+                                success = true;
+                            } else {
+                                // 检查是否需要选择许可证
+                                const licenseButton = [...document.querySelectorAll('button')].find(btn =>
+                                    btn.textContent.includes('选择许可') ||
+                                    btn.textContent.includes('Select license')
+                                );
+
+                                if (licenseButton) {
+                                    logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
+                                    try {
+                                        await new Promise((resolve, reject) => {
+                                            const observer = new MutationObserver((mutationsList) => {
+                                                for (const mutation of mutationsList) {
+                                                    if (mutation.addedNodes.length > 0) {
+                                                        for (const node of mutation.addedNodes) {
+                                                            if (node.nodeType !== 1) continue;
+                                                            // 查找"免费"或"个人"选项
+                                                            const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                                Array.from(el.childNodes).some(cn => {
+                                                                    if (cn.nodeType !== 3) return false;
+                                                                    const text = cn.textContent.trim();
+                                                                    return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
+                                                                           text === '个人' || text === 'Personal';
+                                                                })
+                                                            );
+
+                                                            if (freeTextElement) {
+                                                                const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
+                                                                if (clickableParent) {
+                                                                    logBuffer.push(`Found free/personal license option, clicking it.`);
+                                                                    Utils.deepClick(clickableParent);
+                                                                    observer.disconnect();
+                                                                    resolve();
+                                                                    return;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            });
+
+                                            observer.observe(document.body, { childList: true, subtree: true });
+                                            logBuffer.push(`Clicking license button to open dropdown.`);
+                                            Utils.deepClick(licenseButton); // First click attempt
+
+                                            // 有时第一次点击可能不成功，1.5秒后再试一次
+                                            setTimeout(() => {
+                                                logBuffer.push(`Second attempt to click license button.`);
+                                                Utils.deepClick(licenseButton);
+                                            }, 1500);
+
+                                            // 如果5秒内没有出现下拉菜单，则超时
+                                            setTimeout(() => {
+                                                observer.disconnect();
+                                                reject(new Error('Timeout (5s): The free/personal option did not appear.'));
+                                            }, 5000);
+                                        });
+
+                                        // 许可选择后等待UI更新
+                                        logBuffer.push(`License selected, waiting for UI update.`);
+                                        await new Promise(r => setTimeout(r, 1000));
+
+                                        // 重新检查是否已拥有
+                                        if (isItemOwned().owned) {
+                                            logBuffer.push(`Item became owned after license selection.`);
+                                            success = true;
+                                        }
+                                    } catch (licenseError) {
+                                        logBuffer.push(`License selection failed: ${licenseError.message}`);
+                                    }
+                                }
+
+                                // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
+                                if (!success) {
+                                    // 首先尝试找标准的添加按钮
+                                    let actionButton = [...document.querySelectorAll('button')].find(btn =>
+                                        [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                                    );
+
+                                    // 如果没有标准添加按钮，检查是否是限时免费商品
+                                    if (!actionButton) {
+                                        // 查找包含"免费/Free"和"-100%"的按钮（限时免费商品的许可按钮）
+                                        actionButton = [...document.querySelectorAll('button')].find(btn => {
+                                            const text = btn.textContent;
+                                            const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+                                            const hasDiscount = text.includes('-100%');
+                                            const hasPersonal = text.includes('个人') || text.includes('Personal');
+                                            return hasFreeText && hasDiscount && hasPersonal;
+                                        });
+
+                                        if (actionButton) {
+                                            logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim()}"`);
+                                        }
+                                    }
+
+                                    if (actionButton) {
+                                        logBuffer.push(`Found add button, clicking it.`);
+                                        Utils.deepClick(actionButton);
+
+                                        // 等待添加操作完成
+                                        try {
+                                            await new Promise((resolve, reject) => {
+                                                const timeout = 25000; // 25秒超时
+                                                const interval = setInterval(() => {
+                                                    const currentState = isItemOwned();
+                                                    if (currentState.owned) {
+                                                        logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                                                        success = true;
+                                                        clearInterval(interval);
+                                                        resolve();
+                                                    }
+                                                }, 500); // 每500ms检查一次
+
+                                                setTimeout(() => {
+                                                    clearInterval(interval);
+                                                    reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                                }, timeout);
+                                            });
+                                        } catch (timeoutError) {
+                                            logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                                        }
+                                    } else {
+                                        logBuffer.push(`Could not find an add button.`);
+                                    }
+                                }
+                            }
+                        } catch (uiError) {
+                            logBuffer.push(`UI interaction failed: ${uiError.message}`);
+                        }
+                    }
+                } catch (error) {
+                    logBuffer.push(`A critical error occurred: ${error.message}`);
+                    success = false;
+                } finally {
+                    try {
+                        // 标记为已报告
+                        hasReported = true;
+
+                        // 报告任务结果
+                        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: success,
+                            logs: logBuffer,
+                            task: currentTask,
+                            instanceId: payload.instanceId,
+                            executionTime: Date.now() - startTime
+                        });
+                    } catch (error) {
+                        console.error('Error setting worker done value:', error);
+                    }
+
+                    try {
+                        await GM_deleteValue(workerId); // 清理任务数据
+                    } catch (error) {
+                        console.error('Error deleting worker value:', error);
+                    }
+
+                    // 确保工作标签页在报告完成后关闭
+                    closeWorkerTab();
+                }
+            } catch (error) {
+                Utils.logger('error', `Worker tab error: ${error.message}`);
+                closeWorkerTab();
+            }
+
+            // 关闭工作标签页的函数
+            function closeWorkerTab() {
+                closeAttempted = true;
+                clearTimeout(forceCloseTimer);
+
+                // 如果尚未报告结果，尝试报告失败
+                if (!hasReported && workerId) {
+                    try {
+                        GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                            workerId: workerId,
+                            success: false,
+                            logs: [Utils.getText('worker_closed')],
+                            task: payload?.task,
+                            instanceId: payload?.instanceId,
+                            executionTime: Date.now() - startTime
+                        });
+                    } catch (e) {
+                        // 忽略错误
+                    }
+                }
+
+                try {
+                    window.close();
+                } catch (error) {
+                    Utils.logger('error', `关闭工作标签页失败: ${error.message}`);
+                    // 如果关闭失败，尝试其他方法
+                    try {
+                        window.location.href = 'about:blank';
+                    } catch (e) {
+                        Utils.logger('error', `重定向失败: ${e.message}`);
+                    }
+                }
+            }
+        },
+
+        // 删除这个未使用的函数
+        // This function is now fully obsolete.
+        // advanceDetailTask: async () => {},
+
+            runHideOrShow: () => {
+        // 无论是否在限速状态下，都应该执行隐藏功能
+        State.hiddenThisPageCount = 0;
+        const cards = document.querySelectorAll(Config.SELECTORS.card);
+
+        // 添加一个计数器，用于跟踪实际隐藏的卡片数量
+        let actuallyHidden = 0;
+
+        // 首先检查是否有未加载完成的卡片
+        let hasUnsettledCards = false;
+        const unsettledCards = [];
+
+        // 检查卡片是否已加载完成的函数
+        const isCardSettled = (card) => {
+            // 检查卡片是否有价格、免费标签或已拥有标签
+            return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+        };
+
+        // 检查是否有未加载完成的卡片
+        cards.forEach(card => {
+            if (!isCardSettled(card)) {
+                hasUnsettledCards = true;
+                unsettledCards.push(card);
+            }
+        });
+
+        // 如果有未加载完成的卡片，延迟执行隐藏操作
+        if (hasUnsettledCards && unsettledCards.length > 0) {
+            Utils.logger('info', `检测到 ${unsettledCards.length} 张卡片尚未加载完成，延迟隐藏操作...`);
+
+            // 设置一个较长的延迟，等待卡片加载完成
+            setTimeout(() => {
+                Utils.logger('info', `延迟后重新执行隐藏操作，确保卡片已加载完成`);
+                TaskRunner.runHideOrShow();
+            }, 2000); // 延迟2秒
+
+            return; // 直接返回，等待下次执行
+        }
+
+        // 首先收集所有需要隐藏的卡片
+        const cardsToHide = [];
+
+        // 添加一个数据属性来标记已处理的卡片，避免重复处理
+        cards.forEach(card => {
+            // 检查卡片是否已经被处理过
+            const isProcessed = card.getAttribute('data-fab-processed') === 'true';
+
+            // 如果卡片已经被处理且已经隐藏，则不需要再次处理
+            if (isProcessed && card.style.display === 'none') {
+                State.hiddenThisPageCount++;
+                return;
+            }
+
+            const isFinished = TaskRunner.isCardFinished(card);
+            if (State.hideSaved && isFinished) {
+                cardsToHide.push(card);
+                State.hiddenThisPageCount++;
+
+                // 标记卡片为已处理
+                card.setAttribute('data-fab-processed', 'true');
+            } else {
+                // 如果不需要隐藏，也标记为已处理
+                card.setAttribute('data-fab-processed', 'true');
+            }
+        });
+
+        // 如果有需要隐藏的卡片，使用更长的初始延迟和更慢的隐藏速度
+        if (cardsToHide.length > 0) {
+            if (State.debugMode) {
+                Utils.logger('debug', Utils.getText('debug_prepare_hide', cardsToHide.length));
+            }
+
+            // 随机打乱卡片顺序，使隐藏更加随机
+            cardsToHide.sort(() => Math.random() - 0.5);
+
+            // 分批次隐藏卡片，每批次最多10张（减少批次大小）
+            const batchSize = 10;
+            const batches = Math.ceil(cardsToHide.length / batchSize);
+
+            // 设置一个初始延迟，确保页面有足够时间加载
+            const initialDelay = 1000; // 1秒的初始延迟
+
+            for (let i = 0; i < batches; i++) {
+                const start = i * batchSize;
+                const end = Math.min(start + batchSize, cardsToHide.length);
+                const currentBatch = cardsToHide.slice(start, end);
+
+                // 为每个批次设置一个更长的延迟，增加延迟时间
+                const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+
+                setTimeout(() => {
+                    currentBatch.forEach((card, index) => {
+                        // 为每张卡片设置一个更长的随机延迟
+                        const cardDelay = index * 50 + Math.random() * 100;
+
+                        setTimeout(() => {
+                            card.style.display = 'none';
+                            actuallyHidden++;
+
+                            // 当所有卡片都隐藏后，更新UI
+                            if (actuallyHidden === cardsToHide.length) {
+                                if (State.debugMode) {
+                                    Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                                }
+                                // 延迟更新UI，确保DOM已经完全更新
+                                setTimeout(() => {
+                                    UI.update();
+                                    // 隐藏完成后检查可见性并决定是否刷新
+                                    TaskRunner.checkVisibilityAndRefresh();
+                                }, 300);
+                            }
+                        }, cardDelay);
+                    });
+                }, batchDelay);
+            }
+        }
+
+        // 确保所有不应该隐藏的卡片都是可见的
+        if (State.hideSaved) {
+            // 找出所有不应该隐藏的卡片
+            const visibleCards = Array.from(cards).filter(card => {
+                // 不隐藏未完成的卡片
+                return !TaskRunner.isCardFinished(card);
+            });
+
+            // 显示这些卡片（如果它们之前被隐藏了）
+            visibleCards.forEach(card => {
+                card.style.display = '';
+            });
+
+            // 只有在没有需要隐藏的卡片时才立即更新UI和检查可见性
+            if (cardsToHide.length === 0) {
+                UI.update();
+                TaskRunner.checkVisibilityAndRefresh();
+            }
+        } else {
+            // 如果没有隐藏功能，正常显示所有卡片并更新UI
+            cards.forEach(card => {
+                card.style.display = '';
+            });
+            UI.update();
+        }
+    },
+
+    // 新增：检查可见性并决定是否刷新的方法
+    checkVisibilityAndRefresh: () => {
+        // 计算实际可见的商品数量
+        const cards = document.querySelectorAll(Config.SELECTORS.card);
+
+        // 重新检查所有卡片，确保隐藏状态正确
+        let needsReprocessing = false;
+        cards.forEach(card => {
+            const isProcessed = card.getAttribute('data-fab-processed') === 'true';
+            if (!isProcessed) {
+                needsReprocessing = true;
+            }
+        });
+
+        // 如果发现未处理的卡片，重新执行隐藏逻辑
+        if (needsReprocessing) {
+            if (State.debugMode) {
+                Utils.logger('debug', Utils.getText('debug_unprocessed_cards_simple'));
+            }
+            setTimeout(() => {
+                TaskRunner.runHideOrShow();
+            }, 100);
+            return;
+        }
+
+        // 使用更准确的方式检查元素是否可见
+        const visibleCards = Array.from(cards).filter(card => {
+            // 检查元素自身的display属性
+            if (card.style.display === 'none') return false;
+
+            // 检查是否被CSS规则隐藏
+            const computedStyle = window.getComputedStyle(card);
+            return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+        }).length;
+
+        // 更新真实的可见商品数量
+        if (State.debugMode) {
+            Utils.logger('debug', Utils.getText('debug_visible_after_hide', visibleCards, State.hiddenThisPageCount));
+        }
+
+        // 更新UI上显示的可见商品数
+        const visibleCountElement = document.getElementById('fab-status-visible');
+        if (visibleCountElement) {
+            visibleCountElement.textContent = visibleCards.toString();
+        }
+
+        if (visibleCards === 0) {
+            // 无可见商品，根据状态决定是否刷新
+            if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
+                // 如果已经安排了刷新，不要重复安排
+                if (State.isRefreshScheduled) {
+                    Utils.logger('info', Utils.getText('refresh_plan_exists').replace('(429自动恢复)', '(无商品可见)'));
+                    return;
+                }
+
+                Utils.logger('info', '🔄 所有商品都已隐藏且处于限速状态，将在2秒后刷新页面...');
+
+                // 标记已安排刷新
+                State.isRefreshScheduled = true;
+
+                setTimeout(() => {
+                    // 再次检查实际可见的商品数量
+                    const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
+                        .filter(card => card.style.display !== 'none').length;
+
+                    // 检查是否有待办任务或活动工作线程
+                    if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                        Utils.logger('info', `⏹️ 刷新取消，检测到 ${State.db.todo.length} 个待办任务和 ${State.activeWorkers} 个活动工作线程`);
+                        State.isRefreshScheduled = false; // 重置刷新标记
                         return;
                     }
 
@@ -4581,7 +5776,7 @@
                     display: flex;
                     flex-wrap: wrap;
                     gap: 6px;
-                    /* REMOVED: No longer needed at the bottom of the log */
+    
                     /* margin-bottom: 12px; */
                 }
                 .fab-helper-status-item {
@@ -4606,7 +5801,7 @@
                     justify-content: center;
                     gap: 4px;
                     white-space: nowrap;
-                    /* REMOVED: No longer needed with a wrapping layout */
+
                 }
                 .fab-helper-status-item span {
                     display: block;
@@ -4817,9 +6012,510 @@
                     styleSheet.innerText = styles;
                     document.head.appendChild(styleSheet);
 
-                    const container = document.createElement('div');
-                    container.id = Config.UI_CONTAINER_ID;
-                    State.UI.container = container;
+            const container = document.createElement('div');
+            container.id = Config.UI_CONTAINER_ID;
+            State.UI.container = container;
+
+            // --- Header with Version ---
+            const header = document.createElement('div');
+            header.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;';
+            const title = document.createElement('span');
+            title.textContent = Utils.getText('app_title');
+            title.style.fontWeight = '600';
+            const version = document.createElement('span');
+            version.textContent = `v${GM_info.script.version}`;
+            version.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); background: var(--dark-gray); padding: 2px 5px; border-radius: var(--radius-s);';
+            header.append(title, version);
+            container.appendChild(header);
+
+            // --- Tab Controls ---
+            const tabContainer = document.createElement('div');
+            tabContainer.className = 'fab-helper-tabs';
+            const tabs = ['dashboard', 'settings', 'debug'];
+            tabs.forEach(tabName => {
+                const btn = document.createElement('button');
+                btn.textContent = Utils.getText(`tab_${tabName}`);
+                btn.onclick = () => UI.switchTab(tabName);
+                // 设置仪表盘标签为默认激活状态
+                if (tabName === 'dashboard') {
+                    btn.classList.add('active');
+                }
+                tabContainer.appendChild(btn);
+                State.UI.tabs[tabName] = btn;
+            });
+
+            container.appendChild(tabContainer);
+
+            // --- Dashboard Tab ---
+            const dashboardContent = document.createElement('div');
+            dashboardContent.className = 'fab-helper-tab-content';
+            // 仪表盘标签页默认显示
+            dashboardContent.style.display = 'block';
+            State.UI.tabContents.dashboard = dashboardContent;
+
+            const statusBar = document.createElement('div');
+            statusBar.className = 'fab-helper-status-bar';
+
+            const createStatusItem = (id, label, icon) => {
+                const item = document.createElement('div');
+                item.className = 'fab-helper-status-item';
+                item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
+                return item;
+            };
+            State.UI.statusVisible = createStatusItem('fab-status-visible', Utils.getText('visible'), '👁️');
+            State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥');
+            State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅');
+            State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌');
+            State.UI.statusFailed.style.cursor = 'pointer';
+            State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
+            State.UI.statusFailed.onclick = () => {
+                if (State.db.failed.length === 0) {
+                    Utils.logger('info', '失败列表为空，无需操作。');
+                    return;
+                }
+                if (window.confirm(Utils.getText('confirm_open_failed', State.db.failed.length))) {
+                    Utils.logger('info', `正在打开 ${State.db.failed.length} 个失败项目...`);
+                    State.db.failed.forEach(task => {
+                        GM_openInTab(task.url, { active: false });
+                    });
+                }
+            };
+            State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
+            statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+
+            State.UI.execBtn = document.createElement('button');
+            State.UI.execBtn.className = 'fab-helper-execute-btn';
+            State.UI.execBtn.onclick = TaskRunner.toggleExecution;
+
+            // 根据State.isExecuting设置按钮初始状态
+            if (State.isExecuting) {
+                State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
+                State.UI.execBtn.classList.add('executing');
+            } else {
+                State.UI.execBtn.textContent = Utils.getText('execute');
+                State.UI.execBtn.classList.remove('executing');
+            }
+
+            const actionButtons = document.createElement('div');
+            actionButtons.className = 'fab-helper-actions';
+
+            State.UI.syncBtn = document.createElement('button');
+            State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
+            State.UI.syncBtn.onclick = TaskRunner.refreshVisibleStates;
+
+            State.UI.hideBtn = document.createElement('button');
+            State.UI.hideBtn.onclick = TaskRunner.toggleHideSaved;
+
+            actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
+
+            // --- Log Panel (created before other elements to be appended first) ---
+            const logContainer = document.createElement('div');
+            logContainer.className = 'fab-log-container';
+
+            const logHeader = document.createElement('div');
+            logHeader.className = 'fab-log-header';
+            const logTitle = document.createElement('span');
+            logTitle.textContent = Utils.getText('operation_log');
+            const logControls = document.createElement('div');
+            logControls.className = 'fab-log-controls';
+
+            const copyLogBtn = document.createElement('button');
+            copyLogBtn.innerHTML = '📄';
+            copyLogBtn.title = Utils.getText('copyLog');
+            copyLogBtn.onclick = () => {
+                navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
+                    const originalText = copyLogBtn.textContent;
+                    copyLogBtn.textContent = '✅';
+                    setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
+                }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
+            };
+
+            const clearLogBtn = document.createElement('button');
+            clearLogBtn.innerHTML = '🗑️';
+            clearLogBtn.title = Utils.getText('clearLog');
+            clearLogBtn.onclick = () => { State.UI.logPanel.innerHTML = ''; };
+
+            logControls.append(copyLogBtn, clearLogBtn);
+            logHeader.append(logTitle, logControls);
+
+            State.UI.logPanel = document.createElement('div');
+            State.UI.logPanel.id = Config.UI_LOG_ID;
+
+            logContainer.append(logHeader, State.UI.logPanel);
+
+            // 添加当前保存的浏览位置显示
+            const positionContainer = document.createElement('div');
+            positionContainer.className = 'fab-helper-position-container';
+            positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px;';
+
+            const positionIcon = document.createElement('span');
+            positionIcon.textContent = Utils.getText('position_indicator');
+            positionIcon.style.marginRight = '4px';
+
+            const positionInfo = document.createElement('span');
+            positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+
+            // 保存引用以便后续更新
+            State.UI.savedPositionDisplay = positionInfo;
+
+            positionContainer.appendChild(positionIcon);
+            positionContainer.appendChild(positionInfo);
+
+            // Reorder elements for the new layout: Log first, then position, status, then buttons
+            dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
+
+            container.appendChild(dashboardContent);
+
+            // --- Settings Tab ---
+            const settingsContent = document.createElement('div');
+            settingsContent.className = 'fab-helper-tab-content';
+
+            const createSettingRow = (labelText, stateKey) => {
+                const row = document.createElement('div');
+                row.className = 'fab-setting-row';
+
+                const label = document.createElement('span');
+                label.className = 'fab-setting-label';
+                label.textContent = labelText;
+
+                const switchContainer = document.createElement('label');
+                switchContainer.className = 'fab-toggle-switch';
+
+                const input = document.createElement('input');
+                input.type = 'checkbox';
+                input.checked = State[stateKey];
+                input.onchange = (e) => {
+                    // Stop the event from doing anything weird, just in case.
+                    e.stopPropagation();
+                    e.preventDefault();
+
+                    if(stateKey === 'autoAddOnScroll') {
+                        TaskRunner.toggleAutoAdd();
+                    } else if (stateKey === 'rememberScrollPosition') {
+                        TaskRunner.toggleRememberPosition();
+                    } else if (stateKey === 'autoResumeAfter429') {
+                        TaskRunner.toggleAutoResume();
+                    } else if (stateKey === 'autoRefreshEmptyPage') {
+                        TaskRunner.toggleAutoRefreshEmpty();
+                    }
+                    // Manually sync the visual state of the checkbox since we prevented default action
+                    e.target.checked = State[stateKey];
+                };
+
+                const slider = document.createElement('span');
+                slider.className = 'fab-toggle-slider';
+
+                switchContainer.append(input, slider);
+                row.append(label, switchContainer);
+
+                // 所有设置行都使用相同的布局
+                row.appendChild(label);
+                row.appendChild(switchContainer);
+
+                return row;
+            };
+
+            const autoAddSetting = createSettingRow(Utils.getText('setting_auto_add_scroll'), 'autoAddOnScroll');
+            settingsContent.appendChild(autoAddSetting);
+
+            const rememberPosSetting = createSettingRow(Utils.getText('setting_remember_position'), 'rememberScrollPosition');
+            settingsContent.appendChild(rememberPosSetting);
+
+            const autoResumeSetting = createSettingRow(Utils.getText('setting_auto_resume_429'), 'autoResumeAfter429');
+            settingsContent.appendChild(autoResumeSetting);
+
+            const autoRefreshEmptySetting = createSettingRow(Utils.getText('setting_auto_refresh'), 'autoRefreshEmptyPage');
+            settingsContent.appendChild(autoRefreshEmptySetting);
+
+            const resetButton = document.createElement('button');
+            resetButton.textContent = Utils.getText('clear_all_data');
+            resetButton.style.cssText = 'width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;';
+            resetButton.onclick = Database.resetAllData;
+            settingsContent.appendChild(resetButton);
+
+            // 添加调试模式切换按钮 - 使用自定义行而不是createSettingRow
+            const debugModeRow = document.createElement('div');
+            debugModeRow.className = 'fab-setting-row';
+            debugModeRow.title = Utils.getText('setting_debug_tooltip');
+
+            const debugLabel = document.createElement('span');
+            debugLabel.className = 'fab-setting-label';
+            debugLabel.textContent = Utils.getText('debug_mode');
+            debugLabel.style.color = '#ff9800';
+
+            const switchContainer = document.createElement('label');
+            switchContainer.className = 'fab-toggle-switch';
+
+            const input = document.createElement('input');
+            input.type = 'checkbox';
+            input.checked = State.debugMode;
+            input.onchange = (e) => {
+                State.debugMode = e.target.checked;
+                debugModeRow.classList.toggle('active', State.debugMode);
+                Utils.logger('info', `调试模式已${State.debugMode ? '开启' : '关闭'}。${State.debugMode ? '将显示详细日志信息' : ''}`);
+                GM_setValue('fab_helper_debug_mode', State.debugMode);
+            };
+
+            const slider = document.createElement('span');
+            slider.className = 'fab-toggle-slider';
+
+            switchContainer.append(input, slider);
+            debugModeRow.append(debugLabel, switchContainer);
+            debugModeRow.classList.toggle('active', State.debugMode);
+            settingsContent.appendChild(debugModeRow);
+
+                
+
+              State.UI.tabContents.settings = settingsContent;
+              container.appendChild(settingsContent);
+
+            // 确保设置标签页默认隐藏
+            settingsContent.style.display = 'none';
+
+            // --- 调试标签页 ---
+            const debugContent = document.createElement('div');
+            debugContent.className = 'fab-helper-tab-content';
+            // 确保调试标签页默认隐藏
+            debugContent.style.display = 'none';
+            // 初始化调试内容容器
+            State.UI.debugContent = debugContent;
+
+            const debugHeader = document.createElement('div');
+            debugHeader.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;';
+
+            const debugTitle = document.createElement('h4');
+            debugTitle.textContent = Utils.getText('status_history');
+            debugTitle.style.margin = '0';
+
+            const debugControls = document.createElement('div');
+            debugControls.style.cssText = 'display: flex; gap: 8px;';
+
+            const copyHistoryBtn = document.createElement('button');
+            copyHistoryBtn.textContent = Utils.getText('copy_btn');
+            copyHistoryBtn.title = '复制详细历史记录';
+            copyHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
+            copyHistoryBtn.onclick = () => {
+                if (State.statusHistory.length === 0) {
+                    Utils.logger('info', '没有历史记录可供复制。');
+                    return;
+                }
+                const formatEntry = (entry) => {
+                    const date = new Date(entry.endTime).toLocaleString();
+
+                    if (entry.type === 'STARTUP') {
+                        return `🚀 ${Utils.getText('script_startup')}\n  - ${Utils.getText('time_label')}: ${date}\n  - ${Utils.getText('info_label')}: ${entry.message || ''}`;
+                    } else {
+                        const type = entry.type === 'NORMAL' ? `✅ ${Utils.getText('normal_period')}` : `🚨 ${Utils.getText('rate_limited_period')}`;
+                        // 添加空值检查，防止toFixed错误
+                        let details = `${Utils.getText('duration_label')}: ${entry.duration !== undefined && entry.duration !== null ? entry.duration.toFixed(2) : Utils.getText('unknown_duration')}s`;
+                        if (entry.requests !== undefined) {
+                            details += `, ${Utils.getText('requests_label')}: ${entry.requests}${Utils.getText('requests_unit')}`;
+                        }
+                        return `${type}\n  - ${Utils.getText('ended_at')}: ${date}\n  - ${details}`;
+                    }
+                };
+                const fullLog = State.statusHistory.map(formatEntry).join('\n\n');
+                navigator.clipboard.writeText(fullLog).then(() => {
+                    const originalText = copyHistoryBtn.textContent;
+                    copyHistoryBtn.textContent = Utils.getText('copied_success');
+                    setTimeout(() => { copyHistoryBtn.textContent = originalText; }, 2000);
+                }).catch(err => Utils.logger('error', Utils.getText('log_copy_failed'), err));
+            };
+
+            const clearHistoryBtn = document.createElement('button');
+            clearHistoryBtn.textContent = Utils.getText('clear_btn');
+            clearHistoryBtn.title = '清空历史记录';
+            clearHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
+            clearHistoryBtn.onclick = async () => {
+                if (window.confirm(Utils.getText('confirm_clear_history'))) {
+                    State.statusHistory = [];
+                    await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
+
+                    // 添加一个新的"当前会话"记录
+                    const currentSessionEntry = {
+                        type: 'STARTUP',
+                        duration: 0,
+                        endTime: new Date().toISOString(),
+                        message: Utils.getText('history_cleared_new_session')
+                    };
+                    await RateLimitManager.addToHistory(currentSessionEntry);
+
+                    UI.updateDebugTab();
+                    Utils.logger('info', Utils.getText('status_history_cleared'));
+                }
+            };
+
+            // 添加页面诊断按钮
+            const diagnosisBtn = document.createElement('button');
+            diagnosisBtn.textContent = Utils.getText('page_diagnosis');
+            diagnosisBtn.className = 'fab-helper-btn';
+            diagnosisBtn.style.cssText = 'margin-left: 10px; background: #2196F3; color: white;';
+            diagnosisBtn.onclick = () => {
+                try {
+                    const report = PageDiagnostics.diagnoseDetailPage();
+                    PageDiagnostics.logDiagnosticReport(report);
+                    Utils.logger('info', '页面诊断完成，请查看控制台输出');
+                } catch (error) {
+                    Utils.logger('error', `页面诊断失败: ${error.message}`);
+                }
+            };
+
+            debugControls.append(copyHistoryBtn, clearHistoryBtn, diagnosisBtn);
+            debugHeader.append(debugTitle, debugControls);
+
+            const historyListContainer = document.createElement('div');
+            historyListContainer.style.cssText = 'max-height: 250px; overflow-y: auto; background: rgba(10,10,10,0.85); color: #ddd; padding: 8px; border-radius: var(--radius-m);';
+            historyListContainer.className = 'fab-debug-history-container';
+            // 将historyListContainer保存为State.UI.historyContainer，而不是debugContent
+            State.UI.historyContainer = historyListContainer;
+
+            debugContent.append(debugHeader, historyListContainer);
+            State.UI.tabContents.debug = debugContent;
+            // 确保调试标签页默认隐藏
+            debugContent.style.display = 'none';
+            container.appendChild(debugContent);
+
+            document.body.appendChild(container);
+
+            // --- BUG FIX: Explicitly return true on successful creation ---
+            return true;
+        },
+
+        update: () => {
+            if (!State.UI.container) return;
+
+            // --- Update Static Text Elements (for language switching) ---
+            // 更新应用标题
+            const titleElement = State.UI.container.querySelector('span[style*="font-weight: 600"]');
+            if (titleElement) {
+                titleElement.textContent = Utils.getText('app_title');
+            }
+
+            // 更新标签页文本
+            const tabs = ['dashboard', 'settings', 'debug'];
+            tabs.forEach((tabName) => {
+                const tabButton = State.UI.tabs[tabName];
+                if (tabButton) {
+                    tabButton.textContent = Utils.getText(`tab_${tabName}`);
+                }
+            });
+
+            // 更新同步按钮文本
+            if (State.UI.syncBtn) {
+                State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
+            }
+
+            // --- Update Status Numbers ---
+            const todoCount = State.db.todo.length;
+            const doneCount = State.db.done.length;
+            const failedCount = State.db.failed.length;
+            const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+
+            State.UI.statusTodo.querySelector('span').textContent = todoCount;
+            State.UI.statusDone.querySelector('span').textContent = doneCount;
+            State.UI.statusFailed.querySelector('span').textContent = failedCount;
+            State.UI.statusHidden.querySelector('span').textContent = State.hiddenThisPageCount;
+            State.UI.statusVisible.querySelector('span').textContent = visibleCount;
+
+            // --- Update Button States ---
+            // 确保按钮状态与State.isExecuting一致
+            if (State.isExecuting) {
+                State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
+                State.UI.execBtn.classList.add('executing');
+                // 添加提示信息，显示当前执行状态
+                if (State.executionTotalTasks > 0) {
+                    const progress = State.executionCompletedTasks + State.executionFailedTasks;
+                    const percentage = Math.round((progress / State.executionTotalTasks) * 100);
+                    State.UI.execBtn.title = Utils.getText('tooltip_executing_progress', progress, State.executionTotalTasks, percentage);
+                } else {
+                    State.UI.execBtn.title = Utils.getText('tooltip_executing');
+                }
+            } else {
+                State.UI.execBtn.textContent = Utils.getText('execute');
+                State.UI.execBtn.classList.remove('executing');
+                State.UI.execBtn.title = Utils.getText('tooltip_start_tasks');
+            }
+
+            State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
+        },
+        removeAllOverlays: () => {
+            document.querySelectorAll(Config.SELECTORS.card).forEach(card => {
+                const overlay = card.querySelector('.fab-helper-overlay');
+                if (overlay) overlay.remove();
+                card.style.opacity = '1';
+            });
+        },
+        switchTab: (tabName) => {
+            for (const name in State.UI.tabs) {
+                State.UI.tabs[name].classList.toggle('active', name === tabName);
+                State.UI.tabContents[name].style.display = name === tabName ? 'block' : 'none';
+            }
+        },
+        updateDebugTab: () => {
+            // 使用historyContainer而不是debugContent
+            if (!State.UI.historyContainer) return;
+            State.UI.historyContainer.innerHTML = ''; // Clear previous entries
+
+            // 创建历史记录项
+            const createHistoryItem = (entry) => {
+                const item = document.createElement('div');
+                item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color);';
+
+                const header = document.createElement('div');
+                header.style.cssText = 'display: flex; align-items: center; gap: 8px; margin-bottom: 4px;';
+
+                let icon, color, titleText;
+
+                if (entry.type === 'STARTUP') {
+                    icon = '🚀';
+                    color = 'var(--blue)';
+                    titleText = Utils.getText('script_startup');
+                } else if (entry.type === 'NORMAL') {
+                    icon = '✅';
+                    color = 'var(--green)';
+                    titleText = Utils.getText('normal_period');
+                } else { // RATE_LIMITED
+                    icon = '🚨';
+                    color = 'var(--orange)';
+                    titleText = Utils.getText('rate_limited_period');
+                }
+
+                header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
+
+                const details = document.createElement('div');
+                details.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;';
+
+                let detailsHtml = '';
+
+                if (entry.type === 'STARTUP') {
+                    detailsHtml = `<div>${Utils.getText('status_time_label')}: ${new Date(entry.endTime).toLocaleString()}</div>`;
+                    if (entry.message) {
+                        detailsHtml += `<div>${Utils.getText('status_info_label')}: <strong>${entry.message}</strong></div>`;
+                    }
+                } else {
+                    // 添加空值检查，防止toFixed错误
+                    const duration = entry.duration !== undefined && entry.duration !== null ?
+                        entry.duration.toFixed(2) : Utils.getText('status_unknown_duration');
+                    detailsHtml = `<div>${Utils.getText('status_duration_label')}<strong>${duration}s</strong></div>`;
+                    if (entry.requests !== undefined) {
+                        detailsHtml += `<div>${Utils.getText('status_requests_label')}<strong>${entry.requests}</strong></div>`;
+                    }
+                    // 添加空值检查，防止日期错误
+                    const endTime = entry.endTime ? new Date(entry.endTime).toLocaleString() : Utils.getText('status_unknown_time');
+                    detailsHtml += `<div>${Utils.getText('status_ended_at_label')}${endTime}</div>`;
+                }
+
+                details.innerHTML = detailsHtml;
+
+                item.append(header, details);
+                return item;
+            };
+
+            // 创建当前状态项（即使没有历史记录也会显示）
+            const createCurrentStatusItem = () => {
+                if(State.appStatus === 'NORMAL' || State.appStatus === 'RATE_LIMITED') {
+                    const item = document.createElement('div');
+                    item.style.cssText = 'padding: 8px; border-bottom: 1px solid var(--border-color); background: var(--blue-bg);';
 
                     // --- Header with Version ---
                     const header = document.createElement('div');
