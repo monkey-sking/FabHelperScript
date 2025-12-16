@@ -32,7 +32,6 @@
         SCRIPT_NAME: 'Fab Helper (优化版)',
         DB_VERSION: 3,
         DB_NAME: 'fab_helper_db',
-        MAX_WORKERS: 5, // Maximum number of concurrent worker tabs
         MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
         WORKER_TIMEOUT: 30000, // 工作标签页超时时间
         UI_CONTAINER_ID: 'fab-helper-container',
@@ -379,7 +378,11 @@
 
                 // 页面诊断
                 log_diagnosis_complete: 'Page diagnosis complete, check console output',
-                log_diagnosis_failed: 'Page diagnosis failed: {0}'
+                log_diagnosis_failed: 'Page diagnosis failed: {0}',
+
+                // 账号验证
+                auth_error: 'Session expired: CSRF token not found, please log in again',
+                auth_error_alert: 'Session expired: Please log in again before using the script'
             },
             zh: {
                 // 基础UI
@@ -697,7 +700,11 @@
 
                 // 页面诊断
                 log_diagnosis_complete: '页面诊断完成，请查看控制台输出',
-                log_diagnosis_failed: '页面诊断失败: {0}'
+                log_diagnosis_failed: '页面诊断失败: {0}',
+
+                // 账号验证
+                auth_error: '账号失效：未找到 CSRF token，请重新登录',
+                auth_error_alert: '账号失效：请重新登录后再使用脚本'
             }
         },
         // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
@@ -735,8 +742,6 @@
         isExecuting: false, // 是否正在执行任务
         isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
         isWorkerTab: false, // 是否是工作标签页
-        isReconning: false, // 是否正在进行API扫描
-        lastReconUrl: '', // 最后一次API扫描的URL
         totalTasks: 0, // API扫描的总任务数
         completedTasks: 0, // API扫描的已完成任务数
         isDispatchingTasks: false, // 新增：标记是否正在派发任务
@@ -747,7 +752,6 @@
         normalStartTime: Date.now(),
         successfulSearchCount: 0,
         statusHistory: [], // Holds the history of NORMAL/RATE_LIMITED periods
-        autoResumeAfter429: false, // The new setting for the feature
         // --- 限速恢复相关状态 ---
         consecutiveSuccessCount: 0, // 连续成功请求计数
         requiredSuccessCount: 3, // 退出限速需要的连续成功请求数
@@ -1138,7 +1142,7 @@
         checkAuthentication: () => {
             const csrfToken = Utils.getCookie('fab_csrftoken');
             if (!csrfToken) {
-                Utils.logger('error', '账号失效：未找到 CSRF token，请重新登录');
+                Utils.logger('error', Utils.getText('auth_error'));
                 // 停止执行状态
                 if (State.isExecuting) {
                     State.isExecuting = false;
@@ -1150,7 +1154,7 @@
                     State.UI.execBtn.disabled = true;
                 }
                 // 显示警告信息
-                alert('账号失效：请重新登录后再使用脚本');
+                alert(Utils.getText('auth_error_alert'));
                 return false;
             }
             return true;
@@ -2976,18 +2980,6 @@
             }, randomDelay);
         },
 
-        resetReconProgress: async () => {
-            if (State.isReconning) {
-                Utils.logger('warn', Utils.getText('log_recon_active'));
-                return;
-            }
-            await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-            if (State.UI.reconProgressDisplay) {
-                State.UI.reconProgressDisplay.textContent = Utils.getText('page_reset');
-            }
-            Utils.logger('info', Utils.getText('log_recon_reset'));
-        },
-
         refreshVisibleStates: async () => {
             const API_ENDPOINT = 'https://www.fab.com/i/users/me/listings-states';
             const API_CHUNK_SIZE = 24; // Server-side limit
@@ -3277,40 +3269,6 @@
             await Database.saveFailed();
             Utils.logger('info', `${count} tasks moved from Failed to To-Do list.`);
             UI.update(); // Force immediate UI update
-        },
-
-        // --- Core Logic Functions ---
-        reconWithApi: async () => {
-            if (!State.isReconning) return;
-
-            try {
-                // 不再主动发送API请求，而是使用网页原生请求的数据
-                Utils.logger('info', `[优化] 不再主动发送API请求，而是使用网页原生请求的数据`);
-                Utils.logger('info', `[优化] 当前等待列表中有 ${DataCache.waitingList.size} 个商品ID等待更新`);
-
-                // 更新UI显示
-                if (State.UI.reconProgressDisplay) {
-                    State.UI.reconProgressDisplay.textContent = Utils.getText('using_native_requests', DataCache.waitingList.size);
-                }
-
-                // 结束扫描
-                State.isReconning = false;
-                await GM_deleteValue(Config.DB_KEYS.NEXT_URL);
-                Utils.logger('info', Utils.getText('log_recon_end'));
-                UI.update();
-                return;
-
-
-
-
-            } catch (error) {
-                Utils.logger('error', `API扫描出错: ${error.message}`);
-                if (error.message && error.message.includes('429')) {
-                    Utils.logger('warn', '检测到429错误，可能是请求过于频繁。将暂停扫描。');
-                    State.isReconning = false;
-                }
-                UI.update();
-            }
         },
 
         // This is the watchdog timer that patrols for stalled workers.
