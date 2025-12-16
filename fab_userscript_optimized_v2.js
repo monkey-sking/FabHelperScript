@@ -936,12 +936,15 @@
         logger: (type, ...args) => {
             // 支持debug级别日志
             if (type === 'debug') {
-                // 默认不在控制台显示debug级别日志，除非启用了调试模式
-                if (State.debugMode) {
-                    // 调试模式下在控制台输出日志，使用console.log而不是console.debug以确保可见性
-                    console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
+                // 只有在调试模式下才显示debug日志（控制台和面板都需要开启调试模式）
+                if (!State.debugMode) {
+                    return; // 调试模式关闭时，完全不显示debug日志
                 }
-                // 无论是否调试模式，都记录到日志面板
+
+                // 调试模式下在控制台输出日志
+                console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
+
+                // 调试模式下记录到日志面板
                 if (State.UI.logPanel) {
                     const logEntry = document.createElement('div');
                     logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px; color: #888;';
