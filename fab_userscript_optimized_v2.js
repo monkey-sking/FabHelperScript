@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251216180600
+// @version      3.5.0-20251218111325
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -371,11 +371,29 @@
                 log_no_visible_items_todo_workers: 'Rate limited with {0} to-do and {1} workers, not auto-refreshing.',
                 log_visible_items_detected_skipping: '⏹️ Detected {0} visible items, not refreshing to avoid interruption.',
                 log_please_complete_tasks_first: 'Please complete or cancel these tasks before refreshing.',
-                log_entering_rate_limit_from: '🚨 RATE LIMIT from [{0}]! Normal period lasted {1}s with {2} requests.',
+                log_display_mode_switched: '👁️ Display mode switched, current page has {0} visible items',
+                position_label: 'Location',
+                log_entering_rate_limit_from: '🚨 Entering RATE LIMIT state from [{0}]! Normal period lasted {1}s with {2} requests.',
+                log_entering_rate_limit_from_v2: '🚨 RATE LIMIT DETECTED from [{0}]! Normal operation lasted {1}s with {2} successful search requests.',
+                rate_limit_recovery_success: '✅ Rate limit appears to be lifted from [{0}]. The 429 period lasted {1}s.',
+                fab_dom_refresh_complete: '[Fab DOM Refresh] Complete. Updated {0} visible card states.',
+                auto_refresh_disabled_rate_limit: '⚠️ In rate limit state, auto refresh is disabled. Please manually refresh the page if needed.',
 
                 // 页面诊断
                 log_diagnosis_complete: 'Page diagnosis complete, check console output',
                 log_diagnosis_failed: 'Page diagnosis failed: {0}',
+
+                // Auto resume
+                log_auto_resume_page_loading: '[Auto-Resume] Page loaded in rate limited state. Running recovery probe...',
+                log_recovery_probe_success: '✅ Recovery probe succeeded! Rate limit lifted, continuing normal operations.',
+                log_recovery_probe_failed: 'Recovery probe failed. Still rate limited, will continue random refresh...',
+                log_tasks_still_running: 'Still have {0} tasks running, waiting for them to finish before refresh...',
+                log_todo_tasks_waiting: '{0} to-do tasks waiting to execute, will try to continue execution...',
+                countdown_refresh_source: 'Recovery probe failed',
+                failed_list_empty: 'Failed list is empty, no action needed.',
+                opening_failed_items: 'Opening {0} failed items...',
+                log_rate_limit_check_start: 'Starting rate limit status check...',
+                log_insufficient_info_status: 'Insufficient info to determine rate limit status, maintaining current state',
 
                 // 账号验证
                 auth_error: 'Session expired: CSRF token not found, please log in again',
@@ -690,11 +708,29 @@
                 log_no_visible_items_todo_workers: '虽然处于限速状态，但检测到有 {0} 个待办任务和 {1} 个活动工作线程，暂不自动刷新页面。',
                 log_visible_items_detected_skipping: '⏹️ 检测到页面上有 {0} 个可见商品，不触发自动刷新以避免中断浏览。',
                 log_please_complete_tasks_first: '请手动完成或取消这些任务后再刷新页面。',
+                log_display_mode_switched: '👁️ 显示模式已切换，当前页面有 {0} 个可见商品',
+                position_label: '位置',
                 log_entering_rate_limit_from: '🚨 来自 [{0}] 的限速触发！正常运行期持续了 {1} 秒，期间有 {2} 次成功的搜索请求。',
+                log_entering_rate_limit_from_v2: '🚨 从 [{0}] 检测到限速！正常运行持续了 {1} 秒，包含 {2} 次成功搜索请求。',
+                rate_limit_recovery_success: '✅ 限速似乎已从 [{0}] 解除。429 状态持续了 {1} 秒。',
+                fab_dom_refresh_complete: '[Fab DOM Refresh] 完成。更新了 {0} 个可见卡片的状态。',
+                auto_refresh_disabled_rate_limit: '⚠️ 处于限速状态，自动刷新功能已关闭，请在需要时手动刷新页面。',
 
                 // 页面诊断
                 log_diagnosis_complete: '页面诊断完成，请查看控制台输出',
                 log_diagnosis_failed: '页面诊断失败: {0}',
+
+                // Auto resume
+                log_auto_resume_page_loading: '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...',
+                log_recovery_probe_success: '✅ 恢复探测成功！限速已解除，继续正常操作。',
+                log_recovery_probe_failed: '恢复探测失败。仍处于限速状态，将继续随机刷新...',
+                log_tasks_still_running: '仍有 {0} 个任务在执行中，等待它们完成后再刷新...',
+                log_todo_tasks_waiting: '有 {0} 个待办任务等待执行，将尝试继续执行...',
+                countdown_refresh_source: '恢复探测失败',
+                failed_list_empty: '失败列表为空，无需操作。',
+                opening_failed_items: '正在打开 {0} 个失败项目...',
+                log_rate_limit_check_start: '开始检查限速状态...',
+                log_insufficient_info_status: '没有足够的信息判断限速状态，保持当前状态',
 
                 // 账号验证
                 auth_error: '账号失效：未找到 CSRF token，请重新登录',
@@ -1003,7 +1039,7 @@
         },
         detectLanguage: () => {
             const oldLang = State.lang;
-            State.lang = window.location.href.includes('/zh-cn/') ? 'zh' : 'en';
+            State.lang = window.location.href.includes('/zh-cn/') ? 'zh' : (navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
             Utils.logger('info', `语言检测: 地址=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
 
             // 如果语言发生了变化且UI已经创建，更新UI
@@ -1109,13 +1145,13 @@
         },
         // 添加游标解码函数
         decodeCursor: (cursor) => {
-            if (!cursor) return '无保存位置';
+            if (!cursor) return Utils.getText('no_saved_position');
             try {
-                // Base64解码
+                // Base64 decode
                 const decoded = atob(cursor);
 
-                // 游标通常格式为: o=1&p=Item+Name 或 p=Item+Name
-                // 主要提取p参数的值，通常包含项目名称
+                // Cursor format is usually: o=1&p=Item+Name or p=Item+Name
+                // Extract p parameter value
                 let match;
                 if (decoded.includes('&p=')) {
                     match = decoded.match(/&p=([^&]+)/);
@@ -1124,16 +1160,33 @@
                 }
 
                 if (match && match[1]) {
-                    // 解码URI组件并替换+为空格
+                    // Decode URI component and replace + with space
                     const itemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
-                    return `位置: "${itemName}"`;
+                    return `${Utils.getText('position_label')}: "${itemName}"`;
                 }
 
-                return `位置: (已保存，但无法读取名称)`;
+                return `${Utils.getText('position_label')}: (Unknown)`;
             } catch (e) {
-                Utils.logger('error', `游标解码失败: ${e.message}`);
-                return '位置: (格式无法解析)';
+                Utils.logger('error', `Cursor decode failed: ${e.message}`);
+                return `${Utils.getText('position_label')}: (Invalid)`;
             }
+        },
+        // Helper to extract just the item name from cursor
+        getCursorItemName: (cursor) => {
+            if (!cursor) return null;
+            try {
+                const decoded = atob(cursor);
+                let match;
+                if (decoded.includes('&p=')) {
+                    match = decoded.match(/&p=([^&]+)/);
+                } else if (decoded.startsWith('p=')) {
+                    match = decoded.match(/p=([^&]+)/);
+                }
+                if (match && match[1]) {
+                    return decodeURIComponent(match[1].replace(/\+/g, ' '));
+                }
+            } catch (e) { }
+            return null;
         },
         // 账号验证函数
         checkAuthentication: () => {
@@ -1713,7 +1766,7 @@
             const wasAdded = await this.addToHistory(logEntry);
 
             if (wasAdded) {
-                Utils.logger('error', `🚨 RATE LIMIT DETECTED from [${source}]! Normal operation lasted ${normalDuration}s with ${State.successfulSearchCount} successful search requests.`);
+                Utils.logger('error', Utils.getText('log_entering_rate_limit_from_v2', source, normalDuration, State.successfulSearchCount));
             } else {
                 Utils.logger('debug', Utils.getText('duplicate_normal_status_detected', source));
             }
@@ -1773,7 +1826,7 @@
                 countdownRefresh(randomDelay, '429自动恢复');
             } else {
                 // 自动刷新功能已关闭
-                Utils.logger('info', '⚠️ 处于限速状态，自动刷新功能已关闭，请在需要时手动刷新页面。');
+                Utils.logger('info', Utils.getText('auto_refresh_disabled_rate_limit'));
             }
 
             return true;
@@ -1834,7 +1887,7 @@
             const wasAdded = await this.addToHistory(logEntry);
 
             if (wasAdded) {
-                Utils.logger('info', `✅ Rate limit appears to be lifted from [${source}]. The 429 period lasted ${rateLimitDuration}s.`);
+                Utils.logger('info', Utils.getText('rate_limit_recovery_success', source, rateLimitDuration));
             } else {
                 Utils.logger('debug', `检测到重复的限速状态记录，来源: ${source}`);
             }
@@ -1876,7 +1929,7 @@
             State.isCheckingRateLimit = true;
 
             try {
-                Utils.logger('info', '开始检查限速状态...');
+                Utils.logger('info', Utils.getText('log_rate_limit_check_start'));
 
                 // 首先检查页面内容是否包含限速信息
                 const pageText = document.body.innerText || '';
@@ -1918,7 +1971,7 @@
                 }
 
                 // 如果没有足够的信息判断，保持当前状态
-                Utils.logger('info', `没有足够的信息判断限速状态，保持当前状态`);
+                Utils.logger('info', Utils.getText('log_insufficient_info_status'));
                 return State.appStatus === 'NORMAL';
             } catch (e) {
                 Utils.logger('error', `限速状态检查失败: ${e.message}`);
@@ -2585,6 +2638,9 @@
             // 检查是否包含免费关键词
             const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cardText.includes(freeWord));
 
+            // 检查是否有 -100% 折扣（限时免费）
+            const has100PercentDiscount = cardText.includes('-100%');
+
             // 检查是否有非零价格 (如 $1.99, $10.99, $28.99 等)
             // 匹配 $数字 格式，但排除 $0 或 $0.00
             const priceMatch = cardText.match(/\$(\d+(?:\.\d{2})?)/g);
@@ -2614,8 +2670,8 @@
                 }
             }
 
-            // 如果包含免费关键词且没有非零价格，则是免费的
-            return hasFreeKeyword;
+            // 如果包含免费关键词或-100%折扣，则是免费的
+            return hasFreeKeyword || has100PercentDiscount;
         },
         // --- Toggles ---
         // This is the new main execution function, triggered by the "一键开刷" button.
@@ -2778,7 +2834,7 @@
             if (!State.hideSaved) {
                 // 重新计算实际可见的商品数量
                 const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
-                Utils.logger('info', `👁️ 显示模式已切换，当前页面有 ${actualVisibleCount} 个可见商品`);
+                Utils.logger('info', Utils.getText('log_display_mode_switched', actualVisibleCount));
             }
 
             UI.update();
@@ -3163,7 +3219,7 @@
                     await Database.saveDone();
                 }
 
-                Utils.logger('debug', `[Fab DOM Refresh] Complete. Updated ${updatedCount} visible card states.`);
+                Utils.logger('debug', Utils.getText('fab_dom_refresh_complete', updatedCount));
 
                 TaskRunner.runHideOrShow();
 
@@ -4124,7 +4180,7 @@
                     Utils.logger('info', `[Fab DOM Refresh] ${Utils.getText('fab_dom_api_complete', confirmedOwned)}`);
 
                     // 不立即执行隐藏，而是在调用方决定何时执行
-                    Utils.logger('info', `[Fab DOM Refresh] Complete. Updated ${confirmedOwned} visible card states.`);
+                    Utils.logger('info', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
                 } else {
                     Utils.logger('info', Utils.getText('fab_dom_no_new_owned'));
                 }
@@ -4418,6 +4474,15 @@
                     width: 300px;
                     font-size: 14px;
                     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                }
+                .fab-position-marker {
+                    position: absolute;
+                    top: 5px;
+                    right: 5px;
+                    font-size: 20px;
+                    z-index: 100;
+                    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+                    pointer-events: none;
                 }
                 /* FINAL FIX: Apply a robust box model to all elements within the container */
                 #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
@@ -4748,11 +4813,11 @@
             State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
             State.UI.statusFailed.onclick = () => {
                 if (State.db.failed.length === 0) {
-                    Utils.logger('info', '失败列表为空，无需操作。');
+                    Utils.logger('info', Utils.getText('failed_list_empty'));
                     return;
                 }
                 if (window.confirm(Utils.getText('confirm_open_failed', State.db.failed.length))) {
-                    Utils.logger('info', `正在打开 ${State.db.failed.length} 个失败项目...`);
+                    Utils.logger('info', Utils.getText('opening_failed_items', State.db.failed.length));
                     State.db.failed.forEach(task => {
                         GM_openInTab(task.url, { active: false });
                     });
@@ -4824,7 +4889,7 @@
             // 添加当前保存的浏览位置显示
             const positionContainer = document.createElement('div');
             positionContainer.className = 'fab-helper-position-container';
-            positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px;';
+            positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
 
             const positionIcon = document.createElement('span');
             positionIcon.textContent = Utils.getText('position_indicator');
@@ -5088,11 +5153,27 @@
             const failedCount = State.db.failed.length;
             const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
 
+            // Update status values (spans)
             State.UI.statusTodo.querySelector('span').textContent = todoCount;
             State.UI.statusDone.querySelector('span').textContent = doneCount;
             State.UI.statusFailed.querySelector('span').textContent = failedCount;
             State.UI.statusHidden.querySelector('span').textContent = State.hiddenThisPageCount;
             State.UI.statusVisible.querySelector('span').textContent = visibleCount;
+
+            // Update status labels (for language switching and to prevent corruption)
+            const statusLabelUpdates = [
+                { element: State.UI.statusVisible, icon: '👁️', key: 'visible' },
+                { element: State.UI.statusTodo, icon: '📥', key: 'todo' },
+                { element: State.UI.statusDone, icon: '✅', key: 'added' },
+                { element: State.UI.statusFailed, icon: '❌', key: 'failed' },
+                { element: State.UI.statusHidden, icon: '🙈', key: 'hidden' }
+            ];
+            statusLabelUpdates.forEach(({ element, icon, key }) => {
+                const labelDiv = element?.querySelector('.fab-helper-status-label');
+                if (labelDiv) {
+                    labelDiv.textContent = `${icon} ${Utils.getText(key)}`;
+                }
+            });
 
             // --- Update Button States ---
             // 确保按钮状态与State.isExecuting一致
@@ -5126,6 +5207,58 @@
             for (const name in State.UI.tabs) {
                 State.UI.tabs[name].classList.toggle('active', name === tabName);
                 State.UI.tabContents[name].style.display = name === tabName ? 'block' : 'none';
+            }
+        },
+        runHideOrShow: () => {
+            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            const savedItemName = Utils.getCursorItemName(State.savedCursor);
+
+            cards.forEach(card => {
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                if (!link) return;
+
+                // 1. Position Marker Logic
+                if (savedItemName) {
+                    const titleEl = card.querySelector('[title], h3, .fabkit-Typography-body1'); // Attempt to find title
+                    // Better approach: check common text locations
+                    const cardText = card.textContent;
+                    // Strict check: if card text contains the item name. 
+                    // Since savedItemName can be partial or formatted, we check for inclusion.
+                    // To be more precise, let's look for known title element or check existence
+
+                    // Simple logic: If marker doesn't exist and validation passes, add it.
+                    // Validation: card title includes savedItemName.
+                    // Note: savedItemName from cursor might be 'Cyberpunk City' while card is 'Cyberpunk City Asset Pack'.
+                    // Cursor p= usually matches the slug or title start.
+
+                    // Let's use a specialized check if available, or just inclusion in innerText for now for robustness
+                    if (cardText.includes(savedItemName) && !card.querySelector('.fab-position-marker')) {
+                        const marker = document.createElement('div');
+                        marker.className = 'fab-position-marker';
+                        marker.textContent = '📍';
+                        marker.title = Utils.getText('position_label');
+                        card.style.position = 'relative'; // Ensure absolute positioning works
+                        card.appendChild(marker);
+                    } else if (!cardText.includes(savedItemName)) {
+                        // Remove if it doesn't match (in case of card reuse/virtualization, though less likely here)
+                        const existingMarker = card.querySelector('.fab-position-marker');
+                        if (existingMarker) existingMarker.remove();
+                    }
+                }
+
+                // 2. Hide/Show Logic
+                const url = link.href.split('?')[0];
+                if (State.hideSaved && Database.isDone(url)) {
+                    card.style.display = 'none';
+                } else {
+                    card.style.display = '';
+                }
+            });
+
+            // Update visible count in UI
+            if (State.UI.statusVisible) {
+                const visible = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+                State.UI.statusVisible.querySelector('span').textContent = visible;
             }
         },
         updateDebugTab: () => {
@@ -5693,31 +5826,31 @@
 
         // The auto-resume logic is preserved - always try to recover from 429
         if (State.appStatus === 'RATE_LIMITED') {
-            Utils.logger('info', '[Auto-Resume] 页面在限速状态下加载。正在进行恢复探测...');
+            Utils.logger('info', Utils.getText('log_auto_resume_page_loading'));
 
             // 使用统一的限速状态检查
             const isRecovered = await RateLimitManager.checkRateLimitStatus();
 
             if (isRecovered) {
-                Utils.logger('info', '✅ 恢复探测成功！限速已解除，继续正常操作。');
+                Utils.logger('info', Utils.getText('log_recovery_probe_success'));
 
                 // 如果有待办任务，继续执行
                 if (State.db.todo.length > 0 && !State.isExecuting) {
-                    Utils.logger('info', `发现 ${State.db.todo.length} 个待办任务，自动恢复执行...`);
+                    Utils.logger('info', Utils.getText('log_found_todo_auto_resume', State.db.todo.length));
                     State.isExecuting = true;
                     Database.saveExecutingState();
                     TaskRunner.executeBatch();
                 }
             } else {
                 // 仍然处于限速状态，继续随机刷新
-                Utils.logger('warn', '恢复探测失败。仍处于限速状态，将继续随机刷新...');
+                Utils.logger('warn', Utils.getText('log_recovery_probe_failed'));
 
                 // 如果有活动任务，等待它们完成
                 if (State.activeWorkers > 0) {
-                    Utils.logger('info', `仍有 ${State.activeWorkers} 个任务在执行中，等待它们完成后再刷新...`);
+                    Utils.logger('info', Utils.getText('log_tasks_still_running', State.activeWorkers));
                 } else if (State.db.todo.length > 0) {
                     // 如果有待办任务但没有活动任务，尝试继续执行
-                    Utils.logger('info', `有 ${State.db.todo.length} 个待办任务等待执行，将尝试继续执行...`);
+                    Utils.logger('info', Utils.getText('log_todo_tasks_waiting', State.db.todo.length));
                     if (!State.isExecuting) {
                         State.isExecuting = true;
                         Database.saveExecutingState();
@@ -5726,7 +5859,7 @@
                 } else {
                     // 没有任务，直接刷新
                     const randomDelay = 5000 + Math.random() * 10000;
-                    countdownRefresh(randomDelay, '恢复探测失败');
+                    countdownRefresh(randomDelay, Utils.getText('countdown_refresh_source'));
                 }
             }
         }
