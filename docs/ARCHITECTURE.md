@@ -4,44 +4,81 @@
 
 ## 整体架构
 
-Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成：
+Fab Helper 脚本采用现代化的模块化设计（ES Modules），通过 esbuild 构建为单一的用户脚本。
+
+## 项目结构
 
 ```
-+---------------------------+
-|       脚本初始化          |
-+---------------------------+
-           |
-           v
-+---------------------------+
-|       功能检测模块        |
-+---------------------------+
-           |
-           v
-+---------------------------+     +---------------------------+
-|       限速处理模块        | <-> |       自动恢复模块        |
-+---------------------------+     +---------------------------+
-           |
-           v
-+---------------------------+     +---------------------------+
-|       请求优化模块        | <-> |       游标恢复模块        |
-+---------------------------+     +---------------------------+
-           |
-           v
-+---------------------------+     +---------------------------+
-|       DOM 观察模块        | <-> |       数据缓存模块        |
-+---------------------------+     +---------------------------+
-           |
-           v
-+---------------------------+     +---------------------------+
-|       功能扩展模块        | <-> |       热更新模块          |
-+---------------------------+     +---------------------------+
+src/
+├── index.js             # 入口文件 (初始化、全局事件)
+├── config.js            # 全局配置 (常量、选择器)
+├── state.js             # 集中状态管理 (State 对象)
+├── i18n/                # 国际化资源 (en.js, zh.js)
+└── modules/             # 功能模块
+    ├── api.js           # API 请求封装
+    ├── data-cache.js    # 数据缓存层
+    ├── database.js      # 持久化存储 (GM_getValue wrapper)
+    ├── instance-manager.js # 多标签页/实例管理
+    ├── page-diagnostics.js # 页面诊断工具
+    ├── page-patcher.js  # 页面修补与游标管理
+    ├── rate-limit-manager.js # 限速检测与恢复
+    ├── task-runner.js   # 任务调度与执行核心
+    ├── ui.js            # 界面渲染与交互
+    └── utils.js         # 通用工具函数
 ```
+
+## 核心模块架构
+
+```mermaid
+graph TD
+    Entry[index.js] --> Utils
+    Entry --> State
+    Entry --> UI
+    Entry --> TaskRunner
+    
+    TaskRunner --> Database
+    TaskRunner --> API
+    TaskRunner --> RateLimitManager
+    TaskRunner --> InstanceManager
+    
+    UI --> State
+    UI --> Utils
+    
+    API --> RateLimitManager
+    API --> DataCache
+```
+
+## 模块说明
+
+### 1. 核心控制层
+
+- **index.js**: 程序入口，负责各模块初始化、拦截器注入和全局事件监听。
+- **task-runner.js**: 整个脚本的大脑。负责扫描商品、调度后台 Worker 标签页、处理批量任务和自动浏览逻辑。
+- **ui.js**: 负责创建和更新页面上的悬浮面板、状态指示器和控制按钮。
+
+### 2. 数据与状态层
+
+- **state.js**: 单例对象，存储运行时状态（如当前队列、执行状态、UI引用）。
+- **database.js**: 封装 `GM_getValue`/`GM_setValue`，提供持久化数据的读写接口。
+- **data-cache.js**: 内存缓存，用于存储临时的 API 响应数据，减少重复请求。
+
+### 3. 网络与诊断层
+
+- **api.js**: 统一的 API 请求适配器，自动处理 CSRF Token。
+- **rate-limit-manager.js**: 专门处理 429 错误状态。
+- **page-patcher.js**: 处理复杂的页面状态恢复（如游标位置、滚动位置）。
+
+### 4. 基础设施
+
+- **instance-manager.js**: 协调多个打开的 Fab 页面。
+- **utils.js**: 提供通用工具函数。
 
 ## 核心模块说明
 
 ### 1. 脚本初始化模块
 
 负责脚本的初始化工作，包括：
+
 - 设置全局变量和配置
 - 注入CSS样式
 - 初始化各个功能模块
@@ -50,6 +87,7 @@ Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成
 ### 2. 功能检测模块
 
 检测当前页面环境和可用功能：
+
 - 判断当前页面类型
 - 检查API是否可用
 - 检测浏览器环境
@@ -58,6 +96,7 @@ Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成
 ### 3. 限速处理模块
 
 处理网站API请求限速问题：
+
 - 检测 429 状态码（Too Many Requests）
 - 记录限速发生时间和持续时间
 - 监控全局 XHR 和 fetch 请求
@@ -65,6 +104,7 @@ Fab Helper 脚本采用模块化设计，主要由以下几个核心模块组成
 - 智能检测可见商品数量，决定是否刷新页面
 
 关键函数：
+
 ```javascript
 function handleRateLimit(source) {
   // 处理限速情况
@@ -82,6 +122,7 @@ function checkRateLimitStatus() {
 ### 4. 自动恢复模块
 
 当检测到限速时自动尝试恢复：
+
 - 计算适当的等待时间
 - 管理自动刷新倒计时
 - 执行页面刷新
@@ -89,6 +130,7 @@ function checkRateLimitStatus() {
 - 智能判断可见商品数量，避免中断浏览
 
 关键函数：
+
 ```javascript
 function startAutoRecovery() {
   // 启动自动恢复
@@ -106,6 +148,7 @@ function countdownRefresh(delay, reason) {
 ### 5. 请求优化模块
 
 优化请求以避免触发限速：
+
 - 实现请求去抖动（Debounce）
 - 请求节流（Throttle）
 - 请求队列管理
@@ -113,6 +156,7 @@ function countdownRefresh(delay, reason) {
 - 拦截并缓存网络请求
 
 关键函数：
+
 ```javascript
 function debounceRequest(url, delay) {
   // 延迟请求发送
@@ -130,12 +174,14 @@ function setupRequestInterceptors() {
 ### 6. 游标恢复模块
 
 记录和恢复浏览位置：
+
 - 保存当前浏览游标
 - 在页面刷新后恢复到原位置
 - URL 修补和重定向
 - 游标历史记录管理
 
 关键函数：
+
 ```javascript
 function saveCursorPosition(cursor) {
   // 保存当前游标位置
@@ -149,6 +195,7 @@ function restoreCursorPosition() {
 ### 7. DOM 观察模块
 
 监视页面 DOM 变化并作出响应：
+
 - 使用 MutationObserver 监控页面变化
 - 对特定元素进行增强
 - 添加自定义 UI 元素
@@ -156,6 +203,7 @@ function restoreCursorPosition() {
 - 监控排序选项变化
 
 关键函数：
+
 ```javascript
 function setupDOMObserver() {
   // 设置 DOM 观察器
@@ -173,6 +221,7 @@ function setupSortMonitor() {
 ### 8. 数据缓存模块
 
 缓存API响应数据，减少重复请求：
+
 - 缓存商品列表数据
 - 缓存拥有状态数据
 - 缓存价格信息数据
@@ -180,6 +229,7 @@ function setupSortMonitor() {
 - 拦截并处理API响应
 
 关键函数：
+
 ```javascript
 function saveListings(items) {
   // 保存商品列表数据
@@ -201,6 +251,7 @@ function cleanupExpired() {
 ### 9. 功能扩展模块
 
 实现各种辅助功能：
+
 - 导出聊天记录
 - 添加快捷操作
 - 增强搜索功能
@@ -210,6 +261,7 @@ function cleanupExpired() {
 ### 10. 热更新模块
 
 实现脚本的自动更新：
+
 - 检查新版本
 - 下载更新
 - 自动应用更新
@@ -243,4 +295,4 @@ function cleanupExpired() {
 - 合理使用缓存减少重复请求
 - 异步处理耗时操作，避免阻塞主线程
 - 使用局部变量而非全局变量
-- 避免内存泄漏，特别是在事件监听和定时器中 
+- 避免内存泄漏，特别是在事件监听和定时器中
