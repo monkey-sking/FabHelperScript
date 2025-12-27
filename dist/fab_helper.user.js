@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227053416
+// @version      3.5.0-20251227060009
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3945,28 +3945,146 @@
   };
 
   // src/index.js
-  function countdownRefresh2(delayMs, source) {
+  var currentCountdownInterval = null;
+  var currentRefreshTimeout = null;
+  function countdownRefresh2(delay, reason = "\u5907\u9009\u65B9\u6848") {
     if (State.isRefreshScheduled) {
-      Utils.logger("info", Utils.getText("refresh_plan_exists"));
+      Utils.logger("info", Utils.getText("refresh_plan_exists").replace("(429\u81EA\u52A8\u6062\u590D)", `(${reason})`));
       return;
     }
     State.isRefreshScheduled = true;
-    const seconds = Math.ceil(delayMs / 1e3);
-    Utils.logger("info", Utils.getText("auto_refresh_countdown", seconds));
-    setTimeout(() => {
-      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-      const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-      const visibleCards = totalCards - hiddenCards;
-      if (visibleCards > 0) {
-        Utils.logger("info", Utils.getText("refresh_cancelled_visible_items", visibleCards));
-        State.isRefreshScheduled = false;
-        return;
+    if (currentCountdownInterval) {
+      clearInterval(currentCountdownInterval);
+      currentCountdownInterval = null;
+    }
+    if (currentRefreshTimeout) {
+      clearTimeout(currentRefreshTimeout);
+      currentRefreshTimeout = null;
+    }
+    const seconds = delay ? (delay / 1e3).toFixed(1) : "\u672A\u77E5";
+    Utils.logger("info", `\u{1F504} ${reason}\u542F\u52A8\uFF01\u5C06\u5728 ${seconds} \u79D2\u540E\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...`);
+    let remainingSeconds = Math.ceil(delay / 1e3);
+    currentCountdownInterval = setInterval(() => {
+      remainingSeconds--;
+      if (remainingSeconds <= 0) {
+        clearInterval(currentCountdownInterval);
+        currentCountdownInterval = null;
+        Utils.logger("info", `\u23F1\uFE0F \u5012\u8BA1\u65F6\u7ED3\u675F\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762...`);
+      } else {
+        Utils.logger("info", Utils.getText("auto_refresh_countdown", remainingSeconds));
+        if (!State.isRefreshScheduled) {
+          Utils.logger("info", `\u23F9\uFE0F \u68C0\u6D4B\u5230\u5237\u65B0\u5DF2\u88AB\u53D6\u6D88\uFF0C\u505C\u6B62\u5012\u8BA1\u65F6`);
+          clearInterval(currentCountdownInterval);
+          currentCountdownInterval = null;
+          if (currentRefreshTimeout) {
+            clearTimeout(currentRefreshTimeout);
+            currentRefreshTimeout = null;
+          }
+          return;
+        }
+        if (remainingSeconds % 3 === 0) {
+          checkRateLimitStatus().then((isNotLimited) => {
+            if (isNotLimited) {
+              Utils.logger("info", `\u23F1\uFE0F \u68C0\u6D4B\u5230API\u9650\u901F\u5DF2\u89E3\u9664\uFF0C\u53D6\u6D88\u5237\u65B0...`);
+              clearInterval(currentCountdownInterval);
+              currentCountdownInterval = null;
+              if (currentRefreshTimeout) {
+                clearTimeout(currentRefreshTimeout);
+                currentRefreshTimeout = null;
+              }
+              State.isRefreshScheduled = false;
+              if (State.appStatus === "RATE_LIMITED") {
+                RateLimitManager.exitRateLimitedState();
+              }
+              return;
+            }
+            if (State.appStatus === "RATE_LIMITED") {
+              const actualVisibleCount = parseInt(document.getElementById("fab-status-visible")?.textContent || "0");
+              if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                clearInterval(currentCountdownInterval);
+                clearTimeout(currentRefreshTimeout);
+                currentCountdownInterval = null;
+                currentRefreshTimeout = null;
+                State.isRefreshScheduled = false;
+                Utils.logger("info", `\u23F9\uFE0F \u68C0\u6D4B\u5230\u6709 ${State.db.todo.length} \u4E2A\u5F85\u529E\u4EFB\u52A1\u548C ${State.activeWorkers} \u4E2A\u6D3B\u52A8\u5DE5\u4F5C\u7EBF\u7A0B\uFF0C\u5DF2\u53D6\u6D88\u81EA\u52A8\u5237\u65B0\u3002`);
+                return;
+              }
+            } else {
+              const visibleCount = parseInt(document.getElementById("fab-status-visible")?.textContent || "0");
+              if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+                clearInterval(currentCountdownInterval);
+                clearTimeout(currentRefreshTimeout);
+                currentCountdownInterval = null;
+                currentRefreshTimeout = null;
+                State.isRefreshScheduled = false;
+                Utils.logger("warn", "\u26A0\uFE0F \u5237\u65B0\u6761\u4EF6\u5DF2\u53D8\u5316\uFF0C\u81EA\u52A8\u5237\u65B0\u5DF2\u53D6\u6D88\u3002");
+                return;
+              }
+            }
+          }).catch(() => {
+          });
+        }
       }
-      Utils.logger("info", `Refreshing page (source: ${source})...`);
-      window.location.reload();
-    }, delayMs);
+    }, 1e3);
+    currentRefreshTimeout = setTimeout(() => {
+      const visibleCount = parseInt(document.getElementById("fab-status-visible")?.textContent || "0");
+      if (State.appStatus === "RATE_LIMITED") {
+        if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+          Utils.logger("warn", "\u26A0\uFE0F \u6700\u540E\u4E00\u523B\u68C0\u67E5\uFF1A\u5237\u65B0\u6761\u4EF6\u4E0D\u6EE1\u8DB3\uFF0C\u81EA\u52A8\u5237\u65B0\u5DF2\u53D6\u6D88\u3002");
+          State.isRefreshScheduled = false;
+          return;
+        }
+        if (visibleCount === 0) {
+          Utils.logger("info", `\u{1F504} \u9875\u9762\u4E0A\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u6267\u884C\u81EA\u52A8\u5237\u65B0\u3002`);
+          window.location.href = window.location.href;
+        } else {
+          State.isRefreshScheduled = false;
+          return;
+        }
+      } else {
+        if (State.db.todo.length > 0 || State.activeWorkers > 0 || visibleCount > 0) {
+          Utils.logger("warn", "\u26A0\uFE0F \u6700\u540E\u4E00\u523B\u68C0\u67E5\uFF1A\u5237\u65B0\u6761\u4EF6\u4E0D\u6EE1\u8DB3\uFF0C\u81EA\u52A8\u5237\u65B0\u5DF2\u53D6\u6D88\u3002");
+          State.isRefreshScheduled = false;
+        } else {
+          window.location.href = window.location.href;
+        }
+      }
+    }, delay);
   }
   __name(countdownRefresh2, "countdownRefresh");
+  async function checkRateLimitStatus() {
+    try {
+      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+      const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+      const actualVisibleCards = totalCards - hiddenCards;
+      const visibleCountElement = document.getElementById("fab-status-visible");
+      if (visibleCountElement) {
+        visibleCountElement.textContent = actualVisibleCards.toString();
+      }
+      State.hiddenThisPageCount = hiddenCards;
+      if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0) {
+        return false;
+      }
+      if (actualVisibleCards === 0 && hiddenCards > 25) {
+        return false;
+      }
+      if (window.performance && window.performance.getEntriesByType) {
+        const recentRequests = window.performance.getEntriesByType("resource").filter((r) => r.name.includes("/i/listings/search") || r.name.includes("/i/users/me/listings-states")).filter((r) => Date.now() - r.startTime < 1e4);
+        if (recentRequests.length > 0) {
+          const has429 = recentRequests.some((r) => r.responseStatus === 429);
+          if (has429) return false;
+          const hasSuccess = recentRequests.some((r) => r.responseStatus >= 200 && r.responseStatus < 300);
+          if (hasSuccess) return true;
+        }
+        return State.appStatus === "NORMAL";
+      }
+      return State.appStatus === "NORMAL";
+    } catch (error) {
+      Utils.logger("error", `\u68C0\u67E5\u9650\u901F\u72B6\u6001\u51FA\u9519: ${error.message}`);
+      return false;
+    }
+  }
+  __name(checkRateLimitStatus, "checkRateLimitStatus");
   setUIReference(UI5);
   setUIReference2(UI5);
   setUIReference3(UI5);
@@ -3976,6 +4094,331 @@
     TaskRunner: TaskRunner2,
     countdownRefresh: countdownRefresh2
   });
+  function setupXHRInterceptor() {
+    const originalOpen = XMLHttpRequest.prototype.open;
+    const originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.open = function(...args) {
+      this._url = args[1];
+      return originalOpen.apply(this, args);
+    };
+    XMLHttpRequest.prototype.send = function(...args) {
+      const xhr = this;
+      if (xhr._url && typeof xhr._url === "string") {
+        xhr.addEventListener("load", function() {
+          if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+              const responseData = JSON.parse(xhr.responseText);
+              if (xhr._url.includes("/i/listings/search") && responseData.results && Array.isArray(responseData.results)) {
+                DataCache.saveListings(responseData.results);
+              } else if (xhr._url.includes("/i/users/me/listings-states")) {
+                if (Array.isArray(responseData)) {
+                  DataCache.saveOwnedStatus(responseData);
+                } else {
+                  const extractedData = API.extractStateData(responseData, "XHRInterceptor");
+                  if (Array.isArray(extractedData) && extractedData.length > 0) {
+                    DataCache.saveOwnedStatus(extractedData);
+                  }
+                }
+              } else if (xhr._url.includes("/i/listings/prices-infos") && responseData.offers && Array.isArray(responseData.offers)) {
+                DataCache.savePrices(responseData.offers);
+              }
+            } catch (e) {
+            }
+          }
+          if (xhr._url && xhr._url.includes("/i/listings/search")) {
+            if (xhr.status === 429) {
+              Utils.logger("warn", Utils.getText("detected_api_429_status", xhr._url));
+              if (typeof window.enterRateLimitedState === "function") {
+                window.enterRateLimitedState();
+              }
+            }
+          }
+        });
+      }
+      return originalSend.apply(this, args);
+    };
+  }
+  __name(setupXHRInterceptor, "setupXHRInterceptor");
+  function setupFetchInterceptor() {
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const url = args[0]?.toString() || "";
+      if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
+        try {
+          const response = await originalFetch.apply(this, args);
+          if (response.ok) {
+            const clonedResponse = response.clone();
+            clonedResponse.json().then((data) => {
+              if (url.includes("/i/listings/search") && data.results && Array.isArray(data.results)) {
+                DataCache.saveListings(data.results);
+              } else if (url.includes("/i/users/me/listings-states")) {
+                if (Array.isArray(data)) {
+                  DataCache.saveOwnedStatus(data);
+                } else {
+                  const extractedData = API.extractStateData(data, "FetchInterceptor");
+                  if (Array.isArray(extractedData) && extractedData.length > 0) {
+                    DataCache.saveOwnedStatus(extractedData);
+                  }
+                }
+              } else if (url.includes("/i/listings/prices-infos") && data.offers && Array.isArray(data.offers)) {
+                DataCache.savePrices(data.offers);
+              }
+            }).catch(() => {
+            });
+          }
+          return response;
+        } catch (e) {
+          return originalFetch.apply(this, args);
+        }
+      }
+      return originalFetch.apply(this, args);
+    };
+  }
+  __name(setupFetchInterceptor, "setupFetchInterceptor");
+  function setupRequestInterceptors() {
+    try {
+      setupXHRInterceptor();
+      setupFetchInterceptor();
+      setInterval(() => DataCache.cleanupExpired(), 6e4);
+      Utils.logger("info", "\u8BF7\u6C42\u62E6\u622A\u548C\u7F13\u5B58\u7CFB\u7EDF\u5DF2\u521D\u59CB\u5316");
+    } catch (e) {
+      Utils.logger("error", `\u521D\u59CB\u5316\u8BF7\u6C42\u62E6\u622A\u5668\u5931\u8D25: ${e.message}`);
+    }
+  }
+  __name(setupRequestInterceptors, "setupRequestInterceptors");
+  async function runDomDependentPart() {
+    if (State.hasRunDomPart) return;
+    if (State.isWorkerTab) {
+      State.hasRunDomPart = true;
+      return;
+    }
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has("workerId")) {
+      Utils.logger("info", `\u5DE5\u4F5C\u6807\u7B7E\u9875DOM\u90E8\u5206\u521D\u59CB\u5316\uFF0C\u8DF3\u8FC7UI\u521B\u5EFA`);
+      State.hasRunDomPart = true;
+      return;
+    }
+    const uiCreated = UI5.create();
+    if (!uiCreated) {
+      Utils.logger("info", Utils.getText("log_detail_page"));
+      State.hasRunDomPart = true;
+      return;
+    }
+    UI5.update();
+    UI5.updateDebugTab();
+    UI5.switchTab("dashboard");
+    State.hasRunDomPart = true;
+    window.enterRateLimitedState = function(source = Utils.getText("rate_limit_source_global_call")) {
+      RateLimitManager.enterRateLimitedState(source);
+    };
+    window.recordNetworkRequest = function(source = "\u7F51\u7EDC\u8BF7\u6C42", hasResults = true) {
+      if (hasResults) {
+        RateLimitManager.recordSuccessfulRequest(source, hasResults);
+      }
+    };
+    setInterval(() => {
+      if (State.appStatus === "NORMAL") {
+        const pageText = document.body.innerText || "";
+        if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+          Utils.logger("warn", Utils.getText("page_content_rate_limit_detected"));
+          RateLimitManager.enterRateLimitedState(Utils.getText("rate_limit_source_page_content"));
+        }
+      }
+    }, 5e3);
+    const checkIsErrorPage = /* @__PURE__ */ __name((title, text) => {
+      const isCloudflareTitle = title.includes("Cloudflare") || title.includes("Attention Required");
+      const is429Text = text.includes("429") || text.includes("Too Many Requests") || text.includes("Too many requests");
+      if (isCloudflareTitle || is429Text) {
+        Utils.logger("warn", `[\u9875\u9762\u52A0\u8F7D] \u68C0\u6D4B\u5230429\u9519\u8BEF\u9875\u9762`);
+        window.enterRateLimitedState("\u9875\u9762\u5185\u5BB9429\u68C0\u6D4B");
+        return true;
+      }
+      return false;
+    }, "checkIsErrorPage");
+    checkIsErrorPage(document.title, document.body.innerText || "");
+    if (State.appStatus === "RATE_LIMITED") {
+      Utils.logger("info", Utils.getText("log_auto_resume_page_loading"));
+      const isRecovered = await RateLimitManager.checkRateLimitStatus();
+      if (isRecovered) {
+        Utils.logger("info", Utils.getText("log_recovery_probe_success"));
+        if (State.db.todo.length > 0 && !State.isExecuting) {
+          Utils.logger("info", Utils.getText("log_found_todo_auto_resume", State.db.todo.length));
+          State.isExecuting = true;
+          Database.saveExecutingState();
+          TaskRunner2.executeBatch();
+        }
+      } else {
+        Utils.logger("warn", Utils.getText("log_recovery_probe_failed"));
+        if (State.activeWorkers === 0 && State.db.todo.length === 0) {
+          const randomDelay = 5e3 + Math.random() * 1e4;
+          countdownRefresh2(randomDelay, Utils.getText("countdown_refresh_source"));
+        }
+      }
+    }
+    const containerSelectors = ["main", "#main", ".AssetGrid-root", ".fabkit-responsive-grid-container"];
+    let targetNode = null;
+    for (const selector of containerSelectors) {
+      targetNode = document.querySelector(selector);
+      if (targetNode) break;
+    }
+    if (!targetNode) targetNode = document.body;
+    const observer = new MutationObserver((mutationsList) => {
+      const hasNewContent = mutationsList.some(
+        (mutation) => [...mutation.addedNodes].some(
+          (node) => node.nodeType === 1 && (node.matches(Config.SELECTORS.card) || node.querySelector(Config.SELECTORS.card))
+        )
+      );
+      if (hasNewContent) {
+        clearTimeout(State.observerDebounceTimer);
+        State.observerDebounceTimer = setTimeout(() => {
+          if (State.debugMode) {
+            Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
+          }
+          setTimeout(() => {
+            TaskRunner2.checkVisibleCardsStatus().then(() => {
+              setTimeout(() => {
+                if (State.hideSaved) {
+                  TaskRunner2.runHideOrShow();
+                }
+              }, 1e3);
+              if (State.appStatus === "NORMAL" || State.autoAddOnScroll) {
+                setTimeout(() => {
+                  TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
+                }, 500);
+              }
+            }).catch(() => {
+              setTimeout(() => {
+                if (State.hideSaved) {
+                  TaskRunner2.runHideOrShow();
+                }
+              }, 1500);
+            });
+          }, 2e3);
+        }, 500);
+      }
+    });
+    observer.observe(targetNode, { childList: true, subtree: true });
+    Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
+    TaskRunner2.runHideOrShow();
+    setInterval(() => {
+      if (!State.hideSaved) return;
+      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      let unprocessedCount = 0;
+      cards.forEach((card) => {
+        const isProcessed = card.getAttribute("data-fab-processed") === "true";
+        if (!isProcessed) {
+          unprocessedCount++;
+        } else {
+          const isFinished = TaskRunner2.isCardFinished(card);
+          const shouldBeHidden = isFinished && State.hideSaved;
+          const isHidden = card.style.display === "none";
+          if (shouldBeHidden !== isHidden) {
+            card.removeAttribute("data-fab-processed");
+            unprocessedCount++;
+          }
+        }
+      });
+      if (unprocessedCount > 0) {
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("debug_unprocessed_cards", unprocessedCount));
+        }
+        TaskRunner2.runHideOrShow();
+      }
+    }, 3e3);
+    setInterval(() => {
+      if (State.db.todo.length === 0) return;
+      const initialTodoCount = State.db.todo.length;
+      State.db.todo = State.db.todo.filter((task) => {
+        const url = task.url.split("?")[0];
+        return !State.db.done.includes(url);
+      });
+      if (State.db.todo.length < initialTodoCount) {
+        Utils.logger("info", `[\u81EA\u52A8\u6E05\u7406] \u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\u4E86 ${initialTodoCount - State.db.todo.length} \u4E2A\u5DF2\u5B8C\u6210\u7684\u4EFB\u52A1\u3002`);
+        UI5.update();
+      }
+    }, 1e4);
+    let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+    let noNewCardsCounter = 0;
+    let lastScrollY = window.scrollY;
+    setInterval(() => {
+      if (State.appStatus !== "NORMAL") return;
+      const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+      if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
+        noNewCardsCounter++;
+        if (noNewCardsCounter >= 3) {
+          Utils.logger("warn", `${Utils.getText("implicit_rate_limit_detection")}`);
+          RateLimitManager.enterRateLimitedState(Utils.getText("source_implicit_rate_limit"));
+          noNewCardsCounter = 0;
+        }
+      } else if (currentCardCount > lastCardCount) {
+        noNewCardsCounter = 0;
+      }
+      lastCardCount = currentCardCount;
+      lastScrollY = window.scrollY;
+    }, 5e3);
+    setInterval(async () => {
+      try {
+        const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+        const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter((card) => {
+          if (card.style.display === "none") return false;
+          const computedStyle = window.getComputedStyle(card);
+          return computedStyle.display !== "none" && computedStyle.visibility !== "hidden";
+        });
+        const actualVisibleCards = visibleCards.length;
+        const hiddenCards = totalCards - actualVisibleCards;
+        const visibleCountElement = document.getElementById("fab-status-visible");
+        if (visibleCountElement) {
+          visibleCountElement.textContent = actualVisibleCards.toString();
+        }
+        State.hiddenThisPageCount = hiddenCards;
+        if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
+          if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {
+            Utils.logger("info", `[\u72B6\u6001\u76D1\u63A7] \u68C0\u6D4B\u5230\u9650\u901F\u72B6\u6001\u4E0B\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u81EA\u52A8\u5237\u65B0\u5DF2\u5F00\u542F\uFF0C\u51C6\u5907\u5237\u65B0\u9875\u9762`);
+            const randomDelay = 3e3 + Math.random() * 2e3;
+            countdownRefresh2(randomDelay, "\u9650\u901F\u72B6\u6001\u65E0\u53EF\u89C1\u5546\u54C1");
+          }
+        }
+      } catch (error) {
+        Utils.logger("error", `\u9875\u9762\u72B6\u6001\u68C0\u67E5\u51FA\u9519: ${error.message}`);
+      }
+    }, 1e4);
+    setInterval(() => {
+      if (State.db.todo.length === 0) return;
+      TaskRunner2.ensureTasksAreExecuted();
+    }, 5e3);
+    setInterval(async () => {
+      try {
+        if (State.appStatus !== "NORMAL") return;
+        if (window.performance && window.performance.getEntriesByType) {
+          const navigationEntries = window.performance.getEntriesByType("navigation");
+          if (navigationEntries && navigationEntries.length > 0) {
+            const lastNavigation = navigationEntries[0];
+            if (lastNavigation.responseStatus === 429) {
+              Utils.logger("warn", `[HTTP\u72B6\u6001\u68C0\u6D4B] \u68C0\u6D4B\u5230\u5BFC\u822A\u8BF7\u6C42\u72B6\u6001\u7801\u4E3A429\uFF01`);
+              if (typeof window.enterRateLimitedState === "function") {
+                window.enterRateLimitedState();
+              }
+            }
+          }
+        }
+      } catch (error) {
+      }
+    }, 1e4);
+  }
+  __name(runDomDependentPart, "runDomDependentPart");
+  function ensureUILoaded() {
+    if (!document.getElementById(Config.UI_CONTAINER_ID)) {
+      Utils.logger("warn", "\u68C0\u6D4B\u5230UI\u672A\u52A0\u8F7D\uFF0C\u5C1D\u8BD5\u91CD\u65B0\u521D\u59CB\u5316...");
+      setTimeout(() => {
+        try {
+          runDomDependentPart();
+        } catch (error) {
+          Utils.logger("error", `UI\u91CD\u65B0\u521D\u59CB\u5316\u5931\u8D25: ${error.message}`);
+        }
+      }, 1e3);
+    }
+  }
+  __name(ensureUILoaded, "ensureUILoaded");
   async function main() {
     window.pageLoadTime = Date.now();
     Utils.logger("info", Utils.getText("log_script_starting"));
@@ -4008,12 +4451,136 @@
       const previousDuration = persistedStatus && persistedStatus.startTime ? ((Date.now() - persistedStatus.startTime) / 1e3).toFixed(2) : "0.00";
       Utils.logger("warn", Utils.getText("startup_rate_limited", previousDuration, persistedStatus.source || Utils.getText("status_unknown_source")));
     }
+    setupRequestInterceptors();
     await PagePatcher.init();
-    UI5.init();
-    UI5.update();
+    const tempTasks = await GM_getValue("temp_todo_tasks", null);
+    if (tempTasks && tempTasks.length > 0) {
+      Utils.logger("info", `\u4ECE429\u6062\u590D\uFF1A\u627E\u5230 ${tempTasks.length} \u4E2A\u4E34\u65F6\u4FDD\u5B58\u7684\u5F85\u529E\u4EFB\u52A1\uFF0C\u6B63\u5728\u6062\u590D...`);
+      State.db.todo = tempTasks;
+      await GM_deleteValue("temp_todo_tasks");
+    }
+    State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
+      if (!newValue) return;
+      try {
+        await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
+        const { workerId: workerId2, success, task, logs, instanceId, executionTime } = newValue;
+        if (instanceId !== Config.INSTANCE_ID) {
+          Utils.logger("info", `\u6536\u5230\u6765\u81EA\u5176\u4ED6\u5B9E\u4F8B [${instanceId}] \u7684\u5DE5\u4F5C\u62A5\u544A\uFF0C\u5F53\u524D\u5B9E\u4F8B [${Config.INSTANCE_ID}] \u5C06\u5FFD\u7565\u3002`);
+          return;
+        }
+        if (!workerId2 || !task) {
+          Utils.logger("error", "\u6536\u5230\u65E0\u6548\u7684\u5DE5\u4F5C\u62A5\u544A\u3002\u7F3A\u5C11workerId\u6216task\u3002");
+          return;
+        }
+        if (executionTime) {
+          Utils.logger("info", Utils.getText("task_execution_time", executionTime ? (executionTime / 1e3).toFixed(2) : Utils.getText("status_unknown_duration")));
+        }
+        if (State.runningWorkers[workerId2]) {
+          delete State.runningWorkers[workerId2];
+          State.activeWorkers--;
+        }
+        if (logs && logs.length) {
+          logs.forEach((log) => Utils.logger("info", log));
+        }
+        if (success) {
+          Utils.logger("info", `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}`);
+          const initialTodoCount = State.db.todo.length;
+          State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+          if (State.db.todo.length < initialTodoCount) {
+            Utils.logger("info", `\u5DF2\u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\u4EFB\u52A1 ${task.name}`);
+          }
+          await Database.saveTodo();
+          if (!State.db.done.includes(task.url)) {
+            State.db.done.push(task.url);
+            await Database.saveDone();
+          }
+          State.sessionCompleted.add(task.url);
+          State.executionCompletedTasks++;
+        } else {
+          Utils.logger("warn", `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name}`);
+          State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+          await Database.saveTodo();
+          if (!State.db.failed.some((f) => f.uid === task.uid)) {
+            State.db.failed.push(task);
+            await Database.saveFailed();
+          }
+          State.executionFailedTasks++;
+        }
+        UI5.update();
+        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+          setTimeout(() => TaskRunner2.executeBatch(), 1e3);
+        }
+        if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+          Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
+          State.isExecuting = false;
+          Database.saveExecutingState();
+          await Database.saveTodo();
+          if (State.appStatus === "RATE_LIMITED") {
+            Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...");
+            const randomDelay = 3e3 + Math.random() * 5e3;
+            countdownRefresh2(randomDelay, "\u4EFB\u52A1\u5B8C\u6210\u540E\u9650\u901F\u6062\u590D");
+          }
+          UI5.update();
+        }
+        TaskRunner2.runHideOrShow();
+      } catch (error) {
+        Utils.logger("error", `\u5904\u7406\u5DE5\u4F5C\u62A5\u544A\u65F6\u51FA\u9519: ${error.message}`);
+      }
+    }));
+    State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
+      if (!State.isWorkerTab && State.isExecuting !== newValue) {
+        Utils.logger("info", Utils.getText("execution_status_changed", newValue ? Utils.getText("status_executing") : Utils.getText("status_stopped")));
+        State.isExecuting = newValue;
+        UI5.update();
+      }
+    }));
+    window._fabHelperLauncherActive = window._fabHelperLauncherActive || false;
+    if (!window._fabHelperLauncherActive) {
+      window._fabHelperLauncherActive = true;
+      const launcherInterval = setInterval(() => {
+        if (document.readyState === "interactive" || document.readyState === "complete") {
+          if (!State.hasRunDomPart) {
+            Utils.logger("info", "[Launcher] DOM is ready. Running main script logic...");
+            runDomDependentPart();
+          }
+          if (State.hasRunDomPart) {
+            clearInterval(launcherInterval);
+            window._fabHelperLauncherActive = false;
+            Utils.logger("debug", "[Launcher] Main logic has been launched or skipped. Launcher is now idle.");
+          }
+        }
+      }, 500);
+    }
+    let lastNetworkActivityTime = Date.now();
+    window.recordNetworkActivity = function() {
+      lastNetworkActivityTime = Date.now();
+    };
+    setInterval(() => {
+      if (State.appStatus === "RATE_LIMITED") {
+        const inactiveTime = Date.now() - lastNetworkActivityTime;
+        if (inactiveTime > 3e4) {
+          Utils.logger("warn", `\u26A0\uFE0F \u68C0\u6D4B\u5230\u5728\u9650\u901F\u72B6\u6001\u4E0B ${Math.floor(inactiveTime / 1e3)} \u79D2\u65E0\u7F51\u7EDC\u6D3B\u52A8\uFF0C\u5373\u5C06\u5F3A\u5236\u5237\u65B0\u9875\u9762...`);
+          setTimeout(() => {
+            window.location.reload();
+          }, 1500);
+        }
+      }
+    }, 5e3);
     Utils.logger("info", Utils.getText("log_init"));
   }
   __name(main, "main");
+  window.addEventListener("beforeunload", () => {
+    InstanceManager.cleanup();
+    Utils.cleanup();
+  });
+  window.addEventListener("load", () => {
+    setTimeout(ensureUILoaded, 2e3);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      setTimeout(ensureUILoaded, 500);
+    }
+  });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", main);
   } else {
