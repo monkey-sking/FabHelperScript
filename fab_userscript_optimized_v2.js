@@ -3526,6 +3526,23 @@
                     // 等待页面加载完成
                     await new Promise(resolve => setTimeout(resolve, 3000));
 
+                    // 检查并处理成人内容警告对话框
+                    const adultContentWarning = document.querySelector('.fabkit-Heading--xl');
+                    if (adultContentWarning && (adultContentWarning.textContent.includes('成人内容') || adultContentWarning.textContent.includes('Adult Content') || adultContentWarning.textContent.includes('Mature Content'))) {
+                        logBuffer.push(`检测到成人内容警告对话框，自动点击"继续"按钮...`);
+                        const continueButton = [...document.querySelectorAll('button.fabkit-Button--primary')].find(btn =>
+                            btn.textContent.includes('继续') || btn.textContent.includes('Continue')
+                        );
+                        if (continueButton) {
+                            Utils.deepClick(continueButton);
+                            logBuffer.push(`已点击"继续"按钮，等待页面加载...`);
+                            // 等待页面内容加载
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        } else {
+                            logBuffer.push(`未找到"继续"按钮`);
+                        }
+                    }
+
                     // 执行页面状态诊断
                     logBuffer.push(`=== 页面状态诊断开始 ===`);
                     const diagnosticReport = PageDiagnostics.diagnoseDetailPage();
