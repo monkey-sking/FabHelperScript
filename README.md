@@ -1,5 +1,7 @@
 # Fab Helper Script
 
+**中文** | [English](README_EN.md)
+
 Fab Helper 是一个用于辅助 Fab.com 网站使用的脚本工具，提供自动化功能和界面增强。
 
 ## 版本
