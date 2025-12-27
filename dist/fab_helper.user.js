@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227052328
+// @version      3.5.0-20251227053416
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -998,6 +998,110 @@
     }, "checkAuthentication")
   };
 
+  // src/modules/page-diagnostics.js
+  var PageDiagnostics = {
+    // 诊断商品详情页面状态
+    diagnoseDetailPage: /* @__PURE__ */ __name(() => {
+      const report = {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        url: window.location.href,
+        pageTitle: document.title,
+        buttons: [],
+        licenseOptions: [],
+        priceInfo: {},
+        ownedStatus: {},
+        dynamicContent: {}
+      };
+      const buttons = document.querySelectorAll("button");
+      buttons.forEach((btn, index) => {
+        const text = btn.textContent?.trim();
+        const isVisible = btn.offsetParent !== null;
+        const isDisabled = btn.disabled;
+        const classes = btn.className;
+        if (text) {
+          report.buttons.push({
+            index,
+            text,
+            isVisible,
+            isDisabled,
+            classes,
+            hasClickHandler: btn.onclick !== null
+          });
+        }
+      });
+      const licenseElements = document.querySelectorAll('[class*="license"], [class*="License"], [role="option"]');
+      licenseElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        const isVisible = elem.offsetParent !== null;
+        if (text) {
+          report.licenseOptions.push({
+            index,
+            text,
+            isVisible,
+            tagName: elem.tagName,
+            classes: elem.className,
+            role: elem.getAttribute("role")
+          });
+        }
+      });
+      const priceElements = document.querySelectorAll('[class*="price"], [class*="Price"]');
+      priceElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        if (text) {
+          report.priceInfo[`price_${index}`] = {
+            text,
+            isVisible: elem.offsetParent !== null,
+            classes: elem.className
+          };
+        }
+      });
+      const ownedElements = document.querySelectorAll('h2, [class*="owned"], [class*="library"]');
+      ownedElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        if (text && (text.includes("\u5E93") || text.includes("Library") || text.includes("\u62E5\u6709") || text.includes("Owned"))) {
+          report.ownedStatus[`owned_${index}`] = {
+            text,
+            isVisible: elem.offsetParent !== null,
+            tagName: elem.tagName,
+            classes: elem.className
+          };
+        }
+      });
+      return report;
+    }, "diagnoseDetailPage"),
+    // 输出诊断报告到日志
+    logDiagnosticReport: /* @__PURE__ */ __name((report) => {
+      console.log("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
+      console.log(`\u9875\u9762: ${report.url}`);
+      console.log(`\u6807\u9898: ${report.pageTitle}`);
+      console.log(`--- \u6309\u94AE\u4FE1\u606F (${report.buttons.length}\u4E2A) ---`);
+      report.buttons.forEach((btn) => {
+        if (btn.isVisible) {
+          console.log(`\u6309\u94AE: "${btn.text}" (\u53EF\u89C1: ${btn.isVisible}, \u7981\u7528: ${btn.isDisabled})`);
+        }
+      });
+      console.log(`--- \u8BB8\u53EF\u9009\u9879 (${report.licenseOptions.length}\u4E2A) ---`);
+      report.licenseOptions.forEach((opt) => {
+        if (opt.isVisible) {
+          console.log(`\u8BB8\u53EF: "${opt.text}" (\u53EF\u89C1: ${opt.isVisible}, \u89D2\u8272: ${opt.role})`);
+        }
+      });
+      console.log(`--- \u4EF7\u683C\u4FE1\u606F ---`);
+      Object.entries(report.priceInfo).forEach(([, price]) => {
+        if (price.isVisible) {
+          console.log(`\u4EF7\u683C: "${price.text}"`);
+        }
+      });
+      console.log(`--- \u62E5\u6709\u72B6\u6001 ---`);
+      Object.entries(report.ownedStatus).forEach(([, status]) => {
+        if (status.isVisible) {
+          console.log(`\u72B6\u6001: "${status.text}"`);
+        }
+      });
+      console.log("=== \u8BCA\u65AD\u62A5\u544A\u7ED3\u675F ===");
+    }, "logDiagnosticReport")
+  };
+
   // src/modules/data-cache.js
   var DataCache = {
     // 商品数据缓存 - 键为商品ID，值为商品数据
@@ -1148,6 +1252,122 @@
         Utils.logger("error", `\u7F13\u5B58\u6E05\u7406\u5931\u8D25: ${e.message}`);
       }
     }, "cleanupExpired")
+  };
+
+  // src/modules/api.js
+  var API = {
+    gmFetch: /* @__PURE__ */ __name((options) => {
+      return new Promise((resolve, reject) => {
+        GM_xmlhttpRequest({
+          anonymous: false,
+          // Default to false to ensure cookies are sent
+          ...options,
+          onload: /* @__PURE__ */ __name((response) => resolve(response), "onload"),
+          onerror: /* @__PURE__ */ __name((error) => reject(new Error(`GM_xmlhttpRequest error: ${error.statusText || "Unknown Error"}`)), "onerror"),
+          ontimeout: /* @__PURE__ */ __name(() => reject(new Error("Request timed out.")), "ontimeout"),
+          onabort: /* @__PURE__ */ __name(() => reject(new Error("Request aborted.")), "onabort")
+        });
+      });
+    }, "gmFetch"),
+    // 接口响应数据提取函数
+    extractStateData: /* @__PURE__ */ __name((rawData, source = "") => {
+      const dataType = Array.isArray(rawData) ? "Array" : typeof rawData;
+      if (State.debugMode) {
+        Utils.logger("debug", `[${source}] \u63A5\u53E3\u8FD4\u56DE\u6570\u636E\u7C7B\u578B: ${dataType}`);
+      }
+      if (Array.isArray(rawData)) {
+        return rawData;
+      }
+      if (rawData && typeof rawData === "object") {
+        const keys = Object.keys(rawData);
+        if (State.debugMode) {
+          Utils.logger("debug", `[${source}] \u63A5\u53E3\u8FD4\u56DE\u5BF9\u8C61\u952E: ${keys.join(", ")}`);
+        }
+        const possibleArrayFields = ["data", "results", "items", "listings", "states"];
+        for (const field of possibleArrayFields) {
+          if (rawData[field] && Array.isArray(rawData[field])) {
+            Utils.logger("info", `[${source}] \u5728\u5B57\u6BB5 "${field}" \u4E2D\u627E\u5230\u6570\u7EC4\u6570\u636E`);
+            return rawData[field];
+          }
+        }
+        for (const key of keys) {
+          if (Array.isArray(rawData[key])) {
+            Utils.logger("info", `[${source}] \u5728\u5B57\u6BB5 "${key}" \u4E2D\u627E\u5230\u6570\u7EC4\u6570\u636E`);
+            return rawData[key];
+          }
+        }
+        if (rawData.uid && "acquired" in rawData) {
+          Utils.logger("info", `[${source}] \u8FD4\u56DE\u7684\u662F\u5355\u4E2A\u9879\u76EE\u6570\u636E\uFF0C\u8F6C\u6362\u4E3A\u6570\u7EC4`);
+          return [rawData];
+        }
+      }
+      Utils.logger("warn", `[${source}] \u65E0\u6CD5\u4ECEAPI\u54CD\u5E94\u4E2D\u63D0\u53D6\u6570\u7EC4\u6570\u636E`);
+      if (State.debugMode) {
+        try {
+          const preview = JSON.stringify(rawData).substring(0, 200);
+          Utils.logger("debug", `[${source}] API\u54CD\u5E94\u9884\u89C8: ${preview}...`);
+        } catch (e) {
+          Utils.logger("debug", `[${source}] \u65E0\u6CD5\u5E8F\u5217\u5316API\u54CD\u5E94: ${e.message}`);
+        }
+      }
+      return [];
+    }, "extractStateData"),
+    // 优化后的商品拥有状态检查函数 - 只使用缓存和网页原生请求的数据
+    checkItemsOwnership: /* @__PURE__ */ __name(async function(uids) {
+      if (!uids || uids.length === 0) return [];
+      try {
+        const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
+        if (missingUids.length > 0) {
+          Utils.logger("debug", Utils.getText("fab_dom_unknown_status", missingUids.length));
+          DataCache.addToWaitingList(missingUids);
+        }
+        return cachedResults;
+      } catch (e) {
+        Utils.logger("error", `\u68C0\u67E5\u62E5\u6709\u72B6\u6001\u5931\u8D25: ${e.message}`);
+        return [];
+      }
+    }, "checkItemsOwnership"),
+    // 优化后的价格验证函数
+    checkItemsPrices: /* @__PURE__ */ __name(async function(offerIds) {
+      if (!offerIds || offerIds.length === 0) return [];
+      try {
+        const { result: cachedResults, missing: missingOfferIds } = DataCache.getPrices(offerIds);
+        if (missingOfferIds.length === 0) {
+          if (State.debugMode) {
+            Utils.logger("info", `\u4F7F\u7528\u7F13\u5B58\u7684\u4EF7\u683C\u6570\u636E\uFF0C\u907F\u514DAPI\u8BF7\u6C42`);
+          }
+          return cachedResults;
+        }
+        if (State.debugMode) {
+          Utils.logger("info", `\u5BF9 ${missingOfferIds.length} \u4E2A\u7F3A\u5931\u7684\u62A5\u4EF7ID\u53D1\u9001API\u8BF7\u6C42`);
+        }
+        const csrfToken = Utils.getCookie("fab_csrftoken");
+        if (!csrfToken) {
+          Utils.checkAuthentication();
+          throw new Error("CSRF token not found");
+        }
+        const pricesUrl = new URL("https://www.fab.com/i/listings/prices-infos");
+        missingOfferIds.forEach((offerId) => pricesUrl.searchParams.append("offer_ids", offerId));
+        const response = await this.gmFetch({
+          method: "GET",
+          url: pricesUrl.href,
+          headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+        });
+        try {
+          const pricesData = JSON.parse(response.responseText);
+          if (pricesData.offers && Array.isArray(pricesData.offers)) {
+            DataCache.savePrices(pricesData.offers);
+            return [...cachedResults, ...pricesData.offers];
+          }
+        } catch (e) {
+          Utils.logger("error", `[\u4F18\u5316] \u89E3\u6790\u4EF7\u683CAPI\u54CD\u5E94\u5931\u8D25: ${e.message}`);
+        }
+        return cachedResults;
+      } catch (e) {
+        Utils.logger("error", `[\u4F18\u5316] \u83B7\u53D6\u4EF7\u683C\u4FE1\u606F\u5931\u8D25: ${e.message}`);
+        return [];
+      }
+    }, "checkItemsPrices")
   };
 
   // src/modules/database.js
@@ -1875,59 +2095,6 @@
     }
   };
 
-  // src/modules/task-runner.js
-  var TaskRunner2 = {
-    // TODO: Extract full implementation from original file
-    // Key methods to implement:
-    // - execute()
-    // - executeBatch()
-    // - processDetailPage()
-    // - scanPageForTasks()
-    // - closeWorkerTab()
-    // - setupDOMObserver()
-    execute: /* @__PURE__ */ __name(async () => {
-      Utils.logger("info", "[TaskRunner] Module placeholder - full implementation pending");
-    }, "execute"),
-    executeBatch: /* @__PURE__ */ __name(async () => {
-      Utils.logger("info", "[TaskRunner] executeBatch placeholder");
-    }, "executeBatch"),
-    processDetailPage: /* @__PURE__ */ __name(async () => {
-      Utils.logger("info", "[TaskRunner] processDetailPage placeholder");
-    }, "processDetailPage")
-  };
-
-  // src/modules/ui.js
-  State.UI = {
-    container: null,
-    logPanel: null,
-    execBtn: null,
-    hideBtn: null,
-    statusDisplay: null
-    // ... other UI elements
-  };
-  var UI4 = {
-    // TODO: Extract full implementation from original file
-    // Key methods to implement:
-    // - init()
-    // - update()
-    // - createPanel()
-    // - createStyles()
-    // - updateDebugTab()
-    // - removeAllOverlays()
-    init: /* @__PURE__ */ __name(() => {
-      Utils.logger("info", "[UI] Module placeholder - full implementation pending");
-      State.UI.container = document.createElement("div");
-      State.UI.container.id = Config.UI_CONTAINER_ID;
-      document.body.appendChild(State.UI.container);
-    }, "init"),
-    update: /* @__PURE__ */ __name(() => {
-    }, "update"),
-    updateDebugTab: /* @__PURE__ */ __name(() => {
-    }, "updateDebugTab"),
-    removeAllOverlays: /* @__PURE__ */ __name(() => {
-    }, "removeAllOverlays")
-  };
-
   // src/modules/instance-manager.js
   var InstanceManager = {
     isActive: false,
@@ -2005,6 +2172,1778 @@
     }, "cleanup")
   };
 
+  // src/modules/task-runner.js
+  var UI4 = null;
+  function setUIReference3(uiModule) {
+    UI4 = uiModule;
+  }
+  __name(setUIReference3, "setUIReference");
+  var TaskRunner2 = {
+    // Check if a card is finished (owned, done, or failed)
+    isCardFinished: /* @__PURE__ */ __name((card) => {
+      const link = card.querySelector(Config.SELECTORS.cardLink);
+      const url = link ? link.href.split("?")[0] : null;
+      if (!link) {
+        const icons = card.querySelectorAll("i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled");
+        if (icons.length > 0) return true;
+        const text = card.textContent || "";
+        return text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library");
+      }
+      const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
+      if (!uidMatch || !uidMatch[1]) return false;
+      const uid = uidMatch[1];
+      if (DataCache.ownedStatus.has(uid)) {
+        const status = DataCache.ownedStatus.get(uid);
+        if (status && status.acquired) return true;
+      }
+      if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) {
+        if (uid) {
+          DataCache.saveOwnedStatus([{
+            uid,
+            acquired: true,
+            lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }]);
+        }
+        return true;
+      }
+      if (url) {
+        if (Database.isDone(url)) return true;
+        if (Database.isFailed(url)) return true;
+        if (State.sessionCompleted.has(url)) return true;
+      }
+      return false;
+    }, "isCardFinished"),
+    // Check if a card represents a free item
+    isFreeCard: /* @__PURE__ */ __name((card) => {
+      const cardText = card.textContent || "";
+      const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cardText.includes(freeWord));
+      const has100PercentDiscount = cardText.includes("-100%");
+      const priceMatch = cardText.match(/\$(\d+(?:\.\d{2})?)/g);
+      if (priceMatch) {
+        const hasNonZeroPrice = priceMatch.some((price) => {
+          const numValue = parseFloat(price.replace("$", ""));
+          return numValue > 0;
+        });
+        if (hasNonZeroPrice && !hasFreeKeyword) return false;
+        if (hasNonZeroPrice && hasFreeKeyword) {
+          if (cardText.includes("\u8D77\u59CB\u4EF7\u683C \u514D\u8D39") || cardText.includes("Starting at Free")) return true;
+          if (cardText.match(/起始价格\s*\$[1-9]/) || cardText.match(/Starting at\s*\$[1-9]/i)) return false;
+        }
+      }
+      return hasFreeKeyword || has100PercentDiscount;
+    }, "isFreeCard"),
+    // Toggle execution state
+    toggleExecution: /* @__PURE__ */ __name(() => {
+      if (!Utils.checkAuthentication()) return;
+      if (State.isExecuting) {
+        State.isExecuting = false;
+        Database.saveExecutingState();
+        State.runningWorkers = {};
+        State.activeWorkers = 0;
+        State.executionTotalTasks = 0;
+        State.executionCompletedTasks = 0;
+        State.executionFailedTasks = 0;
+        Utils.logger("info", Utils.getText("log_execution_stopped"));
+        if (UI4) UI4.update();
+        return;
+      }
+      if (State.autoAddOnScroll) {
+        Utils.logger("info", Utils.getText("log_auto_add_enabled"));
+        TaskRunner2.checkVisibleCardsStatus().then(() => {
+          TaskRunner2.startExecution();
+        });
+        return;
+      }
+      State.db.todo = [];
+      Utils.logger("info", Utils.getText("log_todo_cleared"));
+      Utils.logger("info", Utils.getText("log_scanning_items"));
+      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      const newlyAddedList = [];
+      let alreadyInQueueCount = 0;
+      let ownedCount = 0;
+      let skippedCount = 0;
+      const isCardSettled = /* @__PURE__ */ __name((card) => {
+        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+      }, "isCardSettled");
+      cards.forEach((card) => {
+        if (card.style.display === "none") return;
+        if (!isCardSettled(card)) {
+          skippedCount++;
+          return;
+        }
+        if (TaskRunner2.isCardFinished(card)) {
+          ownedCount++;
+          return;
+        }
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const url = link ? link.href.split("?")[0] : null;
+        if (!url) return;
+        if (Database.isTodo(url)) {
+          alreadyInQueueCount++;
+          return;
+        }
+        if (!TaskRunner2.isFreeCard(card)) return;
+        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
+        newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
+      });
+      if (skippedCount > 0) {
+        Utils.logger("info", Utils.getText("log_skipped_unsettled", skippedCount));
+      }
+      if (newlyAddedList.length > 0) {
+        State.db.todo.push(...newlyAddedList);
+        Utils.logger("info", Utils.getText("log_added_to_queue", newlyAddedList.length));
+      }
+      const actionableCount = State.db.todo.length;
+      if (actionableCount > 0) {
+        if (newlyAddedList.length === 0 && alreadyInQueueCount > 0) {
+          Utils.logger("info", Utils.getText("log_all_in_queue", alreadyInQueueCount));
+        }
+        TaskRunner2.checkVisibleCardsStatus().then(() => {
+          TaskRunner2.startExecution();
+        });
+      } else {
+        Utils.logger("info", Utils.getText("log_no_new_items", ownedCount, skippedCount));
+        if (UI4) UI4.update();
+      }
+    }, "toggleExecution"),
+    // Start execution without scanning
+    startExecution: /* @__PURE__ */ __name(() => {
+      if (State.isExecuting) {
+        const newTotal = State.db.todo.length;
+        if (newTotal > State.executionTotalTasks) {
+          Utils.logger("info", Utils.getText("log_new_tasks_added", newTotal));
+          State.executionTotalTasks = newTotal;
+          if (UI4) UI4.update();
+        } else {
+          Utils.logger("info", Utils.getText("log_executor_running"));
+        }
+        return;
+      }
+      if (State.db.todo.length === 0) {
+        Utils.logger("debug", Utils.getText("log_exec_no_tasks"));
+        return;
+      }
+      Utils.logger("info", Utils.getText("log_starting_execution", State.db.todo.length));
+      State.isExecuting = true;
+      Database.saveExecutingState();
+      State.executionTotalTasks = State.db.todo.length;
+      State.executionCompletedTasks = 0;
+      State.executionFailedTasks = 0;
+      if (UI4) UI4.update();
+      TaskRunner2.executeBatch();
+    }, "startExecution"),
+    // Toggle hide saved items
+    toggleHideSaved: /* @__PURE__ */ __name(async () => {
+      State.hideSaved = !State.hideSaved;
+      await Database.saveHidePref();
+      TaskRunner2.runHideOrShow();
+      if (!State.hideSaved) {
+        const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+        Utils.logger("info", Utils.getText("log_display_mode_switched", actualVisibleCount));
+      }
+      if (UI4) UI4.update();
+    }, "toggleHideSaved"),
+    toggleAutoAdd: /* @__PURE__ */ __name(async () => {
+      if (State.isTogglingSetting) return;
+      State.isTogglingSetting = true;
+      State.autoAddOnScroll = !State.autoAddOnScroll;
+      await Database.saveAutoAddPref();
+      Utils.logger("info", Utils.getText("log_auto_add_toggle", State.autoAddOnScroll ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+      setTimeout(() => {
+        State.isTogglingSetting = false;
+      }, 200);
+    }, "toggleAutoAdd"),
+    toggleAutoResume: /* @__PURE__ */ __name(async () => {
+      if (State.isTogglingSetting) return;
+      State.isTogglingSetting = true;
+      State.autoResumeAfter429 = !State.autoResumeAfter429;
+      await Database.saveAutoResumePref();
+      Utils.logger("info", Utils.getText("log_auto_resume_toggle", State.autoResumeAfter429 ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+      setTimeout(() => {
+        State.isTogglingSetting = false;
+      }, 200);
+    }, "toggleAutoResume"),
+    toggleRememberPosition: /* @__PURE__ */ __name(async () => {
+      if (State.isTogglingSetting) return;
+      State.isTogglingSetting = true;
+      State.rememberScrollPosition = !State.rememberScrollPosition;
+      await Database.saveRememberPosPref();
+      Utils.logger("info", Utils.getText("log_remember_pos_toggle", State.rememberScrollPosition ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+      if (!State.rememberScrollPosition) {
+        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        PagePatcher._patchHasBeenApplied = false;
+        PagePatcher._lastSeenCursor = null;
+        State.savedCursor = null;
+        Utils.logger("info", Utils.getText("log_position_cleared"));
+        if (State.UI && State.UI.savedPositionDisplay) {
+          State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
+        }
+      } else if (State.UI && State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+      }
+      setTimeout(() => {
+        State.isTogglingSetting = false;
+      }, 200);
+    }, "toggleRememberPosition"),
+    toggleAutoRefreshEmpty: /* @__PURE__ */ __name(async () => {
+      if (State.isTogglingSetting) return;
+      State.isTogglingSetting = true;
+      State.autoRefreshEmptyPage = !State.autoRefreshEmptyPage;
+      await Database.saveAutoRefreshEmptyPref();
+      Utils.logger("info", Utils.getText("log_auto_refresh_toggle", State.autoRefreshEmptyPage ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+      setTimeout(() => {
+        State.isTogglingSetting = false;
+      }, 200);
+    }, "toggleAutoRefreshEmpty"),
+    stop: /* @__PURE__ */ __name(() => {
+      if (!State.isExecuting) return;
+      State.isExecuting = false;
+      Database.saveExecutingState();
+      Database.saveTodo();
+      GM_deleteValue(Config.DB_KEYS.TASK);
+      State.runningWorkers = {};
+      State.activeWorkers = 0;
+      State.executionTotalTasks = 0;
+      State.executionCompletedTasks = 0;
+      State.executionFailedTasks = 0;
+      Utils.logger("info", Utils.getText("log_execution_stopped"));
+      if (UI4) UI4.update();
+    }, "stop"),
+    runRecoveryProbe: /* @__PURE__ */ __name(async () => {
+      const randomDelay = Math.floor(Math.random() * (3e4 - 15e3 + 1) + 15e3);
+      Utils.logger("info", Utils.getText("log_recovery_probe", (randomDelay / 1e3).toFixed(1)));
+      setTimeout(async () => {
+        Utils.logger("info", Utils.getText("log_probing_connection"));
+        try {
+          const csrfToken = Utils.getCookie("fab_csrftoken");
+          if (!csrfToken) {
+            Utils.checkAuthentication();
+            throw new Error("CSRF token not found for probe.");
+          }
+          const probeResponse = await API.gmFetch({
+            method: "GET",
+            url: "https://www.fab.com/i/users/context",
+            headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+          });
+          if (probeResponse.status === 429) {
+            throw new Error("Probe failed with 429. Still rate-limited.");
+          } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
+            await PagePatcher.handleSearchResponse({ status: 200 });
+            Utils.logger("info", Utils.getText("log_connection_restored"));
+            TaskRunner2.toggleExecution();
+          } else {
+            throw new Error(`Probe failed with unexpected status: ${probeResponse.status}`);
+          }
+        } catch (e) {
+          Utils.logger("error", Utils.getText("log_recovery_failed", e.message));
+          setTimeout(() => location.reload(), 2e3);
+        }
+      }, randomDelay);
+    }, "runRecoveryProbe"),
+    refreshVisibleStates: /* @__PURE__ */ __name(async () => {
+      const API_ENDPOINT = "https://www.fab.com/i/users/me/listings-states";
+      const API_CHUNK_SIZE = 24;
+      const isElementInViewport = /* @__PURE__ */ __name((el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return rect.top < window.innerHeight && rect.bottom > 0 && rect.left < window.innerWidth && rect.right > 0;
+      }, "isElementInViewport");
+      try {
+        const csrfToken = Utils.getCookie("fab_csrftoken");
+        if (!csrfToken) {
+          Utils.checkAuthentication();
+          throw new Error("CSRF token not found. Are you logged in?");
+        }
+        const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)].filter(isElementInViewport).filter((card) => {
+          const link = card.querySelector(Config.SELECTORS.cardLink);
+          if (!link) return false;
+          const url = link.href.split("?")[0];
+          return !Database.isDone(url);
+        }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1]).filter(Boolean));
+        const uidsFromFailedList = new Set(State.db.failed.map((task) => task.uid));
+        const allUidsToCheck = Array.from(/* @__PURE__ */ new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
+        if (allUidsToCheck.length === 0) {
+          Utils.logger("info", Utils.getText("log_no_items_to_check"));
+          return;
+        }
+        Utils.logger("info", Utils.getText("log_checking_items", uidsFromVisibleCards.size, uidsFromFailedList.size));
+        const ownedUids = /* @__PURE__ */ new Set();
+        for (let i = 0; i < allUidsToCheck.length; i += API_CHUNK_SIZE) {
+          const chunk = allUidsToCheck.slice(i, i + API_CHUNK_SIZE);
+          const apiUrl = new URL(API_ENDPOINT);
+          chunk.forEach((uid) => apiUrl.searchParams.append("listing_ids", uid));
+          Utils.logger("info", Utils.getText("log_processing_batch", Math.floor(i / API_CHUNK_SIZE) + 1, chunk.length));
+          const response = await fetch(apiUrl.href, {
+            headers: { "accept": "application/json, text/plain, */*", "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+          });
+          if (!response.ok) {
+            Utils.logger("warn", Utils.getText("log_batch_failed", response.status));
+            continue;
+          }
+          const rawData = await response.json();
+          const data = API.extractStateData(rawData, "RefreshStates");
+          if (!data || !Array.isArray(data)) {
+            Utils.logger("warn", Utils.getText("log_unexpected_data_format"));
+            continue;
+          }
+          data.filter((item) => item.acquired).forEach((item) => ownedUids.add(item.uid));
+          if (allUidsToCheck.length > i + API_CHUNK_SIZE) {
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
+        Utils.logger("info", Utils.getText("fab_dom_api_complete", ownedUids.size));
+        let dbUpdated = false;
+        const langPath = State.lang === "zh" ? "/zh-cn" : "";
+        if (ownedUids.size > 0) {
+          const initialFailedCount = State.db.failed.length;
+          State.db.failed = State.db.failed.filter((failedTask) => !ownedUids.has(failedTask.uid));
+          if (State.db.failed.length < initialFailedCount) {
+            dbUpdated = true;
+            ownedUids.forEach((uid) => {
+              const url = `${window.location.origin}${langPath}/listings/${uid}`;
+              if (!Database.isDone(url)) {
+                State.db.done.push(url);
+              }
+            });
+            Utils.logger("info", Utils.getText("log_cleared_from_failed", initialFailedCount - State.db.failed.length));
+          }
+        }
+        if (dbUpdated) {
+          await Database.saveFailed();
+          await Database.saveDone();
+        }
+        TaskRunner2.runHideOrShow();
+      } catch (e) {
+        Utils.logger("error", Utils.getText("log_refresh_error"), e);
+      }
+    }, "refreshVisibleStates"),
+    retryFailedTasks: /* @__PURE__ */ __name(async () => {
+      if (State.db.failed.length === 0) {
+        Utils.logger("info", Utils.getText("log_no_failed_tasks"));
+        return;
+      }
+      const count = State.db.failed.length;
+      Utils.logger("info", Utils.getText("log_requeuing_tasks", count));
+      State.db.todo.push(...State.db.failed);
+      State.db.failed = [];
+      await Database.saveFailed();
+      Utils.logger("info", Utils.getText("log_tasks_moved", count));
+      if (UI4) UI4.update();
+    }, "retryFailedTasks"),
+    runWatchdog: /* @__PURE__ */ __name(() => {
+      if (State.watchdogTimer) clearInterval(State.watchdogTimer);
+      State.watchdogTimer = setInterval(async () => {
+        if (!InstanceManager.isActive) return;
+        if (!State.isExecuting || Object.keys(State.runningWorkers).length === 0) {
+          clearInterval(State.watchdogTimer);
+          State.watchdogTimer = null;
+          return;
+        }
+        const now = Date.now();
+        const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
+        const stalledWorkers = [];
+        for (const workerId in State.runningWorkers) {
+          const workerInfo = State.runningWorkers[workerId];
+          if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
+          if (now - workerInfo.startTime > STALL_TIMEOUT) {
+            stalledWorkers.push({ workerId, task: workerInfo.task });
+          }
+        }
+        if (stalledWorkers.length > 0) {
+          Utils.logger("warn", Utils.getText("log_stalled_workers", stalledWorkers.length));
+          for (const stalledWorker of stalledWorkers) {
+            const { workerId, task } = stalledWorker;
+            Utils.logger("error", Utils.getText("log_watchdog_stalled", workerId.substring(0, 12)));
+            State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+            await Database.saveTodo();
+            if (!State.db.failed.some((f) => f.uid === task.uid)) {
+              State.db.failed.push(task);
+              await Database.saveFailed();
+            }
+            State.executionFailedTasks++;
+            delete State.runningWorkers[workerId];
+            State.activeWorkers--;
+            await GM_deleteValue(workerId);
+          }
+          Utils.logger("info", Utils.getText("log_cleaned_workers", stalledWorkers.length, State.activeWorkers));
+          if (UI4) UI4.update();
+          setTimeout(() => {
+            if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+              TaskRunner2.executeBatch();
+            }
+          }, 2e3);
+        }
+      }, 5e3);
+    }, "runWatchdog"),
+    executeBatch: /* @__PURE__ */ __name(async () => {
+      if (!Utils.checkAuthentication()) return;
+      if (!State.isWorkerTab && !InstanceManager.isActive) {
+        Utils.logger("warn", Utils.getText("log_not_active_instance"));
+        return;
+      }
+      if (!State.isExecuting) return;
+      if (State.isDispatchingTasks) {
+        Utils.logger("info", Utils.getText("log_dispatching_in_progress"));
+        return;
+      }
+      State.isDispatchingTasks = true;
+      try {
+        if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+          Utils.logger("info", Utils.getText("log_all_tasks_completed"));
+          State.isExecuting = false;
+          Database.saveExecutingState();
+          Database.saveTodo();
+          if (State.watchdogTimer) {
+            clearInterval(State.watchdogTimer);
+            State.watchdogTimer = null;
+          }
+          TaskRunner2.closeAllWorkerTabs();
+          if (UI4) UI4.update();
+          State.isDispatchingTasks = false;
+          return;
+        }
+        if (State.appStatus === "RATE_LIMITED") {
+          Utils.logger("info", Utils.getText("log_rate_limited_continue"));
+        }
+        if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
+          Utils.logger("info", Utils.getText("log_max_workers_reached", Config.MAX_CONCURRENT_WORKERS));
+          State.isDispatchingTasks = false;
+          return;
+        }
+        const inFlightUIDs = new Set(Object.values(State.runningWorkers).map((w) => w.task.uid));
+        const todoList = [...State.db.todo];
+        let dispatchedCount = 0;
+        const dispatchedUIDs = /* @__PURE__ */ new Set();
+        for (const task of todoList) {
+          if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+          if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
+            Utils.logger("info", Utils.getText("log_task_already_running", task.name));
+            continue;
+          }
+          if (Database.isDone(task.url)) {
+            Utils.logger("info", Utils.getText("log_task_already_done", task.name));
+            State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+            Database.saveTodo();
+            continue;
+          }
+          dispatchedUIDs.add(task.uid);
+          State.activeWorkers++;
+          dispatchedCount++;
+          const workerId = `worker_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+          State.runningWorkers[workerId] = {
+            task,
+            startTime: Date.now(),
+            instanceId: Config.INSTANCE_ID
+          };
+          Utils.logger("info", Utils.getText("log_dispatching_worker", workerId.substring(0, 12), task.name));
+          await GM_setValue(workerId, {
+            task,
+            instanceId: Config.INSTANCE_ID
+          });
+          const workerUrl = new URL(task.url);
+          workerUrl.searchParams.set("workerId", workerId);
+          GM_openInTab(workerUrl.href, { active: false, insert: true });
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        if (dispatchedCount > 0) {
+          Utils.logger("info", Utils.getText("log_batch_dispatched", dispatchedCount));
+        }
+        if (!State.watchdogTimer && State.activeWorkers > 0) {
+          TaskRunner2.runWatchdog();
+        }
+        if (UI4) UI4.update();
+      } finally {
+        State.isDispatchingTasks = false;
+      }
+    }, "executeBatch"),
+    closeAllWorkerTabs: /* @__PURE__ */ __name(() => {
+      const workerIds = Object.keys(State.runningWorkers);
+      if (workerIds.length > 0) {
+        Utils.logger("info", Utils.getText("log_cleaning_workers_state", workerIds.length));
+        for (const workerId of workerIds) {
+          GM_deleteValue(workerId);
+        }
+        State.runningWorkers = {};
+        State.activeWorkers = 0;
+        Utils.logger("info", Utils.getText("log_workers_cleaned"));
+      }
+    }, "closeAllWorkerTabs"),
+    processDetailPage: /* @__PURE__ */ __name(async () => {
+      if (!Utils.checkAuthentication()) return;
+      const urlParams = new URLSearchParams(window.location.search);
+      const workerId = urlParams.get("workerId");
+      if (!workerId) return;
+      State.isWorkerTab = true;
+      State.workerTaskId = workerId;
+      const startTime = Date.now();
+      let hasReported = false;
+      let closeAttempted = false;
+      let payload = null;
+      const forceCloseTimer = setTimeout(() => {
+        if (!closeAttempted) {
+          console.log("\u5F3A\u5236\u5173\u95ED\u5DE5\u4F5C\u6807\u7B7E\u9875");
+          try {
+            window.close();
+          } catch (e) {
+            console.error("\u5173\u95ED\u5DE5\u4F5C\u6807\u7B7E\u9875\u5931\u8D25:", e);
+          }
+        }
+      }, 6e4);
+      function closeWorkerTab() {
+        closeAttempted = true;
+        clearTimeout(forceCloseTimer);
+        if (!hasReported && workerId) {
+          try {
+            GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+              workerId,
+              success: false,
+              logs: [Utils.getText("worker_closed")],
+              task: payload?.task,
+              instanceId: payload?.instanceId,
+              executionTime: Date.now() - startTime
+            });
+          } catch (e) {
+          }
+        }
+        try {
+          window.close();
+        } catch (error) {
+          Utils.logger("error", Utils.getText("log_close_worker_failed", error.message));
+          try {
+            window.location.href = "about:blank";
+          } catch (e) {
+          }
+        }
+      }
+      __name(closeWorkerTab, "closeWorkerTab");
+      try {
+        payload = await GM_getValue(workerId);
+        if (!payload || !payload.task) {
+          Utils.logger("info", Utils.getText("log_task_data_cleaned"));
+          closeWorkerTab();
+          return;
+        }
+        const activeInstance = await GM_getValue("fab_active_instance", null);
+        if (activeInstance && activeInstance.id !== payload.instanceId) {
+          Utils.logger("warn", Utils.getText("log_instance_mismatch", payload.instanceId, activeInstance.id));
+          await GM_deleteValue(workerId);
+          closeWorkerTab();
+          return;
+        }
+        const currentTask = payload.task;
+        const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
+        let success = false;
+        try {
+          await new Promise((resolve) => setTimeout(resolve, 3e3));
+          const adultContentWarning = document.querySelector(".fabkit-Heading--xl");
+          if (adultContentWarning && (adultContentWarning.textContent.includes("\u6210\u4EBA\u5185\u5BB9") || adultContentWarning.textContent.includes("Adult Content") || adultContentWarning.textContent.includes("Mature Content"))) {
+            logBuffer.push(`\u68C0\u6D4B\u5230\u6210\u4EBA\u5185\u5BB9\u8B66\u544A\u5BF9\u8BDD\u6846\uFF0C\u81EA\u52A8\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE...`);
+            const continueButton = [...document.querySelectorAll("button.fabkit-Button--primary")].find(
+              (btn) => btn.textContent.includes("\u7EE7\u7EED") || btn.textContent.includes("Continue")
+            );
+            if (continueButton) {
+              Utils.deepClick(continueButton);
+              logBuffer.push(`\u5DF2\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE\uFF0C\u7B49\u5F85\u9875\u9762\u52A0\u8F7D...`);
+              await new Promise((resolve) => setTimeout(resolve, 2e3));
+            }
+          }
+          logBuffer.push(`=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u5F00\u59CB ===`);
+          const diagnosticReport = PageDiagnostics.diagnoseDetailPage();
+          logBuffer.push(`\u9875\u9762\u6807\u9898: ${diagnosticReport.pageTitle}`);
+          logBuffer.push(`\u53EF\u89C1\u6309\u94AE\u6570\u91CF: ${diagnosticReport.buttons.filter((btn) => btn.isVisible).length}`);
+          logBuffer.push(`=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u7ED3\u675F ===`);
+          try {
+            const csrfToken = Utils.getCookie("fab_csrftoken");
+            if (!csrfToken) throw new Error("CSRF token not found for API check.");
+            const statesUrl = new URL("https://www.fab.com/i/users/me/listings-states");
+            statesUrl.searchParams.append("listing_ids", currentTask.uid);
+            const response = await API.gmFetch({
+              method: "GET",
+              url: statesUrl.href,
+              headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+            });
+            let statesData;
+            try {
+              statesData = JSON.parse(response.responseText);
+              if (!Array.isArray(statesData)) {
+                statesData = API.extractStateData(statesData, "SingleItemCheck");
+              }
+            } catch (e) {
+              logBuffer.push(`\u89E3\u6790API\u54CD\u5E94\u5931\u8D25: ${e.message}`);
+              statesData = [];
+            }
+            const isOwned = Array.isArray(statesData) && statesData.some((s) => s && s.uid === currentTask.uid && s.acquired);
+            if (isOwned) {
+              logBuffer.push(`API check confirms item is already owned.`);
+              success = true;
+            } else {
+              logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
+            }
+          } catch (apiError) {
+            logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+          }
+          if (!success) {
+            const isItemOwned = /* @__PURE__ */ __name(() => {
+              const criteria = Config.OWNED_SUCCESS_CRITERIA;
+              const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+              if (snackbar && criteria.snackbarText.some((text) => snackbar.textContent.includes(text))) {
+                return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+              }
+              const successHeader = document.querySelector("h2");
+              if (successHeader && criteria.h2Text.some((text) => successHeader.textContent.includes(text))) {
+                return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
+              }
+              const allButtons = [...document.querySelectorAll("button, a.fabkit-Button-root")];
+              const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((keyword) => btn.textContent.includes(keyword)));
+              if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+              return { owned: false };
+            }, "isItemOwned");
+            const initialState = isItemOwned();
+            if (initialState.owned) {
+              logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+              success = true;
+            } else {
+              let actionButton = [...document.querySelectorAll("button")].find(
+                (btn) => [...Config.ACQUISITION_TEXT_SET].some((keyword) => btn.textContent.includes(keyword))
+              );
+              if (!actionButton) {
+                actionButton = [...document.querySelectorAll("button")].find((btn) => {
+                  const text = btn.textContent;
+                  const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
+                  const hasDiscount = text.includes("-100%");
+                  const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
+                  return hasFreeText && hasDiscount && hasPersonal;
+                });
+              }
+              if (actionButton) {
+                logBuffer.push(`Found add button, clicking it.`);
+                Utils.deepClick(actionButton);
+                try {
+                  await new Promise((resolve, reject) => {
+                    const timeout = 25e3;
+                    const interval = setInterval(() => {
+                      const currentState = isItemOwned();
+                      if (currentState.owned) {
+                        logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                        success = true;
+                        clearInterval(interval);
+                        resolve();
+                      }
+                    }, 500);
+                    setTimeout(() => {
+                      clearInterval(interval);
+                      reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                    }, timeout);
+                  });
+                } catch (timeoutError) {
+                  logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                }
+              } else {
+                logBuffer.push(`Could not find an add button.`);
+              }
+            }
+          }
+        } catch (error) {
+          logBuffer.push(`A critical error occurred: ${error.message}`);
+          success = false;
+        } finally {
+          try {
+            hasReported = true;
+            await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+              workerId,
+              success,
+              logs: logBuffer,
+              task: currentTask,
+              instanceId: payload.instanceId,
+              executionTime: Date.now() - startTime
+            });
+          } catch (error) {
+            console.error("Error setting worker done value:", error);
+          }
+          try {
+            await GM_deleteValue(workerId);
+          } catch (error) {
+            console.error("Error deleting worker value:", error);
+          }
+          closeWorkerTab();
+        }
+      } catch (error) {
+        Utils.logger("error", `Worker tab error: ${error.message}`);
+        closeWorkerTab();
+      }
+    }, "processDetailPage"),
+    runHideOrShow: /* @__PURE__ */ __name(() => {
+      State.hiddenThisPageCount = 0;
+      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      let actuallyHidden = 0;
+      let hasUnsettledCards = false;
+      const unsettledCards = [];
+      const isCardSettled = /* @__PURE__ */ __name((card) => {
+        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+      }, "isCardSettled");
+      cards.forEach((card) => {
+        if (!isCardSettled(card)) {
+          hasUnsettledCards = true;
+          unsettledCards.push(card);
+        }
+      });
+      if (hasUnsettledCards && unsettledCards.length > 0) {
+        Utils.logger("info", Utils.getText("log_unsettled_cards", unsettledCards.length));
+        setTimeout(() => TaskRunner2.runHideOrShow(), 2e3);
+        return;
+      }
+      const cardsToHide = [];
+      cards.forEach((card) => {
+        const isProcessed = card.getAttribute("data-fab-processed") === "true";
+        if (isProcessed && card.style.display === "none") {
+          State.hiddenThisPageCount++;
+          return;
+        }
+        const isFinished = TaskRunner2.isCardFinished(card);
+        if (State.hideSaved && isFinished) {
+          cardsToHide.push(card);
+          State.hiddenThisPageCount++;
+          card.setAttribute("data-fab-processed", "true");
+        } else {
+          card.setAttribute("data-fab-processed", "true");
+        }
+      });
+      if (cardsToHide.length > 0) {
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("debug_prepare_hide", cardsToHide.length));
+        }
+        cardsToHide.sort(() => Math.random() - 0.5);
+        const batchSize = 10;
+        const batches = Math.ceil(cardsToHide.length / batchSize);
+        const initialDelay = 1e3;
+        for (let i = 0; i < batches; i++) {
+          const start = i * batchSize;
+          const end = Math.min(start + batchSize, cardsToHide.length);
+          const currentBatch = cardsToHide.slice(start, end);
+          const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+          setTimeout(() => {
+            currentBatch.forEach((card, index) => {
+              const cardDelay = index * 50 + Math.random() * 100;
+              setTimeout(() => {
+                card.style.display = "none";
+                actuallyHidden++;
+                if (actuallyHidden === cardsToHide.length) {
+                  if (State.debugMode) {
+                    Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+                  }
+                  setTimeout(() => {
+                    if (UI4) UI4.update();
+                    TaskRunner2.checkVisibilityAndRefresh();
+                  }, 300);
+                }
+              }, cardDelay);
+            });
+          }, batchDelay);
+        }
+      }
+      if (State.hideSaved) {
+        const visibleCards = Array.from(cards).filter((card) => !TaskRunner2.isCardFinished(card));
+        visibleCards.forEach((card) => {
+          card.style.display = "";
+        });
+        if (cardsToHide.length === 0) {
+          if (UI4) UI4.update();
+          TaskRunner2.checkVisibilityAndRefresh();
+        }
+      } else {
+        cards.forEach((card) => {
+          card.style.display = "";
+        });
+        if (UI4) UI4.update();
+      }
+    }, "runHideOrShow"),
+    checkVisibilityAndRefresh: /* @__PURE__ */ __name(() => {
+      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      let needsReprocessing = false;
+      cards.forEach((card) => {
+        const isProcessed = card.getAttribute("data-fab-processed") === "true";
+        if (!isProcessed) needsReprocessing = true;
+      });
+      if (needsReprocessing) {
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("debug_unprocessed_cards_simple"));
+        }
+        setTimeout(() => TaskRunner2.runHideOrShow(), 100);
+        return;
+      }
+      const visibleCards = Array.from(cards).filter((card) => {
+        if (card.style.display === "none") return false;
+        const computedStyle = window.getComputedStyle(card);
+        return computedStyle.display !== "none" && computedStyle.visibility !== "hidden";
+      }).length;
+      if (State.debugMode) {
+        Utils.logger("debug", Utils.getText("debug_visible_after_hide", visibleCards, State.hiddenThisPageCount));
+      }
+      const visibleCountElement = document.getElementById("fab-status-visible");
+      if (visibleCountElement) {
+        visibleCountElement.textContent = visibleCards.toString();
+      }
+      if (visibleCards === 0) {
+        if (State.appStatus === "RATE_LIMITED" && State.autoRefreshEmptyPage) {
+          if (State.isRefreshScheduled) {
+            Utils.logger("info", Utils.getText("refresh_plan_exists"));
+            return;
+          }
+          Utils.logger("info", Utils.getText("log_all_hidden_rate_limited"));
+          State.isRefreshScheduled = true;
+          setTimeout(() => {
+            const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter((card) => card.style.display !== "none").length;
+            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+              Utils.logger("info", Utils.getText("log_refresh_cancelled_tasks", State.db.todo.length, State.activeWorkers));
+              State.isRefreshScheduled = false;
+              return;
+            }
+            if (currentVisibleCards === 0 && State.appStatus === "RATE_LIMITED" && State.autoRefreshEmptyPage) {
+              Utils.logger("info", Utils.getText("log_refreshing"));
+              window.location.href = window.location.href;
+            } else {
+              Utils.logger("info", Utils.getText("log_refresh_cancelled_visible", currentVisibleCards));
+              State.isRefreshScheduled = false;
+            }
+          }, 2e3);
+        } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
+          Utils.logger("info", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
+        }
+      }
+    }, "checkVisibilityAndRefresh"),
+    ensureTasksAreExecuted: /* @__PURE__ */ __name(() => {
+      if (State.db.todo.length === 0) return;
+      if (State.isExecuting) {
+        if (State.activeWorkers === 0) {
+          Utils.logger("info", Utils.getText("log_ensure_tasks"));
+          TaskRunner2.executeBatch();
+        }
+        return;
+      }
+      Utils.logger("info", Utils.getText("log_auto_start_execution", State.db.todo.length));
+      TaskRunner2.startExecution();
+    }, "ensureTasksAreExecuted"),
+    checkVisibleCardsStatus: /* @__PURE__ */ __name(async () => {
+      try {
+        const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
+        if (visibleCards.length === 0) {
+          Utils.logger("info", Utils.getText("log_no_visible_cards"));
+          return;
+        }
+        let hasUnsettledCards = false;
+        const unsettledCards = [];
+        const isCardSettled = /* @__PURE__ */ __name((card) => {
+          return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
+        }, "isCardSettled");
+        visibleCards.forEach((card) => {
+          if (!isCardSettled(card)) {
+            hasUnsettledCards = true;
+            unsettledCards.push(card);
+          }
+        });
+        if (hasUnsettledCards && unsettledCards.length > 0) {
+          Utils.logger("info", Utils.getText("log_waiting_for_cards", unsettledCards.length));
+          await new Promise((resolve) => setTimeout(resolve, 3e3));
+          return TaskRunner2.checkVisibleCardsStatus();
+        }
+        const allItems = [];
+        let confirmedOwned = 0;
+        visibleCards.forEach((card) => {
+          const link = card.querySelector(Config.SELECTORS.cardLink);
+          const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
+          if (uidMatch && uidMatch[1]) {
+            const uid = uidMatch[1];
+            const url = link.href.split("?")[0];
+            if (State.db.done.includes(url)) return;
+            allItems.push({ uid, url, element: card });
+          }
+        });
+        if (allItems.length === 0) {
+          Utils.logger("debug", Utils.getText("debug_no_cards_to_check"));
+          return;
+        }
+        Utils.logger("info", Utils.getText("fab_dom_checking_status", allItems.length));
+        const uids = allItems.map((item) => item.uid);
+        const statesData = await API.checkItemsOwnership(uids);
+        const ownedUids = new Set(
+          statesData.filter((state) => state && state.acquired).map((state) => state.uid)
+        );
+        for (const item of allItems) {
+          if (ownedUids.has(item.uid)) {
+            if (!State.db.done.includes(item.url)) {
+              State.db.done.push(item.url);
+              confirmedOwned++;
+            }
+            State.db.failed = State.db.failed.filter((f) => f.uid !== item.uid);
+            State.db.todo = State.db.todo.filter((t) => t.uid !== item.uid);
+          }
+        }
+        if (confirmedOwned > 0) {
+          await Database.saveDone();
+          await Database.saveFailed();
+          Utils.logger("info", Utils.getText("fab_dom_api_complete", confirmedOwned));
+          Utils.logger("info", Utils.getText("fab_dom_refresh_complete", confirmedOwned));
+        } else {
+          Utils.logger("info", Utils.getText("fab_dom_no_new_owned"));
+        }
+      } catch (error) {
+        Utils.logger("error", Utils.getText("log_check_status_error", error.message));
+        if (error.message && error.message.includes("429")) {
+          RateLimitManager.enterRateLimitedState("[Fab DOM Refresh] 429\u9519\u8BEF");
+        }
+      }
+    }, "checkVisibleCardsStatus"),
+    scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
+      if (!State.autoAddOnScroll) return;
+      if (!window._apiWaitStatus) {
+        window._apiWaitStatus = {
+          isWaiting: false,
+          pendingCards: [],
+          lastApiActivity: 0,
+          apiCheckInterval: null
+        };
+      }
+      if (window._apiWaitStatus.isWaiting) {
+        window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
+        Utils.logger("info", Utils.getText("debug_api_wait_in_progress", cards.length));
+        return;
+      }
+      window._apiWaitStatus.isWaiting = true;
+      window._apiWaitStatus.pendingCards = [...cards];
+      window._apiWaitStatus.lastApiActivity = Date.now();
+      if (State.debugMode) {
+        Utils.logger("debug", Utils.getText("debug_wait_api_response", cards.length));
+      }
+      const waitForApiCompletion = /* @__PURE__ */ __name(() => {
+        return new Promise((resolve) => {
+          if (window._apiWaitStatus.apiCheckInterval) {
+            clearInterval(window._apiWaitStatus.apiCheckInterval);
+          }
+          const maxWaitTime = 1e4;
+          const startTime = Date.now();
+          const originalFetch = window.fetch;
+          window.fetch = function(...args) {
+            const url = args[0]?.toString() || "";
+            if (url.includes("/listings-states") || url.includes("/listings/search")) {
+              window._apiWaitStatus.lastApiActivity = Date.now();
+            }
+            return originalFetch.apply(this, args);
+          };
+          window._apiWaitStatus.apiCheckInterval = setInterval(() => {
+            const now = Date.now();
+            const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
+            const totalWaitTime = now - startTime;
+            if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2e3) {
+              clearInterval(window._apiWaitStatus.apiCheckInterval);
+              window.fetch = originalFetch;
+              resolve();
+            }
+          }, 200);
+        });
+      }, "waitForApiCompletion");
+      try {
+        await waitForApiCompletion();
+      } catch (error) {
+        Utils.logger("error", Utils.getText("auto_add_api_error", error.message));
+      }
+      const cardsToProcess = [...window._apiWaitStatus.pendingCards];
+      window._apiWaitStatus.pendingCards = [];
+      window._apiWaitStatus.isWaiting = false;
+      if (State.debugMode) {
+        Utils.logger("debug", Utils.getText("debug_api_wait_complete", cardsToProcess.length));
+      }
+      const newlyAddedList = [];
+      let skippedAlreadyOwned = 0;
+      let skippedInTodo = 0;
+      cardsToProcess.forEach((card) => {
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const url = link ? link.href.split("?")[0] : null;
+        if (!url) return;
+        if (Database.isDone(url)) {
+          skippedAlreadyOwned++;
+          return;
+        }
+        if (Database.isTodo(url)) {
+          skippedInTodo++;
+          return;
+        }
+        const text = card.textContent || "";
+        if (text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library")) {
+          skippedAlreadyOwned++;
+          return;
+        }
+        const icons = card.querySelectorAll("i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled");
+        if (icons.length > 0) {
+          skippedAlreadyOwned++;
+          return;
+        }
+        const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
+        if (uidMatch && uidMatch[1]) {
+          const uid = uidMatch[1];
+          if (DataCache.ownedStatus.has(uid)) {
+            const status = DataCache.ownedStatus.get(uid);
+            if (status && status.acquired) {
+              skippedAlreadyOwned++;
+              return;
+            }
+          }
+        }
+        if (!TaskRunner2.isFreeCard(card)) return;
+        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
+        newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
+      });
+      if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+        if (newlyAddedList.length > 0) {
+          State.db.todo.push(...newlyAddedList);
+          Utils.logger("info", Utils.getText("auto_add_new_tasks", newlyAddedList.length));
+          Database.saveTodo();
+        }
+        if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+          Utils.logger("debug", Utils.getText("debug_filter_owned", skippedAlreadyOwned, skippedInTodo));
+        }
+        if (State.isExecuting) {
+          State.executionTotalTasks = State.db.todo.length;
+          TaskRunner2.executeBatch();
+        } else if (State.autoAddOnScroll) {
+          TaskRunner2.startExecution();
+        }
+        if (UI4) UI4.update();
+      }
+    }, "scanAndAddTasks"),
+    handleRateLimit: /* @__PURE__ */ __name(async (url) => {
+      await RateLimitManager.enterRateLimitedState(url || "\u7F51\u7EDC\u8BF7\u6C42");
+    }, "handleRateLimit"),
+    reportTaskDone: /* @__PURE__ */ __name(async (task, success) => {
+      try {
+        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+          workerId: `worker_task_${task.uid}`,
+          success,
+          logs: [Utils.getText("task_report", success ? Utils.getText("task_success") : Utils.getText("task_failed"), task.name || task.uid)],
+          task,
+          instanceId: Config.INSTANCE_ID,
+          executionTime: 0
+        });
+        Utils.logger("info", Utils.getText("task_report", success ? Utils.getText("task_success") : Utils.getText("task_failed"), task.name || task.uid));
+      } catch (error) {
+        Utils.logger("error", Utils.getText("log_report_error", error.message));
+      }
+    }, "reportTaskDone")
+  };
+
+  // src/modules/ui.js
+  var TaskRunner3 = null;
+  function setTaskRunnerReference(taskRunnerModule) {
+    TaskRunner3 = taskRunnerModule;
+  }
+  __name(setTaskRunnerReference, "setTaskRunnerReference");
+  var UI5 = {
+    init: /* @__PURE__ */ __name(() => {
+      return UI5.create();
+    }, "init"),
+    create: /* @__PURE__ */ __name(() => {
+      const acquisitionButton = [...document.querySelectorAll("button")].find(
+        (btn) => [...Config.ACQUISITION_TEXT_SET].some((keyword) => btn.textContent.includes(keyword))
+      );
+      const downloadTexts = ["\u4E0B\u8F7D", "Download"];
+      const downloadButton = [...document.querySelectorAll('a[href*="/download/"], button')].find(
+        (btn) => downloadTexts.some((text) => btn.textContent.includes(text))
+      );
+      if (acquisitionButton || downloadButton) {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has("workerId")) return false;
+        Utils.logger("info", "On a detail page (detected by action buttons), skipping UI creation.");
+        return false;
+      }
+      if (document.getElementById(Config.UI_CONTAINER_ID)) return true;
+      const styles = `
+            :root {
+                --bg-color: rgba(28, 28, 30, 0.9);
+                --border-color: rgba(255, 255, 255, 0.15);
+                --text-color-primary: #f5f5f7;
+                --text-color-secondary: #a0a0a5;
+                --radius-l: 12px;
+                --radius-m: 8px;
+                --radius-s: 6px;
+                --blue: #007aff; --pink: #ff2d55; --green: #34c759;
+                --orange: #ff9500; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                --blue-bg: rgba(0, 122, 255, 0.2);
+            }
+            #${Config.UI_CONTAINER_ID} {
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                z-index: 9999;
+                background: var(--bg-color);
+                backdrop-filter: blur(15px) saturate(1.8);
+                -webkit-backdrop-filter: blur(15px) saturate(1.8);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-l);
+                color: var(--text-color-primary);
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                width: 300px;
+                font-size: 14px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            }
+            #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
+                box-sizing: border-box;
+            }
+            .fab-helper-tabs {
+                display: flex;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .fab-helper-tabs button {
+                flex: 1;
+                padding: 10px 0;
+                font-size: 14px;
+                font-weight: 500;
+                cursor: pointer;
+                background: transparent;
+                border: none;
+                color: var(--text-color-secondary);
+                transition: color 0.2s, border-bottom 0.2s;
+                border-bottom: 2px solid transparent;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+            .fab-helper-tabs button.active {
+                color: var(--text-color-primary);
+                border-bottom: 2px solid var(--blue);
+            }
+            .fab-helper-tab-content {
+                padding: 12px;
+            }
+            .fab-helper-status-bar {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .fab-helper-status-item {
+                background: var(--dark-gray);
+                padding: 8px 6px;
+                border-radius: var(--radius-m);
+                font-size: 12px;
+                color: var(--text-color-secondary);
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                gap: 2px;
+                min-width: 0;
+                flex-grow: 1;
+                flex-basis: calc((100% - 12px) / 3);
+            }
+            .fab-helper-status-label {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 4px;
+                white-space: nowrap;
+            }
+            .fab-helper-status-item span {
+                display: block;
+                font-size: 18px;
+                font-weight: 600;
+                color: #fff;
+                margin-top: 0;
+            }
+            .fab-helper-execute-btn {
+                width: 100%;
+                border: none;
+                border-radius: var(--radius-m);
+                padding: 12px 14px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                color: #fff;
+                background: var(--blue);
+                margin-bottom: 12px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                gap: 8px;
+            }
+            .fab-helper-execute-btn.executing {
+                background: var(--pink);
+            }
+            .fab-helper-actions {
+                display: flex;
+                gap: 8px;
+            }
+            .fab-helper-actions button {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 5px;
+                background: var(--dark-gray);
+                border: none;
+                border-radius: var(--radius-m);
+                color: var(--text-color-primary);
+                padding: 8px 6px;
+                cursor: pointer;
+                transition: background-color 0.2s;
+                white-space: nowrap;
+                font-size: 13.5px;
+                font-weight: normal;
+            }
+            .fab-helper-actions button:hover {
+                background: #4a4a4c;
+            }
+            .fab-log-container {
+                padding: 0 12px 12px 12px;
+                border-bottom: 1px solid var(--border-color);
+                margin-bottom: 12px;
+            }
+            .fab-log-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 8px;
+                margin-top: 8px;
+            }
+            .fab-log-header span {
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text-color-secondary);
+            }
+            .fab-log-controls button {
+                background: transparent;
+                border: none;
+                color: var(--text-color-secondary);
+                cursor: pointer;
+                padding: 4px;
+                font-size: 18px;
+                line-height: 1;
+            }
+            #${Config.UI_LOG_ID} {
+                background: rgba(10,10,10,0.85);
+                color: #ddd;
+                font-size: 11px;
+                line-height: 1.4;
+                padding: 8px;
+                border-radius: var(--radius-m);
+                max-height: 150px;
+                overflow-y: auto;
+                min-height: 50px;
+                display: flex;
+                flex-direction: column-reverse;
+                box-shadow: inset 0 1px 4px rgba(0,0,0,0.2);
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
+            }
+            #${Config.UI_LOG_ID}::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            #${Config.UI_LOG_ID}::-webkit-scrollbar-track {
+                background: rgba(0,0,0,0.2);
+                border-radius: 4px;
+            }
+            #${Config.UI_LOG_ID}::-webkit-scrollbar-thumb {
+                background: rgba(255,255,255,0.3);
+                border-radius: 4px;
+            }
+            .fab-setting-row {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 0;
+                border-bottom: 1px solid var(--border-color);
+            }
+            .fab-setting-row:last-child {
+                border-bottom: none;
+            }
+            .fab-setting-label {
+                font-size: 14px;
+            }
+            .fab-toggle-switch {
+                position: relative;
+                display: inline-block;
+                width: 44px;
+                height: 24px;
+            }
+            .fab-toggle-switch input {
+                opacity: 0;
+                width: 0;
+                height: 0;
+            }
+            .fab-toggle-slider {
+                position: absolute;
+                cursor: pointer;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background-color: var(--dark-gray);
+                transition: .4s;
+                border-radius: 24px;
+            }
+            .fab-toggle-slider:before {
+                position: absolute;
+                content: "";
+                height: 20px;
+                width: 20px;
+                left: 2px;
+                bottom: 2px;
+                background-color: white;
+                transition: .4s;
+                border-radius: 50%;
+            }
+            input:checked + .fab-toggle-slider {
+                background-color: var(--blue);
+            }
+            input:checked + .fab-toggle-slider:before {
+                transform: translateX(20px);
+            }
+            .fab-debug-history-container {
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
+            }
+            .fab-debug-history-container::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            .fab-debug-history-container::-webkit-scrollbar-track {
+                background: rgba(0,0,0,0.2);
+                border-radius: 4px;
+            }
+            .fab-debug-history-container::-webkit-scrollbar-thumb {
+                background: rgba(255,255,255,0.3);
+                border-radius: 4px;
+            }
+        `;
+      const styleSheet = document.createElement("style");
+      styleSheet.innerText = styles;
+      document.head.appendChild(styleSheet);
+      const container = document.createElement("div");
+      container.id = Config.UI_CONTAINER_ID;
+      State.UI.container = container;
+      const header = document.createElement("div");
+      header.style.cssText = "padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;";
+      const title = document.createElement("span");
+      title.textContent = Utils.getText("app_title");
+      title.style.fontWeight = "600";
+      const version = document.createElement("span");
+      version.textContent = `v${GM_info.script.version}`;
+      version.style.cssText = "font-size: 12px; color: var(--text-color-secondary); background: var(--dark-gray); padding: 2px 5px; border-radius: var(--radius-s);";
+      header.append(title, version);
+      container.appendChild(header);
+      const tabContainer = document.createElement("div");
+      tabContainer.className = "fab-helper-tabs";
+      const tabs = ["dashboard", "settings", "debug"];
+      tabs.forEach((tabName) => {
+        const btn = document.createElement("button");
+        btn.textContent = Utils.getText(`tab_${tabName}`);
+        btn.onclick = () => UI5.switchTab(tabName);
+        if (tabName === "dashboard") btn.classList.add("active");
+        tabContainer.appendChild(btn);
+        State.UI.tabs[tabName] = btn;
+      });
+      container.appendChild(tabContainer);
+      const dashboardContent = document.createElement("div");
+      dashboardContent.className = "fab-helper-tab-content";
+      dashboardContent.style.display = "block";
+      State.UI.tabContents.dashboard = dashboardContent;
+      const statusBar = document.createElement("div");
+      statusBar.className = "fab-helper-status-bar";
+      const createStatusItem = /* @__PURE__ */ __name((id, label, icon) => {
+        const item = document.createElement("div");
+        item.className = "fab-helper-status-item";
+        item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
+        return item;
+      }, "createStatusItem");
+      State.UI.statusVisible = createStatusItem("fab-status-visible", Utils.getText("visible"), "\u{1F441}\uFE0F");
+      State.UI.statusTodo = createStatusItem("fab-status-todo", Utils.getText("todo"), "\u{1F4E5}");
+      State.UI.statusDone = createStatusItem("fab-status-done", Utils.getText("added"), "\u2705");
+      State.UI.statusFailed = createStatusItem("fab-status-failed", Utils.getText("failed"), "\u274C");
+      State.UI.statusFailed.style.cursor = "pointer";
+      State.UI.statusFailed.title = Utils.getText("tooltip_open_failed");
+      State.UI.statusFailed.onclick = () => {
+        if (State.db.failed.length === 0) {
+          Utils.logger("info", Utils.getText("failed_list_empty"));
+          return;
+        }
+        if (window.confirm(Utils.getText("confirm_open_failed", State.db.failed.length))) {
+          Utils.logger("info", Utils.getText("opening_failed_items", State.db.failed.length));
+          State.db.failed.forEach((task) => {
+            GM_openInTab(task.url, { active: false });
+          });
+        }
+      };
+      State.UI.statusHidden = createStatusItem("fab-status-hidden", Utils.getText("hidden"), "\u{1F648}");
+      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+      State.UI.execBtn = document.createElement("button");
+      State.UI.execBtn.className = "fab-helper-execute-btn";
+      State.UI.execBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleExecution();
+      if (State.isExecuting) {
+        State.UI.execBtn.innerHTML = `<span>${Utils.getText("executing")}</span>`;
+        State.UI.execBtn.classList.add("executing");
+      } else {
+        State.UI.execBtn.textContent = Utils.getText("execute");
+        State.UI.execBtn.classList.remove("executing");
+      }
+      const actionButtons = document.createElement("div");
+      actionButtons.className = "fab-helper-actions";
+      State.UI.syncBtn = document.createElement("button");
+      State.UI.syncBtn.textContent = "\u{1F504} " + Utils.getText("sync");
+      State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
+      State.UI.hideBtn = document.createElement("button");
+      State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
+      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
+      const logContainer = document.createElement("div");
+      logContainer.className = "fab-log-container";
+      const logHeader = document.createElement("div");
+      logHeader.className = "fab-log-header";
+      const logTitle = document.createElement("span");
+      logTitle.textContent = Utils.getText("operation_log");
+      const logControls = document.createElement("div");
+      logControls.className = "fab-log-controls";
+      const copyLogBtn = document.createElement("button");
+      copyLogBtn.innerHTML = "\u{1F4C4}";
+      copyLogBtn.title = Utils.getText("copyLog");
+      copyLogBtn.onclick = () => {
+        navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
+          const originalText = copyLogBtn.textContent;
+          copyLogBtn.textContent = "\u2705";
+          setTimeout(() => {
+            copyLogBtn.textContent = originalText;
+          }, 1500);
+        }).catch((err) => Utils.logger("error", "Failed to copy log:", err));
+      };
+      const clearLogBtn = document.createElement("button");
+      clearLogBtn.innerHTML = "\u{1F5D1}\uFE0F";
+      clearLogBtn.title = Utils.getText("clearLog");
+      clearLogBtn.onclick = () => {
+        State.UI.logPanel.innerHTML = "";
+      };
+      logControls.append(copyLogBtn, clearLogBtn);
+      logHeader.append(logTitle, logControls);
+      State.UI.logPanel = document.createElement("div");
+      State.UI.logPanel.id = Config.UI_LOG_ID;
+      logContainer.append(logHeader, State.UI.logPanel);
+      const positionContainer = document.createElement("div");
+      positionContainer.className = "fab-helper-position-container";
+      positionContainer.style.cssText = "margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
+      const positionIcon = document.createElement("span");
+      positionIcon.textContent = Utils.getText("position_indicator");
+      positionIcon.style.marginRight = "4px";
+      const positionInfo = document.createElement("span");
+      positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      State.UI.savedPositionDisplay = positionInfo;
+      positionContainer.appendChild(positionIcon);
+      positionContainer.appendChild(positionInfo);
+      dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
+      container.appendChild(dashboardContent);
+      const settingsContent = document.createElement("div");
+      settingsContent.className = "fab-helper-tab-content";
+      settingsContent.style.display = "none";
+      const createSettingRow = /* @__PURE__ */ __name((labelText, stateKey) => {
+        const row = document.createElement("div");
+        row.className = "fab-setting-row";
+        const label = document.createElement("span");
+        label.className = "fab-setting-label";
+        label.textContent = labelText;
+        const switchContainer = document.createElement("label");
+        switchContainer.className = "fab-toggle-switch";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = State[stateKey];
+        input.onchange = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (!TaskRunner3) return;
+          if (stateKey === "autoAddOnScroll") {
+            TaskRunner3.toggleAutoAdd();
+          } else if (stateKey === "rememberScrollPosition") {
+            TaskRunner3.toggleRememberPosition();
+          } else if (stateKey === "autoResumeAfter429") {
+            TaskRunner3.toggleAutoResume();
+          } else if (stateKey === "autoRefreshEmptyPage") {
+            TaskRunner3.toggleAutoRefreshEmpty();
+          }
+          e.target.checked = State[stateKey];
+        };
+        const slider = document.createElement("span");
+        slider.className = "fab-toggle-slider";
+        switchContainer.append(input, slider);
+        row.append(label, switchContainer);
+        return row;
+      }, "createSettingRow");
+      const autoAddSetting = createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll");
+      settingsContent.appendChild(autoAddSetting);
+      const rememberPosSetting = createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition");
+      settingsContent.appendChild(rememberPosSetting);
+      const autoResumeSetting = createSettingRow(Utils.getText("setting_auto_resume_429"), "autoResumeAfter429");
+      settingsContent.appendChild(autoResumeSetting);
+      const autoRefreshEmptySetting = createSettingRow(Utils.getText("setting_auto_refresh"), "autoRefreshEmptyPage");
+      settingsContent.appendChild(autoRefreshEmptySetting);
+      const resetButton = document.createElement("button");
+      resetButton.textContent = Utils.getText("clear_all_data");
+      resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";
+      resetButton.onclick = Database.resetAllData;
+      settingsContent.appendChild(resetButton);
+      const debugModeRow = document.createElement("div");
+      debugModeRow.className = "fab-setting-row";
+      debugModeRow.title = Utils.getText("setting_debug_tooltip");
+      const debugLabel = document.createElement("span");
+      debugLabel.className = "fab-setting-label";
+      debugLabel.textContent = Utils.getText("debug_mode");
+      debugLabel.style.color = "#ff9800";
+      const debugSwitchContainer = document.createElement("label");
+      debugSwitchContainer.className = "fab-toggle-switch";
+      const debugInput = document.createElement("input");
+      debugInput.type = "checkbox";
+      debugInput.checked = State.debugMode;
+      debugInput.onchange = (e) => {
+        State.debugMode = e.target.checked;
+        debugModeRow.classList.toggle("active", State.debugMode);
+        Utils.logger("info", Utils.getText("log_debug_mode_toggle", State.debugMode ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+        GM_setValue("fab_helper_debug_mode", State.debugMode);
+      };
+      const debugSlider = document.createElement("span");
+      debugSlider.className = "fab-toggle-slider";
+      debugSwitchContainer.append(debugInput, debugSlider);
+      debugModeRow.append(debugLabel, debugSwitchContainer);
+      debugModeRow.classList.toggle("active", State.debugMode);
+      settingsContent.appendChild(debugModeRow);
+      State.UI.tabContents.settings = settingsContent;
+      container.appendChild(settingsContent);
+      const debugContent = document.createElement("div");
+      debugContent.className = "fab-helper-tab-content";
+      debugContent.style.display = "none";
+      State.UI.debugContent = debugContent;
+      const debugHeader = document.createElement("div");
+      debugHeader.style.cssText = "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;";
+      const debugTitle = document.createElement("h4");
+      debugTitle.textContent = Utils.getText("status_history");
+      debugTitle.style.cssText = "margin: 0; font-size: 14px; white-space: nowrap;";
+      const debugControls = document.createElement("div");
+      debugControls.style.cssText = "display: flex; gap: 6px; flex-wrap: wrap;";
+      const copyHistoryBtn = document.createElement("button");
+      copyHistoryBtn.textContent = Utils.getText("copy_btn");
+      copyHistoryBtn.title = "\u590D\u5236\u8BE6\u7EC6\u5386\u53F2\u8BB0\u5F55";
+      copyHistoryBtn.style.cssText = "background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;";
+      copyHistoryBtn.onclick = () => {
+        if (State.statusHistory.length === 0) {
+          Utils.logger("info", Utils.getText("no_history_to_copy"));
+          return;
+        }
+        const formatEntry = /* @__PURE__ */ __name((entry) => {
+          const date = new Date(entry.endTime).toLocaleString();
+          if (entry.type === "STARTUP") {
+            return `\u{1F680} ${Utils.getText("script_startup")}
+  - ${Utils.getText("time_label")}: ${date}
+  - ${Utils.getText("info_label")}: ${entry.message || ""}`;
+          } else {
+            const type = entry.type === "NORMAL" ? `\u2705 ${Utils.getText("normal_period")}` : `\u{1F6A8} ${Utils.getText("rate_limited_period")}`;
+            let details = `${Utils.getText("duration_label")}: ${entry.duration !== void 0 && entry.duration !== null ? entry.duration.toFixed(2) : Utils.getText("unknown_duration")}s`;
+            if (entry.requests !== void 0) {
+              details += `, ${Utils.getText("requests_label")}: ${entry.requests}${Utils.getText("requests_unit")}`;
+            }
+            return `${type}
+  - ${Utils.getText("ended_at")}: ${date}
+  - ${details}`;
+          }
+        }, "formatEntry");
+        const fullLog = State.statusHistory.map(formatEntry).join("\n\n");
+        navigator.clipboard.writeText(fullLog).then(() => {
+          const originalText = copyHistoryBtn.textContent;
+          copyHistoryBtn.textContent = Utils.getText("copied_success");
+          setTimeout(() => {
+            copyHistoryBtn.textContent = originalText;
+          }, 2e3);
+        }).catch((err) => Utils.logger("error", Utils.getText("log_copy_failed"), err));
+      };
+      const clearHistoryBtn = document.createElement("button");
+      clearHistoryBtn.textContent = Utils.getText("clear_btn");
+      clearHistoryBtn.title = "\u6E05\u7A7A\u5386\u53F2\u8BB0\u5F55";
+      clearHistoryBtn.style.cssText = "background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;";
+      clearHistoryBtn.onclick = async () => {
+        if (window.confirm(Utils.getText("confirm_clear_history"))) {
+          State.statusHistory = [];
+          await GM_deleteValue(Config.DB_KEYS.STATUS_HISTORY);
+          const currentSessionEntry = {
+            type: "STARTUP",
+            duration: 0,
+            endTime: (/* @__PURE__ */ new Date()).toISOString(),
+            message: Utils.getText("history_cleared_new_session")
+          };
+          await RateLimitManager.addToHistory(currentSessionEntry);
+          UI5.updateDebugTab();
+          Utils.logger("info", Utils.getText("status_history_cleared"));
+        }
+      };
+      const diagnosisBtn = document.createElement("button");
+      diagnosisBtn.textContent = Utils.getText("page_diagnosis");
+      diagnosisBtn.style.cssText = "background: #2196F3; border: 1px solid #1976D2; color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;";
+      diagnosisBtn.onclick = () => {
+        try {
+          const report = PageDiagnostics.diagnoseDetailPage();
+          PageDiagnostics.logDiagnosticReport(report);
+          Utils.logger("info", Utils.getText("page_diagnosis_complete"));
+        } catch (error) {
+          Utils.logger("error", Utils.getText("page_diagnosis_failed", error.message));
+        }
+      };
+      debugControls.append(copyHistoryBtn, clearHistoryBtn, diagnosisBtn);
+      debugHeader.append(debugTitle, debugControls);
+      const historyListContainer = document.createElement("div");
+      historyListContainer.style.cssText = "max-height: 250px; overflow-y: auto; background: rgba(10,10,10,0.85); color: #ddd; padding: 8px; border-radius: var(--radius-m);";
+      historyListContainer.className = "fab-debug-history-container";
+      State.UI.historyContainer = historyListContainer;
+      debugContent.append(debugHeader, historyListContainer);
+      State.UI.tabContents.debug = debugContent;
+      container.appendChild(debugContent);
+      document.body.appendChild(container);
+      return true;
+    }, "create"),
+    update: /* @__PURE__ */ __name(() => {
+      if (!State.UI.container) return;
+      const titleElement = State.UI.container.querySelector('span[style*="font-weight: 600"]');
+      if (titleElement) {
+        titleElement.textContent = Utils.getText("app_title");
+      }
+      const tabs = ["dashboard", "settings", "debug"];
+      tabs.forEach((tabName) => {
+        const tabButton = State.UI.tabs[tabName];
+        if (tabButton) {
+          tabButton.textContent = Utils.getText(`tab_${tabName}`);
+        }
+      });
+      if (State.UI.syncBtn) {
+        State.UI.syncBtn.textContent = "\u{1F504} " + Utils.getText("sync");
+      }
+      const todoCount = State.db.todo.length;
+      const doneCount = State.db.done.length;
+      const failedCount = State.db.failed.length;
+      const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+      if (State.UI.statusTodo) State.UI.statusTodo.querySelector("span").textContent = todoCount;
+      if (State.UI.statusDone) State.UI.statusDone.querySelector("span").textContent = doneCount;
+      if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;
+      if (State.UI.statusHidden) State.UI.statusHidden.querySelector("span").textContent = State.hiddenThisPageCount;
+      if (State.UI.statusVisible) State.UI.statusVisible.querySelector("span").textContent = visibleCount;
+      const statusLabelUpdates = [
+        { element: State.UI.statusVisible, icon: "\u{1F441}\uFE0F", key: "visible" },
+        { element: State.UI.statusTodo, icon: "\u{1F4E5}", key: "todo" },
+        { element: State.UI.statusDone, icon: "\u2705", key: "added" },
+        { element: State.UI.statusFailed, icon: "\u274C", key: "failed" },
+        { element: State.UI.statusHidden, icon: "\u{1F648}", key: "hidden" }
+      ];
+      statusLabelUpdates.forEach(({ element, icon, key }) => {
+        const labelDiv = element?.querySelector(".fab-helper-status-label");
+        if (labelDiv) {
+          labelDiv.textContent = `${icon} ${Utils.getText(key)}`;
+        }
+      });
+      if (State.UI.execBtn) {
+        if (State.isExecuting) {
+          State.UI.execBtn.innerHTML = `<span>${Utils.getText("executing")}</span>`;
+          State.UI.execBtn.classList.add("executing");
+          if (State.executionTotalTasks > 0) {
+            const progress = State.executionCompletedTasks + State.executionFailedTasks;
+            const percentage = Math.round(progress / State.executionTotalTasks * 100);
+            State.UI.execBtn.title = Utils.getText("tooltip_executing_progress", progress, State.executionTotalTasks, percentage);
+          } else {
+            State.UI.execBtn.title = Utils.getText("tooltip_executing");
+          }
+        } else {
+          State.UI.execBtn.textContent = Utils.getText("execute");
+          State.UI.execBtn.classList.remove("executing");
+          State.UI.execBtn.title = Utils.getText("tooltip_start_tasks");
+        }
+      }
+      if (State.UI.hideBtn) {
+        State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
+      }
+    }, "update"),
+    removeAllOverlays: /* @__PURE__ */ __name(() => {
+      document.querySelectorAll(Config.SELECTORS.card).forEach((card) => {
+        const overlay = card.querySelector(".fab-helper-overlay");
+        if (overlay) overlay.remove();
+        card.style.opacity = "1";
+      });
+    }, "removeAllOverlays"),
+    switchTab: /* @__PURE__ */ __name((tabName) => {
+      for (const name in State.UI.tabs) {
+        State.UI.tabs[name].classList.toggle("active", name === tabName);
+        State.UI.tabContents[name].style.display = name === tabName ? "block" : "none";
+      }
+      if (tabName === "debug") {
+        UI5.updateDebugTab();
+      }
+    }, "switchTab"),
+    updateDebugTab: /* @__PURE__ */ __name(() => {
+      if (!State.UI.historyContainer) return;
+      State.UI.historyContainer.innerHTML = "";
+      const createHistoryItem = /* @__PURE__ */ __name((entry) => {
+        const item = document.createElement("div");
+        item.style.cssText = "padding: 8px; margin-bottom: 8px; background: rgba(50,50,55,0.5); border-radius: 6px; border-left: 3px solid;";
+        if (entry.type === "STARTUP") {
+          item.style.borderLeftColor = "#2196F3";
+          item.innerHTML = `
+                    <div style="font-weight: 500; color: #fff;">\u{1F680} ${Utils.getText("script_startup")}</div>
+                    <div style="font-size: 12px; color: var(--text-color-secondary); padding-left: 22px;">
+                        <div>${Utils.getText("time_label")}: ${new Date(entry.endTime).toLocaleString()}</div>
+                        ${entry.message ? `<div>${Utils.getText("info_label")}: ${entry.message}</div>` : ""}
+                    </div>
+                `;
+        } else {
+          const isNormal = entry.type === "NORMAL";
+          item.style.borderLeftColor = isNormal ? "var(--green)" : "var(--orange)";
+          const icon = isNormal ? "\u2705" : "\u{1F6A8}";
+          const title = isNormal ? Utils.getText("normal_period") : Utils.getText("rate_limited_period");
+          const durationText = entry.duration !== void 0 && entry.duration !== null ? entry.duration.toFixed(2) : Utils.getText("unknown_duration");
+          let detailsHtml = `<div>${Utils.getText("duration_label")}: <strong>${durationText}s</strong></div>`;
+          if (entry.requests !== void 0) {
+            detailsHtml += `<div>${Utils.getText("requests_label")}: <strong>${entry.requests}</strong>${Utils.getText("requests_unit")}</div>`;
+          }
+          detailsHtml += `<div>${Utils.getText("ended_at")}: ${new Date(entry.endTime).toLocaleString()}</div>`;
+          item.innerHTML = `
+                    <div style="font-weight: 500; color: #fff;"><span style="font-size: 18px;">${icon}</span> ${title}</div>
+                    <div style="font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;">${detailsHtml}</div>
+                `;
+        }
+        return item;
+      }, "createHistoryItem");
+      const createCurrentStatusItem = /* @__PURE__ */ __name(() => {
+        const item = document.createElement("div");
+        item.style.cssText = "padding: 12px; margin-bottom: 10px; background: rgba(0,122,255,0.15); border-radius: 8px; border: 1px solid rgba(0,122,255,0.3);";
+        const header = document.createElement("div");
+        header.style.cssText = "display: flex; align-items: center; gap: 8px;";
+        const icon = State.appStatus === "NORMAL" ? "\u2705" : "\u{1F6A8}";
+        const color = State.appStatus === "NORMAL" ? "var(--green)" : "var(--orange)";
+        const titleText = State.appStatus === "NORMAL" ? Utils.getText("current_normal") : Utils.getText("current_rate_limited");
+        header.innerHTML = `<span style="font-size: 18px;">${icon}</span> <strong style="color: ${color};">${titleText}</strong>`;
+        const details = document.createElement("div");
+        details.style.cssText = "font-size: 12px; color: var(--text-color-secondary); padding-left: 26px;";
+        const startTime = State.appStatus === "NORMAL" ? State.normalStartTime : State.rateLimitStartTime;
+        const duration = startTime ? ((Date.now() - startTime) / 1e3).toFixed(2) : Utils.getText("status_unknown_duration");
+        let detailsHtml = `<div>${Utils.getText("status_ongoing_label")}<strong>${duration}s</strong></div>`;
+        if (State.appStatus === "NORMAL") {
+          detailsHtml += `<div>${Utils.getText("status_requests_label")}<strong>${State.successfulSearchCount}</strong></div>`;
+        }
+        const startTimeDisplay = startTime ? new Date(startTime).toLocaleString() : Utils.getText("status_unknown_time");
+        detailsHtml += `<div>${Utils.getText("status_started_at_label")}${startTimeDisplay}</div>`;
+        details.innerHTML = detailsHtml;
+        item.append(header, details);
+        State.UI.historyContainer.appendChild(item);
+      }, "createCurrentStatusItem");
+      createCurrentStatusItem();
+      if (State.statusHistory.length === 0) {
+        const emptyMessage = document.createElement("div");
+        emptyMessage.style.cssText = "color: #888; text-align: center; padding: 20px;";
+        emptyMessage.textContent = Utils.getText("no_history");
+        State.UI.historyContainer.appendChild(emptyMessage);
+        return;
+      }
+      const reversedHistory = [...State.statusHistory].reverse();
+      reversedHistory.forEach((entry) => State.UI.historyContainer.appendChild(createHistoryItem(entry)));
+    }, "updateDebugTab")
+  };
+
   // src/index.js
   function countdownRefresh2(delayMs, source) {
     if (State.isRefreshScheduled) {
@@ -2028,10 +3967,12 @@
     }, delayMs);
   }
   __name(countdownRefresh2, "countdownRefresh");
-  setUIReference(UI4);
-  setUIReference2(UI4);
+  setUIReference(UI5);
+  setUIReference2(UI5);
+  setUIReference3(UI5);
+  setTaskRunnerReference(TaskRunner2);
   setDependencies({
-    UI: UI4,
+    UI: UI5,
     TaskRunner: TaskRunner2,
     countdownRefresh: countdownRefresh2
   });
@@ -2068,8 +4009,8 @@
       Utils.logger("warn", Utils.getText("startup_rate_limited", previousDuration, persistedStatus.source || Utils.getText("status_unknown_source")));
     }
     await PagePatcher.init();
-    UI4.init();
-    UI4.update();
+    UI5.init();
+    UI5.update();
     Utils.logger("info", Utils.getText("log_init"));
   }
   __name(main, "main");
