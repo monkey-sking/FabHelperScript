@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227071748
+// @version      3.5.0-20251227072437
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -4508,26 +4508,12 @@
         }
         if (success) {
           Utils.logger("info", `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}`);
-          const initialTodoCount = State.db.todo.length;
-          State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-          if (State.db.todo.length < initialTodoCount) {
-            Utils.logger("info", `\u5DF2\u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\u4EFB\u52A1 ${task.name}`);
-          }
-          await Database.saveTodo();
-          if (!State.db.done.includes(task.url)) {
-            State.db.done.push(task.url);
-            await Database.saveDone();
-          }
+          await Database.markAsDone(task);
           State.sessionCompleted.add(task.url);
           State.executionCompletedTasks++;
         } else {
           Utils.logger("warn", `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name}`);
-          State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-          await Database.saveTodo();
-          if (!State.db.failed.some((f) => f.uid === task.uid)) {
-            State.db.failed.push(task);
-            await Database.saveFailed();
-          }
+          await Database.markAsFailed(task);
           State.executionFailedTasks++;
         }
         UI5.update();

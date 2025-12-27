@@ -678,29 +678,12 @@ async function main() {
 
             if (success) {
                 Utils.logger('info', `✅ 任务完成: ${task.name}`);
-                const initialTodoCount = State.db.todo.length;
-                State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                if (State.db.todo.length < initialTodoCount) {
-                    Utils.logger('info', `已从待办列表中移除任务 ${task.name}`);
-                }
-                await Database.saveTodo();
-
-                if (!State.db.done.includes(task.url)) {
-                    State.db.done.push(task.url);
-                    await Database.saveDone();
-                }
-
+                await Database.markAsDone(task);
                 State.sessionCompleted.add(task.url);
                 State.executionCompletedTasks++;
             } else {
                 Utils.logger('warn', `❌ 任务失败: ${task.name}`);
-                State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                await Database.saveTodo();
-
-                if (!State.db.failed.some(f => f.uid === task.uid)) {
-                    State.db.failed.push(task);
-                    await Database.saveFailed();
-                }
+                await Database.markAsFailed(task);
                 State.executionFailedTasks++;
             }
 
