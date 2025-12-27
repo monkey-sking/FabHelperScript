@@ -16,8 +16,8 @@ import { DataCache } from './modules/data-cache.js';
 import { API } from './modules/api.js';
 import { Database, setUIReference as setDbUIRef } from './modules/database.js';
 import { RateLimitManager, setDependencies as setRateLimitDeps } from './modules/rate-limit-manager.js';
-import { PagePatcher, setUIReference as setPatcherUIRef } from './modules/page-patcher.js';
-import { TaskRunner, setUIReference as setTaskRunnerUIRef } from './modules/task-runner.js';
+import { PagePatcher } from './modules/page-patcher.js';
+import { TaskRunner } from './modules/task-runner.js';
 import { UI } from './modules/ui.js';
 import { InstanceManager } from './modules/instance-manager.js';
 
@@ -53,8 +53,6 @@ function countdownRefresh(delayMs, source) {
 // Set up circular dependencies
 setUtilsUIRef(UI);
 setDbUIRef(UI);
-setPatcherUIRef(UI);
-setTaskRunnerUIRef(UI);
 setRateLimitDeps({
     UI,
     TaskRunner,

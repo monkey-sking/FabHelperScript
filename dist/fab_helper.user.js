@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227051110
+// @version      3.5.0-20251227052328
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1270,31 +1270,612 @@
     TaskRunner = deps.TaskRunner;
     countdownRefresh = deps.countdownRefresh;
   }, "setDependencies");
+  var RateLimitManager = {
+    // 添加防止重复日志的变量
+    _lastLogTime: 0,
+    _lastLogType: null,
+    _duplicateLogCount: 0,
+    // 检查是否与最后一条记录重复
+    isDuplicateRecord: /* @__PURE__ */ __name(function(newEntry) {
+      if (State.statusHistory.length === 0) return false;
+      const lastEntry = State.statusHistory[State.statusHistory.length - 1];
+      if (lastEntry.type !== newEntry.type) return false;
+      const lastTime = new Date(lastEntry.endTime).getTime();
+      const newTime = new Date(newEntry.endTime).getTime();
+      const timeDiff = Math.abs(newTime - lastTime);
+      if (timeDiff < 1e4) {
+        const durationDiff = Math.abs((lastEntry.duration || 0) - (newEntry.duration || 0));
+        if (durationDiff < 5) {
+          return true;
+        }
+      }
+      return false;
+    }, "isDuplicateRecord"),
+    // 添加记录到历史，带去重检查
+    addToHistory: /* @__PURE__ */ __name(async function(entry) {
+      if (this.isDuplicateRecord(entry)) {
+        Utils.logger("debug", `\u68C0\u6D4B\u5230\u91CD\u590D\u7684\u72B6\u6001\u8BB0\u5F55\uFF0C\u8DF3\u8FC7: ${entry.type} - ${entry.endTime}`);
+        return false;
+      }
+      State.statusHistory.push(entry);
+      if (State.statusHistory.length > 50) {
+        State.statusHistory = State.statusHistory.slice(-50);
+      }
+      await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+      return true;
+    }, "addToHistory"),
+    // 进入限速状态
+    enterRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
+      if (State.appStatus === "RATE_LIMITED") {
+        Utils.logger("info", Utils.getText("rate_limit_already_active", State.lastLimitSource, source));
+        return false;
+      }
+      State.consecutiveSuccessCount = 0;
+      State.lastLimitSource = source;
+      const normalDuration = State.normalStartTime ? ((Date.now() - State.normalStartTime) / 1e3).toFixed(2) : "0.00";
+      const logEntry = {
+        type: "NORMAL",
+        duration: parseFloat(normalDuration),
+        requests: State.successfulSearchCount,
+        endTime: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const wasAdded = await this.addToHistory(logEntry);
+      if (wasAdded) {
+        Utils.logger("error", Utils.getText("log_entering_rate_limit_from_v2", source, normalDuration, State.successfulSearchCount));
+      } else {
+        Utils.logger("debug", Utils.getText("duplicate_normal_status_detected", source));
+      }
+      State.appStatus = "RATE_LIMITED";
+      State.rateLimitStartTime = Date.now();
+      await GM_setValue(Config.DB_KEYS.APP_STATUS, {
+        status: "RATE_LIMITED",
+        startTime: State.rateLimitStartTime,
+        source
+      });
+      if (UI3) {
+        UI3.updateDebugTab();
+        UI3.update();
+      }
+      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+      const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+      const actualVisibleCards = totalCards - hiddenCards;
+      const visibleCountElement = document.getElementById("fab-status-visible");
+      if (visibleCountElement) {
+        visibleCountElement.textContent = actualVisibleCards.toString();
+      }
+      State.hiddenThisPageCount = hiddenCards;
+      if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
+        if (actualVisibleCards > 0) {
+          Utils.logger("info", `\u68C0\u6D4B\u5230\u9875\u9762\u4E0A\u6709 ${actualVisibleCards} \u4E2A\u53EF\u89C1\u5546\u54C1\uFF0C\u6682\u4E0D\u81EA\u52A8\u5237\u65B0\u9875\u9762\u3002`);
+          Utils.logger("info", "\u5F53\u4ECD\u6709\u53EF\u89C1\u5546\u54C1\u65F6\u4E0D\u89E6\u53D1\u81EA\u52A8\u5237\u65B0\uFF0C\u4EE5\u907F\u514D\u4E2D\u65AD\u6D4F\u89C8\u3002");
+        } else {
+          Utils.logger("info", `\u68C0\u6D4B\u5230\u6709 ${State.db.todo.length} \u4E2A\u5F85\u529E\u4EFB\u52A1\u548C ${State.activeWorkers} \u4E2A\u6D3B\u52A8\u5DE5\u4F5C\u7EBF\u7A0B\uFF0C\u6682\u4E0D\u81EA\u52A8\u5237\u65B0\u9875\u9762\u3002`);
+          Utils.logger("info", "\u8BF7\u624B\u52A8\u5B8C\u6210\u6216\u53D6\u6D88\u8FD9\u4E9B\u4EFB\u52A1\u540E\u518D\u5237\u65B0\u9875\u9762\u3002");
+        }
+        Utils.logger("warn", "\u26A0\uFE0F \u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u4F46\u4E0D\u6EE1\u8DB3\u81EA\u52A8\u5237\u65B0\u6761\u4EF6\uFF0C\u8BF7\u5728\u9700\u8981\u65F6\u624B\u52A8\u5237\u65B0\u9875\u9762\u3002");
+      } else if (State.autoRefreshEmptyPage) {
+        const randomDelay = 5e3 + Math.random() * 2e3;
+        if (State.autoResumeAfter429) {
+          Utils.logger("info", Utils.getText("log_auto_resume_start", randomDelay ? (randomDelay / 1e3).toFixed(1) : "\u672A\u77E5"));
+        } else {
+          Utils.logger("info", Utils.getText("log_auto_resume_detect", randomDelay ? (randomDelay / 1e3).toFixed(1) : "\u672A\u77E5"));
+        }
+        if (countdownRefresh) {
+          countdownRefresh(randomDelay, "429\u81EA\u52A8\u6062\u590D");
+        }
+      } else {
+        Utils.logger("info", Utils.getText("auto_refresh_disabled_rate_limit"));
+      }
+      return true;
+    }, "enterRateLimitedState"),
+    // 记录成功请求
+    recordSuccessfulRequest: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
+      if (hasResults) {
+        State.successfulSearchCount++;
+        if (UI3) UI3.updateDebugTab();
+      }
+      if (State.appStatus !== "RATE_LIMITED") {
+        return;
+      }
+      if (!hasResults) {
+        Utils.logger("info", `\u8BF7\u6C42\u6210\u529F\u4F46\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7ED3\u679C\uFF0C\u4E0D\u8BA1\u5165\u8FDE\u7EED\u6210\u529F\u8BA1\u6570\u3002\u6765\u6E90: ${source}`);
+        State.consecutiveSuccessCount = 0;
+        return;
+      }
+      State.consecutiveSuccessCount++;
+      Utils.logger("info", Utils.getText("rate_limit_success_request", State.consecutiveSuccessCount, State.requiredSuccessCount, source));
+      if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
+        await this.exitRateLimitedState(Utils.getText("consecutive_success_exit", State.consecutiveSuccessCount, source));
+      }
+    }, "recordSuccessfulRequest"),
+    // 退出限速状态
+    exitRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
+      if (State.appStatus !== "RATE_LIMITED") {
+        Utils.logger("info", `\u5F53\u524D\u4E0D\u662F\u9650\u901F\u72B6\u6001\uFF0C\u5FFD\u7565\u9000\u51FA\u9650\u901F\u8BF7\u6C42: ${source}`);
+        return false;
+      }
+      const rateLimitDuration = State.rateLimitStartTime ? ((Date.now() - State.rateLimitStartTime) / 1e3).toFixed(2) : "0.00";
+      const logEntry = {
+        type: "RATE_LIMITED",
+        duration: parseFloat(rateLimitDuration),
+        endTime: (/* @__PURE__ */ new Date()).toISOString(),
+        source
+      };
+      const wasAdded = await this.addToHistory(logEntry);
+      if (wasAdded) {
+        Utils.logger("info", Utils.getText("rate_limit_recovery_success", source, rateLimitDuration));
+      } else {
+        Utils.logger("debug", `\u68C0\u6D4B\u5230\u91CD\u590D\u7684\u9650\u901F\u72B6\u6001\u8BB0\u5F55\uFF0C\u6765\u6E90: ${source}`);
+      }
+      State.appStatus = "NORMAL";
+      State.rateLimitStartTime = null;
+      State.normalStartTime = Date.now();
+      State.consecutiveSuccessCount = 0;
+      await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+      if (UI3) {
+        UI3.updateDebugTab();
+        UI3.update();
+      }
+      if (State.db.todo.length > 0 && !State.isExecuting && TaskRunner) {
+        Utils.logger("info", `\u53D1\u73B0 ${State.db.todo.length} \u4E2A\u5F85\u529E\u4EFB\u52A1\uFF0C\u81EA\u52A8\u6062\u590D\u6267\u884C...`);
+        State.isExecuting = true;
+        Database.saveExecutingState();
+        TaskRunner.executeBatch();
+      }
+      return true;
+    }, "exitRateLimitedState"),
+    // 检查限速状态
+    checkRateLimitStatus: /* @__PURE__ */ __name(async function() {
+      if (State.isCheckingRateLimit) {
+        Utils.logger("info", "\u5DF2\u6709\u9650\u901F\u72B6\u6001\u68C0\u67E5\u6B63\u5728\u8FDB\u884C\uFF0C\u8DF3\u8FC7\u672C\u6B21\u68C0\u67E5");
+        return false;
+      }
+      State.isCheckingRateLimit = true;
+      try {
+        Utils.logger("info", Utils.getText("log_rate_limit_check_start"));
+        const pageText = document.body.innerText || "";
+        if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+          Utils.logger("warn", "\u9875\u9762\u5185\u5BB9\u5305\u542B\u9650\u901F\u4FE1\u606F\uFF0C\u786E\u8BA4\u4ECD\u5904\u4E8E\u9650\u901F\u72B6\u6001");
+          await this.enterRateLimitedState("\u9875\u9762\u5185\u5BB9\u68C0\u6D4B");
+          return false;
+        }
+        Utils.logger("debug", "\u4F7F\u7528Performance API\u68C0\u67E5\u6700\u8FD1\u7684\u7F51\u7EDC\u8BF7\u6C42\uFF0C\u4E0D\u518D\u4E3B\u52A8\u53D1\u9001API\u8BF7\u6C42");
+        if (window.performance && window.performance.getEntriesByType) {
+          const recentRequests = window.performance.getEntriesByType("resource").filter((r) => r.name.includes("/i/listings/search") || r.name.includes("/i/users/me/listings-states")).filter((r) => Date.now() - r.startTime < 1e4);
+          if (recentRequests.length > 0) {
+            const has429 = recentRequests.some((r) => r.responseStatus === 429);
+            if (has429) {
+              Utils.logger("info", `\u68C0\u6D4B\u5230\u6700\u8FD110\u79D2\u5185\u6709429\u72B6\u6001\u7801\u7684\u8BF7\u6C42\uFF0C\u5224\u65AD\u4E3A\u9650\u901F\u72B6\u6001`);
+              await this.enterRateLimitedState("Performance API\u68C0\u6D4B429");
+              return false;
+            }
+            const hasSuccess = recentRequests.some((r) => r.responseStatus >= 200 && r.responseStatus < 300);
+            if (hasSuccess) {
+              Utils.logger("info", `\u68C0\u6D4B\u5230\u6700\u8FD110\u79D2\u5185\u6709\u6210\u529F\u7684API\u8BF7\u6C42\uFF0C\u5224\u65AD\u4E3A\u6B63\u5E38\u72B6\u6001`);
+              await this.recordSuccessfulRequest("Performance API\u68C0\u6D4B\u6210\u529F", true);
+              return true;
+            }
+          }
+        }
+        Utils.logger("info", Utils.getText("log_insufficient_info_status"));
+        return State.appStatus === "NORMAL";
+      } catch (e) {
+        Utils.logger("error", `\u9650\u901F\u72B6\u6001\u68C0\u67E5\u5931\u8D25: ${e.message}`);
+        return false;
+      } finally {
+        State.isCheckingRateLimit = false;
+      }
+    }, "checkRateLimitStatus")
+  };
 
   // src/modules/page-patcher.js
-  var UI4 = null;
-  var setUIReference3 = /* @__PURE__ */ __name((uiModule) => {
-    UI4 = uiModule;
-  }, "setUIReference");
   var PagePatcher = {
-    // TODO: Extract full implementation from original file
-    // Key methods to implement:
-    // - init()
-    // - setupXHRIntercept()
-    // - setupFetchIntercept()
-    // - patchUrl()
-    // - shouldPatchUrl()
-    // - isScrollSearchRequest()
-    init: /* @__PURE__ */ __name(async () => {
-      Utils.logger("info", "[PagePatcher] Module placeholder - full implementation pending");
-    }, "init")
+    _patchHasBeenApplied: false,
+    _lastSeenCursor: null,
+    _lastCheckedUrl: null,
+    _bodyObserver: null,
+    // State for request debouncing
+    _debounceXhrTimer: null,
+    _pendingXhr: null,
+    async init() {
+      try {
+        const savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR);
+        if (savedCursor) {
+          State.savedCursor = savedCursor;
+          this._lastSeenCursor = savedCursor;
+          Utils.logger("info", `[Cursor] Initialized. Loaded saved cursor: ${savedCursor.substring(0, 30)}...`);
+        } else {
+          Utils.logger("info", `[Cursor] Initialized. No saved cursor found.`);
+        }
+      } catch (e) {
+        Utils.logger("warn", "[Cursor] Failed to restore cursor state:", e);
+      }
+      this.applyPatches();
+      Utils.logger("info", "[Cursor] Network interceptors applied.");
+      this.setupSortMonitor();
+    },
+    // 添加监听URL变化的方法，检测排序方式变更
+    setupSortMonitor() {
+      this.checkCurrentSortFromUrl();
+      if (typeof MutationObserver !== "undefined") {
+        const bodyObserver = new MutationObserver(() => {
+          if (window.location.href !== this._lastCheckedUrl) {
+            this._lastCheckedUrl = window.location.href;
+            this.checkCurrentSortFromUrl();
+            Utils.detectLanguage();
+          }
+        });
+        bodyObserver.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+        this._bodyObserver = bodyObserver;
+      }
+      window.addEventListener("popstate", () => {
+        this.checkCurrentSortFromUrl();
+        Utils.detectLanguage();
+      });
+      window.addEventListener("hashchange", () => {
+        this.checkCurrentSortFromUrl();
+        Utils.detectLanguage();
+      });
+      this._lastCheckedUrl = window.location.href;
+    },
+    // 从URL中检查当前排序方式并更新设置
+    checkCurrentSortFromUrl() {
+      try {
+        const url = new URL(window.location.href);
+        const sortParam = url.searchParams.get("sort_by");
+        if (!sortParam) return;
+        let matchedOption = null;
+        if (State.sortOptions) {
+          for (const [key, option] of Object.entries(State.sortOptions)) {
+            if (option.value === sortParam) {
+              matchedOption = key;
+              break;
+            }
+          }
+        }
+        if (matchedOption && matchedOption !== State.currentSortOption) {
+          const previousSort = State.currentSortOption;
+          State.currentSortOption = matchedOption;
+          GM_setValue("fab_helper_sort_option", State.currentSortOption);
+          Utils.logger("info", Utils.getText(
+            "log_url_sort_changed",
+            State.sortOptions?.[previousSort]?.name || previousSort,
+            State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
+          ));
+          State.savedCursor = null;
+          GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+          if (State.UI && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
+          }
+          Utils.logger("info", Utils.getText("log_sort_changed_position_cleared"));
+        }
+      } catch (e) {
+        Utils.logger("warn", Utils.getText("log_sort_check_error", e.message));
+      }
+    },
+    async handleSearchResponse(request) {
+      if (request.status === 429) {
+        await RateLimitManager.enterRateLimitedState("\u641C\u7D22\u54CD\u5E94429");
+      } else if (request.status >= 200 && request.status < 300) {
+        try {
+          const responseText = request.responseText;
+          if (responseText) {
+            const data = JSON.parse(responseText);
+            const hasResults = data && data.results && data.results.length > 0;
+            await RateLimitManager.recordSuccessfulRequest(Utils.getText("request_source_search_response"), hasResults);
+          }
+        } catch (e) {
+          Utils.logger("warn", Utils.getText("search_response_parse_failed", e.message));
+        }
+      }
+    },
+    isDebounceableSearch(url) {
+      return typeof url === "string" && url.includes("/i/listings/search") && !url.includes("aggregate_on=") && !url.includes("count=0");
+    },
+    shouldPatchUrl(url) {
+      if (typeof url !== "string") return false;
+      if (this._patchHasBeenApplied) return false;
+      if (!State.rememberScrollPosition || !State.savedCursor) return false;
+      if (!url.includes("/i/listings/search")) return false;
+      if (url.includes("aggregate_on=") || url.includes("count=0") || url.includes("in=wishlist")) return false;
+      Utils.logger("info", Utils.getText("page_patcher_match") + ` URL: ${url}`);
+      return true;
+    },
+    getPatchedUrl(originalUrl) {
+      if (State.savedCursor) {
+        const urlObj = new URL(originalUrl, window.location.origin);
+        urlObj.searchParams.set("cursor", State.savedCursor);
+        const modifiedUrl = urlObj.pathname + urlObj.search;
+        Utils.logger("info", `[Cursor] ${Utils.getText("cursor_injecting")}: ${originalUrl}`);
+        Utils.logger("info", `[Cursor] ${Utils.getText("cursor_patched_url")}: ${modifiedUrl}`);
+        this._patchHasBeenApplied = true;
+        return modifiedUrl;
+      }
+      return originalUrl;
+    },
+    saveLatestCursorFromUrl(url) {
+      try {
+        if (typeof url !== "string" || !url.includes("/i/listings/search") || !url.includes("cursor=")) return;
+        const urlObj = new URL(url, window.location.origin);
+        const newCursor = urlObj.searchParams.get("cursor");
+        if (newCursor && newCursor !== this._lastSeenCursor) {
+          let isValidPosition = true;
+          let decodedCursor = "";
+          try {
+            decodedCursor = atob(newCursor);
+            const filterKeywords = [
+              "Nude+Tennis+Racket",
+              "Nordic+Beach+Boulder",
+              "Nordic+Beach+Rock"
+            ];
+            if (filterKeywords.some((keyword) => decodedCursor.includes(keyword))) {
+              Utils.logger("info", Utils.getText("log_cursor_skip_known_position", decodedCursor));
+              isValidPosition = false;
+            }
+            if (isValidPosition && this._lastSeenCursor) {
+              try {
+                let newItemName = "";
+                let lastItemName = "";
+                if (decodedCursor.includes("p=")) {
+                  const match = decodedCursor.match(/p=([^&]+)/);
+                  if (match && match[1]) {
+                    newItemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+                  }
+                }
+                const lastDecoded = atob(this._lastSeenCursor);
+                if (lastDecoded.includes("p=")) {
+                  const match = lastDecoded.match(/p=([^&]+)/);
+                  if (match && match[1]) {
+                    lastItemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+                  }
+                }
+                if (newItemName && lastItemName) {
+                  const getFirstWord = /* @__PURE__ */ __name((text) => text.trim().substring(0, 3), "getFirstWord");
+                  const newFirstWord = getFirstWord(newItemName);
+                  const lastFirstWord = getFirstWord(lastItemName);
+                  const sortParam = urlObj.searchParams.get("sort_by") || "";
+                  const isReverseSort = sortParam.startsWith("-");
+                  if (isReverseSort && sortParam.includes("title") && newFirstWord > lastFirstWord || !isReverseSort && sortParam.includes("title") && newFirstWord < lastFirstWord) {
+                    Utils.logger("info", Utils.getText(
+                      "log_cursor_skip_backtrack",
+                      newItemName,
+                      lastItemName,
+                      isReverseSort ? Utils.getText("log_sort_descending") : Utils.getText("log_sort_ascending")
+                    ));
+                    isValidPosition = false;
+                  }
+                }
+              } catch (compareError) {
+              }
+            }
+          } catch (decodeError) {
+          }
+          if (isValidPosition) {
+            this._lastSeenCursor = newCursor;
+            State.savedCursor = newCursor;
+            GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
+            if (State.debugMode) {
+              Utils.logger("debug", Utils.getText("debug_save_cursor", newCursor.substring(0, 30) + "..."));
+            }
+            if (State.UI && State.UI.savedPositionDisplay) {
+              State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
+            }
+          }
+        }
+      } catch (e) {
+        Utils.logger("warn", Utils.getText("log_cursor_save_error"), e);
+      }
+    },
+    applyPatches() {
+      const self = this;
+      const originalXhrOpen = XMLHttpRequest.prototype.open;
+      const originalXhrSend = XMLHttpRequest.prototype.send;
+      const DEBOUNCE_DELAY_MS = 350;
+      const listenerAwareSend = /* @__PURE__ */ __name(function(...args) {
+        const request = this;
+        const onLoad = /* @__PURE__ */ __name(() => {
+          request.removeEventListener("load", onLoad);
+          if (typeof window.recordNetworkActivity === "function") {
+            window.recordNetworkActivity();
+          }
+          if (request.status >= 200 && request.status < 300 && request._url && self.isDebounceableSearch(request._url)) {
+            if (typeof window.recordNetworkRequest === "function") {
+              window.recordNetworkRequest(Utils.getText("request_source_xhr_item"), true);
+            }
+          }
+          if (request.status === 429 || request.status === "429" || request.status.toString() === "429") {
+            Utils.logger("warn", Utils.getText("xhr_detected_429", request.responseURL || request._url));
+            RateLimitManager.enterRateLimitedState(request.responseURL || request._url || "XHR\u54CD\u5E94429");
+            return;
+          }
+          if (request.status >= 200 && request.status < 300) {
+            try {
+              const responseText = request.responseText;
+              if (responseText) {
+                if (responseText.includes("Too many requests") || responseText.includes("rate limit") || responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                  Utils.logger("warn", Utils.getText("log_xhr_rate_limit_detect", responseText));
+                  RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u5185\u5BB9\u9650\u901F");
+                  return;
+                }
+                try {
+                  const data = JSON.parse(responseText);
+                  if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
+                    Utils.logger("warn", Utils.getText("detected_rate_limit_error", JSON.stringify(data)));
+                    RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u9650\u901F\u9519\u8BEF");
+                    return;
+                  }
+                  if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
+                    const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                    const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                    const urlObj = new URL(request._url, window.location.origin);
+                    const params = urlObj.searchParams;
+                    const hasSpecialFilters = params.has("query") || params.has("category") || params.has("subcategory") || params.has("tag");
+                    if (isEndOfList) {
+                      Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data).substring(0, 200)));
+                      RateLimitManager.recordSuccessfulRequest("XHR\u5217\u8868\u672B\u5C3E", true);
+                      return;
+                    } else if (isEmptySearch && hasSpecialFilters) {
+                      Utils.logger("info", Utils.getText("log_empty_search_with_filters", JSON.stringify(data).substring(0, 200)));
+                      RateLimitManager.recordSuccessfulRequest("XHR\u7A7A\u641C\u7D22\u7ED3\u679C", true);
+                      return;
+                    } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
+                      Utils.logger("info", Utils.getText("log_empty_search_already_limited", JSON.stringify(data).substring(0, 200)));
+                      return;
+                    } else if (isEmptySearch && document.readyState !== "complete") {
+                      Utils.logger("info", Utils.getText("log_empty_search_page_loading", JSON.stringify(data).substring(0, 200)));
+                      return;
+                    } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
+                      Utils.logger("info", Utils.getText("empty_search_initial"));
+                      return;
+                    } else {
+                      Utils.logger("warn", Utils.getText("detected_possible_rate_limit_empty", JSON.stringify(data).substring(0, 200)));
+                      RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u7A7A\u7ED3\u679C");
+                      return;
+                    }
+                  }
+                  if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
+                    RateLimitManager.recordSuccessfulRequest(Utils.getText("request_source_xhr_search"), true);
+                  }
+                } catch (jsonError) {
+                }
+              }
+            } catch (e) {
+            }
+          }
+          if (self.isDebounceableSearch(request._url)) {
+            self.handleSearchResponse(request);
+          }
+        }, "onLoad");
+        request.addEventListener("load", onLoad);
+        return originalXhrSend.apply(request, args);
+      }, "listenerAwareSend");
+      XMLHttpRequest.prototype.open = function(method, url, ...args) {
+        let modifiedUrl = url;
+        if (self.shouldPatchUrl(url)) {
+          modifiedUrl = self.getPatchedUrl(url);
+          this._isDebouncedSearch = false;
+        } else if (self.isDebounceableSearch(url)) {
+          self.saveLatestCursorFromUrl(url);
+          this._isDebouncedSearch = true;
+        } else {
+          self.saveLatestCursorFromUrl(url);
+        }
+        this._url = modifiedUrl;
+        return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
+      };
+      XMLHttpRequest.prototype.send = function(...args) {
+        if (!this._isDebouncedSearch) {
+          return listenerAwareSend.apply(this, args);
+        }
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("log_debounce_intercept", DEBOUNCE_DELAY_MS));
+        }
+        if (self._pendingXhr) {
+          self._pendingXhr.abort();
+          Utils.logger("info", Utils.getText("log_debounce_discard"));
+        }
+        clearTimeout(self._debounceXhrTimer);
+        self._pendingXhr = this;
+        self._debounceXhrTimer = setTimeout(() => {
+          if (State.debugMode) {
+            Utils.logger("debug", Utils.getText("log_debounce_sending", this._url));
+          }
+          listenerAwareSend.apply(self._pendingXhr, args);
+          self._pendingXhr = null;
+        }, DEBOUNCE_DELAY_MS);
+      };
+      const originalFetch = window.fetch;
+      window.fetch = function(input, init) {
+        let url = typeof input === "string" ? input : input.url;
+        let modifiedInput = input;
+        if (self.shouldPatchUrl(url)) {
+          const modifiedUrl = self.getPatchedUrl(url);
+          if (typeof input === "string") {
+            modifiedInput = modifiedUrl;
+          } else {
+            modifiedInput = new Request(modifiedUrl, input);
+          }
+        } else {
+          self.saveLatestCursorFromUrl(url);
+        }
+        return originalFetch.apply(this, [modifiedInput, init]).then(async (response) => {
+          if (typeof window.recordNetworkActivity === "function") {
+            window.recordNetworkActivity();
+          }
+          if (response.status >= 200 && response.status < 300 && typeof url === "string" && self.isDebounceableSearch(url)) {
+            if (typeof window.recordNetworkRequest === "function") {
+              window.recordNetworkRequest("Fetch\u5546\u54C1\u8BF7\u6C42", true);
+            }
+          }
+          if (response.status === 429 || response.status === "429" || response.status.toString() === "429") {
+            response.clone();
+            Utils.logger("warn", Utils.getText("log_fetch_detected_429", response.url));
+            RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94429").catch(
+              (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
+            );
+          }
+          if (response.status >= 200 && response.status < 300) {
+            try {
+              const clonedResponse = response.clone();
+              const text = await clonedResponse.text();
+              if (text.includes("Too many requests") || text.includes("rate limit") || text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                Utils.logger("warn", Utils.getText("log_fetch_rate_limit_detect", text.substring(0, 100)));
+                RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94\u5185\u5BB9\u9650\u901F").catch(
+                  (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
+                );
+                return response;
+              }
+              try {
+                const data = JSON.parse(text);
+                if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
+                  Utils.logger("warn", Utils.getText("detected_rate_limit_error", "API\u9650\u901F\u54CD\u5E94"));
+                  RateLimitManager.enterRateLimitedState("API\u9650\u901F\u54CD\u5E94").catch(
+                    (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
+                  );
+                  return response;
+                }
+                const responseUrl = response.url || "";
+                if (data.results && data.results.length === 0 && responseUrl.includes("/i/listings/search")) {
+                  const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                  const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                  const urlObj = new URL(responseUrl, window.location.origin);
+                  const params = urlObj.searchParams;
+                  const hasSpecialFilters = params.has("query") || params.has("category") || params.has("subcategory") || params.has("tag");
+                  if (isEndOfList) {
+                    Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data).substring(0, 200)));
+                    RateLimitManager.recordSuccessfulRequest("Fetch\u5217\u8868\u672B\u5C3E", true);
+                  } else if (isEmptySearch && hasSpecialFilters) {
+                    Utils.logger("info", Utils.getText("log_fetch_empty_with_filters", JSON.stringify(data).substring(0, 200)));
+                    RateLimitManager.recordSuccessfulRequest("Fetch\u7A7A\u641C\u7D22\u7ED3\u679C", true);
+                  } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
+                    Utils.logger("info", Utils.getText("log_fetch_empty_already_limited", JSON.stringify(data).substring(0, 200)));
+                  } else if (isEmptySearch && document.readyState !== "complete") {
+                    Utils.logger("info", Utils.getText("log_fetch_empty_page_loading", JSON.stringify(data).substring(0, 200)));
+                  } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
+                    Utils.logger("info", Utils.getText("empty_search_initial"));
+                  } else {
+                    Utils.logger("warn", Utils.getText("log_fetch_implicit_rate_limit", JSON.stringify(data).substring(0, 200)));
+                    RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94\u7A7A\u7ED3\u679C").catch(
+                      (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
+                    );
+                  }
+                }
+              } catch (jsonError) {
+                Utils.logger("debug", Utils.getText("log_json_parse_error", jsonError.message));
+              }
+            } catch (e) {
+            }
+          }
+          return response;
+        });
+      };
+    }
   };
 
   // src/modules/task-runner.js
-  var UI5 = null;
-  var setUIReference4 = /* @__PURE__ */ __name((uiModule) => {
-    UI5 = uiModule;
-  }, "setUIReference");
   var TaskRunner2 = {
     // TODO: Extract full implementation from original file
     // Key methods to implement:
@@ -1324,7 +1905,7 @@
     statusDisplay: null
     // ... other UI elements
   };
-  var UI6 = {
+  var UI4 = {
     // TODO: Extract full implementation from original file
     // Key methods to implement:
     // - init()
@@ -1349,28 +1930,79 @@
 
   // src/modules/instance-manager.js
   var InstanceManager = {
-    // TODO: Extract full implementation from original file
-    // Key properties/methods to implement:
-    // - isActive
-    // - pingInterval
-    // - init()
-    // - activate()
-    // - deactivate()
-    // - startPing()
-    // - stopPing()
     isActive: false,
+    lastPingTime: 0,
     pingInterval: null,
-    init: /* @__PURE__ */ __name(async () => {
-      Utils.logger("info", "[InstanceManager] Module placeholder - full implementation pending");
-      InstanceManager.isActive = true;
-      return true;
+    // 初始化实例管理
+    init: /* @__PURE__ */ __name(async function() {
+      try {
+        const isSearchPage = window.location.href.includes("/search") || window.location.pathname === "/" || window.location.pathname === "/zh-cn/" || window.location.pathname === "/en/";
+        if (isSearchPage) {
+          this.isActive = true;
+          await this.registerAsActive();
+          Utils.logger("info", Utils.getText("log_instance_activated", Config.INSTANCE_ID));
+          this.pingInterval = setInterval(() => this.ping(), 3e3);
+          return true;
+        }
+        const activeInstance = await GM_getValue("fab_active_instance", null);
+        const currentTime = Date.now();
+        if (activeInstance && currentTime - activeInstance.lastPing < 1e4) {
+          Utils.logger("info", Utils.getText("log_instance_collaborating", activeInstance.id));
+          this.isActive = false;
+          return true;
+        } else {
+          this.isActive = true;
+          await this.registerAsActive();
+          Utils.logger("info", Utils.getText("log_instance_no_active", Config.INSTANCE_ID));
+          this.pingInterval = setInterval(() => this.ping(), 3e3);
+          return true;
+        }
+      } catch (error) {
+        Utils.logger("error", Utils.getText("log_instance_init_failed", error.message));
+        this.isActive = true;
+        return true;
+      }
     }, "init"),
-    activate: /* @__PURE__ */ __name(() => {
-      InstanceManager.isActive = true;
-    }, "activate"),
-    deactivate: /* @__PURE__ */ __name(() => {
-      InstanceManager.isActive = false;
-    }, "deactivate")
+    // 注册为活跃实例
+    registerAsActive: /* @__PURE__ */ __name(async function() {
+      await GM_setValue("fab_active_instance", {
+        id: Config.INSTANCE_ID,
+        lastPing: Date.now()
+      });
+    }, "registerAsActive"),
+    // 定期更新活跃状态
+    ping: /* @__PURE__ */ __name(async function() {
+      if (!this.isActive) return;
+      this.lastPingTime = Date.now();
+      await this.registerAsActive();
+    }, "ping"),
+    // 检查是否可以接管
+    checkTakeover: /* @__PURE__ */ __name(async function() {
+      if (this.isActive) return;
+      try {
+        const activeInstance = await GM_getValue("fab_active_instance", null);
+        const currentTime = Date.now();
+        if (!activeInstance || currentTime - activeInstance.lastPing > 1e4) {
+          this.isActive = true;
+          await this.registerAsActive();
+          Utils.logger("info", Utils.getText("log_instance_takeover", Config.INSTANCE_ID));
+          this.pingInterval = setInterval(() => this.ping(), 3e3);
+          location.reload();
+        } else {
+          setTimeout(() => this.checkTakeover(), 5e3);
+        }
+      } catch (error) {
+        Utils.logger("error", Utils.getText("log_instance_takeover_failed", error.message));
+        setTimeout(() => this.checkTakeover(), 5e3);
+      }
+    }, "checkTakeover"),
+    // 清理实例
+    cleanup: /* @__PURE__ */ __name(function() {
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
+    }, "cleanup")
   };
 
   // src/index.js
@@ -1396,12 +2028,10 @@
     }, delayMs);
   }
   __name(countdownRefresh2, "countdownRefresh");
-  setUIReference(UI6);
-  setUIReference2(UI6);
-  setUIReference3(UI6);
-  setUIReference4(UI6);
+  setUIReference(UI4);
+  setUIReference2(UI4);
   setDependencies({
-    UI: UI6,
+    UI: UI4,
     TaskRunner: TaskRunner2,
     countdownRefresh: countdownRefresh2
   });
@@ -1438,8 +2068,8 @@
       Utils.logger("warn", Utils.getText("startup_rate_limited", previousDuration, persistedStatus.source || Utils.getText("status_unknown_source")));
     }
     await PagePatcher.init();
-    UI6.init();
-    UI6.update();
+    UI4.init();
+    UI4.update();
     Utils.logger("info", Utils.getText("log_init"));
   }
   __name(main, "main");
