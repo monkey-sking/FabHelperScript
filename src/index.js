@@ -750,7 +750,17 @@ async function main() {
             if (document.readyState === 'interactive' || document.readyState === 'complete') {
                 if (!State.hasRunDomPart) {
                     Utils.logger('info', '[Launcher] DOM is ready. Running main script logic...');
-                    runDomDependentPart();
+                    // Wrap in async IIFE with error handling to prevent infinite loop
+                    (async () => {
+                        try {
+                            await runDomDependentPart();
+                        } catch (e) {
+                            Utils.logger('error', `[Launcher] Error in runDomDependentPart: ${e.message}`);
+                            console.error('[Fab Helper] runDomDependentPart error:', e);
+                            // Set hasRunDomPart even on error to prevent infinite loop
+                            State.hasRunDomPart = true;
+                        }
+                    })();
                 }
                 if (State.hasRunDomPart) {
                     clearInterval(launcherInterval);
