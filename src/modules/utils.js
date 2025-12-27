@@ -228,23 +228,25 @@ export const Utils = {
         } catch (e) { }
         return null;
     },
-    // 账号验证函数
-    checkAuthentication: () => {
+    // 账号验证函数 - silent模式用于初始化时的检查，不弹出警告
+    checkAuthentication: (silent = false) => {
         const csrfToken = Utils.getCookie('fab_csrftoken');
         if (!csrfToken) {
-            Utils.logger('error', Utils.getText('auth_error'));
-            // 停止执行状态
-            if (State.isExecuting) {
-                State.isExecuting = false;
-                GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+            if (!silent) {
+                Utils.logger('error', Utils.getText('auth_error'));
+                // 停止执行状态
+                if (State.isExecuting) {
+                    State.isExecuting = false;
+                    GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+                }
+                // 更新UI显示
+                if (State.UI && State.UI.execBtn) {
+                    State.UI.execBtn.textContent = Utils.getText('execute');
+                    State.UI.execBtn.disabled = true;
+                }
+                // 显示警告信息
+                alert(Utils.getText('auth_error_alert'));
             }
-            // 更新UI显示
-            if (State.UI && State.UI.execBtn) {
-                State.UI.execBtn.textContent = Utils.getText('execute');
-                State.UI.execBtn.disabled = true;
-            }
-            // 显示警告信息
-            alert(Utils.getText('auth_error_alert'));
             return false;
         }
         return true;

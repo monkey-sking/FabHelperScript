@@ -594,9 +594,10 @@ async function main() {
     Utils.logger('info', Utils.getText('log_script_starting'));
     Utils.detectLanguage();
 
-    if (!Utils.checkAuthentication()) {
-        Utils.logger('error', '账号未登录，脚本停止执行');
-        return;
+    // Check auth but don't block - UI should still show
+    const isLoggedIn = Utils.checkAuthentication(true); // silent mode
+    if (!isLoggedIn) {
+        Utils.logger('warn', '账号未登录，部分功能可能受限');
     }
 
     // Check if worker tab

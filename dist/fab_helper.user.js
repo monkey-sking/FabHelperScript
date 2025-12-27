@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227060009
+// @version      3.5.0-20251227070546
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -978,20 +978,22 @@
       }
       return null;
     }, "getCursorItemName"),
-    // 账号验证函数
-    checkAuthentication: /* @__PURE__ */ __name(() => {
+    // 账号验证函数 - silent模式用于初始化时的检查，不弹出警告
+    checkAuthentication: /* @__PURE__ */ __name((silent = false) => {
       const csrfToken = Utils.getCookie("fab_csrftoken");
       if (!csrfToken) {
-        Utils.logger("error", Utils.getText("auth_error"));
-        if (State.isExecuting) {
-          State.isExecuting = false;
-          GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+        if (!silent) {
+          Utils.logger("error", Utils.getText("auth_error"));
+          if (State.isExecuting) {
+            State.isExecuting = false;
+            GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+          }
+          if (State.UI && State.UI.execBtn) {
+            State.UI.execBtn.textContent = Utils.getText("execute");
+            State.UI.execBtn.disabled = true;
+          }
+          alert(Utils.getText("auth_error_alert"));
         }
-        if (State.UI && State.UI.execBtn) {
-          State.UI.execBtn.textContent = Utils.getText("execute");
-          State.UI.execBtn.disabled = true;
-        }
-        alert(Utils.getText("auth_error_alert"));
         return false;
       }
       return true;
@@ -4423,9 +4425,9 @@
     window.pageLoadTime = Date.now();
     Utils.logger("info", Utils.getText("log_script_starting"));
     Utils.detectLanguage();
-    if (!Utils.checkAuthentication()) {
-      Utils.logger("error", "\u8D26\u53F7\u672A\u767B\u5F55\uFF0C\u811A\u672C\u505C\u6B62\u6267\u884C");
-      return;
+    const isLoggedIn = Utils.checkAuthentication(true);
+    if (!isLoggedIn) {
+      Utils.logger("warn", "\u8D26\u53F7\u672A\u767B\u5F55\uFF0C\u90E8\u5206\u529F\u80FD\u53EF\u80FD\u53D7\u9650");
     }
     const urlParams = new URLSearchParams(window.location.search);
     const workerId = urlParams.get("workerId");
