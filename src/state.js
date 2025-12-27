@@ -57,4 +57,26 @@ export const State = {
     workerTaskId: null,
     // 是否显示状态历史表格
     showStatusHistory: false,
+    // Launcher flag
+    hasRunDomPart: false,
+    // Observer debounce timer
+    observerDebounceTimer: null,
+    // UI element references - populated by UI.create()
+    UI: {
+        container: null,
+        tabs: {},
+        tabContents: {},
+        statusVisible: null,
+        statusTodo: null,
+        statusDone: null,
+        statusFailed: null,
+        statusHidden: null,
+        execBtn: null,
+        syncBtn: null,
+        hideBtn: null,
+        logPanel: null,
+        savedPositionDisplay: null,
+        debugContent: null,
+        historyContainer: null,
+    },
 };

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227071415
+// @version      3.5.0-20251227071748
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -783,7 +783,29 @@
     // 工作线程标签页任务ID
     workerTaskId: null,
     // 是否显示状态历史表格
-    showStatusHistory: false
+    showStatusHistory: false,
+    // Launcher flag
+    hasRunDomPart: false,
+    // Observer debounce timer
+    observerDebounceTimer: null,
+    // UI element references - populated by UI.create()
+    UI: {
+      container: null,
+      tabs: {},
+      tabContents: {},
+      statusVisible: null,
+      statusTodo: null,
+      statusDone: null,
+      statusFailed: null,
+      statusHidden: null,
+      execBtn: null,
+      syncBtn: null,
+      hideBtn: null,
+      logPanel: null,
+      savedPositionDisplay: null,
+      debugContent: null,
+      historyContainer: null
+    }
   };
 
   // src/modules/utils.js
