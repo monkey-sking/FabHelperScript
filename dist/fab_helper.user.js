@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.0-20251227072921
+// @version      3.5.1-20251228024401
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -736,6 +736,10 @@
     // API扫描的已完成任务数
     isDispatchingTasks: false,
     // 新增：标记是否正在派发任务
+    isScanningTasks: false,
+    // 新增：标记是否正在扫描任务，防止重复扫描
+    processedCardUids: /* @__PURE__ */ new Set(),
+    // 新增：已处理过的卡片UID，防止重复添加
     savedCursor: null,
     // Holds the loaded cursor for hijacking
     // --- NEW: State for 429 monitoring ---
@@ -1487,7 +1491,7 @@
         await Database.saveDone();
       }
     }, "markAsDone"),
-    markAsFailed: /* @__PURE__ */ __name(async (task) => {
+    markAsFailed: /* @__PURE__ */ __name(async (task, failureInfo = {}) => {
       if (!task || !task.uid) {
         Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
         return;
@@ -1495,11 +1499,38 @@
       const initialTodoCount = State.db.todo.length;
       State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
       let changed = State.db.todo.length < initialTodoCount;
-      if (!State.db.failed.some((f) => f.uid === task.uid)) {
-        State.db.failed.push(task);
-        changed = true;
+      const failedTask = {
+        ...task,
+        failedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        failureReason: failureInfo.reason || "\u672A\u77E5\u539F\u56E0",
+        errorDetails: failureInfo.details || null,
+        workerLogs: failureInfo.logs || [],
+        retryCount: (task.retryCount || 0) + 1
+      };
+      Utils.logger("warn", `\u{1F4CB} \u4EFB\u52A1\u5931\u8D25\u8BE6\u60C5:`);
+      Utils.logger("warn", `   - \u4EFB\u52A1\u540D\u79F0: ${task.name}`);
+      Utils.logger("warn", `   - \u4EFB\u52A1UID: ${task.uid}`);
+      Utils.logger("warn", `   - \u5931\u8D25\u539F\u56E0: ${failedTask.failureReason}`);
+      Utils.logger("warn", `   - \u91CD\u8BD5\u6B21\u6570: ${failedTask.retryCount}`);
+      if (failedTask.errorDetails) {
+        Utils.logger("warn", `   - \u9519\u8BEF\u8BE6\u60C5: ${JSON.stringify(failedTask.errorDetails)}`);
       }
+      if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
+        Utils.logger("warn", `   - \u5DE5\u4F5C\u7EBF\u7A0B\u65E5\u5FD7 (${failedTask.workerLogs.length} \u6761):`);
+        failedTask.workerLogs.slice(-5).forEach((log, i) => {
+          Utils.logger("warn", `     ${i + 1}. ${log}`);
+        });
+      }
+      const existingIndex = State.db.failed.findIndex((f) => f.uid === task.uid);
+      if (existingIndex >= 0) {
+        State.db.failed[existingIndex] = failedTask;
+        Utils.logger("debug", `\u66F4\u65B0\u4E86\u5DF2\u5B58\u5728\u7684\u5931\u8D25\u8BB0\u5F55: ${task.name}`);
+      } else {
+        State.db.failed.push(failedTask);
+      }
+      changed = true;
       if (changed) {
+        await Database.saveTodo();
         await Database.saveFailed();
       }
     }, "markAsFailed")
@@ -2577,13 +2608,18 @@
           Utils.logger("warn", Utils.getText("log_stalled_workers", stalledWorkers.length));
           for (const stalledWorker of stalledWorkers) {
             const { workerId, task } = stalledWorker;
+            const workerInfo = State.runningWorkers[workerId];
+            const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1e3).toFixed(2) : "\u672A\u77E5";
             Utils.logger("error", Utils.getText("log_watchdog_stalled", workerId.substring(0, 12)));
-            State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-            await Database.saveTodo();
-            if (!State.db.failed.some((f) => f.uid === task.uid)) {
-              State.db.failed.push(task);
-              await Database.saveFailed();
-            }
+            await Database.markAsFailed(task, {
+              reason: "\u5DE5\u4F5C\u7EBF\u7A0B\u8D85\u65F6 (Watchdog)",
+              logs: [`Worker ${workerId.substring(0, 12)} \u8D85\u65F6`, `\u8D85\u65F6\u65F6\u957F: ${stallDuration}s`],
+              details: {
+                workerId,
+                stallDuration: `${stallDuration}s`,
+                timeout: `${Config.WORKER_TIMEOUT / 1e3}s`
+              }
+            });
             State.executionFailedTasks++;
             delete State.runningWorkers[workerId];
             State.activeWorkers--;
@@ -2758,7 +2794,33 @@
         const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
         let success = false;
         try {
-          await new Promise((resolve) => setTimeout(resolve, 3e3));
+          const waitForPageReady = /* @__PURE__ */ __name(async () => {
+            const maxWait = 15e3;
+            const startTime2 = Date.now();
+            let lastState = "";
+            while (Date.now() - startTime2 < maxWait) {
+              const currentState = document.readyState;
+              const hasMainContent = document.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
+              const hasButtons = document.querySelectorAll("button").length > 0;
+              const hasTitle = document.querySelector("h1, .fabkit-Heading--xl");
+              if (currentState !== lastState) {
+                logBuffer.push(`\u9875\u9762\u72B6\u6001: ${currentState}`);
+                lastState = currentState;
+              }
+              if (currentState === "complete" && hasMainContent && (hasButtons || hasTitle)) {
+                logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u901A\u8FC7: readyState=${currentState}, hasContent=true`);
+                return true;
+              }
+              await new Promise((r) => setTimeout(r, 500));
+            }
+            logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u8D85\u65F6 (${maxWait}ms)\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u64CD\u4F5C`);
+            return false;
+          }, "waitForPageReady");
+          const pageReady = await waitForPageReady();
+          if (!pageReady) {
+            logBuffer.push(`\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 2e3));
           const adultContentWarning = document.querySelector(".fabkit-Heading--xl");
           if (adultContentWarning && (adultContentWarning.textContent.includes("\u6210\u4EBA\u5185\u5BB9") || adultContentWarning.textContent.includes("Adult Content") || adultContentWarning.textContent.includes("Mature Content"))) {
             logBuffer.push(`\u68C0\u6D4B\u5230\u6210\u4EBA\u5185\u5BB9\u8B66\u544A\u5BF9\u8BDD\u6846\uFF0C\u81EA\u52A8\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE...`);
@@ -2827,43 +2889,133 @@
               logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
               success = true;
             } else {
-              let actionButton = [...document.querySelectorAll("button")].find(
-                (btn) => [...Config.ACQUISITION_TEXT_SET].some((keyword) => btn.textContent.includes(keyword))
+              const allVisibleButtons = [...document.querySelectorAll("button")].filter((btn) => {
+                const rect = btn.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              });
+              logBuffer.push(`=== \u6309\u94AE\u68C0\u6D4B\u5F00\u59CB (\u5171 ${allVisibleButtons.length} \u4E2A\u53EF\u89C1\u6309\u94AE) ===`);
+              allVisibleButtons.slice(0, 15).forEach((btn, i) => {
+                const text = btn.textContent.trim().substring(0, 60);
+                logBuffer.push(`  \u6309\u94AE${i + 1}: "${text}"`);
+              });
+              const licenseButton = allVisibleButtons.find(
+                (btn) => btn.textContent.includes("\u9009\u62E9\u8BB8\u53EF") || btn.textContent.includes("Select license")
               );
-              if (!actionButton) {
-                actionButton = [...document.querySelectorAll("button")].find((btn) => {
-                  const text = btn.textContent;
-                  const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
-                  const hasDiscount = text.includes("-100%");
-                  const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
-                  return hasFreeText && hasDiscount && hasPersonal;
-                });
-              }
-              if (actionButton) {
-                logBuffer.push(`Found add button, clicking it.`);
-                Utils.deepClick(actionButton);
+              if (licenseButton) {
+                logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
                 try {
                   await new Promise((resolve, reject) => {
-                    const timeout = 25e3;
-                    const interval = setInterval(() => {
-                      const currentState = isItemOwned();
-                      if (currentState.owned) {
-                        logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
-                        success = true;
-                        clearInterval(interval);
-                        resolve();
+                    const observer = new MutationObserver((mutationsList) => {
+                      for (const mutation of mutationsList) {
+                        if (mutation.addedNodes.length > 0) {
+                          for (const node of mutation.addedNodes) {
+                            if (node.nodeType !== 1) continue;
+                            const freeTextElement = Array.from(node.querySelectorAll("span, div")).find(
+                              (el) => Array.from(el.childNodes).some((cn) => {
+                                if (cn.nodeType !== 3) return false;
+                                const text = cn.textContent.trim();
+                                return [...Config.FREE_TEXT_SET].some((freeWord) => text === freeWord) || text === "\u4E2A\u4EBA" || text === "Personal";
+                              })
+                            );
+                            if (freeTextElement) {
+                              const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
+                              if (clickableParent) {
+                                logBuffer.push(`Found free/personal license option, clicking it.`);
+                                Utils.deepClick(clickableParent);
+                                observer.disconnect();
+                                resolve();
+                                return;
+                              }
+                            }
+                          }
+                        }
                       }
-                    }, 500);
+                    });
+                    observer.observe(document.body, { childList: true, subtree: true });
+                    logBuffer.push(`Clicking license button to open dropdown.`);
+                    Utils.deepClick(licenseButton);
                     setTimeout(() => {
-                      clearInterval(interval);
-                      reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                    }, timeout);
+                      logBuffer.push(`Second attempt to click license button.`);
+                      Utils.deepClick(licenseButton);
+                    }, 1500);
+                    setTimeout(() => {
+                      observer.disconnect();
+                      reject(new Error("Timeout (5s): The free/personal option did not appear."));
+                    }, 5e3);
                   });
-                } catch (timeoutError) {
-                  logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                  logBuffer.push(`License selected, waiting for UI update.`);
+                  await new Promise((r) => setTimeout(r, 2e3));
+                  if (isItemOwned().owned) {
+                    logBuffer.push(`Item became owned after license selection.`);
+                    success = true;
+                  }
+                } catch (licenseError) {
+                  logBuffer.push(`License selection failed: ${licenseError.message}`);
                 }
-              } else {
-                logBuffer.push(`Could not find an add button.`);
+              }
+              if (!success) {
+                const freshButtons = [...document.querySelectorAll("button")].filter((btn) => {
+                  const rect = btn.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0;
+                });
+                logBuffer.push(`=== \u91CD\u65B0\u68C0\u6D4B\u6309\u94AE (\u5171 ${freshButtons.length} \u4E2A\u53EF\u89C1\u6309\u94AE) ===`);
+                freshButtons.slice(0, 10).forEach((btn, i) => {
+                  const text = btn.textContent.trim().substring(0, 60);
+                  logBuffer.push(`  \u6309\u94AE${i + 1}: "${text}"`);
+                });
+                let actionButton = freshButtons.find((btn) => {
+                  const text = btn.textContent.toLowerCase();
+                  return [...Config.ACQUISITION_TEXT_SET].some(
+                    (keyword) => text.includes(keyword.toLowerCase())
+                  );
+                });
+                if (!actionButton) {
+                  actionButton = freshButtons.find((btn) => {
+                    const text = btn.textContent;
+                    const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
+                    const hasDiscount = text.includes("-100%");
+                    const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
+                    return hasFreeText && hasDiscount && hasPersonal;
+                  });
+                  if (actionButton) {
+                    logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                  }
+                }
+                if (!actionButton) {
+                  actionButton = freshButtons.find((btn) => {
+                    const text = btn.textContent.toLowerCase();
+                    return text.includes("add") && text.includes("library") || text.includes("\u6DFB\u52A0") && text.includes("\u5E93");
+                  });
+                  if (actionButton) {
+                    logBuffer.push(`\u901A\u8FC7\u5907\u7528\u65B9\u6848\u627E\u5230\u6309\u94AE: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                  }
+                }
+                if (actionButton) {
+                  logBuffer.push(`Found add button, clicking it.`);
+                  Utils.deepClick(actionButton);
+                  try {
+                    await new Promise((resolve, reject) => {
+                      const timeout = 25e3;
+                      const interval = setInterval(() => {
+                        const currentState = isItemOwned();
+                        if (currentState.owned) {
+                          logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                          success = true;
+                          clearInterval(interval);
+                          resolve();
+                        }
+                      }, 500);
+                      setTimeout(() => {
+                        clearInterval(interval);
+                        reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                      }, timeout);
+                    });
+                  } catch (timeoutError) {
+                    logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                  }
+                } else {
+                  logBuffer.push(`Could not find an add button.`);
+                }
               }
             }
           }
@@ -3119,119 +3271,145 @@
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
       if (!State.autoAddOnScroll) return;
-      if (!window._apiWaitStatus) {
-        window._apiWaitStatus = {
-          isWaiting: false,
-          pendingCards: [],
-          lastApiActivity: 0,
-          apiCheckInterval: null
-        };
-      }
-      if (window._apiWaitStatus.isWaiting) {
-        window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
-        Utils.logger("info", Utils.getText("debug_api_wait_in_progress", cards.length));
+      if (State.isScanningTasks) {
+        Utils.logger("debug", `\u5DF2\u6709\u626B\u63CF\u4EFB\u52A1\u8FDB\u884C\u4E2D\uFF0C\u8DF3\u8FC7\u672C\u6B21\u8C03\u7528 (${cards.length} \u5F20\u5361\u7247)`);
         return;
       }
-      window._apiWaitStatus.isWaiting = true;
-      window._apiWaitStatus.pendingCards = [...cards];
-      window._apiWaitStatus.lastApiActivity = Date.now();
-      if (State.debugMode) {
-        Utils.logger("debug", Utils.getText("debug_wait_api_response", cards.length));
-      }
-      const waitForApiCompletion = /* @__PURE__ */ __name(() => {
-        return new Promise((resolve) => {
-          if (window._apiWaitStatus.apiCheckInterval) {
-            clearInterval(window._apiWaitStatus.apiCheckInterval);
-          }
-          const maxWaitTime = 1e4;
-          const startTime = Date.now();
-          const originalFetch = window.fetch;
-          window.fetch = function(...args) {
-            const url = args[0]?.toString() || "";
-            if (url.includes("/listings-states") || url.includes("/listings/search")) {
-              window._apiWaitStatus.lastApiActivity = Date.now();
-            }
-            return originalFetch.apply(this, args);
-          };
-          window._apiWaitStatus.apiCheckInterval = setInterval(() => {
-            const now = Date.now();
-            const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
-            const totalWaitTime = now - startTime;
-            if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2e3) {
-              clearInterval(window._apiWaitStatus.apiCheckInterval);
-              window.fetch = originalFetch;
-              resolve();
-            }
-          }, 200);
-        });
-      }, "waitForApiCompletion");
+      State.isScanningTasks = true;
       try {
-        await waitForApiCompletion();
-      } catch (error) {
-        Utils.logger("error", Utils.getText("auto_add_api_error", error.message));
-      }
-      const cardsToProcess = [...window._apiWaitStatus.pendingCards];
-      window._apiWaitStatus.pendingCards = [];
-      window._apiWaitStatus.isWaiting = false;
-      if (State.debugMode) {
-        Utils.logger("debug", Utils.getText("debug_api_wait_complete", cardsToProcess.length));
-      }
-      const newlyAddedList = [];
-      let skippedAlreadyOwned = 0;
-      let skippedInTodo = 0;
-      cardsToProcess.forEach((card) => {
-        const link = card.querySelector(Config.SELECTORS.cardLink);
-        const url = link ? link.href.split("?")[0] : null;
-        if (!url) return;
-        if (Database.isDone(url)) {
-          skippedAlreadyOwned++;
+        if (!window._apiWaitStatus) {
+          window._apiWaitStatus = {
+            isWaiting: false,
+            pendingCards: [],
+            lastApiActivity: 0,
+            apiCheckInterval: null
+          };
+        }
+        if (window._apiWaitStatus.isWaiting) {
+          window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
+          Utils.logger("info", Utils.getText("debug_api_wait_in_progress", cards.length));
           return;
         }
-        if (Database.isTodo(url)) {
-          skippedInTodo++;
-          return;
+        window._apiWaitStatus.isWaiting = true;
+        window._apiWaitStatus.pendingCards = [...cards];
+        window._apiWaitStatus.lastApiActivity = Date.now();
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("debug_wait_api_response", cards.length));
         }
-        const text = card.textContent || "";
-        if (text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library")) {
-          skippedAlreadyOwned++;
-          return;
+        const waitForApiCompletion = /* @__PURE__ */ __name(() => {
+          return new Promise((resolve) => {
+            if (window._apiWaitStatus.apiCheckInterval) {
+              clearInterval(window._apiWaitStatus.apiCheckInterval);
+            }
+            const maxWaitTime = 1e4;
+            const startTime = Date.now();
+            const originalFetch = window.fetch;
+            window.fetch = function(...args) {
+              const url = args[0]?.toString() || "";
+              if (url.includes("/listings-states") || url.includes("/listings/search")) {
+                window._apiWaitStatus.lastApiActivity = Date.now();
+              }
+              return originalFetch.apply(this, args);
+            };
+            window._apiWaitStatus.apiCheckInterval = setInterval(() => {
+              const now = Date.now();
+              const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
+              const totalWaitTime = now - startTime;
+              if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2e3) {
+                clearInterval(window._apiWaitStatus.apiCheckInterval);
+                window.fetch = originalFetch;
+                resolve();
+              }
+            }, 200);
+          });
+        }, "waitForApiCompletion");
+        try {
+          await waitForApiCompletion();
+        } catch (error) {
+          Utils.logger("error", Utils.getText("auto_add_api_error", error.message));
         }
-        const icons = card.querySelectorAll("i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled");
-        if (icons.length > 0) {
-          skippedAlreadyOwned++;
-          return;
+        const cardsToProcess = [...window._apiWaitStatus.pendingCards];
+        window._apiWaitStatus.pendingCards = [];
+        window._apiWaitStatus.isWaiting = false;
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("debug_api_wait_complete", cardsToProcess.length));
         }
-        const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
-        if (uidMatch && uidMatch[1]) {
-          const uid = uidMatch[1];
-          if (DataCache.ownedStatus.has(uid)) {
-            const status = DataCache.ownedStatus.get(uid);
-            if (status && status.acquired) {
-              skippedAlreadyOwned++;
-              return;
+        const newlyAddedList = [];
+        let skippedAlreadyOwned = 0;
+        let skippedInTodo = 0;
+        cardsToProcess.forEach((card) => {
+          const link = card.querySelector(Config.SELECTORS.cardLink);
+          const url = link ? link.href.split("?")[0] : null;
+          if (!url) return;
+          if (Database.isDone(url)) {
+            skippedAlreadyOwned++;
+            return;
+          }
+          if (Database.isTodo(url)) {
+            skippedInTodo++;
+            return;
+          }
+          const text = card.textContent || "";
+          if (text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library")) {
+            skippedAlreadyOwned++;
+            return;
+          }
+          const icons = card.querySelectorAll("i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled");
+          if (icons.length > 0) {
+            skippedAlreadyOwned++;
+            return;
+          }
+          const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
+          if (uidMatch && uidMatch[1]) {
+            const uid = uidMatch[1];
+            if (DataCache.ownedStatus.has(uid)) {
+              const status = DataCache.ownedStatus.get(uid);
+              if (status && status.acquired) {
+                skippedAlreadyOwned++;
+                return;
+              }
             }
           }
+          if (!TaskRunner2.isFreeCard(card)) return;
+          const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
+          newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
+        });
+        if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+          if (newlyAddedList.length > 0) {
+            const existingUids = new Set(State.db.todo.map((t) => t.uid));
+            const existingUrls = new Set(State.db.todo.map((t) => t.url.split("?")[0]));
+            const uniqueNewTasks = newlyAddedList.filter((task) => {
+              const cleanUrl = task.url.split("?")[0];
+              const isDuplicate = existingUids.has(task.uid) || existingUrls.has(cleanUrl);
+              if (isDuplicate) {
+                Utils.logger("debug", `\u8DF3\u8FC7\u91CD\u590D\u4EFB\u52A1: ${task.name} (uid: ${task.uid})`);
+              }
+              return !isDuplicate;
+            });
+            if (uniqueNewTasks.length > 0) {
+              State.db.todo.push(...uniqueNewTasks);
+              Utils.logger("info", Utils.getText("auto_add_new_tasks", uniqueNewTasks.length));
+              if (uniqueNewTasks.length < newlyAddedList.length) {
+                Utils.logger("debug", `\u8FC7\u6EE4\u4E86 ${newlyAddedList.length - uniqueNewTasks.length} \u4E2A\u91CD\u590D\u4EFB\u52A1`);
+              }
+              Database.saveTodo();
+            } else {
+              Utils.logger("debug", `\u6240\u6709 ${newlyAddedList.length} \u4E2A\u4EFB\u52A1\u90FD\u662F\u91CD\u590D\u7684\uFF0C\u5DF2\u8DF3\u8FC7`);
+            }
+          }
+          if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+            Utils.logger("debug", Utils.getText("debug_filter_owned", skippedAlreadyOwned, skippedInTodo));
+          }
+          if (State.isExecuting) {
+            State.executionTotalTasks = State.db.todo.length;
+            TaskRunner2.executeBatch();
+          } else if (State.autoAddOnScroll) {
+            TaskRunner2.startExecution();
+          }
+          if (UI4) UI4.update();
         }
-        if (!TaskRunner2.isFreeCard(card)) return;
-        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
-        newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
-      });
-      if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-        if (newlyAddedList.length > 0) {
-          State.db.todo.push(...newlyAddedList);
-          Utils.logger("info", Utils.getText("auto_add_new_tasks", newlyAddedList.length));
-          Database.saveTodo();
-        }
-        if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-          Utils.logger("debug", Utils.getText("debug_filter_owned", skippedAlreadyOwned, skippedInTodo));
-        }
-        if (State.isExecuting) {
-          State.executionTotalTasks = State.db.todo.length;
-          TaskRunner2.executeBatch();
-        } else if (State.autoAddOnScroll) {
-          TaskRunner2.startExecution();
-        }
-        if (UI4) UI4.update();
+      } finally {
+        State.isScanningTasks = false;
       }
     }, "scanAndAddTasks"),
     handleRateLimit: /* @__PURE__ */ __name(async (url) => {
@@ -4513,7 +4691,15 @@
           State.executionCompletedTasks++;
         } else {
           Utils.logger("warn", `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name}`);
-          await Database.markAsFailed(task);
+          await Database.markAsFailed(task, {
+            reason: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25",
+            logs: logs || [],
+            details: {
+              executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",
+              workerId: workerId2,
+              instanceId
+            }
+          });
           State.executionFailedTasks++;
         }
         UI5.update();

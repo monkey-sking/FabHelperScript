@@ -477,15 +477,21 @@ export const TaskRunner = {
 
                 for (const stalledWorker of stalledWorkers) {
                     const { workerId, task } = stalledWorker;
+                    const workerInfo = State.runningWorkers[workerId];
+                    const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1000).toFixed(2) : '未知';
+
                     Utils.logger('error', Utils.getText('log_watchdog_stalled', workerId.substring(0, 12)));
 
-                    State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-                    await Database.saveTodo();
-
-                    if (!State.db.failed.some(f => f.uid === task.uid)) {
-                        State.db.failed.push(task);
-                        await Database.saveFailed();
-                    }
+                    // 使用增强的 markAsFailed 记录详细信息
+                    await Database.markAsFailed(task, {
+                        reason: '工作线程超时 (Watchdog)',
+                        logs: [`Worker ${workerId.substring(0, 12)} 超时`, `超时时长: ${stallDuration}s`],
+                        details: {
+                            workerId: workerId,
+                            stallDuration: `${stallDuration}s`,
+                            timeout: `${Config.WORKER_TIMEOUT / 1000}s`
+                        }
+                    });
                     State.executionFailedTasks++;
 
                     delete State.runningWorkers[workerId];
@@ -689,7 +695,43 @@ export const TaskRunner = {
             let success = false;
 
             try {
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                // 等待页面完全加载，使用多重检测机制
+                const waitForPageReady = async () => {
+                    const maxWait = 15000;
+                    const startTime = Date.now();
+                    let lastState = '';
+
+                    while (Date.now() - startTime < maxWait) {
+                        const currentState = document.readyState;
+                        const hasMainContent = document.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
+                        const hasButtons = document.querySelectorAll('button').length > 0;
+                        const hasTitle = document.querySelector('h1, .fabkit-Heading--xl');
+
+                        if (currentState !== lastState) {
+                            logBuffer.push(`页面状态: ${currentState}`);
+                            lastState = currentState;
+                        }
+
+                        if (currentState === 'complete' && hasMainContent && (hasButtons || hasTitle)) {
+                            logBuffer.push(`页面就绪检测通过: readyState=${currentState}, hasContent=true`);
+                            return true;
+                        }
+
+                        await new Promise(r => setTimeout(r, 500));
+                    }
+
+                    logBuffer.push(`页面就绪检测超时 (${maxWait}ms)，继续尝试操作`);
+                    return false;
+                };
+
+                const pageReady = await waitForPageReady();
+                if (!pageReady) {
+                    logBuffer.push(`⚠️ 警告: 页面可能未完全加载，这可能导致操作失败`);
+                }
+
+                // 额外等待以确保动态内容加载完成
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
 
                 // Check for adult content warning
                 const adultContentWarning = document.querySelector('.fabkit-Heading--xl');
@@ -773,48 +815,168 @@ export const TaskRunner = {
                         logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
                         success = true;
                     } else {
-                        // Try to find and click add button
-                        let actionButton = [...document.querySelectorAll('button')].find(btn =>
-                            [...Config.ACQUISITION_TEXT_SET].some(keyword => btn.textContent.includes(keyword))
+                        // 记录所有可见按钮的文本，用于调试
+                        const allVisibleButtons = [...document.querySelectorAll('button')].filter(btn => {
+                            const rect = btn.getBoundingClientRect();
+                            return rect.width > 0 && rect.height > 0;
+                        });
+
+                        logBuffer.push(`=== 按钮检测开始 (共 ${allVisibleButtons.length} 个可见按钮) ===`);
+                        allVisibleButtons.slice(0, 15).forEach((btn, i) => {
+                            const text = btn.textContent.trim().substring(0, 60);
+                            logBuffer.push(`  按钮${i + 1}: "${text}"`);
+                        });
+
+                        // 检查是否需要选择许可证（多许可证商品）
+                        const licenseButton = allVisibleButtons.find(btn =>
+                            btn.textContent.includes('选择许可') ||
+                            btn.textContent.includes('Select license')
                         );
 
-                        if (!actionButton) {
-                            actionButton = [...document.querySelectorAll('button')].find(btn => {
-                                const text = btn.textContent;
-                                const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
-                                const hasDiscount = text.includes('-100%');
-                                const hasPersonal = text.includes('个人') || text.includes('Personal');
-                                return hasFreeText && hasDiscount && hasPersonal;
-                            });
-                        }
-
-                        if (actionButton) {
-                            logBuffer.push(`Found add button, clicking it.`);
-                            Utils.deepClick(actionButton);
-
+                        if (licenseButton) {
+                            logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
                             try {
                                 await new Promise((resolve, reject) => {
-                                    const timeout = 25000;
-                                    const interval = setInterval(() => {
-                                        const currentState = isItemOwned();
-                                        if (currentState.owned) {
-                                            logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
-                                            success = true;
-                                            clearInterval(interval);
-                                            resolve();
-                                        }
-                                    }, 500);
+                                    const observer = new MutationObserver((mutationsList) => {
+                                        for (const mutation of mutationsList) {
+                                            if (mutation.addedNodes.length > 0) {
+                                                for (const node of mutation.addedNodes) {
+                                                    if (node.nodeType !== 1) continue;
+                                                    // 查找"免费"或"个人"选项
+                                                    const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
+                                                        Array.from(el.childNodes).some(cn => {
+                                                            if (cn.nodeType !== 3) return false;
+                                                            const text = cn.textContent.trim();
+                                                            return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
+                                                                text === '个人' || text === 'Personal';
+                                                        })
+                                                    );
 
+                                                    if (freeTextElement) {
+                                                        const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
+                                                        if (clickableParent) {
+                                                            logBuffer.push(`Found free/personal license option, clicking it.`);
+                                                            Utils.deepClick(clickableParent);
+                                                            observer.disconnect();
+                                                            resolve();
+                                                            return;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    });
+
+                                    observer.observe(document.body, { childList: true, subtree: true });
+                                    logBuffer.push(`Clicking license button to open dropdown.`);
+                                    Utils.deepClick(licenseButton);
+
+                                    // 有时第一次点击可能不成功，1.5秒后再试一次
                                     setTimeout(() => {
-                                        clearInterval(interval);
-                                        reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                                    }, timeout);
+                                        logBuffer.push(`Second attempt to click license button.`);
+                                        Utils.deepClick(licenseButton);
+                                    }, 1500);
+
+                                    // 如果5秒内没有出现下拉菜单，则超时
+                                    setTimeout(() => {
+                                        observer.disconnect();
+                                        reject(new Error('Timeout (5s): The free/personal option did not appear.'));
+                                    }, 5000);
                                 });
-                            } catch (timeoutError) {
-                                logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+
+                                // 许可选择后等待UI更新
+                                logBuffer.push(`License selected, waiting for UI update.`);
+                                await new Promise(r => setTimeout(r, 2000)); // 增加等待时间
+
+                                // 重新检查是否已拥有
+                                if (isItemOwned().owned) {
+                                    logBuffer.push(`Item became owned after license selection.`);
+                                    success = true;
+                                }
+                            } catch (licenseError) {
+                                logBuffer.push(`License selection failed: ${licenseError.message}`);
                             }
-                        } else {
-                            logBuffer.push(`Could not find an add button.`);
+                        }
+
+                        // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
+                        if (!success) {
+                            // 重新查询页面按钮（许可选择后按钮可能已更新）
+                            const freshButtons = [...document.querySelectorAll('button')].filter(btn => {
+                                const rect = btn.getBoundingClientRect();
+                                return rect.width > 0 && rect.height > 0;
+                            });
+
+                            logBuffer.push(`=== 重新检测按钮 (共 ${freshButtons.length} 个可见按钮) ===`);
+                            freshButtons.slice(0, 10).forEach((btn, i) => {
+                                const text = btn.textContent.trim().substring(0, 60);
+                                logBuffer.push(`  按钮${i + 1}: "${text}"`);
+                            });
+
+                            // 首先尝试找标准的添加按钮 (大小写不敏感)
+                            let actionButton = freshButtons.find(btn => {
+                                const text = btn.textContent.toLowerCase();
+                                return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
+                                    text.includes(keyword.toLowerCase())
+                                );
+                            });
+
+                            // 如果没有标准添加按钮，检查是否是限时免费商品
+                            if (!actionButton) {
+                                // 查找包含"免费/Free"和"-100%"的按钮（限时免费商品的许可按钮）
+                                actionButton = freshButtons.find(btn => {
+                                    const text = btn.textContent;
+                                    const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+                                    const hasDiscount = text.includes('-100%');
+                                    const hasPersonal = text.includes('个人') || text.includes('Personal');
+                                    return hasFreeText && hasDiscount && hasPersonal;
+                                });
+
+                                if (actionButton) {
+                                    logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                                }
+                            }
+
+                            // 备用方案：查找包含 "add" 和 "library" 的按钮
+                            if (!actionButton) {
+                                actionButton = freshButtons.find(btn => {
+                                    const text = btn.textContent.toLowerCase();
+                                    return (text.includes('add') && text.includes('library')) ||
+                                        (text.includes('添加') && text.includes('库'));
+                                });
+                                if (actionButton) {
+                                    logBuffer.push(`通过备用方案找到按钮: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                                }
+                            }
+
+                            if (actionButton) {
+                                logBuffer.push(`Found add button, clicking it.`);
+                                Utils.deepClick(actionButton);
+
+                                // 等待添加操作完成
+                                try {
+                                    await new Promise((resolve, reject) => {
+                                        const timeout = 25000; // 25秒超时
+                                        const interval = setInterval(() => {
+                                            const currentState = isItemOwned();
+                                            if (currentState.owned) {
+                                                logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                                                success = true;
+                                                clearInterval(interval);
+                                                resolve();
+                                            }
+                                        }, 500); // 每500ms检查一次
+
+                                        setTimeout(() => {
+                                            clearInterval(interval);
+                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
+                                        }, timeout);
+                                    });
+                                } catch (timeoutError) {
+                                    logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
+                                }
+                            } else {
+                                logBuffer.push(`Could not find an add button.`);
+                            }
                         }
                     }
                 }
@@ -1118,148 +1280,181 @@ export const TaskRunner = {
     scanAndAddTasks: async (cards) => {
         if (!State.autoAddOnScroll) return;
 
-        if (!window._apiWaitStatus) {
-            window._apiWaitStatus = {
-                isWaiting: false,
-                pendingCards: [],
-                lastApiActivity: 0,
-                apiCheckInterval: null
-            };
-        }
-
-        if (window._apiWaitStatus.isWaiting) {
-            window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
-            Utils.logger('info', Utils.getText('debug_api_wait_in_progress', cards.length));
+        // 防止并发调用
+        if (State.isScanningTasks) {
+            Utils.logger('debug', `已有扫描任务进行中，跳过本次调用 (${cards.length} 张卡片)`);
             return;
         }
 
-        window._apiWaitStatus.isWaiting = true;
-        window._apiWaitStatus.pendingCards = [...cards];
-        window._apiWaitStatus.lastApiActivity = Date.now();
-
-        if (State.debugMode) {
-            Utils.logger('debug', Utils.getText('debug_wait_api_response', cards.length));
-        }
-
-        const waitForApiCompletion = () => {
-            return new Promise((resolve) => {
-                if (window._apiWaitStatus.apiCheckInterval) {
-                    clearInterval(window._apiWaitStatus.apiCheckInterval);
-                }
-
-                const maxWaitTime = 10000;
-                const startTime = Date.now();
-
-                const originalFetch = window.fetch;
-                window.fetch = function (...args) {
-                    const url = args[0]?.toString() || '';
-                    if (url.includes('/listings-states') || url.includes('/listings/search')) {
-                        window._apiWaitStatus.lastApiActivity = Date.now();
-                    }
-                    return originalFetch.apply(this, args);
-                };
-
-                window._apiWaitStatus.apiCheckInterval = setInterval(() => {
-                    const now = Date.now();
-                    const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
-                    const totalWaitTime = now - startTime;
-
-                    if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2000) {
-                        clearInterval(window._apiWaitStatus.apiCheckInterval);
-                        window.fetch = originalFetch;
-                        resolve();
-                    }
-                }, 200);
-            });
-        };
+        State.isScanningTasks = true;
 
         try {
-            await waitForApiCompletion();
-        } catch (error) {
-            Utils.logger('error', Utils.getText('auto_add_api_error', error.message));
-        }
+            if (!window._apiWaitStatus) {
+                window._apiWaitStatus = {
+                    isWaiting: false,
+                    pendingCards: [],
+                    lastApiActivity: 0,
+                    apiCheckInterval: null
+                };
+            }
 
-        const cardsToProcess = [...window._apiWaitStatus.pendingCards];
-        window._apiWaitStatus.pendingCards = [];
-        window._apiWaitStatus.isWaiting = false;
-
-        if (State.debugMode) {
-            Utils.logger('debug', Utils.getText('debug_api_wait_complete', cardsToProcess.length));
-        }
-
-        const newlyAddedList = [];
-        let skippedAlreadyOwned = 0;
-        let skippedInTodo = 0;
-
-        cardsToProcess.forEach(card => {
-            const link = card.querySelector(Config.SELECTORS.cardLink);
-            const url = link ? link.href.split('?')[0] : null;
-            if (!url) return;
-
-            if (Database.isDone(url)) {
-                skippedAlreadyOwned++;
+            if (window._apiWaitStatus.isWaiting) {
+                window._apiWaitStatus.pendingCards = [...window._apiWaitStatus.pendingCards, ...cards];
+                Utils.logger('info', Utils.getText('debug_api_wait_in_progress', cards.length));
                 return;
             }
 
-            if (Database.isTodo(url)) {
-                skippedInTodo++;
-                return;
+            window._apiWaitStatus.isWaiting = true;
+            window._apiWaitStatus.pendingCards = [...cards];
+            window._apiWaitStatus.lastApiActivity = Date.now();
+
+            if (State.debugMode) {
+                Utils.logger('debug', Utils.getText('debug_wait_api_response', cards.length));
             }
 
-            const text = card.textContent || '';
-            if (text.includes("已保存在我的库中") ||
-                text.includes("已保存") ||
-                text.includes("Saved to My Library") ||
-                text.includes("In your library")) {
-                skippedAlreadyOwned++;
-                return;
+            const waitForApiCompletion = () => {
+                return new Promise((resolve) => {
+                    if (window._apiWaitStatus.apiCheckInterval) {
+                        clearInterval(window._apiWaitStatus.apiCheckInterval);
+                    }
+
+                    const maxWaitTime = 10000;
+                    const startTime = Date.now();
+
+                    const originalFetch = window.fetch;
+                    window.fetch = function (...args) {
+                        const url = args[0]?.toString() || '';
+                        if (url.includes('/listings-states') || url.includes('/listings/search')) {
+                            window._apiWaitStatus.lastApiActivity = Date.now();
+                        }
+                        return originalFetch.apply(this, args);
+                    };
+
+                    window._apiWaitStatus.apiCheckInterval = setInterval(() => {
+                        const now = Date.now();
+                        const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
+                        const totalWaitTime = now - startTime;
+
+                        if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2000) {
+                            clearInterval(window._apiWaitStatus.apiCheckInterval);
+                            window.fetch = originalFetch;
+                            resolve();
+                        }
+                    }, 200);
+                });
+            };
+
+            try {
+                await waitForApiCompletion();
+            } catch (error) {
+                Utils.logger('error', Utils.getText('auto_add_api_error', error.message));
             }
 
-            const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
-            if (icons.length > 0) {
-                skippedAlreadyOwned++;
-                return;
+            const cardsToProcess = [...window._apiWaitStatus.pendingCards];
+            window._apiWaitStatus.pendingCards = [];
+            window._apiWaitStatus.isWaiting = false;
+
+            if (State.debugMode) {
+                Utils.logger('debug', Utils.getText('debug_api_wait_complete', cardsToProcess.length));
             }
 
-            const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
-            if (uidMatch && uidMatch[1]) {
-                const uid = uidMatch[1];
-                if (DataCache.ownedStatus.has(uid)) {
-                    const status = DataCache.ownedStatus.get(uid);
-                    if (status && status.acquired) {
-                        skippedAlreadyOwned++;
-                        return;
+            const newlyAddedList = [];
+            let skippedAlreadyOwned = 0;
+            let skippedInTodo = 0;
+
+            cardsToProcess.forEach(card => {
+                const link = card.querySelector(Config.SELECTORS.cardLink);
+                const url = link ? link.href.split('?')[0] : null;
+                if (!url) return;
+
+                if (Database.isDone(url)) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+
+                if (Database.isTodo(url)) {
+                    skippedInTodo++;
+                    return;
+                }
+
+                const text = card.textContent || '';
+                if (text.includes("已保存在我的库中") ||
+                    text.includes("已保存") ||
+                    text.includes("Saved to My Library") ||
+                    text.includes("In your library")) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+
+                const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
+                if (icons.length > 0) {
+                    skippedAlreadyOwned++;
+                    return;
+                }
+
+                const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
+                if (uidMatch && uidMatch[1]) {
+                    const uid = uidMatch[1];
+                    if (DataCache.ownedStatus.has(uid)) {
+                        const status = DataCache.ownedStatus.get(uid);
+                        if (status && status.acquired) {
+                            skippedAlreadyOwned++;
+                            return;
+                        }
                     }
                 }
+
+                if (!TaskRunner.isFreeCard(card)) return;
+
+                const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
+                    card.querySelector('a[href*="/listings/"]')?.textContent.trim() ||
+                    Utils.getText('untitled');
+                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+            });
+
+            if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+                if (newlyAddedList.length > 0) {
+                    // 严格去重：使用 uid 和 url 双重检查，防止重复添加
+                    const existingUids = new Set(State.db.todo.map(t => t.uid));
+                    const existingUrls = new Set(State.db.todo.map(t => t.url.split('?')[0]));
+
+                    const uniqueNewTasks = newlyAddedList.filter(task => {
+                        const cleanUrl = task.url.split('?')[0];
+                        const isDuplicate = existingUids.has(task.uid) || existingUrls.has(cleanUrl);
+                        if (isDuplicate) {
+                            Utils.logger('debug', `跳过重复任务: ${task.name} (uid: ${task.uid})`);
+                        }
+                        return !isDuplicate;
+                    });
+
+                    if (uniqueNewTasks.length > 0) {
+                        State.db.todo.push(...uniqueNewTasks);
+                        Utils.logger('info', Utils.getText('auto_add_new_tasks', uniqueNewTasks.length));
+                        if (uniqueNewTasks.length < newlyAddedList.length) {
+                            Utils.logger('debug', `过滤了 ${newlyAddedList.length - uniqueNewTasks.length} 个重复任务`);
+                        }
+                        Database.saveTodo();
+                    } else {
+                        Utils.logger('debug', `所有 ${newlyAddedList.length} 个任务都是重复的，已跳过`);
+                    }
+                }
+
+                if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
+                    Utils.logger('debug', Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo));
+                }
+
+                if (State.isExecuting) {
+                    State.executionTotalTasks = State.db.todo.length;
+                    TaskRunner.executeBatch();
+                } else if (State.autoAddOnScroll) {
+                    TaskRunner.startExecution();
+                }
+
+                if (UI) UI.update();
             }
-
-            if (!TaskRunner.isFreeCard(card)) return;
-
-            const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
-                card.querySelector('a[href*="/listings/"]')?.textContent.trim() ||
-                Utils.getText('untitled');
-            newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
-        });
-
-        if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-            if (newlyAddedList.length > 0) {
-                State.db.todo.push(...newlyAddedList);
-                Utils.logger('info', Utils.getText('auto_add_new_tasks', newlyAddedList.length));
-                Database.saveTodo();
-            }
-
-            if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
-                Utils.logger('debug', Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo));
-            }
-
-            if (State.isExecuting) {
-                State.executionTotalTasks = State.db.todo.length;
-                TaskRunner.executeBatch();
-            } else if (State.autoAddOnScroll) {
-                TaskRunner.startExecution();
-            }
-
-            if (UI) UI.update();
+        } finally {
+            // 确保扫描锁被释放
+            State.isScanningTasks = false;
         }
     },
 

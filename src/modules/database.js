@@ -112,7 +112,7 @@ export const Database = {
             await Database.saveDone();
         }
     },
-    markAsFailed: async (task) => {
+    markAsFailed: async (task, failureInfo = {}) => {
         if (!task || !task.uid) {
             Utils.logger('error', '标记任务失败，收到无效任务:', JSON.stringify(task));
             return;
@@ -123,13 +123,45 @@ export const Database = {
         State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
         let changed = State.db.todo.length < initialTodoCount;
 
-        // Add to failed, ensuring no duplicates by UID
-        if (!State.db.failed.some(f => f.uid === task.uid)) {
-            State.db.failed.push(task); // Store the whole task object for potential retry
-            changed = true;
+        // 构建包含详细失败信息的任务对象
+        const failedTask = {
+            ...task,
+            failedAt: new Date().toISOString(),
+            failureReason: failureInfo.reason || '未知原因',
+            errorDetails: failureInfo.details || null,
+            workerLogs: failureInfo.logs || [],
+            retryCount: (task.retryCount || 0) + 1
+        };
+
+        // 记录详细的失败日志
+        Utils.logger('warn', `📋 任务失败详情:`);
+        Utils.logger('warn', `   - 任务名称: ${task.name}`);
+        Utils.logger('warn', `   - 任务UID: ${task.uid}`);
+        Utils.logger('warn', `   - 失败原因: ${failedTask.failureReason}`);
+        Utils.logger('warn', `   - 重试次数: ${failedTask.retryCount}`);
+        if (failedTask.errorDetails) {
+            Utils.logger('warn', `   - 错误详情: ${JSON.stringify(failedTask.errorDetails)}`);
+        }
+        if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
+            Utils.logger('warn', `   - 工作线程日志 (${failedTask.workerLogs.length} 条):`);
+            failedTask.workerLogs.slice(-5).forEach((log, i) => {
+                Utils.logger('warn', `     ${i + 1}. ${log}`);
+            });
         }
 
+        // Add to failed, ensuring no duplicates by UID (update if exists)
+        const existingIndex = State.db.failed.findIndex(f => f.uid === task.uid);
+        if (existingIndex >= 0) {
+            // 更新现有记录
+            State.db.failed[existingIndex] = failedTask;
+            Utils.logger('debug', `更新了已存在的失败记录: ${task.name}`);
+        } else {
+            State.db.failed.push(failedTask);
+        }
+        changed = true;
+
         if (changed) {
+            await Database.saveTodo();
             await Database.saveFailed();
         }
     },

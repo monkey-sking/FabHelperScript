@@ -683,7 +683,15 @@ async function main() {
                 State.executionCompletedTasks++;
             } else {
                 Utils.logger('warn', `❌ 任务失败: ${task.name}`);
-                await Database.markAsFailed(task);
+                await Database.markAsFailed(task, {
+                    reason: '工作标签页报告失败',
+                    logs: logs || [],
+                    details: {
+                        executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
+                        workerId: workerId,
+                        instanceId: instanceId
+                    }
+                });
                 State.executionFailedTasks++;
             }
 
