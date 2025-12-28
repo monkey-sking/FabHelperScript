@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20251228024401
+// @version      3.5.1-20251228051304
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1444,10 +1444,12 @@
         await GM_deleteValue(Config.DB_KEYS.TODO);
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
+        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
         State.db.todo = [];
         State.db.done = [];
         State.db.failed = [];
-        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\u5DF2\u91CD\u7F6E\u3002");
+        State.savedCursor = null;
+        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI2) {
           UI2.removeAllOverlays();
           UI2.update();

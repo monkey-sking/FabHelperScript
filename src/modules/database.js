@@ -54,10 +54,12 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.TODO);
             await GM_deleteValue(Config.DB_KEYS.DONE);
             await GM_deleteValue(Config.DB_KEYS.FAILED);
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR); // 清除滚动记忆
             State.db.todo = [];
             State.db.done = [];
             State.db.failed = [];
-            Utils.logger('info', '所有脚本数据已重置。');
+            State.savedCursor = null;
+            Utils.logger('info', '所有脚本数据（包括滚动记忆）已重置。');
             if (UI) {
                 UI.removeAllOverlays();
                 UI.update();
