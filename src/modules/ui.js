@@ -442,7 +442,7 @@ export const UI = {
         // Position Display
         const positionContainer = document.createElement('div');
         positionContainer.className = 'fab-helper-position-container';
-        positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;';
+        positionContainer.style.cssText = 'margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center;';
 
         const positionIcon = document.createElement('span');
         positionIcon.textContent = Utils.getText('position_indicator');
@@ -454,6 +454,26 @@ export const UI = {
 
         positionContainer.appendChild(positionIcon);
         positionContainer.appendChild(positionInfo);
+
+        const clearPositionBtn = document.createElement('button');
+        clearPositionBtn.textContent = '🔄';
+        clearPositionBtn.title = Utils.getText('clear_position_tooltip');
+        clearPositionBtn.style.cssText = 'background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s;';
+        clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
+        clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
+        clearPositionBtn.onclick = async () => {
+            if (State.savedCursor) {
+                if (confirm(Utils.getText('confirm_reset_position'))) {
+                    State.savedCursor = null;
+                    await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                    State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+                    window.location.reload();
+                }
+            } else {
+                Utils.logger('info', Utils.getText('no_position_to_reset'));
+            }
+        };
+        positionContainer.appendChild(clearPositionBtn);
 
         dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
         container.appendChild(dashboardContent);

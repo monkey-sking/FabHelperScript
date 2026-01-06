@@ -45,17 +45,17 @@ export const PagePatcher = {
         this.setupSortMonitor();
     },
 
-    // 添加监听URL变化的方法，检测排序方式变更
+    // 添加监听URL变化的方法，检测排序方式和筛选条件变更
     setupSortMonitor() {
-        // 初始检查当前URL中的排序参数
-        this.checkCurrentSortFromUrl();
+        // 初始检查当前URL
+        this.checkUrlChanges();
 
         // 使用MutationObserver监听URL变化
         if (typeof MutationObserver !== 'undefined') {
             const bodyObserver = new MutationObserver(() => {
                 if (window.location.href !== this._lastCheckedUrl) {
                     this._lastCheckedUrl = window.location.href;
-                    this.checkCurrentSortFromUrl();
+                    this.checkUrlChanges();
                     Utils.detectLanguage();
                 }
             });
@@ -70,13 +70,13 @@ export const PagePatcher = {
 
         // 监听popstate事件（浏览器前进/后退按钮）
         window.addEventListener('popstate', () => {
-            this.checkCurrentSortFromUrl();
+            this.checkUrlChanges();
             Utils.detectLanguage();
         });
 
         // 监听hashchange事件
         window.addEventListener('hashchange', () => {
-            this.checkCurrentSortFromUrl();
+            this.checkUrlChanges();
             Utils.detectLanguage();
         });
 
@@ -84,46 +84,72 @@ export const PagePatcher = {
         this._lastCheckedUrl = window.location.href;
     },
 
-    // 从URL中检查当前排序方式并更新设置
-    checkCurrentSortFromUrl() {
+    // 检查URL变化（排序、搜索词、分类等）并重置状态
+    checkUrlChanges() {
         try {
             const url = new URL(window.location.href);
-            const sortParam = url.searchParams.get('sort_by');
+            const currentSort = url.searchParams.get('sort_by');
+            const currentQuery = url.searchParams.get('query') || url.searchParams.get('q'); // 兼容不同搜索参数
+            const currentCategory = url.searchParams.get('category'); // 或 path 变化，这里主要看参数
 
-            if (!sortParam) return;
-
-            // 查找匹配的排序选项
-            let matchedOption = null;
-            if (State.sortOptions) {
-                for (const [key, option] of Object.entries(State.sortOptions)) {
-                    if (option.value === sortParam) {
-                        matchedOption = key;
-                        break;
+            // 1. 处理排序变更
+            if (currentSort) {
+                // 查找匹配的排序选项
+                let matchedOption = null;
+                if (State.sortOptions) {
+                    for (const [key, option] of Object.entries(State.sortOptions)) {
+                        if (option.value === currentSort) {
+                            matchedOption = key;
+                            break;
+                        }
                     }
                 }
-            }
 
-            // 如果找到匹配的排序选项，且与当前选项不同，则更新
-            if (matchedOption && matchedOption !== State.currentSortOption) {
-                const previousSort = State.currentSortOption;
-                State.currentSortOption = matchedOption;
-                GM_setValue('fab_helper_sort_option', State.currentSortOption);
+                // 如果找到匹配的排序选项，且与当前选项不同，则更新
+                if (matchedOption && matchedOption !== State.currentSortOption) {
+                    const previousSort = State.currentSortOption;
+                    State.currentSortOption = matchedOption;
+                    GM_setValue('fab_helper_sort_option', State.currentSortOption);
 
-                Utils.logger('debug', Utils.getText('log_url_sort_changed',
-                    State.sortOptions?.[previousSort]?.name || previousSort,
-                    State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
-                ));
+                    Utils.logger('debug', Utils.getText('log_url_sort_changed',
+                        State.sortOptions?.[previousSort]?.name || previousSort,
+                        State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
+                    ));
 
-                // 清除已保存的浏览位置
-                State.savedCursor = null;
-                GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                if (State.UI && State.UI.savedPositionDisplay) {
-                    State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+                    this.clearSavedPosition('Sort change');
                 }
-                Utils.logger('info', Utils.getText('log_sort_changed_position_cleared'));
             }
+
+            // 2. 简单的搜索词/分类变更检测
+            // 这里我们对比上一次记录的关键参数 (如果存在)
+            if (this._lastParams) {
+                if (this._lastParams.query !== currentQuery ||
+                    this._lastParams.category !== currentCategory) {
+                    this.clearSavedPosition('Search/Filter change');
+                }
+            }
+
+            // 更新记录的参数
+            this._lastParams = {
+                query: currentQuery,
+                category: currentCategory,
+                sort: currentSort
+            };
+
         } catch (e) {
             Utils.logger('warn', Utils.getText('log_sort_check_error', e.message));
+        }
+    },
+
+    // 辅助方法：清除位置
+    async clearSavedPosition(reason) {
+        if (State.savedCursor) {
+            State.savedCursor = null;
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+            if (State.UI && State.UI.savedPositionDisplay) {
+                State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+            }
+            Utils.logger('info', `${Utils.getText('log_sort_changed_position_cleared')} (${reason})`);
         }
     },
 
@@ -166,6 +192,20 @@ export const PagePatcher = {
             Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_injecting')}: ${originalUrl}`);
             Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_patched_url')}: ${modifiedUrl}`);
             this._patchHasBeenApplied = true;
+
+            // UI 视觉反馈：高亮显示已恢复的位置
+            if (State.UI && State.UI.savedPositionDisplay) {
+                const container = State.UI.savedPositionDisplay.parentElement;
+                if (container) {
+                    const originalBg = container.style.backgroundColor;
+                    container.style.transition = 'background-color 0.5s';
+                    container.style.backgroundColor = '#d4edda'; // 浅绿色高亮
+                    setTimeout(() => {
+                        container.style.backgroundColor = originalBg;
+                    }, 5000); // 5秒后恢复
+                }
+            }
+
             return modifiedUrl;
         }
         return originalUrl;
@@ -178,82 +218,16 @@ export const PagePatcher = {
             const newCursor = urlObj.searchParams.get('cursor');
 
             if (newCursor && newCursor !== this._lastSeenCursor) {
-                let isValidPosition = true;
-                let decodedCursor = '';
+                this._lastSeenCursor = newCursor;
+                State.savedCursor = newCursor;
+                GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
 
-                try {
-                    decodedCursor = atob(newCursor);
-
-                    // 检查特定的过滤关键词列表
-                    const filterKeywords = [
-                        "Nude+Tennis+Racket",
-                        "Nordic+Beach+Boulder",
-                        "Nordic+Beach+Rock"
-                    ];
-
-                    if (filterKeywords.some(keyword => decodedCursor.includes(keyword))) {
-                        Utils.logger('info', Utils.getText('log_cursor_skip_known_position', decodedCursor));
-                        isValidPosition = false;
-                    }
-
-                    // 检查是否是已经滚动过的前面位置
-                    if (isValidPosition && this._lastSeenCursor) {
-                        try {
-                            let newItemName = '';
-                            let lastItemName = '';
-
-                            if (decodedCursor.includes("p=")) {
-                                const match = decodedCursor.match(/p=([^&]+)/);
-                                if (match && match[1]) {
-                                    newItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
-                                }
-                            }
-
-                            const lastDecoded = atob(this._lastSeenCursor);
-                            if (lastDecoded.includes("p=")) {
-                                const match = lastDecoded.match(/p=([^&]+)/);
-                                if (match && match[1]) {
-                                    lastItemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
-                                }
-                            }
-
-                            if (newItemName && lastItemName) {
-                                const getFirstWord = (text) => text.trim().substring(0, 3);
-                                const newFirstWord = getFirstWord(newItemName);
-                                const lastFirstWord = getFirstWord(lastItemName);
-
-                                const sortParam = urlObj.searchParams.get('sort_by') || '';
-                                const isReverseSort = sortParam.startsWith('-');
-
-                                if ((isReverseSort && sortParam.includes('title') && newFirstWord > lastFirstWord) ||
-                                    (!isReverseSort && sortParam.includes('title') && newFirstWord < lastFirstWord)) {
-                                    Utils.logger('info', Utils.getText('log_cursor_skip_backtrack',
-                                        newItemName, lastItemName,
-                                        isReverseSort ? Utils.getText('log_sort_descending') : Utils.getText('log_sort_ascending')
-                                    ));
-                                    isValidPosition = false;
-                                }
-                            }
-                        } catch (compareError) {
-                            // 比较错误，继续正常流程
-                        }
-                    }
-                } catch (decodeError) {
-                    // 解码错误，继续正常流程
+                if (State.debugMode) {
+                    Utils.logger('debug', Utils.getText('debug_save_cursor', newCursor.substring(0, 30) + '...'));
                 }
 
-                if (isValidPosition) {
-                    this._lastSeenCursor = newCursor;
-                    State.savedCursor = newCursor;
-                    GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
-
-                    if (State.debugMode) {
-                        Utils.logger('debug', Utils.getText('debug_save_cursor', newCursor.substring(0, 30) + '...'));
-                    }
-
-                    if (State.UI && State.UI.savedPositionDisplay) {
-                        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
-                    }
+                if (State.UI && State.UI.savedPositionDisplay) {
+                    State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
                 }
             }
         } catch (e) {

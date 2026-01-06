@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260106032624
+// @version      3.5.1-20260106033251
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -244,6 +244,9 @@
     log_sort_changed_position_cleared: "Cleared saved position due to sort method change",
     log_sort_check_error: "Error checking URL sort parameter: {0}",
     log_position_cleared: "Cleared saved browsing position.",
+    clear_position_tooltip: "Reset position and refresh",
+    confirm_reset_position: "Are you sure you want to clear the saved browsing position and refresh the page?",
+    no_position_to_reset: "No saved browsing position.",
     log_sort_ascending: "Ascending",
     log_sort_descending: "Descending",
     // XHR/Fetch 限速检测
@@ -547,6 +550,9 @@
     log_sort_changed_position_cleared: "\u7531\u4E8E\u6392\u5E8F\u65B9\u5F0F\u53D8\u66F4\uFF0C\u5DF2\u6E05\u9664\u4FDD\u5B58\u7684\u6D4F\u89C8\u4F4D\u7F6E",
     log_sort_check_error: "\u68C0\u67E5URL\u6392\u5E8F\u53C2\u6570\u65F6\u51FA\u9519: {0}",
     log_position_cleared: "\u5DF2\u6E05\u9664\u5DF2\u4FDD\u5B58\u7684\u6D4F\u89C8\u4F4D\u7F6E\u3002",
+    clear_position_tooltip: "\u91CD\u7F6E\u6D4F\u89C8\u4F4D\u7F6E\u5E76\u5237\u65B0",
+    confirm_reset_position: "\u786E\u5B9A\u8981\u6E05\u9664\u5DF2\u4FDD\u5B58\u7684\u6D4F\u89C8\u4F4D\u7F6E\u5E76\u5237\u65B0\u9875\u9762\u5417\uFF1F",
+    no_position_to_reset: "\u5F53\u524D\u6CA1\u6709\u4FDD\u5B58\u7684\u6D4F\u89C8\u4F4D\u7F6E\u3002",
     log_sort_ascending: "\u5347\u5E8F",
     log_sort_descending: "\u964D\u5E8F",
     // XHR/Fetch 限速检测
@@ -977,7 +983,18 @@
           match = decoded.match(/p=([^&]+)/);
         }
         if (match && match[1]) {
-          const itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+          let itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+          // Check if it looks like an ISO date and format it
+          if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(itemName)) {
+            try {
+              const date = new Date(itemName);
+              if (State.lang === 'zh') {
+                itemName = date.toLocaleString('zh-CN', { hour12: false });
+              } else {
+                itemName = date.toLocaleString();
+              }
+            } catch (e) { }
+          }
           return `${Utils.getText("position_label")}: "${itemName}"`;
         }
         return `${Utils.getText("position_label")}: (Unknown)`;
@@ -1150,12 +1167,12 @@
     TTL: 5 * 60 * 1e3,
     // 5分钟
     // 检查缓存是否有效
-    isValid: /* @__PURE__ */ __name(function(type, key) {
+    isValid: /* @__PURE__ */ __name(function (type, key) {
       const timestamp = this.timestamps[type].get(key);
       return timestamp && Date.now() - timestamp < this.TTL;
     }, "isValid"),
     // 保存商品数据到缓存
-    saveListings: /* @__PURE__ */ __name(function(items) {
+    saveListings: /* @__PURE__ */ __name(function (items) {
       if (!Array.isArray(items)) return;
       const now = Date.now();
       items.forEach((item) => {
@@ -1166,13 +1183,13 @@
       });
     }, "saveListings"),
     // 添加到等待列表
-    addToWaitingList: /* @__PURE__ */ __name(function(uids) {
+    addToWaitingList: /* @__PURE__ */ __name(function (uids) {
       if (!uids || !Array.isArray(uids)) return;
       uids.forEach((uid) => this.waitingList.add(uid));
       Utils.logger("debug", `[Cache] ${Utils.getText("fab_dom_add_to_waitlist", uids.length, this.waitingList.size)}`);
     }, "addToWaitingList"),
     // 检查并从等待列表中移除
-    checkWaitingList: /* @__PURE__ */ __name(function() {
+    checkWaitingList: /* @__PURE__ */ __name(function () {
       if (this.waitingList.size === 0) return;
       let removedCount = 0;
       for (const uid of this.waitingList) {
@@ -1186,7 +1203,7 @@
       }
     }, "checkWaitingList"),
     // 保存拥有状态到缓存
-    saveOwnedStatus: /* @__PURE__ */ __name(function(states) {
+    saveOwnedStatus: /* @__PURE__ */ __name(function (states) {
       if (!Array.isArray(states)) return;
       const now = Date.now();
       states.forEach((state) => {
@@ -1207,7 +1224,7 @@
       }
     }, "saveOwnedStatus"),
     // 保存价格信息到缓存
-    savePrices: /* @__PURE__ */ __name(function(offers) {
+    savePrices: /* @__PURE__ */ __name(function (offers) {
       if (!Array.isArray(offers)) return;
       const now = Date.now();
       offers.forEach((offer) => {
@@ -1222,7 +1239,7 @@
       });
     }, "savePrices"),
     // 获取商品数据，如果缓存有效则使用缓存
-    getListings: /* @__PURE__ */ __name(function(uids) {
+    getListings: /* @__PURE__ */ __name(function (uids) {
       const result = [];
       const missing = [];
       uids.forEach((uid) => {
@@ -1235,7 +1252,7 @@
       return { result, missing };
     }, "getListings"),
     // 获取拥有状态，如果缓存有效则使用缓存
-    getOwnedStatus: /* @__PURE__ */ __name(function(uids) {
+    getOwnedStatus: /* @__PURE__ */ __name(function (uids) {
       const result = [];
       const missing = [];
       uids.forEach((uid) => {
@@ -1248,7 +1265,7 @@
       return { result, missing };
     }, "getOwnedStatus"),
     // 获取价格信息，如果缓存有效则使用缓存
-    getPrices: /* @__PURE__ */ __name(function(offerIds) {
+    getPrices: /* @__PURE__ */ __name(function (offerIds) {
       const result = [];
       const missing = [];
       offerIds.forEach((offerId) => {
@@ -1261,7 +1278,7 @@
       return { result, missing };
     }, "getPrices"),
     // 清理过期缓存
-    cleanupExpired: /* @__PURE__ */ __name(function() {
+    cleanupExpired: /* @__PURE__ */ __name(function () {
       try {
         const now = Date.now();
         const cacheTypes = ["listings", "ownedStatus", "prices"];
@@ -1341,7 +1358,7 @@
       return [];
     }, "extractStateData"),
     // 优化后的商品拥有状态检查函数 - 只使用缓存和网页原生请求的数据
-    checkItemsOwnership: /* @__PURE__ */ __name(async function(uids) {
+    checkItemsOwnership: /* @__PURE__ */ __name(async function (uids) {
       if (!uids || uids.length === 0) return [];
       try {
         const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
@@ -1356,7 +1373,7 @@
       }
     }, "checkItemsOwnership"),
     // 优化后的价格验证函数
-    checkItemsPrices: /* @__PURE__ */ __name(async function(offerIds) {
+    checkItemsPrices: /* @__PURE__ */ __name(async function (offerIds) {
       if (!offerIds || offerIds.length === 0) return [];
       try {
         const { result: cachedResults, missing: missingOfferIds } = DataCache.getPrices(offerIds);
@@ -1553,7 +1570,7 @@
     _lastLogType: null,
     _duplicateLogCount: 0,
     // 检查是否与最后一条记录重复
-    isDuplicateRecord: /* @__PURE__ */ __name(function(newEntry) {
+    isDuplicateRecord: /* @__PURE__ */ __name(function (newEntry) {
       if (State.statusHistory.length === 0) return false;
       const lastEntry = State.statusHistory[State.statusHistory.length - 1];
       if (lastEntry.type !== newEntry.type) return false;
@@ -1569,7 +1586,7 @@
       return false;
     }, "isDuplicateRecord"),
     // 添加记录到历史，带去重检查
-    addToHistory: /* @__PURE__ */ __name(async function(entry) {
+    addToHistory: /* @__PURE__ */ __name(async function (entry) {
       if (this.isDuplicateRecord(entry)) {
         Utils.logger("debug", `\u68C0\u6D4B\u5230\u91CD\u590D\u7684\u72B6\u6001\u8BB0\u5F55\uFF0C\u8DF3\u8FC7: ${entry.type} - ${entry.endTime}`);
         return false;
@@ -1582,7 +1599,7 @@
       return true;
     }, "addToHistory"),
     // 进入限速状态
-    enterRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
+    enterRateLimitedState: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90") {
       if (State.appStatus === "RATE_LIMITED") {
         Utils.logger("info", Utils.getText("rate_limit_already_active", State.lastLimitSource, source));
         return false;
@@ -1646,7 +1663,7 @@
       return true;
     }, "enterRateLimitedState"),
     // 记录成功请求
-    recordSuccessfulRequest: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
+    recordSuccessfulRequest: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
       if (hasResults) {
         State.successfulSearchCount++;
         if (UI3) UI3.updateDebugTab();
@@ -1666,7 +1683,7 @@
       }
     }, "recordSuccessfulRequest"),
     // 退出限速状态
-    exitRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
+    exitRateLimitedState: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90") {
       if (State.appStatus !== "RATE_LIMITED") {
         Utils.logger("info", `\u5F53\u524D\u4E0D\u662F\u9650\u901F\u72B6\u6001\uFF0C\u5FFD\u7565\u9000\u51FA\u9650\u901F\u8BF7\u6C42: ${source}`);
         return false;
@@ -1702,7 +1719,7 @@
       return true;
     }, "exitRateLimitedState"),
     // 检查限速状态
-    checkRateLimitStatus: /* @__PURE__ */ __name(async function() {
+    checkRateLimitStatus: /* @__PURE__ */ __name(async function () {
       if (State.isCheckingRateLimit) {
         Utils.logger("info", "\u5DF2\u6709\u9650\u901F\u72B6\u6001\u68C0\u67E5\u6B63\u5728\u8FDB\u884C\uFF0C\u8DF3\u8FC7\u672C\u6B21\u68C0\u67E5");
         return false;
@@ -1771,14 +1788,14 @@
       Utils.logger("debug", "[Cursor] Network interceptors applied.");
       this.setupSortMonitor();
     },
-    // 添加监听URL变化的方法，检测排序方式变更
+    // 添加监听URL变化的方法，检测排序方式和筛选条件变更
     setupSortMonitor() {
-      this.checkCurrentSortFromUrl();
+      this.checkUrlChanges();
       if (typeof MutationObserver !== "undefined") {
         const bodyObserver = new MutationObserver(() => {
           if (window.location.href !== this._lastCheckedUrl) {
             this._lastCheckedUrl = window.location.href;
-            this.checkCurrentSortFromUrl();
+            this.checkUrlChanges();
             Utils.detectLanguage();
           }
         });
@@ -1789,48 +1806,67 @@
         this._bodyObserver = bodyObserver;
       }
       window.addEventListener("popstate", () => {
-        this.checkCurrentSortFromUrl();
+        this.checkUrlChanges();
         Utils.detectLanguage();
       });
       window.addEventListener("hashchange", () => {
-        this.checkCurrentSortFromUrl();
+        this.checkUrlChanges();
         Utils.detectLanguage();
       });
       this._lastCheckedUrl = window.location.href;
     },
-    // 从URL中检查当前排序方式并更新设置
-    checkCurrentSortFromUrl() {
+    // 检查URL变化（排序、搜索词、分类等）并重置状态
+    checkUrlChanges() {
       try {
         const url = new URL(window.location.href);
-        const sortParam = url.searchParams.get("sort_by");
-        if (!sortParam) return;
-        let matchedOption = null;
-        if (State.sortOptions) {
-          for (const [key, option] of Object.entries(State.sortOptions)) {
-            if (option.value === sortParam) {
-              matchedOption = key;
-              break;
+        const currentSort = url.searchParams.get("sort_by");
+        const currentQuery = url.searchParams.get("query") || url.searchParams.get("q");
+        const currentCategory = url.searchParams.get("category");
+        if (currentSort) {
+          let matchedOption = null;
+          if (State.sortOptions) {
+            for (const [key, option] of Object.entries(State.sortOptions)) {
+              if (option.value === currentSort) {
+                matchedOption = key;
+                break;
+              }
             }
           }
-        }
-        if (matchedOption && matchedOption !== State.currentSortOption) {
-          const previousSort = State.currentSortOption;
-          State.currentSortOption = matchedOption;
-          GM_setValue("fab_helper_sort_option", State.currentSortOption);
-          Utils.logger("debug", Utils.getText(
-            "log_url_sort_changed",
-            State.sortOptions?.[previousSort]?.name || previousSort,
-            State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
-          ));
-          State.savedCursor = null;
-          GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-          if (State.UI && State.UI.savedPositionDisplay) {
-            State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
+          if (matchedOption && matchedOption !== State.currentSortOption) {
+            const previousSort = State.currentSortOption;
+            State.currentSortOption = matchedOption;
+            GM_setValue("fab_helper_sort_option", State.currentSortOption);
+            Utils.logger("debug", Utils.getText(
+              "log_url_sort_changed",
+              State.sortOptions?.[previousSort]?.name || previousSort,
+              State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
+            ));
+            this.clearSavedPosition("Sort change");
           }
-          Utils.logger("info", Utils.getText("log_sort_changed_position_cleared"));
         }
+        if (this._lastParams) {
+          if (this._lastParams.query !== currentQuery || this._lastParams.category !== currentCategory) {
+            this.clearSavedPosition("Search/Filter change");
+          }
+        }
+        this._lastParams = {
+          query: currentQuery,
+          category: currentCategory,
+          sort: currentSort
+        };
       } catch (e) {
         Utils.logger("warn", Utils.getText("log_sort_check_error", e.message));
+      }
+    },
+    // 辅助方法：清除位置
+    async clearSavedPosition(reason) {
+      if (State.savedCursor) {
+        State.savedCursor = null;
+        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        if (State.UI && State.UI.savedPositionDisplay) {
+          State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
+        }
+        Utils.logger("info", `${Utils.getText("log_sort_changed_position_cleared")} (${reason})`);
       }
     },
     async handleSearchResponse(request) {
@@ -1869,6 +1905,17 @@
         Utils.logger("debug", `[Cursor] ${Utils.getText("cursor_injecting")}: ${originalUrl}`);
         Utils.logger("debug", `[Cursor] ${Utils.getText("cursor_patched_url")}: ${modifiedUrl}`);
         this._patchHasBeenApplied = true;
+        if (State.UI && State.UI.savedPositionDisplay) {
+          const container = State.UI.savedPositionDisplay.parentElement;
+          if (container) {
+            const originalBg = container.style.backgroundColor;
+            container.style.transition = "background-color 0.5s";
+            container.style.backgroundColor = "#d4edda";
+            setTimeout(() => {
+              container.style.backgroundColor = originalBg;
+            }, 5e3);
+          }
+        }
         return modifiedUrl;
       }
       return originalUrl;
@@ -1879,67 +1926,14 @@
         const urlObj = new URL(url, window.location.origin);
         const newCursor = urlObj.searchParams.get("cursor");
         if (newCursor && newCursor !== this._lastSeenCursor) {
-          let isValidPosition = true;
-          let decodedCursor = "";
-          try {
-            decodedCursor = atob(newCursor);
-            const filterKeywords = [
-              "Nude+Tennis+Racket",
-              "Nordic+Beach+Boulder",
-              "Nordic+Beach+Rock"
-            ];
-            if (filterKeywords.some((keyword) => decodedCursor.includes(keyword))) {
-              Utils.logger("info", Utils.getText("log_cursor_skip_known_position", decodedCursor));
-              isValidPosition = false;
-            }
-            if (isValidPosition && this._lastSeenCursor) {
-              try {
-                let newItemName = "";
-                let lastItemName = "";
-                if (decodedCursor.includes("p=")) {
-                  const match = decodedCursor.match(/p=([^&]+)/);
-                  if (match && match[1]) {
-                    newItemName = decodeURIComponent(match[1].replace(/\+/g, " "));
-                  }
-                }
-                const lastDecoded = atob(this._lastSeenCursor);
-                if (lastDecoded.includes("p=")) {
-                  const match = lastDecoded.match(/p=([^&]+)/);
-                  if (match && match[1]) {
-                    lastItemName = decodeURIComponent(match[1].replace(/\+/g, " "));
-                  }
-                }
-                if (newItemName && lastItemName) {
-                  const getFirstWord = /* @__PURE__ */ __name((text) => text.trim().substring(0, 3), "getFirstWord");
-                  const newFirstWord = getFirstWord(newItemName);
-                  const lastFirstWord = getFirstWord(lastItemName);
-                  const sortParam = urlObj.searchParams.get("sort_by") || "";
-                  const isReverseSort = sortParam.startsWith("-");
-                  if (isReverseSort && sortParam.includes("title") && newFirstWord > lastFirstWord || !isReverseSort && sortParam.includes("title") && newFirstWord < lastFirstWord) {
-                    Utils.logger("info", Utils.getText(
-                      "log_cursor_skip_backtrack",
-                      newItemName,
-                      lastItemName,
-                      isReverseSort ? Utils.getText("log_sort_descending") : Utils.getText("log_sort_ascending")
-                    ));
-                    isValidPosition = false;
-                  }
-                }
-              } catch (compareError) {
-              }
-            }
-          } catch (decodeError) {
+          this._lastSeenCursor = newCursor;
+          State.savedCursor = newCursor;
+          GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
+          if (State.debugMode) {
+            Utils.logger("debug", Utils.getText("debug_save_cursor", newCursor.substring(0, 30) + "..."));
           }
-          if (isValidPosition) {
-            this._lastSeenCursor = newCursor;
-            State.savedCursor = newCursor;
-            GM_setValue(Config.DB_KEYS.LAST_CURSOR, newCursor);
-            if (State.debugMode) {
-              Utils.logger("debug", Utils.getText("debug_save_cursor", newCursor.substring(0, 30) + "..."));
-            }
-            if (State.UI && State.UI.savedPositionDisplay) {
-              State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
-            }
+          if (State.UI && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(newCursor);
           }
         }
       } catch (e) {
@@ -1951,7 +1945,7 @@
       const originalXhrOpen = XMLHttpRequest.prototype.open;
       const originalXhrSend = XMLHttpRequest.prototype.send;
       const DEBOUNCE_DELAY_MS = 350;
-      const listenerAwareSend = /* @__PURE__ */ __name(function(...args) {
+      const listenerAwareSend = /* @__PURE__ */ __name(function (...args) {
         const request = this;
         const onLoad = /* @__PURE__ */ __name(() => {
           request.removeEventListener("load", onLoad);
@@ -2029,7 +2023,7 @@
         request.addEventListener("load", onLoad);
         return originalXhrSend.apply(request, args);
       }, "listenerAwareSend");
-      XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      XMLHttpRequest.prototype.open = function (method, url, ...args) {
         let modifiedUrl = url;
         if (self.shouldPatchUrl(url)) {
           modifiedUrl = self.getPatchedUrl(url);
@@ -2043,7 +2037,7 @@
         this._url = modifiedUrl;
         return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
       };
-      XMLHttpRequest.prototype.send = function(...args) {
+      XMLHttpRequest.prototype.send = function (...args) {
         if (!this._isDebouncedSearch) {
           return listenerAwareSend.apply(this, args);
         }
@@ -2065,7 +2059,7 @@
         }, DEBOUNCE_DELAY_MS);
       };
       const originalFetch = window.fetch;
-      window.fetch = function(input, init) {
+      window.fetch = function (input, init) {
         let url = typeof input === "string" ? input : input.url;
         let modifiedInput = input;
         if (self.shouldPatchUrl(url)) {
@@ -2158,7 +2152,7 @@
     lastPingTime: 0,
     pingInterval: null,
     // 初始化实例管理
-    init: /* @__PURE__ */ __name(async function() {
+    init: /* @__PURE__ */ __name(async function () {
       try {
         const isSearchPage = window.location.href.includes("/search") || window.location.pathname === "/" || window.location.pathname === "/zh-cn/" || window.location.pathname === "/en/";
         if (isSearchPage) {
@@ -2188,20 +2182,20 @@
       }
     }, "init"),
     // 注册为活跃实例
-    registerAsActive: /* @__PURE__ */ __name(async function() {
+    registerAsActive: /* @__PURE__ */ __name(async function () {
       await GM_setValue("fab_active_instance", {
         id: Config.INSTANCE_ID,
         lastPing: Date.now()
       });
     }, "registerAsActive"),
     // 定期更新活跃状态
-    ping: /* @__PURE__ */ __name(async function() {
+    ping: /* @__PURE__ */ __name(async function () {
       if (!this.isActive) return;
       this.lastPingTime = Date.now();
       await this.registerAsActive();
     }, "ping"),
     // 检查是否可以接管
-    checkTakeover: /* @__PURE__ */ __name(async function() {
+    checkTakeover: /* @__PURE__ */ __name(async function () {
       if (this.isActive) return;
       try {
         const activeInstance = await GM_getValue("fab_active_instance", null);
@@ -2221,7 +2215,7 @@
       }
     }, "checkTakeover"),
     // 清理实例
-    cleanup: /* @__PURE__ */ __name(function() {
+    cleanup: /* @__PURE__ */ __name(function () {
       if (this.pingInterval) {
         clearInterval(this.pingInterval);
         this.pingInterval = null;
@@ -3306,7 +3300,7 @@
             const maxWaitTime = 1e4;
             const startTime = Date.now();
             const originalFetch = window.fetch;
-            window.fetch = function(...args) {
+            window.fetch = function (...args) {
               const url = args[0]?.toString() || "";
               if (url.includes("/listings-states") || url.includes("/listings/search")) {
                 window._apiWaitStatus.lastApiActivity = Date.now();
@@ -3830,15 +3824,42 @@
       logContainer.append(logHeader, State.UI.logPanel);
       const positionContainer = document.createElement("div");
       positionContainer.className = "fab-helper-position-container";
-      positionContainer.style.cssText = "margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;";
+      positionContainer.style.cssText = "margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center;";
       const positionIcon = document.createElement("span");
       positionIcon.textContent = Utils.getText("position_indicator");
       positionIcon.style.marginRight = "4px";
       const positionInfo = document.createElement("span");
-      positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      if (State.rememberScrollPosition) {
+        positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      } else {
+        positionInfo.textContent = Utils.getText("position_tracking_disabled") || "位置记录已关闭";
+      }
       State.UI.savedPositionDisplay = positionInfo;
       positionContainer.appendChild(positionIcon);
       positionContainer.appendChild(positionInfo);
+      const clearPositionBtn = document.createElement("button");
+      clearPositionBtn.textContent = "\u{1F504}";
+      clearPositionBtn.title = Utils.getText("clear_position_tooltip");
+      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s;";
+      clearPositionBtn.onmouseover = () => {
+        clearPositionBtn.style.opacity = "1";
+      };
+      clearPositionBtn.onmouseout = () => {
+        clearPositionBtn.style.opacity = "0.7";
+      };
+      clearPositionBtn.onclick = async () => {
+        if (State.savedCursor) {
+          if (confirm(Utils.getText("confirm_reset_position"))) {
+            State.savedCursor = null;
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+            State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
+            window.location.reload();
+          }
+        } else {
+          Utils.logger("info", Utils.getText("no_position_to_reset"));
+        }
+      };
+      positionContainer.appendChild(clearPositionBtn);
       dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
       container.appendChild(dashboardContent);
       const settingsContent = document.createElement("div");
@@ -3863,6 +3884,14 @@
             TaskRunner3.toggleAutoAdd();
           } else if (stateKey === "rememberScrollPosition") {
             TaskRunner3.toggleRememberPosition();
+            // Update the display immediately when toggled
+            if (State.UI.savedPositionDisplay) {
+              if (State.rememberScrollPosition) {
+                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+              } else {
+                State.UI.savedPositionDisplay.textContent = Utils.getText("position_tracking_disabled") || "位置记录已关闭";
+              }
+            }
           } else if (stateKey === "autoResumeAfter429") {
             TaskRunner3.toggleAutoResume();
           } else if (stateKey === "autoRefreshEmptyPage") {
@@ -4301,14 +4330,14 @@
   function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(...args) {
+    XMLHttpRequest.prototype.open = function (...args) {
       this._url = args[1];
       return originalOpen.apply(this, args);
     };
-    XMLHttpRequest.prototype.send = function(...args) {
+    XMLHttpRequest.prototype.send = function (...args) {
       const xhr = this;
       if (xhr._url && typeof xhr._url === "string") {
-        xhr.addEventListener("load", function() {
+        xhr.addEventListener("load", function () {
           if (xhr.readyState === 4 && xhr.status === 200) {
             try {
               const responseData = JSON.parse(xhr.responseText);
@@ -4345,7 +4374,7 @@
   __name(setupXHRInterceptor, "setupXHRInterceptor");
   function setupFetchInterceptor() {
     const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
+    window.fetch = async function (...args) {
       const url = args[0]?.toString() || "";
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
         try {
@@ -4412,10 +4441,10 @@
     UI5.updateDebugTab();
     UI5.switchTab("dashboard");
     State.hasRunDomPart = true;
-    window.enterRateLimitedState = function(source = Utils.getText("rate_limit_source_global_call")) {
+    window.enterRateLimitedState = function (source = Utils.getText("rate_limit_source_global_call")) {
       RateLimitManager.enterRateLimitedState(source);
     };
-    window.recordNetworkRequest = function(source = "\u7F51\u7EDC\u8BF7\u6C42", hasResults = true) {
+    window.recordNetworkRequest = function (source = "\u7F51\u7EDC\u8BF7\u6C42", hasResults = true) {
       if (hasResults) {
         RateLimitManager.recordSuccessfulRequest(source, hasResults);
       }
@@ -4758,7 +4787,7 @@
       }, 500);
     }
     let lastNetworkActivityTime = Date.now();
-    window.recordNetworkActivity = function() {
+    window.recordNetworkActivity = function () {
       lastNetworkActivityTime = Date.now();
     };
     setInterval(() => {

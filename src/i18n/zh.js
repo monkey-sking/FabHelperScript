@@ -237,6 +237,9 @@ export const zh = {
     log_sort_changed_position_cleared: '由于排序方式变更，已清除保存的浏览位置',
     log_sort_check_error: '检查URL排序参数时出错: {0}',
     log_position_cleared: '已清除已保存的浏览位置。',
+    clear_position_tooltip: '重置浏览位置并刷新',
+    confirm_reset_position: '确定要清除已保存的浏览位置并刷新页面吗？',
+    no_position_to_reset: '当前没有保存的浏览位置。',
     log_sort_ascending: '升序',
     log_sort_descending: '降序',
 

@@ -237,6 +237,9 @@ export const en = {
     log_sort_changed_position_cleared: 'Cleared saved position due to sort method change',
     log_sort_check_error: 'Error checking URL sort parameter: {0}',
     log_position_cleared: 'Cleared saved browsing position.',
+    clear_position_tooltip: 'Reset position and refresh',
+    confirm_reset_position: 'Are you sure you want to clear the saved browsing position and refresh the page?',
+    no_position_to_reset: 'No saved browsing position.',
     log_sort_ascending: 'Ascending',
     log_sort_descending: 'Descending',
 
