@@ -29,9 +29,9 @@ export const PagePatcher = {
             if (savedCursor) {
                 State.savedCursor = savedCursor;
                 this._lastSeenCursor = savedCursor;
-                Utils.logger('info', `[Cursor] Initialized. Loaded saved cursor: ${savedCursor.substring(0, 30)}...`);
+                Utils.logger('debug', `[Cursor] Initialized. Loaded saved cursor: ${savedCursor.substring(0, 30)}...`);
             } else {
-                Utils.logger('info', `[Cursor] Initialized. No saved cursor found.`);
+                Utils.logger('debug', `[Cursor] Initialized. No saved cursor found.`);
             }
         } catch (e) {
             Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
@@ -39,7 +39,7 @@ export const PagePatcher = {
 
         // 应用拦截器
         this.applyPatches();
-        Utils.logger('info', '[Cursor] Network interceptors applied.');
+        Utils.logger('debug', '[Cursor] Network interceptors applied.');
 
         // 监听URL变化，检测排序方式变更
         this.setupSortMonitor();
@@ -109,7 +109,7 @@ export const PagePatcher = {
                 State.currentSortOption = matchedOption;
                 GM_setValue('fab_helper_sort_option', State.currentSortOption);
 
-                Utils.logger('info', Utils.getText('log_url_sort_changed',
+                Utils.logger('debug', Utils.getText('log_url_sort_changed',
                     State.sortOptions?.[previousSort]?.name || previousSort,
                     State.sortOptions?.[State.currentSortOption]?.name || State.currentSortOption
                 ));
@@ -154,7 +154,7 @@ export const PagePatcher = {
         if (!State.rememberScrollPosition || !State.savedCursor) return false;
         if (!url.includes('/i/listings/search')) return false;
         if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
-        Utils.logger('info', Utils.getText('page_patcher_match') + ` URL: ${url}`);
+        Utils.logger('debug', Utils.getText('page_patcher_match') + ` URL: ${url}`);
         return true;
     },
 
@@ -163,8 +163,8 @@ export const PagePatcher = {
             const urlObj = new URL(originalUrl, window.location.origin);
             urlObj.searchParams.set('cursor', State.savedCursor);
             const modifiedUrl = urlObj.pathname + urlObj.search;
-            Utils.logger('info', `[Cursor] ${Utils.getText('cursor_injecting')}: ${originalUrl}`);
-            Utils.logger('info', `[Cursor] ${Utils.getText('cursor_patched_url')}: ${modifiedUrl}`);
+            Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_injecting')}: ${originalUrl}`);
+            Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_patched_url')}: ${modifiedUrl}`);
             this._patchHasBeenApplied = true;
             return modifiedUrl;
         }

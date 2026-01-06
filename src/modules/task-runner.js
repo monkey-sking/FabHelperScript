@@ -1169,7 +1169,7 @@ export const TaskRunner = {
                     }
                 }, 2000);
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
-                Utils.logger('info', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
+                Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
             }
         }
     },
