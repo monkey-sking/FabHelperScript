@@ -125,7 +125,7 @@ export const TaskRunner = {
         State.db.todo = [];
         Utils.logger('info', Utils.getText('log_todo_cleared'));
 
-        Utils.logger('info', Utils.getText('log_scanning_items'));
+        Utils.logger('debug', Utils.getText('log_scanning_items'));
         const cards = document.querySelectorAll(Config.SELECTORS.card);
         const newlyAddedList = [];
         let alreadyInQueueCount = 0;
@@ -166,7 +166,7 @@ export const TaskRunner = {
         });
 
         if (skippedCount > 0) {
-            Utils.logger('info', Utils.getText('log_skipped_unsettled', skippedCount));
+            Utils.logger('debug', Utils.getText('log_skipped_unsettled', skippedCount));
         }
 
         if (newlyAddedList.length > 0) {
@@ -367,7 +367,7 @@ export const TaskRunner = {
                 return;
             }
 
-            Utils.logger('info', Utils.getText('log_checking_items', uidsFromVisibleCards.size, uidsFromFailedList.size));
+            Utils.logger('debug', Utils.getText('log_checking_items', uidsFromVisibleCards.size, uidsFromFailedList.size));
 
             const ownedUids = new Set();
             for (let i = 0; i < allUidsToCheck.length; i += API_CHUNK_SIZE) {
@@ -375,7 +375,7 @@ export const TaskRunner = {
                 const apiUrl = new URL(API_ENDPOINT);
                 chunk.forEach(uid => apiUrl.searchParams.append('listing_ids', uid));
 
-                Utils.logger('info', Utils.getText('log_processing_batch', Math.floor(i / API_CHUNK_SIZE) + 1, chunk.length));
+                Utils.logger('debug', Utils.getText('log_processing_batch', Math.floor(i / API_CHUNK_SIZE) + 1, chunk.length));
 
                 const response = await fetch(apiUrl.href, {
                     headers: { 'accept': 'application/json, text/plain, */*', 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
@@ -563,12 +563,12 @@ export const TaskRunner = {
                 if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
 
                 if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
-                    Utils.logger('info', Utils.getText('log_task_already_running', task.name));
+                    Utils.logger('debug', Utils.getText('log_task_already_running', task.name));
                     continue;
                 }
 
                 if (Database.isDone(task.url)) {
-                    Utils.logger('info', Utils.getText('log_task_already_done', task.name));
+                    Utils.logger('debug', Utils.getText('log_task_already_done', task.name));
                     State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
                     Database.saveTodo();
                     continue;
@@ -585,7 +585,7 @@ export const TaskRunner = {
                     instanceId: Config.INSTANCE_ID
                 };
 
-                Utils.logger('info', Utils.getText('log_dispatching_worker', workerId.substring(0, 12), task.name));
+                Utils.logger('debug', Utils.getText('log_dispatching_worker', workerId.substring(0, 12), task.name));
 
                 await GM_setValue(workerId, {
                     task,
@@ -600,7 +600,7 @@ export const TaskRunner = {
             }
 
             if (dispatchedCount > 0) {
-                Utils.logger('info', Utils.getText('log_batch_dispatched', dispatchedCount));
+                Utils.logger('debug', Utils.getText('log_batch_dispatched', dispatchedCount));
             }
 
             if (!State.watchdogTimer && State.activeWorkers > 0) {
@@ -616,7 +616,7 @@ export const TaskRunner = {
     closeAllWorkerTabs: () => {
         const workerIds = Object.keys(State.runningWorkers);
         if (workerIds.length > 0) {
-            Utils.logger('info', Utils.getText('log_cleaning_workers_state', workerIds.length));
+            Utils.logger('debug', Utils.getText('log_cleaning_workers_state', workerIds.length));
             for (const workerId of workerIds) {
                 GM_deleteValue(workerId);
             }
@@ -1267,7 +1267,7 @@ export const TaskRunner = {
                 Utils.logger('info', Utils.getText('fab_dom_api_complete', confirmedOwned));
                 Utils.logger('info', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
             } else {
-                Utils.logger('info', Utils.getText('fab_dom_no_new_owned'));
+                Utils.logger('debug', Utils.getText('fab_dom_no_new_owned'));
             }
         } catch (error) {
             Utils.logger('error', Utils.getText('log_check_status_error', error.message));

@@ -44,7 +44,7 @@ function countdownRefresh(delay, reason = '备选方案') {
     }
 
     const seconds = delay ? (delay / 1000).toFixed(1) : '未知';
-    Utils.logger('info', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
+    Utils.logger('debug', `🔄 ${reason}启动！将在 ${seconds} 秒后刷新页面尝试恢复...`);
 
     let remainingSeconds = Math.ceil(delay / 1000);
     currentCountdownInterval = setInterval(() => {
@@ -52,12 +52,12 @@ function countdownRefresh(delay, reason = '备选方案') {
         if (remainingSeconds <= 0) {
             clearInterval(currentCountdownInterval);
             currentCountdownInterval = null;
-            Utils.logger('info', `⏱️ 倒计时结束，正在刷新页面...`);
+            Utils.logger('debug', `⏱️ 倒计时结束，正在刷新页面...`);
         } else {
-            Utils.logger('info', Utils.getText('auto_refresh_countdown', remainingSeconds));
+            Utils.logger('debug', Utils.getText('auto_refresh_countdown', remainingSeconds));
 
             if (!State.isRefreshScheduled) {
-                Utils.logger('info', `⏹️ 检测到刷新已被取消，停止倒计时`);
+                Utils.logger('debug', `⏹️ 检测到刷新已被取消，停止倒计时`);
                 clearInterval(currentCountdownInterval);
                 currentCountdownInterval = null;
                 if (currentRefreshTimeout) {
@@ -71,7 +71,7 @@ function countdownRefresh(delay, reason = '备选方案') {
             if (remainingSeconds % 3 === 0) {
                 checkRateLimitStatus().then(isNotLimited => {
                     if (isNotLimited) {
-                        Utils.logger('info', `⏱️ 检测到API限速已解除，取消刷新...`);
+                        Utils.logger('debug', `⏱️ 检测到API限速已解除，取消刷新...`);
                         clearInterval(currentCountdownInterval);
                         currentCountdownInterval = null;
                         if (currentRefreshTimeout) {
@@ -295,7 +295,7 @@ function setupRequestInterceptors() {
         setupXHRInterceptor();
         setupFetchInterceptor();
         setInterval(() => DataCache.cleanupExpired(), 60000);
-        Utils.logger('info', '请求拦截和缓存系统已初始化');
+        Utils.logger('debug', '请求拦截和缓存系统已初始化');
     } catch (e) {
         Utils.logger('error', `初始化请求拦截器失败: ${e.message}`);
     }
@@ -312,7 +312,7 @@ async function runDomDependentPart() {
 
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.has('workerId')) {
-        Utils.logger('info', `工作标签页DOM部分初始化，跳过UI创建`);
+        Utils.logger('debug', `工作标签页DOM部分初始化，跳过UI创建`);
         State.hasRunDomPart = true;
         return;
     }
@@ -371,7 +371,7 @@ async function runDomDependentPart() {
 
     // Auto-resume from rate limit
     if (State.appStatus === 'RATE_LIMITED') {
-        Utils.logger('info', Utils.getText('log_auto_resume_page_loading'));
+        Utils.logger('debug', Utils.getText('log_auto_resume_page_loading'));
         const isRecovered = await RateLimitManager.checkRateLimitStatus();
 
         if (isRecovered) {

@@ -259,7 +259,7 @@ export const RateLimitManager = {
         State.isCheckingRateLimit = true;
 
         try {
-            Utils.logger('info', Utils.getText('log_rate_limit_check_start'));
+            Utils.logger('debug', Utils.getText('log_rate_limit_check_start'));
 
             // 首先检查页面内容是否包含限速信息
             const pageText = document.body.innerText || '';
@@ -301,7 +301,7 @@ export const RateLimitManager = {
             }
 
             // 如果没有足够的信息判断，保持当前状态
-            Utils.logger('info', Utils.getText('log_insufficient_info_status'));
+            Utils.logger('debug', Utils.getText('log_insufficient_info_status'));
             return State.appStatus === 'NORMAL';
         } catch (e) {
             Utils.logger('error', `限速状态检查失败: ${e.message}`);

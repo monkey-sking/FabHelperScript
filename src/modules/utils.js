@@ -80,7 +80,7 @@ export const Utils = {
     detectLanguage: () => {
         const oldLang = State.lang;
         State.lang = window.location.href.includes('/zh-cn/') ? 'zh' : (navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en');
-        Utils.logger('info', `语言检测: 地址=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
+        Utils.logger('debug', `语言检测: 地址=${window.location.href}, 检测到语言=${State.lang}${oldLang !== State.lang ? ` (从${oldLang}切换)` : ''}`);
 
         // 如果语言发生了变化且UI已经创建，更新UI
         if (oldLang !== State.lang && State.UI && State.UI.container && UI) {
