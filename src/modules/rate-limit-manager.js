@@ -177,6 +177,19 @@ export const RateLimitManager = {
             return;
         }
 
+        // --- PENALTY BOX LOGIC (强制冷静期) ---
+        // If we are in RATE_LIMITED state, we MUST wait for at least 40 seconds.
+        // During this time, any "success" is likely a fluke or cached response.
+        // We ignore it to prevent premature exit triggering another 429 immediately.
+        if (State.rateLimitStartTime) {
+            const timeSinceRateLimit = Date.now() - State.rateLimitStartTime;
+            if (timeSinceRateLimit < 40000) { // 40 seconds mandatory wait
+                Utils.logger('debug', `处于限速强制冷静期 (${(timeSinceRateLimit / 1000).toFixed(1)}s < 40s)，忽略此次成功请求。`);
+                return;
+            }
+        }
+
+
         // 如果请求没有返回有效结果，不计入连续成功
         if (!hasResults) {
             Utils.logger('debug', `请求成功但没有返回有效结果，不计入连续成功计数。来源: ${source}`);
