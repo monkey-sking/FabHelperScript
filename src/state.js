@@ -13,6 +13,7 @@ export const State = {
     rememberScrollPosition: false, // 是否记住滚动位置
     autoResumeAfter429: false, // 是否在429后自动恢复
     autoRefreshEmptyPage: true, // 新增：无商品可见时自动刷新（默认开启）
+    hideDiscountedPaid: false, // 是否隐藏打折的付费商品
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务

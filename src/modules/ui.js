@@ -538,6 +538,9 @@ export const UI = {
         const autoRefreshEmptySetting = createSettingRow(Utils.getText('setting_auto_refresh'), 'autoRefreshEmptyPage');
         settingsContent.appendChild(autoRefreshEmptySetting);
 
+        const hideDiscountedPaidSetting = createSettingRow(Utils.getText('setting_hide_discounted'), 'hideDiscountedPaid');
+        settingsContent.appendChild(hideDiscountedPaidSetting);
+
         const resetButton = document.createElement('button');
         resetButton.textContent = Utils.getText('clear_all_data');
         resetButton.style.cssText = 'width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;';

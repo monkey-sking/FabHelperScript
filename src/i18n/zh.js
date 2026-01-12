@@ -182,6 +182,7 @@ export const zh = {
     setting_auto_add_scroll: '无限滚动时自动添加任务',
     setting_remember_position: '记住瀑布流浏览位置',
     setting_auto_resume_429: '429后自动恢复并继续',
+    setting_hide_discounted: '隐藏打折的付费商品',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 
     // 状态文本

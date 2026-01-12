@@ -102,6 +102,30 @@ export const TaskRunner = {
         return hasFreeKeyword || has100PercentDiscount;
     },
 
+    // Check if a card is a discounted paid item
+    isDiscountedPaidCard: (card) => {
+        if (TaskRunner.isFreeCard(card)) return false; // If it's free, it's not a "discounted paid" item
+
+        const cardText = card.textContent || '';
+        // Look for -XX% pattern or "Save"/"Off" with percentage
+        const hasDiscountTag = /-\d+%/.test(cardText) || cardText.includes('% off') || cardText.includes('% Off');
+
+        // Also check simplified "Save $X" if need be, but percentage is standard on Fab
+        // For now, stick to percentage to avoid false positives
+
+        if (!hasDiscountTag) return false;
+
+        // Double check positive price
+        const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
+        if (priceMatches) {
+            return priceMatches.some(priceStr => {
+                const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
+                return numValue > 0.00;
+            });
+        }
+        return false;
+    },
+
     // Toggle execution state
     toggleExecution: () => {
         if (!Utils.checkAuthentication()) return;
@@ -285,6 +309,20 @@ export const TaskRunner = {
         await Database.saveAutoRefreshEmptyPref();
         Utils.logger('info', Utils.getText('log_auto_refresh_toggle', State.autoRefreshEmptyPage ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
         setTimeout(() => { State.isTogglingSetting = false; }, 200);
+    },
+
+    toggleHideDiscountedPaid: async () => {
+        State.hideDiscountedPaid = !State.hideDiscountedPaid;
+        await Database.saveHideDiscountedPref();
+        TaskRunner.runHideOrShow();
+
+        if (State.hideDiscountedPaid) {
+            Utils.logger('info', '已开启隐藏打折付费商品');
+        } else {
+            Utils.logger('info', '已关闭隐藏打折付费商品');
+        }
+
+        if (UI) UI.update();
     },
 
     stop: () => {
@@ -1075,7 +1113,9 @@ export const TaskRunner = {
             }
 
             const isFinished = TaskRunner.isCardFinished(card);
-            if (State.hideSaved && isFinished) {
+            const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card);
+
+            if ((State.hideSaved && isFinished) || isDiscountedPaid) {
                 cardsToHide.push(card);
                 State.hiddenThisPageCount++;
                 card.setAttribute('data-fab-processed', 'true');
@@ -1122,8 +1162,12 @@ export const TaskRunner = {
             }
         }
 
-        if (State.hideSaved) {
-            const visibleCards = Array.from(cards).filter(card => !TaskRunner.isCardFinished(card));
+        if (State.hideSaved || State.hideDiscountedPaid) {
+            const visibleCards = Array.from(cards).filter(card => {
+                if (State.hideSaved && TaskRunner.isCardFinished(card)) return false;
+                if (State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card)) return false;
+                return true;
+            });
             visibleCards.forEach(card => { card.style.display = ''; });
 
             if (cardsToHide.length === 0) {

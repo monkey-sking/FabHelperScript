@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112112815
+// @version      3.5.1-20260112114648
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -197,6 +197,7 @@
     setting_auto_add_scroll: "Auto add tasks on infinite scroll",
     setting_remember_position: "Remember waterfall browsing position",
     setting_auto_resume_429: "Auto resume after 429 errors",
+    setting_hide_discounted: "Hide discounted paid items",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
     status_enabled: "enabled",
@@ -503,6 +504,7 @@
     setting_auto_add_scroll: "\u65E0\u9650\u6EDA\u52A8\u65F6\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1",
     setting_remember_position: "\u8BB0\u4F4F\u7011\u5E03\u6D41\u6D4F\u89C8\u4F4D\u7F6E",
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
+    setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
     status_enabled: "\u5F00\u542F",
@@ -672,8 +674,10 @@
       // 自动恢复功能设置
       IS_EXECUTING: "fab_is_executing_v1",
       // 执行状态保存
-      AUTO_REFRESH_EMPTY: "fab_auto_refresh_empty_v1"
+      AUTO_REFRESH_EMPTY: "fab_auto_refresh_empty_v1",
       // 无商品可见时自动刷新
+      HIDE_DISCOUNTED: "fab_hideDiscounted_v8"
+      // 隐藏打折的付费商品
       // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {
@@ -728,6 +732,8 @@
     // 是否在429后自动恢复
     autoRefreshEmptyPage: true,
     // 新增：无商品可见时自动刷新（默认开启）
+    hideDiscountedPaid: false,
+    // 是否隐藏打折的付费商品
     debugMode: false,
     // 是否启用调试模式
     lang: "zh",
@@ -1430,6 +1436,7 @@
       State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
       State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
       State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
+      State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false);
       State.debugMode = await GM_getValue("fab_helper_debug_mode", false);
       State.currentSortOption = await GM_getValue("fab_helper_sort_option", "title_desc");
       State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
@@ -1454,6 +1461,8 @@
     saveAutoResumePref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
     saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
     // 保存无商品自动刷新设置
+    saveHideDiscountedPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), "saveHideDiscountedPref"),
+    // 保存隐藏打折付费设置
     saveExecutingState: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
@@ -1462,6 +1471,7 @@
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         State.db.todo = [];
         State.db.done = [];
         State.db.failed = [];
@@ -2290,6 +2300,21 @@
       }
       return hasFreeKeyword || has100PercentDiscount;
     }, "isFreeCard"),
+    // Check if a card is a discounted paid item
+    isDiscountedPaidCard: /* @__PURE__ */ __name((card) => {
+      if (TaskRunner2.isFreeCard(card)) return false;
+      const cardText = card.textContent || "";
+      const hasDiscountTag = /-\d+%/.test(cardText) || cardText.includes("% off") || cardText.includes("% Off");
+      if (!hasDiscountTag) return false;
+      const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
+      if (priceMatches) {
+        return priceMatches.some((priceStr) => {
+          const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
+          return numValue > 0;
+        });
+      }
+      return false;
+    }, "isDiscountedPaidCard"),
     // Toggle execution state
     toggleExecution: /* @__PURE__ */ __name(() => {
       if (!Utils.checkAuthentication()) return;
@@ -2453,6 +2478,17 @@
         State.isTogglingSetting = false;
       }, 200);
     }, "toggleAutoRefreshEmpty"),
+    toggleHideDiscountedPaid: /* @__PURE__ */ __name(async () => {
+      State.hideDiscountedPaid = !State.hideDiscountedPaid;
+      await Database.saveHideDiscountedPref();
+      TaskRunner2.runHideOrShow();
+      if (State.hideDiscountedPaid) {
+        Utils.logger("info", "\u5DF2\u5F00\u542F\u9690\u85CF\u6253\u6298\u4ED8\u8D39\u5546\u54C1");
+      } else {
+        Utils.logger("info", "\u5DF2\u5173\u95ED\u9690\u85CF\u6253\u6298\u4ED8\u8D39\u5546\u54C1");
+      }
+      if (UI4) UI4.update();
+    }, "toggleHideDiscountedPaid"),
     stop: /* @__PURE__ */ __name(() => {
       if (!State.isExecuting) return;
       State.isExecuting = false;
@@ -3096,7 +3132,8 @@
           return;
         }
         const isFinished = TaskRunner2.isCardFinished(card);
-        if (State.hideSaved && isFinished) {
+        const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card);
+        if (State.hideSaved && isFinished || isDiscountedPaid) {
           cardsToHide.push(card);
           State.hiddenThisPageCount++;
           card.setAttribute("data-fab-processed", "true");
@@ -3137,8 +3174,12 @@
           }, batchDelay);
         }
       }
-      if (State.hideSaved) {
-        const visibleCards = Array.from(cards).filter((card) => !TaskRunner2.isCardFinished(card));
+      if (State.hideSaved || State.hideDiscountedPaid) {
+        const visibleCards = Array.from(cards).filter((card) => {
+          if (State.hideSaved && TaskRunner2.isCardFinished(card)) return false;
+          if (State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card)) return false;
+          return true;
+        });
         visibleCards.forEach((card) => {
           card.style.display = "";
         });
@@ -3927,6 +3968,8 @@
       settingsContent.appendChild(autoResumeSetting);
       const autoRefreshEmptySetting = createSettingRow(Utils.getText("setting_auto_refresh"), "autoRefreshEmptyPage");
       settingsContent.appendChild(autoRefreshEmptySetting);
+      const hideDiscountedPaidSetting = createSettingRow(Utils.getText("setting_hide_discounted"), "hideDiscountedPaid");
+      settingsContent.appendChild(hideDiscountedPaidSetting);
       const resetButton = document.createElement("button");
       resetButton.textContent = Utils.getText("clear_all_data");
       resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";

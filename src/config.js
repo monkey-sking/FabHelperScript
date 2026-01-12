@@ -26,6 +26,7 @@ export const Config = {
         AUTO_RESUME: 'fab_auto_resume_v1', // 自动恢复功能设置
         IS_EXECUTING: 'fab_is_executing_v1', // 执行状态保存
         AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 无商品可见时自动刷新
+        HIDE_DISCOUNTED: 'fab_hideDiscounted_v8', // 隐藏打折的付费商品
         // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {

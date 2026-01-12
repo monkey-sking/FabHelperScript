@@ -182,6 +182,7 @@ export const en = {
     setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
     setting_remember_position: 'Remember waterfall browsing position',
     setting_auto_resume_429: 'Auto resume after 429 errors',
+    setting_hide_discounted: 'Hide discounted paid items',
     setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
 
     // 状态文本

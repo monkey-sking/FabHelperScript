@@ -20,6 +20,7 @@ export const Database = {
         State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
         State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
         State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
+        State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false); // 加载隐藏打折付费设置
         State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
         State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
@@ -46,6 +47,7 @@ export const Database = {
     saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
     saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
     saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
+    saveHideDiscountedPref: () => GM_setValue(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), // 保存隐藏打折付费设置
     saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
@@ -55,6 +57,7 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.DONE);
             await GM_deleteValue(Config.DB_KEYS.FAILED);
             await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR); // 清除滚动记忆
+            await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             State.db.todo = [];
             State.db.done = [];
             State.db.failed = [];
