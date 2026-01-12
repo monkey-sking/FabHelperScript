@@ -201,7 +201,20 @@ export const Utils = {
 
             if (match && match[1]) {
                 // Decode URI component and replace + with space
-                const itemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
+                let itemName = decodeURIComponent(match[1].replace(/\+/g, ' '));
+
+                // Check if it looks like an ISO date (e.g., 2023-05-05T...)
+                // If so, format it to be shorter and cleaner
+                if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(itemName)) {
+                    try {
+                        const date = new Date(itemName);
+                        // Format: YYYY-MM-DD HH:mm:ss
+                        const dateStr = date.toLocaleDateString();
+                        const timeStr = date.toLocaleTimeString([], { hour12: false });
+                        itemName = `${dateStr} ${timeStr}`;
+                    } catch (e) { /* Ignore date parse error */ }
+                }
+
                 return `${Utils.getText('position_label')}: "${itemName}"`;
             }
 

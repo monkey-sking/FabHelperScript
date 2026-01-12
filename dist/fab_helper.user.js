@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112112527
+// @version      3.5.1-20260112112815
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -985,7 +985,16 @@
           match = decoded.match(/p=([^&]+)/);
         }
         if (match && match[1]) {
-          const itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+          let itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
+          if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(itemName)) {
+            try {
+              const date = new Date(itemName);
+              const dateStr = date.toLocaleDateString();
+              const timeStr = date.toLocaleTimeString([], { hour12: false });
+              itemName = `${dateStr} ${timeStr}`;
+            } catch (e) {
+            }
+          }
           return `${Utils.getText("position_label")}: "${itemName}"`;
         }
         return `${Utils.getText("position_label")}: (Unknown)`;
@@ -3846,6 +3855,7 @@
       positionIcon.style.marginRight = "4px";
       const positionInfo = document.createElement("span");
       positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
       State.UI.savedPositionDisplay = positionInfo;
       positionContainer.appendChild(positionIcon);
       positionContainer.appendChild(positionInfo);

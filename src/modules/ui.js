@@ -450,6 +450,8 @@ export const UI = {
 
         const positionInfo = document.createElement('span');
         positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+        // Fix overflow: allow text to shrink and show ellipsis so the reset button stays visible
+        positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
         State.UI.savedPositionDisplay = positionInfo;
 
         positionContainer.appendChild(positionIcon);
