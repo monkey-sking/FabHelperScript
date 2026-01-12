@@ -1217,11 +1217,16 @@ export const TaskRunner = {
     },
 
     checkVisibleCardsStatus: async () => {
+        if (State.isCheckingStatus) {
+            return;
+        }
+        State.isCheckingStatus = true;
+
         try {
             const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
 
             if (visibleCards.length === 0) {
-                Utils.logger('info', Utils.getText('log_no_visible_cards'));
+                // Utils.logger('info', Utils.getText('log_no_visible_cards')); // Reduce noise
                 return;
             }
 
@@ -1240,15 +1245,23 @@ export const TaskRunner = {
             });
 
             if (hasUnsettledCards && unsettledCards.length > 0) {
-                Utils.logger('info', Utils.getText('log_waiting_for_cards', unsettledCards.length));
-                await new Promise(resolve => setTimeout(resolve, 3000));
-                return TaskRunner.checkVisibleCardsStatus();
+                // Found unsettled cards. We will proceed to check settled cards' ownership,
+                // and rely on subsequent triggers (observer/interval) to re-check.
+                // We do NOT return here, and we do NOT unlock prematurely.
             }
+            // Re-implementing logic with the lock safely:
+
+            // Filter only settled items for API check to avoiding checking "loading" items?
+            // Or just proceed. The original logic waited.
 
             const allItems = [];
             let confirmedOwned = 0;
 
             visibleCards.forEach(card => {
+                // If card is unsettled, maybe skip it this round?
+                // But if we skip it, we might miss it if observer doesn't fire again.
+                // Let's process valid links regardless.
+
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
 
@@ -1262,7 +1275,7 @@ export const TaskRunner = {
             });
 
             if (allItems.length === 0) {
-                Utils.logger('debug', Utils.getText('debug_no_cards_to_check'));
+                // Utils.logger('debug', Utils.getText('debug_no_cards_to_check'));
                 return;
             }
 
@@ -1301,6 +1314,8 @@ export const TaskRunner = {
             if (error.message && error.message.includes('429')) {
                 RateLimitManager.enterRateLimitedState('[Fab DOM Refresh] 429错误');
             }
+        } finally {
+            State.isCheckingStatus = false;
         }
     },
 

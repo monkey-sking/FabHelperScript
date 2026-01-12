@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112111938
+// @version      3.5.1-20260112112527
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3211,10 +3211,13 @@
       TaskRunner2.startExecution();
     }, "ensureTasksAreExecuted"),
     checkVisibleCardsStatus: /* @__PURE__ */ __name(async () => {
+      if (State.isCheckingStatus) {
+        return;
+      }
+      State.isCheckingStatus = true;
       try {
         const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
         if (visibleCards.length === 0) {
-          Utils.logger("info", Utils.getText("log_no_visible_cards"));
           return;
         }
         let hasUnsettledCards = false;
@@ -3229,9 +3232,6 @@
           }
         });
         if (hasUnsettledCards && unsettledCards.length > 0) {
-          Utils.logger("info", Utils.getText("log_waiting_for_cards", unsettledCards.length));
-          await new Promise((resolve) => setTimeout(resolve, 3e3));
-          return TaskRunner2.checkVisibleCardsStatus();
         }
         const allItems = [];
         let confirmedOwned = 0;
@@ -3246,7 +3246,6 @@
           }
         });
         if (allItems.length === 0) {
-          Utils.logger("debug", Utils.getText("debug_no_cards_to_check"));
           return;
         }
         Utils.logger("info", Utils.getText("fab_dom_checking_status", allItems.length));
@@ -3278,6 +3277,8 @@
         if (error.message && error.message.includes("429")) {
           RateLimitManager.enterRateLimitedState("[Fab DOM Refresh] 429\u9519\u8BEF");
         }
+      } finally {
+        State.isCheckingStatus = false;
       }
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
