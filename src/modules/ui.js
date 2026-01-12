@@ -513,6 +513,8 @@ export const UI = {
                     TaskRunner.toggleAutoResume();
                 } else if (stateKey === 'autoRefreshEmptyPage') {
                     TaskRunner.toggleAutoRefreshEmpty();
+                } else if (stateKey === 'hideDiscountedPaid') {
+                    TaskRunner.toggleHideDiscountedPaid();
                 }
                 e.target.checked = State[stateKey];
             };
