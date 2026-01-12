@@ -178,7 +178,7 @@ export const RateLimitManager = {
 
         // 如果请求没有返回有效结果，不计入连续成功
         if (!hasResults) {
-            Utils.logger('info', `请求成功但没有返回有效结果，不计入连续成功计数。来源: ${source}`);
+            Utils.logger('debug', `请求成功但没有返回有效结果，不计入连续成功计数。来源: ${source}`);
             State.consecutiveSuccessCount = 0;
             return;
         }
@@ -186,7 +186,12 @@ export const RateLimitManager = {
         // 增加连续成功计数
         State.consecutiveSuccessCount++;
 
-        Utils.logger('info', Utils.getText('rate_limit_success_request', State.consecutiveSuccessCount, State.requiredSuccessCount, source));
+        // 每 3 次成功或者即将达到目标时记录一次 info 日志，平时记录 debug
+        const isMilestone = State.consecutiveSuccessCount % 3 === 0 ||
+            State.consecutiveSuccessCount >= State.requiredSuccessCount;
+
+        const logMsg = Utils.getText('rate_limit_success_request', State.consecutiveSuccessCount, State.requiredSuccessCount, source);
+        Utils.logger(isMilestone ? 'info' : 'debug', logMsg);
 
         // 如果达到所需的连续成功数，退出限速状态
         if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {

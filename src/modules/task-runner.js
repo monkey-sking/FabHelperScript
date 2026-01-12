@@ -815,17 +815,29 @@ export const TaskRunner = {
                         logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
                         success = true;
                     } else {
-                        // 记录所有可见按钮的文本，用于调试
+                        // 记录关键按钮的文本，减少噪音
                         const allVisibleButtons = [...document.querySelectorAll('button')].filter(btn => {
                             const rect = btn.getBoundingClientRect();
-                            return rect.width > 0 && rect.height > 0;
+                            const text = btn.textContent.trim();
+                            return rect.width > 0 && rect.height > 0 && text.length > 0;
                         });
 
-                        logBuffer.push(`=== 按钮检测开始 (共 ${allVisibleButtons.length} 个可见按钮) ===`);
-                        allVisibleButtons.slice(0, 15).forEach((btn, i) => {
-                            const text = btn.textContent.trim().substring(0, 60);
-                            logBuffer.push(`  按钮${i + 1}: "${text}"`);
+                        const criticalKeywords = [...Config.ACQUISITION_TEXT_SET, ...Config.FREE_TEXT_SET, '许可', 'License', 'Select', '选择', 'Add', '添加', 'Library', '库'];
+                        const criticalButtons = allVisibleButtons.filter(btn => {
+                            const text = btn.textContent;
+                            return criticalKeywords.some(key => text.includes(key));
                         });
+
+                        logBuffer.push(`=== 按钮检测: 可见=${allVisibleButtons.length}, 关键=${criticalButtons.length} ===`);
+                        if (criticalButtons.length > 0) {
+                            criticalButtons.slice(0, 5).forEach((btn, i) => {
+                                logBuffer.push(`  关键按钮${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                            });
+                        } else if (allVisibleButtons.length > 0) {
+                            allVisibleButtons.slice(0, 3).forEach((btn, i) => {
+                                logBuffer.push(`  按钮${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                            });
+                        }
 
                         // 检查是否需要选择许可证（多许可证商品）
                         const licenseButton = allVisibleButtons.find(btn =>
@@ -903,14 +915,21 @@ export const TaskRunner = {
                             // 重新查询页面按钮（许可选择后按钮可能已更新）
                             const freshButtons = [...document.querySelectorAll('button')].filter(btn => {
                                 const rect = btn.getBoundingClientRect();
-                                return rect.width > 0 && rect.height > 0;
+                                const text = btn.textContent.trim();
+                                return rect.width > 0 && rect.height > 0 && text.length > 0;
                             });
 
-                            logBuffer.push(`=== 重新检测按钮 (共 ${freshButtons.length} 个可见按钮) ===`);
-                            freshButtons.slice(0, 10).forEach((btn, i) => {
-                                const text = btn.textContent.trim().substring(0, 60);
-                                logBuffer.push(`  按钮${i + 1}: "${text}"`);
+                            const freshCritical = freshButtons.filter(btn => {
+                                const text = btn.textContent;
+                                return criticalKeywords.some(key => text.includes(key));
                             });
+
+                            logBuffer.push(`=== 重新检测: 可见=${freshButtons.length}, 关键=${freshCritical.length} ===`);
+                            if (freshCritical.length > 0) {
+                                freshCritical.slice(0, 3).forEach((btn, i) => {
+                                    logBuffer.push(`  关键按钮${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                                });
+                            }
 
                             // 首先尝试找标准的添加按钮 (大小写不敏感)
                             let actionButton = freshButtons.find(btn => {

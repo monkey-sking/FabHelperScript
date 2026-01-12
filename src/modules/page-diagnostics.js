@@ -86,38 +86,38 @@ export const PageDiagnostics = {
 
     // 输出诊断报告到日志
     logDiagnosticReport: (report) => {
-        console.log('=== 页面状态诊断报告 ===');
+        console.group('=== Fab Helper 页面状态诊断报告 ===');
         console.log(`页面: ${report.url}`);
         console.log(`标题: ${report.pageTitle}`);
 
-        console.log(`--- 按钮信息 (${report.buttons.length}个) ---`);
-        report.buttons.forEach(btn => {
-            if (btn.isVisible) {
-                console.log(`按钮: "${btn.text}" (可见: ${btn.isVisible}, 禁用: ${btn.isDisabled})`);
-            }
-        });
+        const visibleButtons = report.buttons.filter(b => b.isVisible);
+        if (visibleButtons.length > 0) {
+            console.log(`--- 可见按钮 (${visibleButtons.length}) ---`);
+            visibleButtons.forEach(btn => {
+                console.log(`  [${btn.index}] "${btn.text}" (禁用: ${btn.isDisabled}, 类: ${btn.classes.split(' ').slice(0, 2).join(' ')}...)`);
+            });
+        }
 
-        console.log(`--- 许可选项 (${report.licenseOptions.length}个) ---`);
-        report.licenseOptions.forEach(opt => {
-            if (opt.isVisible) {
-                console.log(`许可: "${opt.text}" (可见: ${opt.isVisible}, 角色: ${opt.role})`);
-            }
-        });
+        const visibleLicenses = report.licenseOptions.filter(l => l.isVisible);
+        if (visibleLicenses.length > 0) {
+            console.log(`--- 可见许可选项 (${visibleLicenses.length}) ---`);
+            visibleLicenses.forEach(opt => {
+                console.log(`  [${opt.index}] "${opt.text}" (标签: ${opt.tagName}, 角色: ${opt.role || '无'})`);
+            });
+        }
 
-        console.log(`--- 价格信息 ---`);
-        Object.entries(report.priceInfo).forEach(([, price]) => {
-            if (price.isVisible) {
-                console.log(`价格: "${price.text}"`);
-            }
-        });
+        const visiblePrices = Object.values(report.priceInfo).filter(p => p.isVisible);
+        if (visiblePrices.length > 0) {
+            console.log(`--- 价格信息 (${visiblePrices.length}) ---`);
+            visiblePrices.forEach(p => console.log(`  价格: "${p.text}"`));
+        }
 
-        console.log(`--- 拥有状态 ---`);
-        Object.entries(report.ownedStatus).forEach(([, status]) => {
-            if (status.isVisible) {
-                console.log(`状态: "${status.text}"`);
-            }
-        });
+        const visibleOwned = Object.values(report.ownedStatus).filter(s => s.isVisible);
+        if (visibleOwned.length > 0) {
+            console.log(`--- 拥有状态 (${visibleOwned.length}) ---`);
+            visibleOwned.forEach(s => console.log(`  状态: "${s.text}"`));
+        }
 
-        console.log('=== 诊断报告结束 ===');
+        console.groupEnd();
     }
 };

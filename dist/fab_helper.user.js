@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260106033251
+// @version      3.5.1-20260112070123
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -983,18 +983,7 @@
           match = decoded.match(/p=([^&]+)/);
         }
         if (match && match[1]) {
-          let itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
-          // Check if it looks like an ISO date and format it
-          if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(itemName)) {
-            try {
-              const date = new Date(itemName);
-              if (State.lang === 'zh') {
-                itemName = date.toLocaleString('zh-CN', { hour12: false });
-              } else {
-                itemName = date.toLocaleString();
-              }
-            } catch (e) { }
-          }
+          const itemName = decodeURIComponent(match[1].replace(/\+/g, " "));
           return `${Utils.getText("position_label")}: "${itemName}"`;
         }
         return `${Utils.getText("position_label")}: (Unknown)`;
@@ -1116,34 +1105,34 @@
     }, "diagnoseDetailPage"),
     // 输出诊断报告到日志
     logDiagnosticReport: /* @__PURE__ */ __name((report) => {
-      console.log("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
+      console.group("=== Fab Helper \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
       console.log(`\u9875\u9762: ${report.url}`);
       console.log(`\u6807\u9898: ${report.pageTitle}`);
-      console.log(`--- \u6309\u94AE\u4FE1\u606F (${report.buttons.length}\u4E2A) ---`);
-      report.buttons.forEach((btn) => {
-        if (btn.isVisible) {
-          console.log(`\u6309\u94AE: "${btn.text}" (\u53EF\u89C1: ${btn.isVisible}, \u7981\u7528: ${btn.isDisabled})`);
-        }
-      });
-      console.log(`--- \u8BB8\u53EF\u9009\u9879 (${report.licenseOptions.length}\u4E2A) ---`);
-      report.licenseOptions.forEach((opt) => {
-        if (opt.isVisible) {
-          console.log(`\u8BB8\u53EF: "${opt.text}" (\u53EF\u89C1: ${opt.isVisible}, \u89D2\u8272: ${opt.role})`);
-        }
-      });
-      console.log(`--- \u4EF7\u683C\u4FE1\u606F ---`);
-      Object.entries(report.priceInfo).forEach(([, price]) => {
-        if (price.isVisible) {
-          console.log(`\u4EF7\u683C: "${price.text}"`);
-        }
-      });
-      console.log(`--- \u62E5\u6709\u72B6\u6001 ---`);
-      Object.entries(report.ownedStatus).forEach(([, status]) => {
-        if (status.isVisible) {
-          console.log(`\u72B6\u6001: "${status.text}"`);
-        }
-      });
-      console.log("=== \u8BCA\u65AD\u62A5\u544A\u7ED3\u675F ===");
+      const visibleButtons = report.buttons.filter((b) => b.isVisible);
+      if (visibleButtons.length > 0) {
+        console.log(`--- \u53EF\u89C1\u6309\u94AE (${visibleButtons.length}) ---`);
+        visibleButtons.forEach((btn) => {
+          console.log(`  [${btn.index}] "${btn.text}" (\u7981\u7528: ${btn.isDisabled}, \u7C7B: ${btn.classes.split(" ").slice(0, 2).join(" ")}...)`);
+        });
+      }
+      const visibleLicenses = report.licenseOptions.filter((l) => l.isVisible);
+      if (visibleLicenses.length > 0) {
+        console.log(`--- \u53EF\u89C1\u8BB8\u53EF\u9009\u9879 (${visibleLicenses.length}) ---`);
+        visibleLicenses.forEach((opt) => {
+          console.log(`  [${opt.index}] "${opt.text}" (\u6807\u7B7E: ${opt.tagName}, \u89D2\u8272: ${opt.role || "\u65E0"})`);
+        });
+      }
+      const visiblePrices = Object.values(report.priceInfo).filter((p) => p.isVisible);
+      if (visiblePrices.length > 0) {
+        console.log(`--- \u4EF7\u683C\u4FE1\u606F (${visiblePrices.length}) ---`);
+        visiblePrices.forEach((p) => console.log(`  \u4EF7\u683C: "${p.text}"`));
+      }
+      const visibleOwned = Object.values(report.ownedStatus).filter((s) => s.isVisible);
+      if (visibleOwned.length > 0) {
+        console.log(`--- \u62E5\u6709\u72B6\u6001 (${visibleOwned.length}) ---`);
+        visibleOwned.forEach((s) => console.log(`  \u72B6\u6001: "${s.text}"`));
+      }
+      console.groupEnd();
     }, "logDiagnosticReport")
   };
 
@@ -1167,12 +1156,12 @@
     TTL: 5 * 60 * 1e3,
     // 5分钟
     // 检查缓存是否有效
-    isValid: /* @__PURE__ */ __name(function (type, key) {
+    isValid: /* @__PURE__ */ __name(function(type, key) {
       const timestamp = this.timestamps[type].get(key);
       return timestamp && Date.now() - timestamp < this.TTL;
     }, "isValid"),
     // 保存商品数据到缓存
-    saveListings: /* @__PURE__ */ __name(function (items) {
+    saveListings: /* @__PURE__ */ __name(function(items) {
       if (!Array.isArray(items)) return;
       const now = Date.now();
       items.forEach((item) => {
@@ -1183,13 +1172,13 @@
       });
     }, "saveListings"),
     // 添加到等待列表
-    addToWaitingList: /* @__PURE__ */ __name(function (uids) {
+    addToWaitingList: /* @__PURE__ */ __name(function(uids) {
       if (!uids || !Array.isArray(uids)) return;
       uids.forEach((uid) => this.waitingList.add(uid));
       Utils.logger("debug", `[Cache] ${Utils.getText("fab_dom_add_to_waitlist", uids.length, this.waitingList.size)}`);
     }, "addToWaitingList"),
     // 检查并从等待列表中移除
-    checkWaitingList: /* @__PURE__ */ __name(function () {
+    checkWaitingList: /* @__PURE__ */ __name(function() {
       if (this.waitingList.size === 0) return;
       let removedCount = 0;
       for (const uid of this.waitingList) {
@@ -1203,7 +1192,7 @@
       }
     }, "checkWaitingList"),
     // 保存拥有状态到缓存
-    saveOwnedStatus: /* @__PURE__ */ __name(function (states) {
+    saveOwnedStatus: /* @__PURE__ */ __name(function(states) {
       if (!Array.isArray(states)) return;
       const now = Date.now();
       states.forEach((state) => {
@@ -1224,7 +1213,7 @@
       }
     }, "saveOwnedStatus"),
     // 保存价格信息到缓存
-    savePrices: /* @__PURE__ */ __name(function (offers) {
+    savePrices: /* @__PURE__ */ __name(function(offers) {
       if (!Array.isArray(offers)) return;
       const now = Date.now();
       offers.forEach((offer) => {
@@ -1239,7 +1228,7 @@
       });
     }, "savePrices"),
     // 获取商品数据，如果缓存有效则使用缓存
-    getListings: /* @__PURE__ */ __name(function (uids) {
+    getListings: /* @__PURE__ */ __name(function(uids) {
       const result = [];
       const missing = [];
       uids.forEach((uid) => {
@@ -1252,7 +1241,7 @@
       return { result, missing };
     }, "getListings"),
     // 获取拥有状态，如果缓存有效则使用缓存
-    getOwnedStatus: /* @__PURE__ */ __name(function (uids) {
+    getOwnedStatus: /* @__PURE__ */ __name(function(uids) {
       const result = [];
       const missing = [];
       uids.forEach((uid) => {
@@ -1265,7 +1254,7 @@
       return { result, missing };
     }, "getOwnedStatus"),
     // 获取价格信息，如果缓存有效则使用缓存
-    getPrices: /* @__PURE__ */ __name(function (offerIds) {
+    getPrices: /* @__PURE__ */ __name(function(offerIds) {
       const result = [];
       const missing = [];
       offerIds.forEach((offerId) => {
@@ -1278,7 +1267,7 @@
       return { result, missing };
     }, "getPrices"),
     // 清理过期缓存
-    cleanupExpired: /* @__PURE__ */ __name(function () {
+    cleanupExpired: /* @__PURE__ */ __name(function() {
       try {
         const now = Date.now();
         const cacheTypes = ["listings", "ownedStatus", "prices"];
@@ -1358,7 +1347,7 @@
       return [];
     }, "extractStateData"),
     // 优化后的商品拥有状态检查函数 - 只使用缓存和网页原生请求的数据
-    checkItemsOwnership: /* @__PURE__ */ __name(async function (uids) {
+    checkItemsOwnership: /* @__PURE__ */ __name(async function(uids) {
       if (!uids || uids.length === 0) return [];
       try {
         const { result: cachedResults, missing: missingUids } = DataCache.getOwnedStatus(uids);
@@ -1373,7 +1362,7 @@
       }
     }, "checkItemsOwnership"),
     // 优化后的价格验证函数
-    checkItemsPrices: /* @__PURE__ */ __name(async function (offerIds) {
+    checkItemsPrices: /* @__PURE__ */ __name(async function(offerIds) {
       if (!offerIds || offerIds.length === 0) return [];
       try {
         const { result: cachedResults, missing: missingOfferIds } = DataCache.getPrices(offerIds);
@@ -1570,7 +1559,7 @@
     _lastLogType: null,
     _duplicateLogCount: 0,
     // 检查是否与最后一条记录重复
-    isDuplicateRecord: /* @__PURE__ */ __name(function (newEntry) {
+    isDuplicateRecord: /* @__PURE__ */ __name(function(newEntry) {
       if (State.statusHistory.length === 0) return false;
       const lastEntry = State.statusHistory[State.statusHistory.length - 1];
       if (lastEntry.type !== newEntry.type) return false;
@@ -1586,7 +1575,7 @@
       return false;
     }, "isDuplicateRecord"),
     // 添加记录到历史，带去重检查
-    addToHistory: /* @__PURE__ */ __name(async function (entry) {
+    addToHistory: /* @__PURE__ */ __name(async function(entry) {
       if (this.isDuplicateRecord(entry)) {
         Utils.logger("debug", `\u68C0\u6D4B\u5230\u91CD\u590D\u7684\u72B6\u6001\u8BB0\u5F55\uFF0C\u8DF3\u8FC7: ${entry.type} - ${entry.endTime}`);
         return false;
@@ -1599,7 +1588,7 @@
       return true;
     }, "addToHistory"),
     // 进入限速状态
-    enterRateLimitedState: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90") {
+    enterRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
       if (State.appStatus === "RATE_LIMITED") {
         Utils.logger("info", Utils.getText("rate_limit_already_active", State.lastLimitSource, source));
         return false;
@@ -1663,7 +1652,7 @@
       return true;
     }, "enterRateLimitedState"),
     // 记录成功请求
-    recordSuccessfulRequest: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
+    recordSuccessfulRequest: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
       if (hasResults) {
         State.successfulSearchCount++;
         if (UI3) UI3.updateDebugTab();
@@ -1672,18 +1661,20 @@
         return;
       }
       if (!hasResults) {
-        Utils.logger("info", `\u8BF7\u6C42\u6210\u529F\u4F46\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7ED3\u679C\uFF0C\u4E0D\u8BA1\u5165\u8FDE\u7EED\u6210\u529F\u8BA1\u6570\u3002\u6765\u6E90: ${source}`);
+        Utils.logger("debug", `\u8BF7\u6C42\u6210\u529F\u4F46\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7ED3\u679C\uFF0C\u4E0D\u8BA1\u5165\u8FDE\u7EED\u6210\u529F\u8BA1\u6570\u3002\u6765\u6E90: ${source}`);
         State.consecutiveSuccessCount = 0;
         return;
       }
       State.consecutiveSuccessCount++;
-      Utils.logger("info", Utils.getText("rate_limit_success_request", State.consecutiveSuccessCount, State.requiredSuccessCount, source));
+      const isMilestone = State.consecutiveSuccessCount % 3 === 0 || State.consecutiveSuccessCount >= State.requiredSuccessCount;
+      const logMsg = Utils.getText("rate_limit_success_request", State.consecutiveSuccessCount, State.requiredSuccessCount, source);
+      Utils.logger(isMilestone ? "info" : "debug", logMsg);
       if (State.consecutiveSuccessCount >= State.requiredSuccessCount) {
         await this.exitRateLimitedState(Utils.getText("consecutive_success_exit", State.consecutiveSuccessCount, source));
       }
     }, "recordSuccessfulRequest"),
     // 退出限速状态
-    exitRateLimitedState: /* @__PURE__ */ __name(async function (source = "\u672A\u77E5\u6765\u6E90") {
+    exitRateLimitedState: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90") {
       if (State.appStatus !== "RATE_LIMITED") {
         Utils.logger("info", `\u5F53\u524D\u4E0D\u662F\u9650\u901F\u72B6\u6001\uFF0C\u5FFD\u7565\u9000\u51FA\u9650\u901F\u8BF7\u6C42: ${source}`);
         return false;
@@ -1719,7 +1710,7 @@
       return true;
     }, "exitRateLimitedState"),
     // 检查限速状态
-    checkRateLimitStatus: /* @__PURE__ */ __name(async function () {
+    checkRateLimitStatus: /* @__PURE__ */ __name(async function() {
       if (State.isCheckingRateLimit) {
         Utils.logger("info", "\u5DF2\u6709\u9650\u901F\u72B6\u6001\u68C0\u67E5\u6B63\u5728\u8FDB\u884C\uFF0C\u8DF3\u8FC7\u672C\u6B21\u68C0\u67E5");
         return false;
@@ -1945,7 +1936,7 @@
       const originalXhrOpen = XMLHttpRequest.prototype.open;
       const originalXhrSend = XMLHttpRequest.prototype.send;
       const DEBOUNCE_DELAY_MS = 350;
-      const listenerAwareSend = /* @__PURE__ */ __name(function (...args) {
+      const listenerAwareSend = /* @__PURE__ */ __name(function(...args) {
         const request = this;
         const onLoad = /* @__PURE__ */ __name(() => {
           request.removeEventListener("load", onLoad);
@@ -2023,7 +2014,7 @@
         request.addEventListener("load", onLoad);
         return originalXhrSend.apply(request, args);
       }, "listenerAwareSend");
-      XMLHttpRequest.prototype.open = function (method, url, ...args) {
+      XMLHttpRequest.prototype.open = function(method, url, ...args) {
         let modifiedUrl = url;
         if (self.shouldPatchUrl(url)) {
           modifiedUrl = self.getPatchedUrl(url);
@@ -2037,7 +2028,7 @@
         this._url = modifiedUrl;
         return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
       };
-      XMLHttpRequest.prototype.send = function (...args) {
+      XMLHttpRequest.prototype.send = function(...args) {
         if (!this._isDebouncedSearch) {
           return listenerAwareSend.apply(this, args);
         }
@@ -2059,7 +2050,7 @@
         }, DEBOUNCE_DELAY_MS);
       };
       const originalFetch = window.fetch;
-      window.fetch = function (input, init) {
+      window.fetch = function(input, init) {
         let url = typeof input === "string" ? input : input.url;
         let modifiedInput = input;
         if (self.shouldPatchUrl(url)) {
@@ -2152,7 +2143,7 @@
     lastPingTime: 0,
     pingInterval: null,
     // 初始化实例管理
-    init: /* @__PURE__ */ __name(async function () {
+    init: /* @__PURE__ */ __name(async function() {
       try {
         const isSearchPage = window.location.href.includes("/search") || window.location.pathname === "/" || window.location.pathname === "/zh-cn/" || window.location.pathname === "/en/";
         if (isSearchPage) {
@@ -2182,20 +2173,20 @@
       }
     }, "init"),
     // 注册为活跃实例
-    registerAsActive: /* @__PURE__ */ __name(async function () {
+    registerAsActive: /* @__PURE__ */ __name(async function() {
       await GM_setValue("fab_active_instance", {
         id: Config.INSTANCE_ID,
         lastPing: Date.now()
       });
     }, "registerAsActive"),
     // 定期更新活跃状态
-    ping: /* @__PURE__ */ __name(async function () {
+    ping: /* @__PURE__ */ __name(async function() {
       if (!this.isActive) return;
       this.lastPingTime = Date.now();
       await this.registerAsActive();
     }, "ping"),
     // 检查是否可以接管
-    checkTakeover: /* @__PURE__ */ __name(async function () {
+    checkTakeover: /* @__PURE__ */ __name(async function() {
       if (this.isActive) return;
       try {
         const activeInstance = await GM_getValue("fab_active_instance", null);
@@ -2215,7 +2206,7 @@
       }
     }, "checkTakeover"),
     // 清理实例
-    cleanup: /* @__PURE__ */ __name(function () {
+    cleanup: /* @__PURE__ */ __name(function() {
       if (this.pingInterval) {
         clearInterval(this.pingInterval);
         this.pingInterval = null;
@@ -2887,13 +2878,24 @@
             } else {
               const allVisibleButtons = [...document.querySelectorAll("button")].filter((btn) => {
                 const rect = btn.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
+                const text = btn.textContent.trim();
+                return rect.width > 0 && rect.height > 0 && text.length > 0;
               });
-              logBuffer.push(`=== \u6309\u94AE\u68C0\u6D4B\u5F00\u59CB (\u5171 ${allVisibleButtons.length} \u4E2A\u53EF\u89C1\u6309\u94AE) ===`);
-              allVisibleButtons.slice(0, 15).forEach((btn, i) => {
-                const text = btn.textContent.trim().substring(0, 60);
-                logBuffer.push(`  \u6309\u94AE${i + 1}: "${text}"`);
+              const criticalKeywords = [...Config.ACQUISITION_TEXT_SET, ...Config.FREE_TEXT_SET, "\u8BB8\u53EF", "License", "Select", "\u9009\u62E9", "Add", "\u6DFB\u52A0", "Library", "\u5E93"];
+              const criticalButtons = allVisibleButtons.filter((btn) => {
+                const text = btn.textContent;
+                return criticalKeywords.some((key) => text.includes(key));
               });
+              logBuffer.push(`=== \u6309\u94AE\u68C0\u6D4B: \u53EF\u89C1=${allVisibleButtons.length}, \u5173\u952E=${criticalButtons.length} ===`);
+              if (criticalButtons.length > 0) {
+                criticalButtons.slice(0, 5).forEach((btn, i) => {
+                  logBuffer.push(`  \u5173\u952E\u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                });
+              } else if (allVisibleButtons.length > 0) {
+                allVisibleButtons.slice(0, 3).forEach((btn, i) => {
+                  logBuffer.push(`  \u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                });
+              }
               const licenseButton = allVisibleButtons.find(
                 (btn) => btn.textContent.includes("\u9009\u62E9\u8BB8\u53EF") || btn.textContent.includes("Select license")
               );
@@ -2952,13 +2954,19 @@
               if (!success) {
                 const freshButtons = [...document.querySelectorAll("button")].filter((btn) => {
                   const rect = btn.getBoundingClientRect();
-                  return rect.width > 0 && rect.height > 0;
+                  const text = btn.textContent.trim();
+                  return rect.width > 0 && rect.height > 0 && text.length > 0;
                 });
-                logBuffer.push(`=== \u91CD\u65B0\u68C0\u6D4B\u6309\u94AE (\u5171 ${freshButtons.length} \u4E2A\u53EF\u89C1\u6309\u94AE) ===`);
-                freshButtons.slice(0, 10).forEach((btn, i) => {
-                  const text = btn.textContent.trim().substring(0, 60);
-                  logBuffer.push(`  \u6309\u94AE${i + 1}: "${text}"`);
+                const freshCritical = freshButtons.filter((btn) => {
+                  const text = btn.textContent;
+                  return criticalKeywords.some((key) => text.includes(key));
                 });
+                logBuffer.push(`=== \u91CD\u65B0\u68C0\u6D4B: \u53EF\u89C1=${freshButtons.length}, \u5173\u952E=${freshCritical.length} ===`);
+                if (freshCritical.length > 0) {
+                  freshCritical.slice(0, 3).forEach((btn, i) => {
+                    logBuffer.push(`  \u5173\u952E\u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                  });
+                }
                 let actionButton = freshButtons.find((btn) => {
                   const text = btn.textContent.toLowerCase();
                   return [...Config.ACQUISITION_TEXT_SET].some(
@@ -3300,7 +3308,7 @@
             const maxWaitTime = 1e4;
             const startTime = Date.now();
             const originalFetch = window.fetch;
-            window.fetch = function (...args) {
+            window.fetch = function(...args) {
               const url = args[0]?.toString() || "";
               if (url.includes("/listings-states") || url.includes("/listings/search")) {
                 window._apiWaitStatus.lastApiActivity = Date.now();
@@ -3829,11 +3837,7 @@
       positionIcon.textContent = Utils.getText("position_indicator");
       positionIcon.style.marginRight = "4px";
       const positionInfo = document.createElement("span");
-      if (State.rememberScrollPosition) {
-        positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
-      } else {
-        positionInfo.textContent = Utils.getText("position_tracking_disabled") || "位置记录已关闭";
-      }
+      positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
       State.UI.savedPositionDisplay = positionInfo;
       positionContainer.appendChild(positionIcon);
       positionContainer.appendChild(positionInfo);
@@ -3884,14 +3888,6 @@
             TaskRunner3.toggleAutoAdd();
           } else if (stateKey === "rememberScrollPosition") {
             TaskRunner3.toggleRememberPosition();
-            // Update the display immediately when toggled
-            if (State.UI.savedPositionDisplay) {
-              if (State.rememberScrollPosition) {
-                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
-              } else {
-                State.UI.savedPositionDisplay.textContent = Utils.getText("position_tracking_disabled") || "位置记录已关闭";
-              }
-            }
           } else if (stateKey === "autoResumeAfter429") {
             TaskRunner3.toggleAutoResume();
           } else if (stateKey === "autoRefreshEmptyPage") {
@@ -4330,14 +4326,14 @@
   function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function (...args) {
+    XMLHttpRequest.prototype.open = function(...args) {
       this._url = args[1];
       return originalOpen.apply(this, args);
     };
-    XMLHttpRequest.prototype.send = function (...args) {
+    XMLHttpRequest.prototype.send = function(...args) {
       const xhr = this;
       if (xhr._url && typeof xhr._url === "string") {
-        xhr.addEventListener("load", function () {
+        xhr.addEventListener("load", function() {
           if (xhr.readyState === 4 && xhr.status === 200) {
             try {
               const responseData = JSON.parse(xhr.responseText);
@@ -4374,7 +4370,7 @@
   __name(setupXHRInterceptor, "setupXHRInterceptor");
   function setupFetchInterceptor() {
     const originalFetch = window.fetch;
-    window.fetch = async function (...args) {
+    window.fetch = async function(...args) {
       const url = args[0]?.toString() || "";
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
         try {
@@ -4441,10 +4437,10 @@
     UI5.updateDebugTab();
     UI5.switchTab("dashboard");
     State.hasRunDomPart = true;
-    window.enterRateLimitedState = function (source = Utils.getText("rate_limit_source_global_call")) {
+    window.enterRateLimitedState = function(source = Utils.getText("rate_limit_source_global_call")) {
       RateLimitManager.enterRateLimitedState(source);
     };
-    window.recordNetworkRequest = function (source = "\u7F51\u7EDC\u8BF7\u6C42", hasResults = true) {
+    window.recordNetworkRequest = function(source = "\u7F51\u7EDC\u8BF7\u6C42", hasResults = true) {
       if (hasResults) {
         RateLimitManager.recordSuccessfulRequest(source, hasResults);
       }
@@ -4787,7 +4783,7 @@
       }, 500);
     }
     let lastNetworkActivityTime = Date.now();
-    window.recordNetworkActivity = function () {
+    window.recordNetworkActivity = function() {
       lastNetworkActivityTime = Date.now();
     };
     setInterval(() => {
