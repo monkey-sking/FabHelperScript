@@ -146,7 +146,8 @@ export const RateLimitManager = {
             Utils.logger('warn', '⚠️ 处于限速状态，但不满足自动刷新条件，请在需要时手动刷新页面。');
         } else if (State.autoRefreshEmptyPage) {
             // 只有在开启了自动刷新功能时才触发刷新
-            const randomDelay = 5000 + Math.random() * 2000;
+            // 429 Rate Limit Recovery: Wait 45-60 seconds to clear the rate limit window.
+            const randomDelay = 45000 + Math.random() * 15000;
             if (State.autoResumeAfter429) {
                 Utils.logger('info', Utils.getText('log_auto_resume_start', randomDelay ? (randomDelay / 1000).toFixed(1) : '未知'));
             } else {

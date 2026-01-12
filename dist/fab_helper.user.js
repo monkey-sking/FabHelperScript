@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112070123
+// @version      3.5.1-20260112105005
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1637,7 +1637,7 @@
         }
         Utils.logger("warn", "\u26A0\uFE0F \u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u4F46\u4E0D\u6EE1\u8DB3\u81EA\u52A8\u5237\u65B0\u6761\u4EF6\uFF0C\u8BF7\u5728\u9700\u8981\u65F6\u624B\u52A8\u5237\u65B0\u9875\u9762\u3002");
       } else if (State.autoRefreshEmptyPage) {
-        const randomDelay = 5e3 + Math.random() * 2e3;
+        const randomDelay = 45e3 + Math.random() * 15e3;
         if (State.autoResumeAfter429) {
           Utils.logger("info", Utils.getText("log_auto_resume_start", randomDelay ? (randomDelay / 1e3).toFixed(1) : "\u672A\u77E5"));
         } else {
@@ -2260,16 +2260,14 @@
       const cardText = card.textContent || "";
       const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cardText.includes(freeWord));
       const has100PercentDiscount = cardText.includes("-100%");
-      const priceMatch = cardText.match(/\$(\d+(?:\.\d{2})?)/g);
-      if (priceMatch) {
-        const hasNonZeroPrice = priceMatch.some((price) => {
-          const numValue = parseFloat(price.replace("$", ""));
+      const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
+      if (priceMatches) {
+        const hasPositivePrice = priceMatches.some((priceStr) => {
+          const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
           return numValue > 0;
         });
-        if (hasNonZeroPrice && !hasFreeKeyword) return false;
-        if (hasNonZeroPrice && hasFreeKeyword) {
-          if (cardText.includes("\u8D77\u59CB\u4EF7\u683C \u514D\u8D39") || cardText.includes("Starting at Free")) return true;
-          if (cardText.match(/起始价格\s*\$[1-9]/) || cardText.match(/Starting at\s*\$[1-9]/i)) return false;
+        if (hasPositivePrice && !has100PercentDiscount) {
+          return false;
         }
       }
       return hasFreeKeyword || has100PercentDiscount;

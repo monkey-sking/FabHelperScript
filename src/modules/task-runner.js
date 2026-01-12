@@ -79,21 +79,26 @@ export const TaskRunner = {
         const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cardText.includes(freeWord));
         const has100PercentDiscount = cardText.includes('-100%');
 
-        const priceMatch = cardText.match(/\$(\d+(?:\.\d{2})?)/g);
-        if (priceMatch) {
-            const hasNonZeroPrice = priceMatch.some(price => {
-                const numValue = parseFloat(price.replace('$', ''));
-                return numValue > 0;
+        // Extract all price-like strings (e.g. $1.99, $0.00)
+        // Using a more robust regex that catches price formats
+        const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
+
+        if (priceMatches) {
+            // Check if there is ANY price that is strictly greater than 0
+            const hasPositivePrice = priceMatches.some(priceStr => {
+                // Remove '$' and whitespace to parse number
+                const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
+                return numValue > 0.00; // Strictly greater than 0
             });
 
-            if (hasNonZeroPrice && !hasFreeKeyword) return false;
-
-            if (hasNonZeroPrice && hasFreeKeyword) {
-                if (cardText.includes('起始价格 免费') || cardText.includes('Starting at Free')) return true;
-                if (cardText.match(/起始价格\s*\$[1-9]/) || cardText.match(/Starting at\s*\$[1-9]/i)) return false;
+            // STRICT RULE: If there is a price > 0, it is PAID, UNLESS there is a -100% discount tag.
+            // This overrides any "Free" keyword (like "Royalty Free" or "Hassle Free").
+            if (hasPositivePrice && !has100PercentDiscount) {
+                 return false; 
             }
         }
 
+        // If no positive price found (or it's discounted to free), check for keywords
         return hasFreeKeyword || has100PercentDiscount;
     },
 
