@@ -361,7 +361,8 @@ export const TaskRunner = {
                     const url = link.href.split('?')[0];
                     // Only check status for items that are NOT done AND are detected as free.
                     // This prevents infinite looping on paid items like the $1.99 one.
-                    return !Database.isDone(url) && TaskRunner.isFreeCard(card);
+                    // Also skip items that are already in the TODO queue to prevent redundant checks/logs while processing.
+                    return !Database.isDone(url) && !Database.isInTodo(url) && TaskRunner.isFreeCard(card);
                 })
                 .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
                 .filter(Boolean));

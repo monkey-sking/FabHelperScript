@@ -57,4 +57,5 @@ export const Config = {
     FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费', 'Starting at Free']),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
+    STATUS_CHECK_INTERVAL: 3000, // Status check interval in ms (throttled to reduce log spam)
 };

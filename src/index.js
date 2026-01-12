@@ -473,7 +473,7 @@ async function runDomDependentPart() {
             }
             TaskRunner.runHideOrShow();
         }
-    }, 3000);
+    }, Config.STATUS_CHECK_INTERVAL);
 
     // Clean completed tasks from todo
     setInterval(() => {

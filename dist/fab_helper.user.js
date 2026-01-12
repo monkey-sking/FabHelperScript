@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112105910
+// @version      3.5.1-20260112111938
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -703,7 +703,9 @@
     SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
     FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
     // 添加一个实例ID，用于防止多实例运行
-    INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15)
+    INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15),
+    STATUS_CHECK_INTERVAL: 3e3
+    // Status check interval in ms (throttled to reduce log spam)
   };
 
   // src/state.js
@@ -1660,6 +1662,13 @@
       if (State.appStatus !== "RATE_LIMITED") {
         return;
       }
+      if (State.rateLimitStartTime) {
+        const timeSinceRateLimit = Date.now() - State.rateLimitStartTime;
+        if (timeSinceRateLimit < 4e4) {
+          Utils.logger("debug", `\u5904\u4E8E\u9650\u901F\u5F3A\u5236\u51B7\u9759\u671F (${(timeSinceRateLimit / 1e3).toFixed(1)}s < 40s)\uFF0C\u5FFD\u7565\u6B64\u6B21\u6210\u529F\u8BF7\u6C42\u3002`);
+          return;
+        }
+      }
       if (!hasResults) {
         Utils.logger("debug", `\u8BF7\u6C42\u6210\u529F\u4F46\u6CA1\u6709\u8FD4\u56DE\u6709\u6548\u7ED3\u679C\uFF0C\u4E0D\u8BA1\u5165\u8FDE\u7EED\u6210\u529F\u8BA1\u6570\u3002\u6765\u6E90: ${source}`);
         State.consecutiveSuccessCount = 0;
@@ -2498,7 +2507,7 @@
           const link = card.querySelector(Config.SELECTORS.cardLink);
           if (!link) return false;
           const url = link.href.split("?")[0];
-          return !Database.isDone(url) && TaskRunner2.isFreeCard(card);
+          return !Database.isDone(url) && !Database.isInTodo(url) && TaskRunner2.isFreeCard(card);
         }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1]).filter(Boolean));
         const uidsFromFailedList = new Set(State.db.failed.map((task) => task.uid));
         const allUidsToCheck = Array.from(/* @__PURE__ */ new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
@@ -4551,7 +4560,7 @@
         }
         TaskRunner2.runHideOrShow();
       }
-    }, 3e3);
+    }, Config.STATUS_CHECK_INTERVAL);
     setInterval(() => {
       if (State.db.todo.length === 0) return;
       const initialTodoCount = State.db.todo.length;
