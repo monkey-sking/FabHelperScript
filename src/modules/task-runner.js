@@ -94,7 +94,7 @@ export const TaskRunner = {
             // STRICT RULE: If there is a price > 0, it is PAID, UNLESS there is a -100% discount tag.
             // This overrides any "Free" keyword (like "Royalty Free" or "Hassle Free").
             if (hasPositivePrice && !has100PercentDiscount) {
-                 return false; 
+                return false;
             }
         }
 
@@ -359,7 +359,9 @@ export const TaskRunner = {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
                     if (!link) return false;
                     const url = link.href.split('?')[0];
-                    return !Database.isDone(url);
+                    // Only check status for items that are NOT done AND are detected as free.
+                    // This prevents infinite looping on paid items like the $1.99 one.
+                    return !Database.isDone(url) && TaskRunner.isFreeCard(card);
                 })
                 .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
                 .filter(Boolean));

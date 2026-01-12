@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260112105005
+// @version      3.5.1-20260112105910
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -701,7 +701,7 @@
     ACQUISITION_TEXT_SET: /* @__PURE__ */ new Set(["\u6DFB\u52A0\u5230\u6211\u7684\u5E93", "Add to my library"]),
     // Kept for backward compatibility with recon logic.
     SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
-    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39"]),
+    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15)
   };
@@ -2498,7 +2498,7 @@
           const link = card.querySelector(Config.SELECTORS.cardLink);
           if (!link) return false;
           const url = link.href.split("?")[0];
-          return !Database.isDone(url);
+          return !Database.isDone(url) && TaskRunner2.isFreeCard(card);
         }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1]).filter(Boolean));
         const uidsFromFailedList = new Set(State.db.failed.map((task) => task.uid));
         const allUidsToCheck = Array.from(/* @__PURE__ */ new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
