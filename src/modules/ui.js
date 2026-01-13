@@ -402,13 +402,7 @@ export const UI = {
         State.UI.hideBtn = document.createElement('button');
         State.UI.hideBtn.onclick = () => TaskRunner && TaskRunner.toggleHideSaved();
 
-        State.UI.hideDiscountedBtn = document.createElement('button');
-        State.UI.hideDiscountedBtn.onclick = () => TaskRunner && TaskRunner.toggleHideDiscountedPaid();
-
-        State.UI.hidePaidBtn = document.createElement('button');
-        State.UI.hidePaidBtn.onclick = () => TaskRunner && TaskRunner.toggleHidePaid();
-
-        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.hideDiscountedBtn, State.UI.hidePaidBtn);
+        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
 
         // Log Panel
         const logContainer = document.createElement('div');
@@ -759,13 +753,7 @@ export const UI = {
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
         }
 
-        if (State.UI.hideDiscountedBtn) {
-            State.UI.hideDiscountedBtn.textContent = (State.hideDiscountedPaid ? '🙈 ' : '👁️ ') + (State.hideDiscountedPaid ? Utils.getText('showDiscounted') : Utils.getText('hideDiscounted'));
-        }
 
-        if (State.UI.hidePaidBtn) {
-            State.UI.hidePaidBtn.textContent = (State.hidePaid ? '🙈 ' : '👁️ ') + (State.hidePaid ? Utils.getText('showPaid') : Utils.getText('hidePaid'));
-        }
     },
 
     removeAllOverlays: () => {

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260113092914
+// @version      3.5.1-20260113094518
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3869,11 +3869,7 @@
       State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
       State.UI.hideBtn = document.createElement("button");
       State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
-      State.UI.hideDiscountedBtn = document.createElement("button");
-      State.UI.hideDiscountedBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideDiscountedPaid();
-      State.UI.hidePaidBtn = document.createElement("button");
-      State.UI.hidePaidBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHidePaid();
-      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.hideDiscountedBtn, State.UI.hidePaidBtn);
+      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
       const logContainer = document.createElement("div");
       logContainer.className = "fab-log-container";
       const logHeader = document.createElement("div");
@@ -4166,12 +4162,6 @@
       }
       if (State.UI.hideBtn) {
         State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
-      }
-      if (State.UI.hideDiscountedBtn) {
-        State.UI.hideDiscountedBtn.textContent = (State.hideDiscountedPaid ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideDiscountedPaid ? Utils.getText("showDiscounted") : Utils.getText("hideDiscounted"));
-      }
-      if (State.UI.hidePaidBtn) {
-        State.UI.hidePaidBtn.textContent = (State.hidePaid ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hidePaid ? Utils.getText("showPaid") : Utils.getText("hidePaid"));
       }
     }, "update"),
     removeAllOverlays: /* @__PURE__ */ __name(() => {
