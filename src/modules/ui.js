@@ -515,6 +515,8 @@ export const UI = {
                     TaskRunner.toggleAutoRefreshEmpty();
                 } else if (stateKey === 'hideDiscountedPaid') {
                     TaskRunner.toggleHideDiscountedPaid();
+                } else if (stateKey === 'hidePaid') {
+                    TaskRunner.toggleHidePaid();
                 }
                 e.target.checked = State[stateKey];
             };
@@ -542,6 +544,9 @@ export const UI = {
 
         const hideDiscountedPaidSetting = createSettingRow(Utils.getText('setting_hide_discounted'), 'hideDiscountedPaid');
         settingsContent.appendChild(hideDiscountedPaidSetting);
+
+        const hidePaidSetting = createSettingRow(Utils.getText('setting_hide_paid'), 'hidePaid');
+        settingsContent.appendChild(hidePaidSetting);
 
         const resetButton = document.createElement('button');
         resetButton.textContent = Utils.getText('clear_all_data');

@@ -325,6 +325,20 @@ export const TaskRunner = {
         if (UI) UI.update();
     },
 
+    toggleHidePaid: async () => {
+        State.hidePaid = !State.hidePaid;
+        await Database.saveHidePaidPref();
+        TaskRunner.runHideOrShow();
+
+        if (State.hidePaid) {
+            Utils.logger('info', '已开启隐藏付费商品');
+        } else {
+            Utils.logger('info', '已关闭隐藏付费商品');
+        }
+
+        if (UI) UI.update();
+    },
+
     stop: () => {
         if (!State.isExecuting) return;
         State.isExecuting = false;
