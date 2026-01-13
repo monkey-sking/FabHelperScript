@@ -4,6 +4,8 @@
 export const zh = {
     // 基础UI
     hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止',
+    hideDiscounted: '隐藏打折', showDiscounted: '显示打折',
+    hidePaid: '隐藏付费', showPaid: '显示付费',
     added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', visible: '可见',
     clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!',
     tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试',
@@ -183,6 +185,7 @@ export const zh = {
     setting_remember_position: '记住瀑布流浏览位置',
     setting_auto_resume_429: '429后自动恢复并继续',
     setting_hide_discounted: '隐藏打折的付费商品',
+    setting_hide_paid: '隐藏所有付费商品',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 
     // 状态文本

@@ -1114,8 +1114,9 @@ export const TaskRunner = {
 
             const isFinished = TaskRunner.isCardFinished(card);
             const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card);
+            const isPaidAndHidden = State.hidePaid && !TaskRunner.isFreeCard(card);
 
-            if ((State.hideSaved && isFinished) || isDiscountedPaid) {
+            if ((State.hideSaved && isFinished) || isDiscountedPaid || isPaidAndHidden) {
                 cardsToHide.push(card);
                 State.hiddenThisPageCount++;
                 card.setAttribute('data-fab-processed', 'true');
@@ -1162,10 +1163,11 @@ export const TaskRunner = {
             }
         }
 
-        if (State.hideSaved || State.hideDiscountedPaid) {
+        if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
             const visibleCards = Array.from(cards).filter(card => {
                 if (State.hideSaved && TaskRunner.isCardFinished(card)) return false;
                 if (State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card)) return false;
+                if (State.hidePaid && !TaskRunner.isFreeCard(card)) return false;
                 return true;
             });
             visibleCards.forEach(card => { card.style.display = ''; });
