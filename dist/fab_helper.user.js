@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260113094518
+// @version      3.5.1-20260113102517
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -2500,6 +2500,17 @@
       }
       if (UI4) UI4.update();
     }, "toggleHideDiscountedPaid"),
+    toggleHidePaid: /* @__PURE__ */ __name(async () => {
+      State.hidePaid = !State.hidePaid;
+      await Database.saveHidePaidPref();
+      TaskRunner2.runHideOrShow();
+      if (State.hidePaid) {
+        Utils.logger("info", "\u5DF2\u5F00\u542F\u9690\u85CF\u4ED8\u8D39\u5546\u54C1");
+      } else {
+        Utils.logger("info", "\u5DF2\u5173\u95ED\u9690\u85CF\u4ED8\u8D39\u5546\u54C1");
+      }
+      if (UI4) UI4.update();
+    }, "toggleHidePaid"),
     stop: /* @__PURE__ */ __name(() => {
       if (!State.isExecuting) return;
       State.isExecuting = false;
@@ -3966,6 +3977,8 @@
             TaskRunner3.toggleAutoRefreshEmpty();
           } else if (stateKey === "hideDiscountedPaid") {
             TaskRunner3.toggleHideDiscountedPaid();
+          } else if (stateKey === "hidePaid") {
+            TaskRunner3.toggleHidePaid();
           }
           e.target.checked = State[stateKey];
         };
@@ -3985,6 +3998,8 @@
       settingsContent.appendChild(autoRefreshEmptySetting);
       const hideDiscountedPaidSetting = createSettingRow(Utils.getText("setting_hide_discounted"), "hideDiscountedPaid");
       settingsContent.appendChild(hideDiscountedPaidSetting);
+      const hidePaidSetting = createSettingRow(Utils.getText("setting_hide_paid"), "hidePaid");
+      settingsContent.appendChild(hidePaidSetting);
       const resetButton = document.createElement("button");
       resetButton.textContent = Utils.getText("clear_all_data");
       resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";
