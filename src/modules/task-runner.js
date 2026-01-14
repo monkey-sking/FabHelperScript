@@ -1079,19 +1079,33 @@ export const TaskRunner = {
                                             }
 
                                             // 检查是否出现了“结账”或“完成订单”之类的二次确认按钮
-                                            const secondaryButtons = [...document.querySelectorAll('button')].filter(btn => {
-                                                const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                                return text.includes('checkout') || text.includes('结账') ||
-                                                    text.includes('complete order') || text.includes('完成订单') ||
-                                                    text.includes('place order') || text.includes('下单') ||
-                                                    text.includes('确认') || text.includes('confirm');
-                                            });
+                                            // 2025-01-14 优化：优先检查特定CSS类名，兼容翻译插件干扰
+                                            const confirmBtn = document.querySelector('.payment-order-confirm__btn');
+                                            let checkoutBtn = null;
 
-                                            if (secondaryButtons.length > 0) {
-                                                const checkoutBtn = secondaryButtons.find(btn => btn.offsetParent !== null && !btn.disabled);
-                                                if (checkoutBtn) {
+                                            if (confirmBtn && confirmBtn.offsetParent !== null && !confirmBtn.disabled) {
+                                                checkoutBtn = confirmBtn;
+                                                logBuffer.push(`Detected Place Order button by class: .payment-order-confirm__btn`);
+                                            } else {
+                                                const secondaryButtons = [...document.querySelectorAll('button')].filter(btn => {
+                                                    const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
+                                                    return text.includes('checkout') || text.includes('结账') ||
+                                                        text.includes('complete order') || text.includes('完成订单') ||
+                                                        text.includes('place order') || text.includes('下单') ||
+                                                        text.includes('确认') || text.includes('confirm');
+                                                });
+                                                checkoutBtn = secondaryButtons.find(btn => btn.offsetParent !== null && !btn.disabled);
+                                            }
+
+                                            if (checkoutBtn) {
+                                                // Avoid repeated clicks on the same button too fast
+                                                if (checkoutBtn.dataset.clicked !== 'true') {
                                                     logBuffer.push(`Detected secondary action button [${checkoutBtn.textContent.trim()}], clicking it.`);
+                                                    checkoutBtn.dataset.clicked = 'true';
                                                     Utils.deepClick(checkoutBtn);
+
+                                                    // Reset moved flag after 2s to allow retry if needed
+                                                    setTimeout(() => { if (checkoutBtn) checkoutBtn.dataset.clicked = 'false'; }, 2000);
                                                 }
                                             }
                                         }, 500); // 每500ms检查一次
