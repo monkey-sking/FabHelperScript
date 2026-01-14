@@ -1070,7 +1070,7 @@ export const TaskRunner = {
                                         // 延长超时时间以适应较慢的结账流程 (60s)
                                         const timeout = 60000;
                                         const startTime = Date.now();
-                                        
+
                                         const interval = setInterval(() => {
                                             // 1. 检查是否已经拥有
                                             const currentState = isItemOwned();
@@ -1084,26 +1084,26 @@ export const TaskRunner = {
 
                                             // 2. 积极寻找并点击 "Place Order" 按钮
                                             const allButtonsWithShadow = Utils.findAllButtonsWithShadow();
-                                            
+
                                             // A. 优先尝试直接通过 Class 查找
-                                            let checkoutBtn = allButtonsWithShadow.find(btn => 
+                                            let checkoutBtn = allButtonsWithShadow.find(btn =>
                                                 btn.classList.contains('payment-order-confirm__btn')
                                             );
-                                            
+
                                             // B. 备用：通过文本查找
                                             if (!checkoutBtn) {
                                                 checkoutBtn = allButtonsWithShadow.find(btn => {
                                                     const rect = btn.getBoundingClientRect();
                                                     if (rect.width === 0 || rect.height === 0) return false;
-                                                    
+
                                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                                     // 排除掉之前的 "Buy Now" 或 "Add to Library" 按钮，只找结账相关的
-                                                    if (text.includes('buy now') || text.includes('立即购买')) return false; 
-                                                    
-                                                    return text.includes('place order') || text.includes('下单') || 
-                                                           text.includes('checkout') || text.includes('结账') ||
-                                                           text.includes('complete order') || text.includes('完成订单') ||
-                                                           text.includes('confirm');
+                                                    if (text.includes('buy now') || text.includes('立即购买')) return false;
+
+                                                    return text.includes('place order') || text.includes('下单') ||
+                                                        text.includes('checkout') || text.includes('结账') ||
+                                                        text.includes('complete order') || text.includes('完成订单') ||
+                                                        text.includes('confirm');
                                                 });
                                             }
 
@@ -1111,7 +1111,7 @@ export const TaskRunner = {
                                                 // 仅仅在按钮未被点击过或距离上次点击超过2秒时点击
                                                 const lastClickTime = parseInt(checkoutBtn.dataset.lastClickTime || '0');
                                                 const now = Date.now();
-                                                
+
                                                 if (now - lastClickTime > 2000) {
                                                     logBuffer.push(`Found checkout/place order button [${checkoutBtn.textContent.trim()}], clicking it.`);
                                                     checkoutBtn.dataset.lastClickTime = now.toString();
@@ -1417,7 +1417,7 @@ export const TaskRunner = {
                 return;
             }
 
-            Utils.logger('info', Utils.getText('fab_dom_checking_status', allItems.length));
+            Utils.logger('debug', Utils.getText('fab_dom_checking_status', allItems.length));
 
             const uids = allItems.map(item => item.uid);
             const statesData = await API.checkItemsOwnership(uids);

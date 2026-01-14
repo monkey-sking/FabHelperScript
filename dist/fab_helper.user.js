@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114030246
+// @version      3.5.1-20260114031231
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3473,7 +3473,7 @@
         if (allItems.length === 0) {
           return;
         }
-        Utils.logger("info", Utils.getText("fab_dom_checking_status", allItems.length));
+        Utils.logger("debug", Utils.getText("fab_dom_checking_status", allItems.length));
         const uids = allItems.map((item) => item.uid);
         const statesData = await API.checkItemsOwnership(uids);
         const ownedUids = new Set(
