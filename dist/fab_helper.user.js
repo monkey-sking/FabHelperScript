@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114020103
+// @version      3.5.1-20260114020522
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -2257,7 +2257,17 @@
         clearInterval(this.pingInterval);
         this.pingInterval = null;
       }
-    }, "cleanup")
+    }, "cleanup"),
+    // 手动强制激活（用于用户手动开始任务时）
+    activate: /* @__PURE__ */ __name(async function() {
+      if (this.isActive) return;
+      this.isActive = true;
+      await this.registerAsActive();
+      Utils.logger("info", Utils.getText("log_instance_activated", Config.INSTANCE_ID));
+      if (!this.pingInterval) {
+        this.pingInterval = setInterval(() => this.ping(), 3e3);
+      }
+    }, "activate")
   };
 
   // src/modules/task-runner.js
@@ -2431,6 +2441,9 @@
         return;
       }
       Utils.logger("info", Utils.getText("log_starting_execution", State.db.todo.length));
+      if (typeof InstanceManager !== "undefined" && InstanceManager.activate) {
+        InstanceManager.activate();
+      }
       State.isExecuting = true;
       Database.saveExecutingState();
       State.executionTotalTasks = State.db.todo.length;

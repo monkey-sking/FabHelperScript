@@ -248,6 +248,12 @@ export const TaskRunner = {
         }
 
         Utils.logger('info', Utils.getText('log_starting_execution', State.db.todo.length));
+
+        // 强制激活当前实例，确保多标签页环境下由用户操作的标签页接管
+        if (typeof InstanceManager !== 'undefined' && InstanceManager.activate) {
+            InstanceManager.activate();
+        }
+
         State.isExecuting = true;
         Database.saveExecutingState();
         State.executionTotalTasks = State.db.todo.length;

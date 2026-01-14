@@ -113,5 +113,18 @@ export const InstanceManager = {
             clearInterval(this.pingInterval);
             this.pingInterval = null;
         }
+    },
+
+    // 手动强制激活（用于用户手动开始任务时）
+    activate: async function () {
+        if (this.isActive) return;
+
+        this.isActive = true;
+        await this.registerAsActive();
+        Utils.logger('info', Utils.getText('log_instance_activated', Config.INSTANCE_ID));
+
+        if (!this.pingInterval) {
+            this.pingInterval = setInterval(() => this.ping(), 3000);
+        }
     }
 };
