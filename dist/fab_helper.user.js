@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114014435
+// @version      3.5.1-20260114015100
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -2306,7 +2306,7 @@
       const rawText = card.textContent || "";
       const cardText = Utils.normalizeWhitespace(rawText);
       const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cardText.includes(freeWord));
-      const has100PercentDiscount = cardText.includes("-100%");
+      const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cardText);
       const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
       if (priceMatches) {
         const hasPositivePrice = priceMatches.some((priceStr) => {
@@ -2352,8 +2352,12 @@
       }
       if (State.autoAddOnScroll) {
         Utils.logger("info", Utils.getText("log_auto_add_enabled"));
+        Utils.logger("debug", "\u542F\u52A8\u4EFB\u52A1\u524D\u6B63\u5728\u786E\u8BA4\u5F53\u524D\u9875\u9762\u5546\u54C1\u8BC6\u522B\u72B6\u6001...");
         TaskRunner2.checkVisibleCardsStatus().then(() => {
-          TaskRunner2.startExecution();
+          Utils.logger("debug", "\u6B63\u5728\u626B\u63CF\u5F53\u524D\u9875\u9762\u7B26\u5408\u6761\u4EF6\u7684\u5546\u54C1...");
+          TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).then(() => {
+            TaskRunner2.startExecution();
+          });
         });
         return;
       }
@@ -4629,6 +4633,12 @@
     observer.observe(targetNode, { childList: true, subtree: true });
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
+    if (State.autoAddOnScroll) {
+      setTimeout(() => {
+        Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
+        TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
+      }, 3e3);
+    }
     setInterval(() => {
       if (!State.hideSaved) return;
       const cards = document.querySelectorAll(Config.SELECTORS.card);

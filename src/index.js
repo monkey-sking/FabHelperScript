@@ -445,6 +445,15 @@ async function runDomDependentPart() {
     // Initial hide/show
     TaskRunner.runHideOrShow();
 
+    // 初始加载时，如果开启了自动添加，则扫描一次现有商品
+    if (State.autoAddOnScroll) {
+        setTimeout(() => {
+            Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
+            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                .catch(error => Utils.logger('error', `初始扫描任务失败: ${error.message}`));
+        }, 3000); // 给页面一点渲染时间
+    }
+
     // Periodic card processing check
     setInterval(() => {
         if (!State.hideSaved) return;

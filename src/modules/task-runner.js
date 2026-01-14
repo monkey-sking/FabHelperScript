@@ -77,8 +77,12 @@ export const TaskRunner = {
     isFreeCard: (card) => {
         const rawText = card.textContent || '';
         const cardText = Utils.normalizeWhitespace(rawText);
+
+        // 1. Check for explicit keywords
         const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cardText.includes(freeWord));
-        const has100PercentDiscount = cardText.includes('-100%');
+
+        // 2. Check for -100% discount (handles various spacings like -100%, - 100%, -100 % etc.)
+        const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cardText);
 
         // Extract all price-like strings (e.g. $1.99, $0.00)
         // Using a more robust regex that catches price formats
@@ -147,8 +151,13 @@ export const TaskRunner = {
 
         if (State.autoAddOnScroll) {
             Utils.logger('info', Utils.getText('log_auto_add_enabled'));
+            // 启动前先强制扫描一次当前可见卡片
+            Utils.logger('debug', '启动任务前正在确认当前页面商品识别状态...');
             TaskRunner.checkVisibleCardsStatus().then(() => {
-                TaskRunner.startExecution();
+                Utils.logger('debug', '正在扫描当前页面符合条件的商品...');
+                TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).then(() => {
+                    TaskRunner.startExecution();
+                });
             });
             return;
         }
