@@ -1067,8 +1067,12 @@ export const TaskRunner = {
                                 // 等待添加操作完成
                                 try {
                                     await new Promise((resolve, reject) => {
-                                        const timeout = 25000; // 25秒超时
+                                        // 延长超时时间以适应较慢的结账流程 (60s)
+                                        const timeout = 60000;
+                                        const startTime = Date.now();
+                                        
                                         const interval = setInterval(() => {
+                                            // 1. 检查是否已经拥有
                                             const currentState = isItemOwned();
                                             if (currentState.owned) {
                                                 logBuffer.push(`Successfully owned (UI Match: ${currentState.reason})`);
@@ -1078,54 +1082,52 @@ export const TaskRunner = {
                                                 return;
                                             }
 
-                                            // 检查是否出现了“结账”或“完成订单”之类的二次确认按钮
-                                            // 2025-01-14 优化：优先检查特定CSS类名，兼容翻译插件干扰 (支持 Shadow DOM)
-                                            // 使用 shadow-dom 感知的查找
+                                            // 2. 积极寻找并点击 "Place Order" 按钮
                                             const allButtonsWithShadow = Utils.findAllButtonsWithShadow();
-
-                                            // 1. 尝试直接通过 Class 查找 (Shadow DOM 内或外)
-                                            let checkoutBtn = allButtonsWithShadow.find(btn =>
+                                            
+                                            // A. 优先尝试直接通过 Class 查找
+                                            let checkoutBtn = allButtonsWithShadow.find(btn => 
                                                 btn.classList.contains('payment-order-confirm__btn')
                                             );
-
-                                            if (checkoutBtn && !checkoutBtn.disabled) {
-                                                logBuffer.push(`Detected Place Order button by class (Shadow-aware): .payment-order-confirm__btn`);
-                                            } else {
-                                                // 2. 尝试关键词查找 (Shadow DOM 内或外)
-                                                // 过滤掉不可见的按钮 (offsetParent check only works for light DOM usually, for Shadow DOM checks can be tricky so relax it slightly or use getBoundingClientRect)
-                                                const secondaryButtons = allButtonsWithShadow.filter(btn => {
-                                                    // 简单的可见性检查
+                                            
+                                            // B. 备用：通过文本查找
+                                            if (!checkoutBtn) {
+                                                checkoutBtn = allButtonsWithShadow.find(btn => {
                                                     const rect = btn.getBoundingClientRect();
                                                     if (rect.width === 0 || rect.height === 0) return false;
-
+                                                    
                                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                                    return text.includes('checkout') || text.includes('结账') ||
-                                                        text.includes('complete order') || text.includes('完成订单') ||
-                                                        text.includes('place order') || text.includes('下单') ||
-                                                        text.includes('确认') || text.includes('confirm');
+                                                    // 排除掉之前的 "Buy Now" 或 "Add to Library" 按钮，只找结账相关的
+                                                    if (text.includes('buy now') || text.includes('立即购买')) return false; 
+                                                    
+                                                    return text.includes('place order') || text.includes('下单') || 
+                                                           text.includes('checkout') || text.includes('结账') ||
+                                                           text.includes('complete order') || text.includes('完成订单') ||
+                                                           text.includes('confirm');
                                                 });
-                                                checkoutBtn = secondaryButtons.find(btn => !btn.disabled);
                                             }
 
-                                            if (checkoutBtn) {
-                                                // Avoid repeated clicks on the same button too fast
-                                                if (checkoutBtn.dataset.clicked !== 'true') {
-                                                    logBuffer.push(`Detected secondary action button [${checkoutBtn.textContent.trim()}], clicking it.`);
-                                                    checkoutBtn.dataset.clicked = 'true';
+                                            if (checkoutBtn && !checkoutBtn.disabled) {
+                                                // 仅仅在按钮未被点击过或距离上次点击超过2秒时点击
+                                                const lastClickTime = parseInt(checkoutBtn.dataset.lastClickTime || '0');
+                                                const now = Date.now();
+                                                
+                                                if (now - lastClickTime > 2000) {
+                                                    logBuffer.push(`Found checkout/place order button [${checkoutBtn.textContent.trim()}], clicking it.`);
+                                                    checkoutBtn.dataset.lastClickTime = now.toString();
                                                     Utils.deepClick(checkoutBtn);
-
-                                                    // Reset moved flag after 2s to allow retry if needed
-                                                    setTimeout(() => { if (checkoutBtn) checkoutBtn.dataset.clicked = 'false'; }, 2000);
                                                 }
                                             }
-                                        }, 500); // 每500ms检查一次
 
-                                        setTimeout(() => {
-                                            clearInterval(interval);
-                                            // Extend timeout message to suggest manual intervention if needed
-                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
-                                        }, timeout + 30000); // Extend the internal timeout by 30s
+                                            // 3. 超时检查
+                                            if (Date.now() - startTime > timeout) {
+                                                clearInterval(interval);
+                                                // Extend timeout message to suggest manual intervention if needed
+                                                reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
+                                            }
+                                        }, 500); // 500ms check interval
                                     });
+
                                 } catch (timeoutError) {
                                     logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
                                 }

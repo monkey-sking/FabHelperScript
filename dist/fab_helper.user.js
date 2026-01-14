@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114023703
+// @version      3.5.1-20260114025245
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3153,7 +3153,8 @@
                   Utils.deepClick(actionButton);
                   try {
                     await new Promise((resolve, reject) => {
-                      const timeout = 25e3;
+                      const timeout = 6e4;
+                      const startTime2 = Date.now();
                       const interval = setInterval(() => {
                         const currentState = isItemOwned();
                         if (currentState.owned) {
@@ -3167,32 +3168,29 @@
                         let checkoutBtn = allButtonsWithShadow.find(
                           (btn) => btn.classList.contains("payment-order-confirm__btn")
                         );
-                        if (checkoutBtn && !checkoutBtn.disabled) {
-                          logBuffer.push(`Detected Place Order button by class (Shadow-aware): .payment-order-confirm__btn`);
-                        } else {
-                          const secondaryButtons = allButtonsWithShadow.filter((btn) => {
+                        if (!checkoutBtn) {
+                          checkoutBtn = allButtonsWithShadow.find((btn) => {
                             const rect = btn.getBoundingClientRect();
                             if (rect.width === 0 || rect.height === 0) return false;
                             const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                            return text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("\u786E\u8BA4") || text.includes("confirm");
+                            if (text.includes("buy now") || text.includes("\u7ACB\u5373\u8D2D\u4E70")) return false;
+                            return text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("confirm");
                           });
-                          checkoutBtn = secondaryButtons.find((btn) => !btn.disabled);
                         }
-                        if (checkoutBtn) {
-                          if (checkoutBtn.dataset.clicked !== "true") {
-                            logBuffer.push(`Detected secondary action button [${checkoutBtn.textContent.trim()}], clicking it.`);
-                            checkoutBtn.dataset.clicked = "true";
+                        if (checkoutBtn && !checkoutBtn.disabled) {
+                          const lastClickTime = parseInt(checkoutBtn.dataset.lastClickTime || "0");
+                          const now = Date.now();
+                          if (now - lastClickTime > 2e3) {
+                            logBuffer.push(`Found checkout/place order button [${checkoutBtn.textContent.trim()}], clicking it.`);
+                            checkoutBtn.dataset.lastClickTime = now.toString();
                             Utils.deepClick(checkoutBtn);
-                            setTimeout(() => {
-                              if (checkoutBtn) checkoutBtn.dataset.clicked = "false";
-                            }, 2e3);
                           }
                         }
+                        if (Date.now() - startTime2 > timeout) {
+                          clearInterval(interval);
+                          reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
+                        }
                       }, 500);
-                      setTimeout(() => {
-                        clearInterval(interval);
-                        reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
-                      }, timeout + 3e4);
                     });
                   } catch (timeoutError) {
                     logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
