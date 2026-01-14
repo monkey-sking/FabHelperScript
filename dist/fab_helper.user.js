@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114025245
+// @version      3.5.1-20260114025652
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -983,15 +983,18 @@
     // where a simple .click() is ignored by a framework's event handling.
     deepClick: /* @__PURE__ */ __name((element) => {
       if (!element) return;
+      try {
+        element.focus();
+      } catch (e) {
+      }
       setTimeout(() => {
         const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
         Utils.logger("info", `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
-        const pointerDownEvent = new PointerEvent("pointerdown", { view: pageWindow, bubbles: true, cancelable: true });
-        const mouseDownEvent = new MouseEvent("mousedown", { view: pageWindow, bubbles: true, cancelable: true });
-        const mouseUpEvent = new MouseEvent("mouseup", { view: pageWindow, bubbles: true, cancelable: true });
-        element.dispatchEvent(pointerDownEvent);
-        element.dispatchEvent(mouseDownEvent);
-        element.dispatchEvent(mouseUpEvent);
+        const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
+        element.dispatchEvent(new PointerEvent("pointerdown", eventOptions));
+        element.dispatchEvent(new MouseEvent("mousedown", eventOptions));
+        element.dispatchEvent(new PointerEvent("pointerup", eventOptions));
+        element.dispatchEvent(new MouseEvent("mouseup", eventOptions));
         element.click();
       }, 50);
     }, "deepClick"),
@@ -1008,6 +1011,7 @@
       });
       State.valueChangeListeners = [];
     }, "cleanup"),
+    // ... (existing helper methods) ...
     // 添加游标解码函数
     decodeCursor: /* @__PURE__ */ __name((cursor) => {
       if (!cursor) return Utils.getText("no_saved_position");
@@ -1081,17 +1085,27 @@
       if (!text) return "";
       return text.replace(/\s+/g, " ").trim();
     }, "normalizeWhitespace"),
-    // Traverse open shadow roots to find all buttons
+    // Broadened to find more clickable elements including inputs and divs/spans that look like buttons
     findAllButtonsWithShadow: /* @__PURE__ */ __name((root = document) => {
-      const buttons = [];
+      const interactables = [];
       const traverse = /* @__PURE__ */ __name((node) => {
         if (!node) return;
         if (node.nodeType === 1) {
           if (node.shadowRoot) {
             traverse(node.shadowRoot);
           }
-          if (node.tagName === "BUTTON" || node.tagName === "A" && node.getAttribute("role") === "button") {
-            buttons.push(node);
+          const tagName = node.tagName;
+          const role = node.getAttribute("role");
+          const type = node.getAttribute("type");
+          const className = node.className && typeof node.className === "string" ? node.className : "";
+          if (tagName === "BUTTON") {
+            interactables.push(node);
+          } else if (tagName === "A" && (role === "button" || className.includes("btn") || className.includes("button"))) {
+            interactables.push(node);
+          } else if (tagName === "INPUT" && (type === "submit" || type === "button" || type === "reset")) {
+            interactables.push(node);
+          } else if (role === "button" || className.includes("payment-order-confirm__btn") || className.includes("place-order")) {
+            interactables.push(node);
           }
         }
         let child = node.firstChild;
@@ -1101,7 +1115,7 @@
         }
       }, "traverse");
       traverse(root);
-      return buttons;
+      return interactables;
     }, "findAllButtonsWithShadow")
   };
 

@@ -152,6 +152,10 @@ export const Utils = {
     // where a simple .click() is ignored by a framework's event handling.
     deepClick: (element) => {
         if (!element) return;
+
+        // Ensure element is focused if possible
+        try { element.focus(); } catch (e) { }
+
         // A small delay to ensure the browser's event loop is clear and any framework
         // event listeners on the element have had a chance to attach.
         setTimeout(() => {
@@ -159,15 +163,15 @@ export const Utils = {
 
             Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
 
-            // Add pointerdown for modern frameworks
-            const pointerDownEvent = new PointerEvent('pointerdown', { view: pageWindow, bubbles: true, cancelable: true });
-            const mouseDownEvent = new MouseEvent('mousedown', { view: pageWindow, bubbles: true, cancelable: true });
-            const mouseUpEvent = new MouseEvent('mouseup', { view: pageWindow, bubbles: true, cancelable: true });
+            const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
 
-            element.dispatchEvent(pointerDownEvent);
-            element.dispatchEvent(mouseDownEvent);
-            element.dispatchEvent(mouseUpEvent);
-            // Also trigger the standard click for maximum compatibility.
+            // Pointer events sequence
+            element.dispatchEvent(new PointerEvent('pointerdown', eventOptions));
+            element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
+            element.dispatchEvent(new PointerEvent('pointerup', eventOptions));
+            element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
+
+            // Standard click
             element.click();
         }, 50); // 50ms delay
     },
@@ -183,6 +187,7 @@ export const Utils = {
         });
         State.valueChangeListeners = [];
     },
+    // ... (existing helper methods) ...
     // 添加游标解码函数
     decodeCursor: (cursor) => {
         if (!cursor) return Utils.getText('no_saved_position');
@@ -269,17 +274,36 @@ export const Utils = {
         if (!text) return '';
         return text.replace(/\s+/g, ' ').trim();
     },
-    // Traverse open shadow roots to find all buttons
+    // Broadened to find more clickable elements including inputs and divs/spans that look like buttons
     findAllButtonsWithShadow: (root = document) => {
-        const buttons = [];
+        const interactables = [];
         const traverse = (node) => {
             if (!node) return;
             if (node.nodeType === 1) { // Element
                 if (node.shadowRoot) {
                     traverse(node.shadowRoot);
                 }
-                if (node.tagName === 'BUTTON' || (node.tagName === 'A' && node.getAttribute('role') === 'button')) {
-                    buttons.push(node);
+
+                const tagName = node.tagName;
+                const role = node.getAttribute('role');
+                const type = node.getAttribute('type');
+                const className = (node.className && typeof node.className === 'string') ? node.className : '';
+
+                // 1. Basic Buttons
+                if (tagName === 'BUTTON') {
+                    interactables.push(node);
+                }
+                // 2. Links that validly look like buttons
+                else if (tagName === 'A' && (role === 'button' || className.includes('btn') || className.includes('button'))) {
+                    interactables.push(node);
+                }
+                // 3. Inputs (submit/button)
+                else if (tagName === 'INPUT' && (type === 'submit' || type === 'button' || type === 'reset')) {
+                    interactables.push(node);
+                }
+                // 4. Divs/Spans acting as buttons (common in modern frameworks)
+                else if (role === 'button' || className.includes('payment-order-confirm__btn') || className.includes('place-order')) {
+                    interactables.push(node);
                 }
             }
             // Traverse children
@@ -290,6 +314,6 @@ export const Utils = {
             }
         };
         traverse(root);
-        return buttons;
+        return interactables;
     }
 };
