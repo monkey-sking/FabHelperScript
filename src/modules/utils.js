@@ -269,4 +269,27 @@ export const Utils = {
         if (!text) return '';
         return text.replace(/\s+/g, ' ').trim();
     },
+    // Traverse open shadow roots to find all buttons
+    findAllButtonsWithShadow: (root = document) => {
+        const buttons = [];
+        const traverse = (node) => {
+            if (!node) return;
+            if (node.nodeType === 1) { // Element
+                if (node.shadowRoot) {
+                    traverse(node.shadowRoot);
+                }
+                if (node.tagName === 'BUTTON' || (node.tagName === 'A' && node.getAttribute('role') === 'button')) {
+                    buttons.push(node);
+                }
+            }
+            // Traverse children
+            let child = node.firstChild;
+            while (child) {
+                traverse(child);
+                child = child.nextSibling;
+            }
+        };
+        traverse(root);
+        return buttons;
+    }
 };

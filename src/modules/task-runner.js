@@ -1079,22 +1079,32 @@ export const TaskRunner = {
                                             }
 
                                             // 检查是否出现了“结账”或“完成订单”之类的二次确认按钮
-                                            // 2025-01-14 优化：优先检查特定CSS类名，兼容翻译插件干扰
-                                            const confirmBtn = document.querySelector('.payment-order-confirm__btn');
-                                            let checkoutBtn = null;
+                                            // 2025-01-14 优化：优先检查特定CSS类名，兼容翻译插件干扰 (支持 Shadow DOM)
+                                            // 使用 shadow-dom 感知的查找
+                                            const allButtonsWithShadow = Utils.findAllButtonsWithShadow();
 
-                                            if (confirmBtn && confirmBtn.offsetParent !== null && !confirmBtn.disabled) {
-                                                checkoutBtn = confirmBtn;
-                                                logBuffer.push(`Detected Place Order button by class: .payment-order-confirm__btn`);
+                                            // 1. 尝试直接通过 Class 查找 (Shadow DOM 内或外)
+                                            let checkoutBtn = allButtonsWithShadow.find(btn =>
+                                                btn.classList.contains('payment-order-confirm__btn')
+                                            );
+
+                                            if (checkoutBtn && !checkoutBtn.disabled) {
+                                                logBuffer.push(`Detected Place Order button by class (Shadow-aware): .payment-order-confirm__btn`);
                                             } else {
-                                                const secondaryButtons = [...document.querySelectorAll('button')].filter(btn => {
+                                                // 2. 尝试关键词查找 (Shadow DOM 内或外)
+                                                // 过滤掉不可见的按钮 (offsetParent check only works for light DOM usually, for Shadow DOM checks can be tricky so relax it slightly or use getBoundingClientRect)
+                                                const secondaryButtons = allButtonsWithShadow.filter(btn => {
+                                                    // 简单的可见性检查
+                                                    const rect = btn.getBoundingClientRect();
+                                                    if (rect.width === 0 || rect.height === 0) return false;
+
                                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                                     return text.includes('checkout') || text.includes('结账') ||
                                                         text.includes('complete order') || text.includes('完成订单') ||
                                                         text.includes('place order') || text.includes('下单') ||
                                                         text.includes('确认') || text.includes('confirm');
                                                 });
-                                                checkoutBtn = secondaryButtons.find(btn => btn.offsetParent !== null && !btn.disabled);
+                                                checkoutBtn = secondaryButtons.find(btn => !btn.disabled);
                                             }
 
                                             if (checkoutBtn) {
@@ -1112,8 +1122,9 @@ export const TaskRunner = {
 
                                         setTimeout(() => {
                                             clearInterval(interval);
-                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                                        }, timeout);
+                                            // Extend timeout message to suggest manual intervention if needed
+                                            reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
+                                        }, timeout + 30000); // Extend the internal timeout by 30s
                                     });
                                 } catch (timeoutError) {
                                     logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);

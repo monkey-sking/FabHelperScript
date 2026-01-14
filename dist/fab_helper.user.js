@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114023126
+// @version      3.5.1-20260114023703
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1080,7 +1080,29 @@
     normalizeWhitespace: /* @__PURE__ */ __name((text) => {
       if (!text) return "";
       return text.replace(/\s+/g, " ").trim();
-    }, "normalizeWhitespace")
+    }, "normalizeWhitespace"),
+    // Traverse open shadow roots to find all buttons
+    findAllButtonsWithShadow: /* @__PURE__ */ __name((root = document) => {
+      const buttons = [];
+      const traverse = /* @__PURE__ */ __name((node) => {
+        if (!node) return;
+        if (node.nodeType === 1) {
+          if (node.shadowRoot) {
+            traverse(node.shadowRoot);
+          }
+          if (node.tagName === "BUTTON" || node.tagName === "A" && node.getAttribute("role") === "button") {
+            buttons.push(node);
+          }
+        }
+        let child = node.firstChild;
+        while (child) {
+          traverse(child);
+          child = child.nextSibling;
+        }
+      }, "traverse");
+      traverse(root);
+      return buttons;
+    }, "findAllButtonsWithShadow")
   };
 
   // src/modules/page-diagnostics.js
@@ -3141,17 +3163,20 @@
                           resolve();
                           return;
                         }
-                        const confirmBtn = document.querySelector(".payment-order-confirm__btn");
-                        let checkoutBtn = null;
-                        if (confirmBtn && confirmBtn.offsetParent !== null && !confirmBtn.disabled) {
-                          checkoutBtn = confirmBtn;
-                          logBuffer.push(`Detected Place Order button by class: .payment-order-confirm__btn`);
+                        const allButtonsWithShadow = Utils.findAllButtonsWithShadow();
+                        let checkoutBtn = allButtonsWithShadow.find(
+                          (btn) => btn.classList.contains("payment-order-confirm__btn")
+                        );
+                        if (checkoutBtn && !checkoutBtn.disabled) {
+                          logBuffer.push(`Detected Place Order button by class (Shadow-aware): .payment-order-confirm__btn`);
                         } else {
-                          const secondaryButtons = [...document.querySelectorAll("button")].filter((btn) => {
+                          const secondaryButtons = allButtonsWithShadow.filter((btn) => {
+                            const rect = btn.getBoundingClientRect();
+                            if (rect.width === 0 || rect.height === 0) return false;
                             const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                             return text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("\u786E\u8BA4") || text.includes("confirm");
                           });
-                          checkoutBtn = secondaryButtons.find((btn) => btn.offsetParent !== null && !btn.disabled);
+                          checkoutBtn = secondaryButtons.find((btn) => !btn.disabled);
                         }
                         if (checkoutBtn) {
                           if (checkoutBtn.dataset.clicked !== "true") {
@@ -3166,8 +3191,8 @@
                       }, 500);
                       setTimeout(() => {
                         clearInterval(interval);
-                        reject(new Error(`Timeout waiting for page to enter an 'owned' state.`));
-                      }, timeout);
+                        reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
+                      }, timeout + 3e4);
                     });
                   } catch (timeoutError) {
                     logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
