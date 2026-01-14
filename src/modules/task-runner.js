@@ -1002,23 +1002,35 @@ export const TaskRunner = {
                                 });
                             }
 
-                            // 首先尝试找标准的添加按钮 (大小写不敏感)
+                            // 寻找动作按钮的逻辑逻辑优化：
+                            // 1. 优先寻找包含动作关键词且不是下拉弹出(aria-haspopup)的按钮
                             let actionButton = freshButtons.find(btn => {
                                 const text = btn.textContent.toLowerCase();
-                                return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
+                                const isPopup = btn.getAttribute('aria-haspopup') === 'true';
+                                return !isPopup && [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                     text.includes(keyword.toLowerCase())
                                 );
                             });
 
-                            // 如果没有标准添加按钮，检查是否是限时免费商品
+                            // 2. 如果没找到，再寻找只要包含关键词的按钮 (包含可能的弹出式选择器，虽然概率低)
                             if (!actionButton) {
-                                // 查找包含"免费/Free"和"-100%"的按钮（限时免费商品的许可按钮）
+                                actionButton = freshButtons.find(btn => {
+                                    const text = btn.textContent.toLowerCase();
+                                    return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
+                                        text.includes(keyword.toLowerCase())
+                                    );
+                                });
+                            }
+
+                            // 3. 兜底方案：如果是限时免费商品的价格/许可按钮 (排除掉 aria-haspopup="true" 的选择器，除非它是唯一的)
+                            if (!actionButton) {
                                 actionButton = freshButtons.find(btn => {
                                     const text = btn.textContent;
+                                    const isPopup = btn.getAttribute('aria-haspopup') === 'true';
                                     const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
-                                    const hasDiscount = text.includes('-100%');
+                                    const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
                                     const hasPersonal = text.includes('个人') || text.includes('Personal');
-                                    return hasFreeText && hasDiscount && hasPersonal;
+                                    return !isPopup && hasFreeText && hasDiscount && hasPersonal;
                                 });
 
                                 if (actionButton) {
@@ -1026,7 +1038,7 @@ export const TaskRunner = {
                                 }
                             }
 
-                            // 备用方案：查找包含 "add" 和 "library" 的按钮
+                            // 4. 备用方案：查找包含 "add" 和 "library" 的按钮
                             if (!actionButton) {
                                 actionButton = freshButtons.find(btn => {
                                     const text = btn.textContent.toLowerCase();
@@ -1039,7 +1051,7 @@ export const TaskRunner = {
                             }
 
                             if (actionButton) {
-                                logBuffer.push(`Found add button, clicking it.`);
+                                logBuffer.push(`Found add button [${actionButton.textContent.trim().substring(0, 30)}], clicking it.`);
                                 Utils.deepClick(actionButton);
 
                                 // 等待添加操作完成
@@ -1049,10 +1061,27 @@ export const TaskRunner = {
                                         const interval = setInterval(() => {
                                             const currentState = isItemOwned();
                                             if (currentState.owned) {
-                                                logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                                                logBuffer.push(`Successfully owned (UI Match: ${currentState.reason})`);
                                                 success = true;
                                                 clearInterval(interval);
                                                 resolve();
+                                                return;
+                                            }
+
+                                            // 检查是否出现了“结账”或“完成订单”之类的二次确认按钮
+                                            const secondaryButtons = [...document.querySelectorAll('button')].filter(btn => {
+                                                const text = btn.textContent.toLowerCase();
+                                                return text.includes('checkout') || text.includes('结账') ||
+                                                    text.includes('complete order') || text.includes('完成订单') ||
+                                                    text.includes('确认') || text.includes('confirm');
+                                            });
+
+                                            if (secondaryButtons.length > 0) {
+                                                const checkoutBtn = secondaryButtons.find(btn => btn.offsetParent !== null && !btn.disabled);
+                                                if (checkoutBtn) {
+                                                    logBuffer.push(`Detected secondary action button [${checkoutBtn.textContent.trim()}], clicking it.`);
+                                                    Utils.deepClick(checkoutBtn);
+                                                }
                                             }
                                         }, 500); // 每500ms检查一次
 

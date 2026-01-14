@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114015100
+// @version      3.5.1-20260114020103
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3056,17 +3056,27 @@
                 }
                 let actionButton = freshButtons.find((btn) => {
                   const text = btn.textContent.toLowerCase();
-                  return [...Config.ACQUISITION_TEXT_SET].some(
+                  const isPopup = btn.getAttribute("aria-haspopup") === "true";
+                  return !isPopup && [...Config.ACQUISITION_TEXT_SET].some(
                     (keyword) => text.includes(keyword.toLowerCase())
                   );
                 });
                 if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
+                    const text = btn.textContent.toLowerCase();
+                    return [...Config.ACQUISITION_TEXT_SET].some(
+                      (keyword) => text.includes(keyword.toLowerCase())
+                    );
+                  });
+                }
+                if (!actionButton) {
+                  actionButton = freshButtons.find((btn) => {
                     const text = btn.textContent;
+                    const isPopup = btn.getAttribute("aria-haspopup") === "true";
                     const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
-                    const hasDiscount = text.includes("-100%");
+                    const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
                     const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
-                    return hasFreeText && hasDiscount && hasPersonal;
+                    return !isPopup && hasFreeText && hasDiscount && hasPersonal;
                   });
                   if (actionButton) {
                     logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
@@ -3082,7 +3092,7 @@
                   }
                 }
                 if (actionButton) {
-                  logBuffer.push(`Found add button, clicking it.`);
+                  logBuffer.push(`Found add button [${actionButton.textContent.trim().substring(0, 30)}], clicking it.`);
                   Utils.deepClick(actionButton);
                   try {
                     await new Promise((resolve, reject) => {
@@ -3090,10 +3100,22 @@
                       const interval = setInterval(() => {
                         const currentState = isItemOwned();
                         if (currentState.owned) {
-                          logBuffer.push(`Item became owned after clicking add button: ${currentState.reason}`);
+                          logBuffer.push(`Successfully owned (UI Match: ${currentState.reason})`);
                           success = true;
                           clearInterval(interval);
                           resolve();
+                          return;
+                        }
+                        const secondaryButtons = [...document.querySelectorAll("button")].filter((btn) => {
+                          const text = btn.textContent.toLowerCase();
+                          return text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("\u786E\u8BA4") || text.includes("confirm");
+                        });
+                        if (secondaryButtons.length > 0) {
+                          const checkoutBtn = secondaryButtons.find((btn) => btn.offsetParent !== null && !btn.disabled);
+                          if (checkoutBtn) {
+                            logBuffer.push(`Detected secondary action button [${checkoutBtn.textContent.trim()}], clicking it.`);
+                            Utils.deepClick(checkoutBtn);
+                          }
                         }
                       }, 500);
                       setTimeout(() => {
