@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114025652
+// @version      3.5.1-20260114030246
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1085,18 +1085,32 @@
       if (!text) return "";
       return text.replace(/\s+/g, " ").trim();
     }, "normalizeWhitespace"),
-    // Broadened to find more clickable elements including inputs and divs/spans that look like buttons
+    // Broadened to find more clickable elements including inputs and divs/spans that look like buttons.
+    // Also traverses into same-origin iframes.
     findAllButtonsWithShadow: /* @__PURE__ */ __name((root = document) => {
       const interactables = [];
+      const visitedIframes = /* @__PURE__ */ new WeakSet();
       const traverse = /* @__PURE__ */ __name((node) => {
         if (!node) return;
         if (node.nodeType === 1) {
           if (node.shadowRoot) {
             traverse(node.shadowRoot);
           }
+          if (node.tagName === "IFRAME" && !visitedIframes.has(node)) {
+            visitedIframes.add(node);
+            try {
+              const iframeDoc = node.contentDocument || node.contentWindow?.document;
+              if (iframeDoc) {
+                Utils.logger("debug", `Traversing iframe: ${node.src || "(inline)"}`);
+                traverse(iframeDoc.body || iframeDoc);
+              }
+            } catch (e) {
+              Utils.logger("debug", `Cannot access cross-origin iframe: ${node.src}`);
+            }
+          }
           const tagName = node.tagName;
-          const role = node.getAttribute("role");
-          const type = node.getAttribute("type");
+          const role = node.getAttribute && node.getAttribute("role");
+          const type = node.getAttribute && node.getAttribute("type");
           const className = node.className && typeof node.className === "string" ? node.className : "";
           if (tagName === "BUTTON") {
             interactables.push(node);
@@ -1115,6 +1129,25 @@
         }
       }, "traverse");
       traverse(root);
+      if (root === document) {
+        try {
+          const allIframes = document.querySelectorAll("iframe");
+          allIframes.forEach((iframe) => {
+            if (!visitedIframes.has(iframe)) {
+              visitedIframes.add(iframe);
+              try {
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+                if (iframeDoc) {
+                  Utils.logger("debug", `Top-level iframe search: ${iframe.src || "(inline)"}`);
+                  traverse(iframeDoc.body || iframeDoc);
+                }
+              } catch (e) {
+              }
+            }
+          });
+        } catch (e) {
+        }
+      }
       return interactables;
     }, "findAllButtonsWithShadow")
   };
