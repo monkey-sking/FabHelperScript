@@ -264,4 +264,9 @@ export const Utils = {
         }
         return true;
     },
+    // 将所有空白字符（包括换行、多个空格）统一替换为单个空格
+    normalizeWhitespace: (text) => {
+        if (!text) return '';
+        return text.replace(/\s+/g, ' ').trim();
+    },
 };

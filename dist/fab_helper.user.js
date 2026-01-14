@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260113102517
+// @version      3.5.1-20260114014435
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -94,6 +94,7 @@
     log_auto_resume_toggle: "429 auto resume function {0}.",
     log_auto_resume_start: "\u{1F504} 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...",
     log_auto_resume_detect: "\u{1F504} Detected 429 error, will auto refresh page in {0} seconds to attempt recovery...",
+    log_refresh_error: "Error during state synchronization:",
     // 调试日志消息
     debug_save_cursor: "Saving new recovery point: {0}",
     debug_prepare_hide: "Preparing to hide {0} cards, will use longer delay...",
@@ -405,6 +406,7 @@
     log_auto_resume_toggle: "429\u540E\u81EA\u52A8\u6062\u590D\u529F\u80FD\u5DF2{0}\u3002",
     log_auto_resume_start: "\u{1F504} 429\u81EA\u52A8\u6062\u590D\u542F\u52A8\uFF01\u5C06\u5728{0}\u79D2\u540E\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...",
     log_auto_resume_detect: "\u{1F504} \u68C0\u6D4B\u5230429\u9519\u8BEF\uFF0C\u5C06\u5728{0}\u79D2\u540E\u81EA\u52A8\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...",
+    log_refresh_error: "\u72B6\u6001\u540C\u6B65\u8FC7\u7A0B\u4E2D\u51FA\u9519:",
     // 调试日志消息
     debug_save_cursor: "\u4FDD\u5B58\u65B0\u7684\u6062\u590D\u70B9: {0}",
     debug_prepare_hide: "\u51C6\u5907\u9690\u85CF {0} \u5F20\u5361\u7247\uFF0C\u5C06\u4F7F\u7528\u66F4\u957F\u7684\u5EF6\u8FDF...",
@@ -1053,7 +1055,12 @@
         return false;
       }
       return true;
-    }, "checkAuthentication")
+    }, "checkAuthentication"),
+    // 将所有空白字符（包括换行、多个空格）统一替换为单个空格
+    normalizeWhitespace: /* @__PURE__ */ __name((text) => {
+      if (!text) return "";
+      return text.replace(/\s+/g, " ").trim();
+    }, "normalizeWhitespace")
   };
 
   // src/modules/page-diagnostics.js
@@ -2296,7 +2303,8 @@
     }, "isCardFinished"),
     // Check if a card represents a free item
     isFreeCard: /* @__PURE__ */ __name((card) => {
-      const cardText = card.textContent || "";
+      const rawText = card.textContent || "";
+      const cardText = Utils.normalizeWhitespace(rawText);
       const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cardText.includes(freeWord));
       const has100PercentDiscount = cardText.includes("-100%");
       const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
@@ -2314,7 +2322,8 @@
     // Check if a card is a discounted paid item
     isDiscountedPaidCard: /* @__PURE__ */ __name((card) => {
       if (TaskRunner2.isFreeCard(card)) return false;
-      const cardText = card.textContent || "";
+      const rawText = card.textContent || "";
+      const cardText = Utils.normalizeWhitespace(rawText);
       const hasDiscountTag = /-\d+%/.test(cardText) || cardText.includes("% off") || cardText.includes("% Off");
       if (!hasDiscountTag) return false;
       const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
@@ -2574,7 +2583,7 @@
           const link = card.querySelector(Config.SELECTORS.cardLink);
           if (!link) return false;
           const url = link.href.split("?")[0];
-          return !Database.isDone(url) && !Database.isInTodo(url) && TaskRunner2.isFreeCard(card);
+          return !Database.isDone(url) && !Database.isTodo(url) && TaskRunner2.isFreeCard(card);
         }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1]).filter(Boolean));
         const uidsFromFailedList = new Set(State.db.failed.map((task) => task.uid));
         const allUidsToCheck = Array.from(/* @__PURE__ */ new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));

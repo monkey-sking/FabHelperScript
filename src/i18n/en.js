@@ -58,6 +58,7 @@ export const en = {
     log_auto_resume_toggle: '429 auto resume function {0}.',
     log_auto_resume_start: '🔄 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...',
     log_auto_resume_detect: '🔄 Detected 429 error, will auto refresh page in {0} seconds to attempt recovery...',
+    log_refresh_error: 'Error during state synchronization:',
 
     // 调试日志消息
     debug_save_cursor: 'Saving new recovery point: {0}',

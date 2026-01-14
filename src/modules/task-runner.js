@@ -75,7 +75,8 @@ export const TaskRunner = {
 
     // Check if a card represents a free item
     isFreeCard: (card) => {
-        const cardText = card.textContent || '';
+        const rawText = card.textContent || '';
+        const cardText = Utils.normalizeWhitespace(rawText);
         const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cardText.includes(freeWord));
         const has100PercentDiscount = cardText.includes('-100%');
 
@@ -106,7 +107,8 @@ export const TaskRunner = {
     isDiscountedPaidCard: (card) => {
         if (TaskRunner.isFreeCard(card)) return false; // If it's free, it's not a "discounted paid" item
 
-        const cardText = card.textContent || '';
+        const rawText = card.textContent || '';
+        const cardText = Utils.normalizeWhitespace(rawText);
         // Look for -XX% pattern or "Save"/"Off" with percentage
         const hasDiscountTag = /-\d+%/.test(cardText) || cardText.includes('% off') || cardText.includes('% Off');
 
@@ -414,7 +416,7 @@ export const TaskRunner = {
                     // Only check status for items that are NOT done AND are detected as free.
                     // This prevents infinite looping on paid items like the $1.99 one.
                     // Also skip items that are already in the TODO queue to prevent redundant checks/logs while processing.
-                    return !Database.isDone(url) && !Database.isInTodo(url) && TaskRunner.isFreeCard(card);
+                    return !Database.isDone(url) && !Database.isTodo(url) && TaskRunner.isFreeCard(card);
                 })
                 .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
                 .filter(Boolean));
