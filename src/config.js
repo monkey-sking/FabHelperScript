@@ -51,11 +51,20 @@ export const Config = {
         // Check for the temporary success popup (snackbar).
         snackbarText: ['产品已添加至您的库中', 'Product added to your library'],
     },
-    ACQUISITION_TEXT_SET: new Set(['添加到我的库', 'Add to my library']),
+    ACQUISITION_TEXT_SET: new Set([
+        '添加到我的库', 'Add to my library',
+        '加入购物车', 'Add to cart',
+        '结账', 'Checkout',
+        '立即获取', 'Get it',
+        '免费获取', 'Get for free',
+        '完成订单', 'Complete order',
+        '立即购买', 'Buy now',
+        '获取资源', 'Get asset'
+    ]),
 
     // Kept for backward compatibility with recon logic.
     SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library']),
-    FREE_TEXT_SET: new Set(['免费', 'Free', '起始价格 免费', 'Starting at Free']),
+    FREE_TEXT_SET: new Set(['免费', 'Free', 'Free*', '0.00', '起始价格 免费', 'Starting at Free']),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
     STATUS_CHECK_INTERVAL: 3000, // Status check interval in ms (throttled to reduce log spam)

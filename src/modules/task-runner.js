@@ -917,10 +917,12 @@ export const TaskRunner = {
                         }
 
                         // 检查是否需要选择许可证（多许可证商品）
-                        const licenseButton = allVisibleButtons.find(btn =>
-                            btn.textContent.includes('选择许可') ||
-                            btn.textContent.includes('Select license')
-                        );
+                        const licenseButton = allVisibleButtons.find(btn => {
+                            const text = Utils.normalizeWhitespace(btn.textContent);
+                            return text.includes('选择许可') ||
+                                text.includes('Select license') ||
+                                (btn.getAttribute('aria-haspopup') === 'true' && TaskRunner.isFreeCard(btn));
+                        });
 
                         if (licenseButton) {
                             logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
@@ -1011,16 +1013,11 @@ export const TaskRunner = {
                             // 寻找动作按钮的逻辑逻辑优化：
                             // 1. 优先寻找包含动作关键词且不是下拉弹出(aria-haspopup)的按钮
                             let actionButton = freshButtons.find(btn => {
-                                const text = btn.textContent.toLowerCase();
+                                const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                 const isPopup = btn.getAttribute('aria-haspopup') === 'true';
                                 const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                     text.includes(keyword.toLowerCase())
                                 );
-
-                                // 记录匹配但被排除的原因 (Debug)
-                                if (matchesKeyword && isPopup) {
-                                    logBuffer.push(`Ignoring button [${text.substring(0, 20)}] because it is a popup (aria-haspopup=true)`);
-                                }
 
                                 return !isPopup && matchesKeyword;
                             });
@@ -1028,7 +1025,7 @@ export const TaskRunner = {
                             // 2. 如果没找到，再寻找只要包含关键词的按钮 (包含可能的弹出式选择器，虽然概率低)
                             if (!actionButton) {
                                 actionButton = freshButtons.find(btn => {
-                                    const text = btn.textContent.toLowerCase();
+                                    const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                     return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                         text.includes(keyword.toLowerCase())
                                     );
@@ -1038,12 +1035,12 @@ export const TaskRunner = {
                             // 3. 兜底方案：如果是限时免费商品的价格/许可按钮 (排除掉 aria-haspopup="true" 的选择器，除非它是唯一的)
                             if (!actionButton) {
                                 actionButton = freshButtons.find(btn => {
-                                    const text = btn.textContent;
+                                    const text = Utils.normalizeWhitespace(btn.textContent);
                                     const isPopup = btn.getAttribute('aria-haspopup') === 'true';
                                     const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
                                     const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
                                     const hasPersonal = text.includes('个人') || text.includes('Personal');
-                                    return !isPopup && hasFreeText && hasDiscount && hasPersonal;
+                                    return hasFreeText && hasDiscount && hasPersonal;
                                 });
 
                                 if (actionButton) {

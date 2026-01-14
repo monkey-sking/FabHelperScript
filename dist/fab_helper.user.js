@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114021405
+// @version      3.5.1-20260114021941
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -709,10 +709,27 @@
       // Check for the temporary success popup (snackbar).
       snackbarText: ["\u4EA7\u54C1\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "Product added to your library"]
     },
-    ACQUISITION_TEXT_SET: /* @__PURE__ */ new Set(["\u6DFB\u52A0\u5230\u6211\u7684\u5E93", "Add to my library"]),
+    ACQUISITION_TEXT_SET: /* @__PURE__ */ new Set([
+      "\u6DFB\u52A0\u5230\u6211\u7684\u5E93",
+      "Add to my library",
+      "\u52A0\u5165\u8D2D\u7269\u8F66",
+      "Add to cart",
+      "\u7ED3\u8D26",
+      "Checkout",
+      "\u7ACB\u5373\u83B7\u53D6",
+      "Get it",
+      "\u514D\u8D39\u83B7\u53D6",
+      "Get for free",
+      "\u5B8C\u6210\u8BA2\u5355",
+      "Complete order",
+      "\u7ACB\u5373\u8D2D\u4E70",
+      "Buy now",
+      "\u83B7\u53D6\u8D44\u6E90",
+      "Get asset"
+    ]),
     // Kept for backward compatibility with recon logic.
     SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
-    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
+    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "Free*", "0.00", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15),
     STATUS_CHECK_INTERVAL: 3e3
@@ -2996,9 +3013,10 @@
                   logBuffer.push(`  \u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
                 });
               }
-              const licenseButton = allVisibleButtons.find(
-                (btn) => btn.textContent.includes("\u9009\u62E9\u8BB8\u53EF") || btn.textContent.includes("Select license")
-              );
+              const licenseButton = allVisibleButtons.find((btn) => {
+                const text = Utils.normalizeWhitespace(btn.textContent);
+                return text.includes("\u9009\u62E9\u8BB8\u53EF") || text.includes("Select license") || btn.getAttribute("aria-haspopup") === "true" && TaskRunner2.isFreeCard(btn);
+              });
               if (licenseButton) {
                 logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
                 try {
@@ -3068,19 +3086,16 @@
                   });
                 }
                 let actionButton = freshButtons.find((btn) => {
-                  const text = btn.textContent.toLowerCase();
+                  const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                   const isPopup = btn.getAttribute("aria-haspopup") === "true";
                   const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(
                     (keyword) => text.includes(keyword.toLowerCase())
                   );
-                  if (matchesKeyword && isPopup) {
-                    logBuffer.push(`Ignoring button [${text.substring(0, 20)}] because it is a popup (aria-haspopup=true)`);
-                  }
                   return !isPopup && matchesKeyword;
                 });
                 if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
-                    const text = btn.textContent.toLowerCase();
+                    const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                     return [...Config.ACQUISITION_TEXT_SET].some(
                       (keyword) => text.includes(keyword.toLowerCase())
                     );
@@ -3088,12 +3103,12 @@
                 }
                 if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
-                    const text = btn.textContent;
+                    const text = Utils.normalizeWhitespace(btn.textContent);
                     const isPopup = btn.getAttribute("aria-haspopup") === "true";
                     const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
                     const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
                     const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
-                    return !isPopup && hasFreeText && hasDiscount && hasPersonal;
+                    return hasFreeText && hasDiscount && hasPersonal;
                   });
                   if (actionButton) {
                     logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
