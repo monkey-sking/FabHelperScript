@@ -1013,9 +1013,16 @@ export const TaskRunner = {
                             let actionButton = freshButtons.find(btn => {
                                 const text = btn.textContent.toLowerCase();
                                 const isPopup = btn.getAttribute('aria-haspopup') === 'true';
-                                return !isPopup && [...Config.ACQUISITION_TEXT_SET].some(keyword =>
+                                const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                     text.includes(keyword.toLowerCase())
                                 );
+
+                                // 记录匹配但被排除的原因 (Debug)
+                                if (matchesKeyword && isPopup) {
+                                    logBuffer.push(`Ignoring button [${text.substring(0, 20)}] because it is a popup (aria-haspopup=true)`);
+                                }
+
+                                return !isPopup && matchesKeyword;
                             });
 
                             // 2. 如果没找到，再寻找只要包含关键词的按钮 (包含可能的弹出式选择器，虽然概率低)

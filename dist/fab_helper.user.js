@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114020522
+// @version      3.5.1-20260114021405
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3070,9 +3070,13 @@
                 let actionButton = freshButtons.find((btn) => {
                   const text = btn.textContent.toLowerCase();
                   const isPopup = btn.getAttribute("aria-haspopup") === "true";
-                  return !isPopup && [...Config.ACQUISITION_TEXT_SET].some(
+                  const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(
                     (keyword) => text.includes(keyword.toLowerCase())
                   );
+                  if (matchesKeyword && isPopup) {
+                    logBuffer.push(`Ignoring button [${text.substring(0, 20)}] because it is a popup (aria-haspopup=true)`);
+                  }
+                  return !isPopup && matchesKeyword;
                 });
                 if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
