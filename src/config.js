@@ -59,7 +59,8 @@ export const Config = {
         '免费获取', 'Get for free',
         '完成订单', 'Complete order',
         '立即购买', 'Buy now',
-        '获取资源', 'Get asset'
+        '获取资源', 'Get asset',
+        'Place order', '确认订单', '下单'
     ]),
 
     // Kept for backward compatibility with recon logic.

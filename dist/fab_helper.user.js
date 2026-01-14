@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114021941
+// @version      3.5.1-20260114022352
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -725,7 +725,10 @@
       "\u7ACB\u5373\u8D2D\u4E70",
       "Buy now",
       "\u83B7\u53D6\u8D44\u6E90",
-      "Get asset"
+      "Get asset",
+      "Place order",
+      "\u786E\u8BA4\u8BA2\u5355",
+      "\u4E0B\u5355"
     ]),
     // Kept for backward compatibility with recon logic.
     SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
@@ -3139,8 +3142,8 @@
                           return;
                         }
                         const secondaryButtons = [...document.querySelectorAll("button")].filter((btn) => {
-                          const text = btn.textContent.toLowerCase();
-                          return text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("\u786E\u8BA4") || text.includes("confirm");
+                          const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
+                          return text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("\u786E\u8BA4") || text.includes("confirm");
                         });
                         if (secondaryButtons.length > 0) {
                           const checkoutBtn = secondaryButtons.find((btn) => btn.offsetParent !== null && !btn.disabled);

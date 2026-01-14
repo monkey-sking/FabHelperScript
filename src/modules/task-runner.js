@@ -1080,9 +1080,10 @@ export const TaskRunner = {
 
                                             // 检查是否出现了“结账”或“完成订单”之类的二次确认按钮
                                             const secondaryButtons = [...document.querySelectorAll('button')].filter(btn => {
-                                                const text = btn.textContent.toLowerCase();
+                                                const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                                 return text.includes('checkout') || text.includes('结账') ||
                                                     text.includes('complete order') || text.includes('完成订单') ||
+                                                    text.includes('place order') || text.includes('下单') ||
                                                     text.includes('确认') || text.includes('confirm');
                                             });
 
