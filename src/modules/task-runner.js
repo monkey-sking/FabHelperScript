@@ -96,9 +96,11 @@ export const TaskRunner = {
                 return numValue > 0.00; // Strictly greater than 0
             });
 
-            // STRICT RULE: If there is a price > 0, it is PAID, UNLESS there is a -100% discount tag.
-            // This overrides any "Free" keyword (like "Royalty Free" or "Hassle Free").
-            if (hasPositivePrice && !has100PercentDiscount) {
+            // STRICT RULE: If there is a price > 0, it is PAID, UNLESS:
+            // 1. There is a -100% discount tag, OR
+            // 2. There is also a "Free" keyword present (mixed license: e.g. Personal=$X, Professional=Free)
+            // This overrides any non-license "Free" keyword (like "Royalty Free" or "Hassle Free").
+            if (hasPositivePrice && !has100PercentDiscount && !hasFreeKeyword) {
                 return false;
             }
         }

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260114031231
+// @version      3.5.1-20260304043208
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -2412,7 +2412,7 @@
           const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
           return numValue > 0;
         });
-        if (hasPositivePrice && !has100PercentDiscount) {
+        if (hasPositivePrice && !has100PercentDiscount && !hasFreeKeyword) {
           return false;
         }
       }
