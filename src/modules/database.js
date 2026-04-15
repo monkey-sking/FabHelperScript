@@ -109,6 +109,13 @@ export const Database = {
 
         let changed = false;
 
+        const initialFailedCount = State.db.failed.length;
+        State.db.failed = State.db.failed.filter(failedTask => failedTask.uid !== task.uid);
+        if (State.db.failed.length !== initialFailedCount) {
+            changed = true;
+            await Database.saveFailed();
+        }
+
         // The 'done' list can still use URLs for simplicity, as it's for display/hiding.
         const cleanUrl = task.url.split('?')[0];
         if (!Database.isDone(cleanUrl)) {

@@ -27,6 +27,82 @@ export function setUIReference(uiModule) {
 }
 
 export const TaskRunner = {
+    findFreeLicenseOption: (root) => {
+        if (!root || typeof root.querySelectorAll !== 'function') {
+            return null;
+        }
+
+        const candidates = Array.from(root.querySelectorAll('span, div'))
+            .map(el => {
+                const text = Utils.normalizeWhitespace(el.textContent || '');
+                const clickTarget = el.closest('[role="option"], button, label, input[type="radio"]');
+                return { text, clickTarget };
+            })
+            .filter(candidate => candidate.text && candidate.clickTarget);
+
+        const hasExplicitFreeSignal = (text) =>
+            [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+
+        const explicitFree = candidates.find(candidate => hasExplicitFreeSignal(candidate.text));
+        if (explicitFree) {
+            return explicitFree.clickTarget;
+        }
+
+        const personalFree = candidates.find(candidate => {
+            const isPersonal = candidate.text.includes('个人') || candidate.text.includes('Personal');
+            return isPersonal && hasExplicitFreeSignal(candidate.text);
+        });
+
+        return personalFree ? personalFree.clickTarget : null;
+    },
+
+    getExternalProductState: (root = document) => {
+        if (!root || typeof root.querySelectorAll !== 'function') {
+            return { handled: false };
+        }
+
+        const currentHref = (typeof window !== 'undefined' && window.location?.href)
+            ? window.location.href
+            : 'https://www.fab.com/';
+        const currentHostname = (typeof window !== 'undefined' && window.location?.hostname)
+            ? window.location.hostname
+            : 'www.fab.com';
+        const links = [...root.querySelectorAll('a[href]')];
+        const externalLink = links.find(link => {
+            const text = Utils.normalizeWhitespace(link.textContent || '');
+            if (!text || ![...Config.EXTERNAL_CTA_TEXT_SET].some(label => text.includes(label))) {
+                return false;
+            }
+
+            const rect = typeof link.getBoundingClientRect === 'function'
+                ? link.getBoundingClientRect()
+                : { width: 1, height: 1 };
+            if (rect.width === 0 || rect.height === 0) {
+                return false;
+            }
+
+            try {
+                const href = link.href || link.getAttribute?.('href');
+                if (!href) return false;
+                const targetUrl = new URL(href, currentHref);
+                return targetUrl.hostname !== currentHostname;
+            } catch (error) {
+                return false;
+            }
+        });
+
+        if (!externalLink) {
+            return { handled: false };
+        }
+
+        const text = Utils.normalizeWhitespace(externalLink.textContent || '');
+        return {
+            handled: true,
+            reason: `External CTA "${text}"`,
+            href: externalLink.href || externalLink.getAttribute?.('href') || ''
+        };
+    },
+
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: (card) => {
         const link = card.querySelector(Config.SELECTORS.cardLink);
@@ -894,6 +970,14 @@ export const TaskRunner = {
                         logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
                         success = true;
                     } else {
+                        const externalState = TaskRunner.getExternalProductState(document);
+                        if (externalState.handled) {
+                            logBuffer.push(`Detected non-purchasable external listing (${externalState.reason}). Marking task as handled.`);
+                            success = true;
+                        }
+                    }
+
+                    if (!success) {
                         // 记录关键按钮的文本，减少噪音
                         const allVisibleButtons = [...document.querySelectorAll('button')].filter(btn => {
                             const rect = btn.getBoundingClientRect();
@@ -935,25 +1019,13 @@ export const TaskRunner = {
                                             if (mutation.addedNodes.length > 0) {
                                                 for (const node of mutation.addedNodes) {
                                                     if (node.nodeType !== 1) continue;
-                                                    // 查找"免费"或"个人"选项
-                                                    const freeTextElement = Array.from(node.querySelectorAll('span, div')).find(el =>
-                                                        Array.from(el.childNodes).some(cn => {
-                                                            if (cn.nodeType !== 3) return false;
-                                                            const text = cn.textContent.trim();
-                                                            return [...Config.FREE_TEXT_SET].some(freeWord => text === freeWord) ||
-                                                                text === '个人' || text === 'Personal';
-                                                        })
-                                                    );
-
-                                                    if (freeTextElement) {
-                                                        const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
-                                                        if (clickableParent) {
-                                                            logBuffer.push(`Found free/personal license option, clicking it.`);
-                                                            Utils.deepClick(clickableParent);
-                                                            observer.disconnect();
-                                                            resolve();
-                                                            return;
-                                                        }
+                                                    const clickableParent = TaskRunner.findFreeLicenseOption(node);
+                                                    if (clickableParent) {
+                                                        logBuffer.push(`Found explicit free license option, clicking it.`);
+                                                        Utils.deepClick(clickableParent);
+                                                        observer.disconnect();
+                                                        resolve();
+                                                        return;
                                                     }
                                                 }
                                             }

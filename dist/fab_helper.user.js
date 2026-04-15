@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260304043208
+// @version      3.5.1-20260415124417
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -733,6 +733,10 @@
     // Kept for backward compatibility with recon logic.
     SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
     FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "Free*", "0.00", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
+    EXTERNAL_CTA_TEXT_SET: /* @__PURE__ */ new Set([
+      "\u5728\u5916\u90E8\u7F51\u7AD9\u67E5\u770B",
+      "View on external website"
+    ]),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15),
     STATUS_CHECK_INTERVAL: 3e3
@@ -1618,6 +1622,12 @@
         Utils.logger("warn", "\u4EFB\u52A1\u672A\u80FD\u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\uFF0C\u53EF\u80FD\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u5904\u7406");
       }
       let changed = false;
+      const initialFailedCount = State.db.failed.length;
+      State.db.failed = State.db.failed.filter((failedTask) => failedTask.uid !== task.uid);
+      if (State.db.failed.length !== initialFailedCount) {
+        changed = true;
+        await Database.saveFailed();
+      }
       const cleanUrl = task.url.split("?")[0];
       if (!Database.isDone(cleanUrl)) {
         State.db.done.push(cleanUrl);
@@ -2366,6 +2376,61 @@
   }
   __name(setUIReference3, "setUIReference");
   var TaskRunner2 = {
+    findFreeLicenseOption: /* @__PURE__ */ __name((root) => {
+      if (!root || typeof root.querySelectorAll !== "function") {
+        return null;
+      }
+      const candidates = Array.from(root.querySelectorAll("span, div")).map((el) => {
+        const text = Utils.normalizeWhitespace(el.textContent || "");
+        const clickTarget = el.closest('[role="option"], button, label, input[type="radio"]');
+        return { text, clickTarget };
+      }).filter((candidate) => candidate.text && candidate.clickTarget);
+      const hasExplicitFreeSignal = /* @__PURE__ */ __name((text) => [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord)), "hasExplicitFreeSignal");
+      const explicitFree = candidates.find((candidate) => hasExplicitFreeSignal(candidate.text));
+      if (explicitFree) {
+        return explicitFree.clickTarget;
+      }
+      const personalFree = candidates.find((candidate) => {
+        const isPersonal = candidate.text.includes("\u4E2A\u4EBA") || candidate.text.includes("Personal");
+        return isPersonal && hasExplicitFreeSignal(candidate.text);
+      });
+      return personalFree ? personalFree.clickTarget : null;
+    }, "findFreeLicenseOption"),
+    getExternalProductState: /* @__PURE__ */ __name((root = document) => {
+      if (!root || typeof root.querySelectorAll !== "function") {
+        return { handled: false };
+      }
+      const currentHref = typeof window !== "undefined" && window.location?.href ? window.location.href : "https://www.fab.com/";
+      const currentHostname = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "www.fab.com";
+      const links = [...root.querySelectorAll("a[href]")];
+      const externalLink = links.find((link) => {
+        const text2 = Utils.normalizeWhitespace(link.textContent || "");
+        if (!text2 || ![...Config.EXTERNAL_CTA_TEXT_SET].some((label) => text2.includes(label))) {
+          return false;
+        }
+        const rect = typeof link.getBoundingClientRect === "function" ? link.getBoundingClientRect() : { width: 1, height: 1 };
+        if (rect.width === 0 || rect.height === 0) {
+          return false;
+        }
+        try {
+          const href = link.href || link.getAttribute?.("href");
+          if (!href) return false;
+          const targetUrl = new URL(href, currentHref);
+          return targetUrl.hostname !== currentHostname;
+        } catch (error) {
+          return false;
+        }
+      });
+      if (!externalLink) {
+        return { handled: false };
+      }
+      const text = Utils.normalizeWhitespace(externalLink.textContent || "");
+      return {
+        handled: true,
+        reason: `External CTA "${text}"`,
+        href: externalLink.href || externalLink.getAttribute?.("href") || ""
+      };
+    }, "getExternalProductState"),
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: /* @__PURE__ */ __name((card) => {
       const link = card.querySelector(Config.SELECTORS.cardLink);
@@ -3065,6 +3130,13 @@
               logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
               success = true;
             } else {
+              const externalState = TaskRunner2.getExternalProductState(document);
+              if (externalState.handled) {
+                logBuffer.push(`Detected non-purchasable external listing (${externalState.reason}). Marking task as handled.`);
+                success = true;
+              }
+            }
+            if (!success) {
               const allVisibleButtons = [...document.querySelectorAll("button")].filter((btn) => {
                 const rect = btn.getBoundingClientRect();
                 const text = btn.textContent.trim();
@@ -3098,22 +3170,13 @@
                         if (mutation.addedNodes.length > 0) {
                           for (const node of mutation.addedNodes) {
                             if (node.nodeType !== 1) continue;
-                            const freeTextElement = Array.from(node.querySelectorAll("span, div")).find(
-                              (el) => Array.from(el.childNodes).some((cn) => {
-                                if (cn.nodeType !== 3) return false;
-                                const text = cn.textContent.trim();
-                                return [...Config.FREE_TEXT_SET].some((freeWord) => text === freeWord) || text === "\u4E2A\u4EBA" || text === "Personal";
-                              })
-                            );
-                            if (freeTextElement) {
-                              const clickableParent = freeTextElement.closest('[role="option"], button, label, input[type="radio"]');
-                              if (clickableParent) {
-                                logBuffer.push(`Found free/personal license option, clicking it.`);
-                                Utils.deepClick(clickableParent);
-                                observer.disconnect();
-                                resolve();
-                                return;
-                              }
+                            const clickableParent = TaskRunner2.findFreeLicenseOption(node);
+                            if (clickableParent) {
+                              logBuffer.push(`Found explicit free license option, clicking it.`);
+                              Utils.deepClick(clickableParent);
+                              observer.disconnect();
+                              resolve();
+                              return;
                             }
                           }
                         }
