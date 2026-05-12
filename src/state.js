@@ -65,6 +65,8 @@ export const State = {
     hasRunDomPart: false,
     // Observer debounce timer
     observerDebounceTimer: null,
+    // Pending retry for hide/show while card status labels are still loading
+    hideRetryTimer: null,
     // UI element references - populated by UI.create()
     UI: {
         container: null,

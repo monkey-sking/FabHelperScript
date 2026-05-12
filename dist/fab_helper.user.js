@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260415124417
+// @version      3.5.1-20260512022449
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -839,6 +839,8 @@
     hasRunDomPart: false,
     // Observer debounce timer
     observerDebounceTimer: null,
+    // Pending retry for hide/show while card status labels are still loading
+    hideRetryTimer: null,
     // UI element references - populated by UI.create()
     UI: {
       container: null,
@@ -2431,15 +2433,22 @@
         href: externalLink.href || externalLink.getAttribute?.("href") || ""
       };
     }, "getExternalProductState"),
+    hasSavedLibraryText: /* @__PURE__ */ __name((card) => {
+      const cardText = Utils.normalizeWhitespace(card.textContent || "");
+      return [...Config.SAVED_TEXT_SET].some((savedText) => cardText.includes(savedText));
+    }, "hasSavedLibraryText"),
+    isCardSettled: /* @__PURE__ */ __name((card) => {
+      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card);
+    }, "isCardSettled"),
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: /* @__PURE__ */ __name((card) => {
       const link = card.querySelector(Config.SELECTORS.cardLink);
       const url = link ? link.href.split("?")[0] : null;
+      const hasSavedText = TaskRunner2.hasSavedLibraryText(card);
       if (!link) {
         const icons = card.querySelectorAll("i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled");
         if (icons.length > 0) return true;
-        const text = card.textContent || "";
-        return text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library");
+        return hasSavedText;
       }
       const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
       if (!uidMatch || !uidMatch[1]) return false;
@@ -2448,7 +2457,7 @@
         const status = DataCache.ownedStatus.get(uid);
         if (status && status.acquired) return true;
       }
-      if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) {
+      if (card.querySelector(Config.SELECTORS.ownedStatus) !== null || hasSavedText) {
         if (uid) {
           DataCache.saveOwnedStatus([{
             uid,
@@ -2533,12 +2542,9 @@
       let alreadyInQueueCount = 0;
       let ownedCount = 0;
       let skippedCount = 0;
-      const isCardSettled = /* @__PURE__ */ __name((card) => {
-        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-      }, "isCardSettled");
       cards.forEach((card) => {
         if (card.style.display === "none") return;
-        if (!isCardSettled(card)) {
+        if (!TaskRunner2.isCardSettled(card)) {
           skippedCount++;
           return;
         }
@@ -3346,19 +3352,25 @@
       let actuallyHidden = 0;
       let hasUnsettledCards = false;
       const unsettledCards = [];
-      const isCardSettled = /* @__PURE__ */ __name((card) => {
-        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-      }, "isCardSettled");
       cards.forEach((card) => {
-        if (!isCardSettled(card)) {
+        if (!TaskRunner2.isCardSettled(card)) {
           hasUnsettledCards = true;
           unsettledCards.push(card);
         }
       });
       if (hasUnsettledCards && unsettledCards.length > 0) {
-        Utils.logger("info", Utils.getText("log_unsettled_cards", unsettledCards.length));
-        setTimeout(() => TaskRunner2.runHideOrShow(), 2e3);
+        if (!State.hideRetryTimer) {
+          Utils.logger("info", Utils.getText("log_unsettled_cards", unsettledCards.length));
+          State.hideRetryTimer = setTimeout(() => {
+            State.hideRetryTimer = null;
+            TaskRunner2.runHideOrShow();
+          }, 2e3);
+        }
         return;
+      }
+      if (State.hideRetryTimer) {
+        clearTimeout(State.hideRetryTimer);
+        State.hideRetryTimer = null;
       }
       const cardsToHide = [];
       cards.forEach((card) => {
@@ -3510,11 +3522,8 @@
         }
         let hasUnsettledCards = false;
         const unsettledCards = [];
-        const isCardSettled = /* @__PURE__ */ __name((card) => {
-          return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-        }, "isCardSettled");
         visibleCards.forEach((card) => {
-          if (!isCardSettled(card)) {
+          if (!TaskRunner2.isCardSettled(card)) {
             hasUnsettledCards = true;
             unsettledCards.push(card);
           }

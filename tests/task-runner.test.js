@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { TaskRunner } from '../src/modules/task-runner.js';
 import { Database } from '../src/modules/database.js';
 import { State } from '../src/state.js';
+import { Utils } from '../src/modules/utils.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -93,4 +94,108 @@ test('prefers explicit free license over paid personal option', () => {
     const result = TaskRunner.findFreeLicenseOption(node);
 
     assert.equal(result, freeProfessional);
+});
+
+test('coalesces hide retries while cards are still loading', () => {
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const scheduled = [];
+    const logs = [];
+
+    globalThis.document = {
+        querySelectorAll: () => [{
+            querySelector: () => null
+        }]
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        scheduled.push({ callback, delay });
+        return scheduled.length;
+    };
+    Utils.logger = (type, message) => {
+        logs.push({ type, message });
+    };
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+
+    try {
+        TaskRunner.runHideOrShow();
+        TaskRunner.runHideOrShow();
+
+        assert.equal(logs.filter(log => log.message === 'log_unsettled_cards').length, 1);
+        assert.equal(scheduled.length, 1);
+        assert.equal(scheduled[0].delay, 2000);
+    } finally {
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
+test('treats linked cards with saved library text as ready to hide', () => {
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const scheduled = [];
+    const logs = [];
+    const card = {
+        textContent: '2DFactory – Advanced JSON Sprite Importer Tamarar 已保存在我的库中',
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/0eaac510-c35b-4bbc-96f7-3fb9d1d43684'
+                };
+            }
+            return null;
+        },
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        }
+    };
+
+    globalThis.document = {
+        querySelectorAll: () => [card],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        scheduled.push({ callback, delay });
+        return scheduled.length;
+    };
+    Utils.logger = (type, message) => {
+        logs.push({ type, message });
+    };
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.db.done = [];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(logs.some(log => log.message === 'log_unsettled_cards'), false);
+        assert.equal(card.attributes['data-fab-processed'], 'true');
+        assert.equal(scheduled.some(timer => timer.delay === 2000), false);
+    } finally {
+        globalThis.document = originalDocument;
+        delete globalThis.window;
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
 });

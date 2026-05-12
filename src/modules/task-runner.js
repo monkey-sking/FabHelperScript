@@ -103,20 +103,27 @@ export const TaskRunner = {
         };
     },
 
+    hasSavedLibraryText: (card) => {
+        const cardText = Utils.normalizeWhitespace(card.textContent || '');
+        return [...Config.SAVED_TEXT_SET].some(savedText => cardText.includes(savedText));
+    },
+
+    isCardSettled: (card) => {
+        return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null ||
+            TaskRunner.hasSavedLibraryText(card);
+    },
+
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: (card) => {
         const link = card.querySelector(Config.SELECTORS.cardLink);
         const url = link ? link.href.split('?')[0] : null;
+        const hasSavedText = TaskRunner.hasSavedLibraryText(card);
 
         if (!link) {
             const icons = card.querySelectorAll('i.fabkit-Icon--intent-success, i.edsicon-check-circle-filled');
             if (icons.length > 0) return true;
 
-            const text = card.textContent || '';
-            return text.includes("已保存在我的库中") ||
-                text.includes("已保存") ||
-                text.includes("Saved to My Library") ||
-                text.includes("In your library");
+            return hasSavedText;
         }
 
         const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
@@ -129,7 +136,7 @@ export const TaskRunner = {
             if (status && status.acquired) return true;
         }
 
-        if (card.querySelector(Config.SELECTORS.ownedStatus) !== null) {
+        if (card.querySelector(Config.SELECTORS.ownedStatus) !== null || hasSavedText) {
             if (uid) {
                 DataCache.saveOwnedStatus([{
                     uid: uid,
@@ -250,13 +257,9 @@ export const TaskRunner = {
         let ownedCount = 0;
         let skippedCount = 0;
 
-        const isCardSettled = (card) => {
-            return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-        };
-
         cards.forEach(card => {
             if (card.style.display === 'none') return;
-            if (!isCardSettled(card)) {
+            if (!TaskRunner.isCardSettled(card)) {
                 skippedCount++;
                 return;
             }
@@ -1251,21 +1254,27 @@ export const TaskRunner = {
         let hasUnsettledCards = false;
         const unsettledCards = [];
 
-        const isCardSettled = (card) => {
-            return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-        };
-
         cards.forEach(card => {
-            if (!isCardSettled(card)) {
+            if (!TaskRunner.isCardSettled(card)) {
                 hasUnsettledCards = true;
                 unsettledCards.push(card);
             }
         });
 
         if (hasUnsettledCards && unsettledCards.length > 0) {
-            Utils.logger('info', Utils.getText('log_unsettled_cards', unsettledCards.length));
-            setTimeout(() => TaskRunner.runHideOrShow(), 2000);
+            if (!State.hideRetryTimer) {
+                Utils.logger('info', Utils.getText('log_unsettled_cards', unsettledCards.length));
+                State.hideRetryTimer = setTimeout(() => {
+                    State.hideRetryTimer = null;
+                    TaskRunner.runHideOrShow();
+                }, 2000);
+            }
             return;
+        }
+
+        if (State.hideRetryTimer) {
+            clearTimeout(State.hideRetryTimer);
+            State.hideRetryTimer = null;
         }
 
         const cardsToHide = [];
@@ -1445,12 +1454,8 @@ export const TaskRunner = {
             let hasUnsettledCards = false;
             const unsettledCards = [];
 
-            const isCardSettled = (card) => {
-                return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null;
-            };
-
             visibleCards.forEach(card => {
-                if (!isCardSettled(card)) {
+                if (!TaskRunner.isCardSettled(card)) {
                     hasUnsettledCards = true;
                     unsettledCards.push(card);
                 }
