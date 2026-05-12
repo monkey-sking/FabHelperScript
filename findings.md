@@ -1,5 +1,20 @@
 # Findings
 
+## 2026-05-12
+
+- User-visible `log_unsettled_cards` means either an older installed userscript is running or the message is logged at info level. Current fix demotes it to debug and adds i18n strings.
+- Owned card hiding had two separate blockers:
+  - `isCardSettled()` depended on old Fab class selectors and did not recognize saved-library text in the new DOM.
+  - `runHideOrShow()` returned early when any card was unsettled, blocking already-owned cards from hiding.
+- DOM Refresh confirmed owned cards but only wrote to `State.db.done`; it did not immediately run hide logic. Added hide trigger when hide filters are enabled.
+- `State.db.done` stored URLs, but write paths produced multiple shapes for the same listing:
+  - `https://www.fab.com/zh-cn/listings/<uid>`
+  - `https://www.fab.com/listings/<uid>`
+  - links with query params
+  This caused `已入库` to overcount. Canonicalizing to `https://www.fab.com/listings/<uid>` fixes duplicates and makes `Database.isDone()` robust.
+- Additional audit finding: `Config.DB_KEYS.HIDE_PAID` was referenced but not defined, so the hidden-paid preference could persist under an undefined key. Added the key.
+- Additional audit finding: `TaskRunner.stop()` deleted `Config.DB_KEYS.TASK`, but that key was not defined and no active code used it. Removed the stale delete.
+
 ## 2026-04-15
 
 - Root cause sits in `src/modules/task-runner.js` worker-detail flow.

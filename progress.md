@@ -1,5 +1,19 @@
 # Progress
 
+## 2026-05-12
+
+- Investigated repeated `log_unsettled_cards` and owned-card hiding reports.
+- Added regression coverage for retry coalescing, saved-library text detection, mixed settled/unsettled card lists, and DOM Refresh hide triggering.
+- Implemented canonical done URL handling and added regression coverage for localized/query URL variants.
+- Rebuilt and pushed fixes through commits:
+  - `714c84f` Fix owned card hiding detection
+  - `0e4ed0d` Avoid blocking hide on loading cards
+  - `ab668e1` Hide cards after ownership refresh
+  - `4c4b1df` Normalize done listing URLs
+- Audited adjacent persistence keys; found and fixed missing `HIDE_PAID` key and stale `TASK` delete call.
+- Updated root and docs changelogs with 3.5.2 notes.
+- Bumped package version to 3.5.2 and rebuilt dist so the userscript header matches the changelog.
+
 ## 2026-04-15
 
 - Initialized planning files for `fix/marketplace-external-cta`.

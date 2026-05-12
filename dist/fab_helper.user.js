@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260512053546
+// @version      3.5.2-20260512053904
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -685,8 +685,10 @@
       // 执行状态保存
       AUTO_REFRESH_EMPTY: "fab_auto_refresh_empty_v1",
       // 无商品可见时自动刷新
-      HIDE_DISCOUNTED: "fab_hideDiscounted_v8"
+      HIDE_DISCOUNTED: "fab_hideDiscounted_v8",
       // 隐藏打折的付费商品
+      HIDE_PAID: "fab_hidePaid_v8"
+      // 隐藏所有付费商品
       // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {
@@ -2736,7 +2738,6 @@
       State.isExecuting = false;
       Database.saveExecutingState();
       Database.saveTodo();
-      GM_deleteValue(Config.DB_KEYS.TASK);
       State.runningWorkers = {};
       State.activeWorkers = 0;
       State.executionTotalTasks = 0;

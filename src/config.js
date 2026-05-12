@@ -27,6 +27,7 @@ export const Config = {
         IS_EXECUTING: 'fab_is_executing_v1', // 执行状态保存
         AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 无商品可见时自动刷新
         HIDE_DISCOUNTED: 'fab_hideDiscounted_v8', // 隐藏打折的付费商品
+        HIDE_PAID: 'fab_hidePaid_v8', // 隐藏所有付费商品
         // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {

@@ -6,6 +6,7 @@ import { Database } from '../src/modules/database.js';
 import { State } from '../src/state.js';
 import { Utils } from '../src/modules/utils.js';
 import { API } from '../src/modules/api.js';
+import { Config } from '../src/config.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -35,6 +36,12 @@ test('detects external website CTA as a handled terminal state', () => {
         reason: 'External CTA "在外部网站查看"',
         href: 'https://odininspector.com/?utm_source=fabstore'
     });
+});
+
+test('database keys used by persisted settings are defined', () => {
+    assert.equal(typeof Config.DB_KEYS.HIDE_PAID, 'string');
+    assert.equal(Config.DB_KEYS.HIDE_PAID.length > 0, true);
+    assert.equal('TASK' in Config.DB_KEYS, false);
 });
 
 test('markAsDone clears stale failed entries for the same uid', async () => {

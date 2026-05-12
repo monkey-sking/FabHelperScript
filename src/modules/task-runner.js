@@ -442,7 +442,6 @@ export const TaskRunner = {
         State.isExecuting = false;
         Database.saveExecutingState();
         Database.saveTodo();
-        GM_deleteValue(Config.DB_KEYS.TASK);
         State.runningWorkers = {};
         State.activeWorkers = 0;
         State.executionTotalTasks = 0;

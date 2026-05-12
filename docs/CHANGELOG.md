@@ -1,5 +1,29 @@
 # 更新日志
 
+## 3.5.2 (2026-05-12)
+
+### 功能修复
+
+- 修复 **已入库计数不准确** 问题：
+  - 统一按 listing UID 归一化 `done` URL，避免不同语言路径、绝对/相对路径、query 参数造成重复计数
+  - 启动时自动清理旧的重复 `done` 记录并保存
+  - 待办自动清理、DOM Refresh、任务完成写入统一使用 `Database.isDone()` / `Database.addDoneUrl()`
+- 修复 **已拥有卡片不自动隐藏** 问题：
+  - 支持通过“已保存在我的库中 / Saved in My Library / 在我的库中 / In My Library”文案识别已拥有卡片
+  - DOM Refresh 确认新拥有项目后立即触发隐藏
+  - 未加载完成卡片只安排后台重试，不再阻塞其它卡片隐藏
+- 修复 **日志异常** 问题：
+  - `log_unsettled_cards` 不再作为普通日志刷屏
+  - 补齐中英文翻译，避免显示裸 key
+- 修复 **隐藏付费设置持久化** 问题：
+  - 新增 `HIDE_PAID` 存储 key
+  - 清理停止任务时对废弃 `TASK` key 的调用
+
+### 验证
+
+- 新增并通过 10 个 targeted regression tests
+- 通过本地构建，生成 `dist/fab_helper.user.js`
+
 ## 3.5.1 (2025-12-28)
 
 ### 功能修复
