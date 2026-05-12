@@ -1263,16 +1263,13 @@ export const TaskRunner = {
 
         if (hasUnsettledCards && unsettledCards.length > 0) {
             if (!State.hideRetryTimer) {
-                Utils.logger('info', Utils.getText('log_unsettled_cards', unsettledCards.length));
+                Utils.logger('debug', Utils.getText('log_unsettled_cards', unsettledCards.length));
                 State.hideRetryTimer = setTimeout(() => {
                     State.hideRetryTimer = null;
                     TaskRunner.runHideOrShow();
                 }, 2000);
             }
-            return;
-        }
-
-        if (State.hideRetryTimer) {
+        } else if (State.hideRetryTimer) {
             clearTimeout(State.hideRetryTimer);
             State.hideRetryTimer = null;
         }
@@ -1280,6 +1277,10 @@ export const TaskRunner = {
         const cardsToHide = [];
 
         cards.forEach(card => {
+            if (!TaskRunner.isCardSettled(card)) {
+                return;
+            }
+
             const isProcessed = card.getAttribute('data-fab-processed') === 'true';
 
             if (isProcessed && card.style.display === 'none') {
@@ -1363,7 +1364,7 @@ export const TaskRunner = {
         let needsReprocessing = false;
         cards.forEach(card => {
             const isProcessed = card.getAttribute('data-fab-processed') === 'true';
-            if (!isProcessed) needsReprocessing = true;
+            if (!isProcessed && TaskRunner.isCardSettled(card)) needsReprocessing = true;
         });
 
         if (needsReprocessing) {

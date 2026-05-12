@@ -98,6 +98,7 @@ test('prefers explicit free license over paid personal option', () => {
 
 test('coalesces hide retries while cards are still loading', () => {
     const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
     const originalSetTimeout = globalThis.setTimeout;
     const originalLogger = Utils.logger;
 
@@ -106,8 +107,17 @@ test('coalesces hide retries while cards are still loading', () => {
 
     globalThis.document = {
         querySelectorAll: () => [{
-            querySelector: () => null
-        }]
+            querySelector: () => null,
+            querySelectorAll: () => [],
+            textContent: '',
+            style: {},
+            getAttribute: () => null,
+            setAttribute: () => {}
+        }],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
     };
     globalThis.setTimeout = (callback, delay) => {
         scheduled.push({ callback, delay });
@@ -125,11 +135,16 @@ test('coalesces hide retries while cards are still loading', () => {
         TaskRunner.runHideOrShow();
         TaskRunner.runHideOrShow();
 
-        assert.equal(logs.filter(log => log.message === 'log_unsettled_cards').length, 1);
+        assert.equal(logs.filter(log => log.type === 'debug').length, 1);
         assert.equal(scheduled.length, 1);
         assert.equal(scheduled[0].delay, 2000);
     } finally {
         globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
         globalThis.setTimeout = originalSetTimeout;
         Utils.logger = originalLogger;
         State.hideRetryTimer = null;
@@ -194,6 +209,82 @@ test('treats linked cards with saved library text as ready to hide', () => {
     } finally {
         globalThis.document = originalDocument;
         delete globalThis.window;
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
+test('does not block owned cards when another card is still loading', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const scheduled = [];
+    const logs = [];
+    const makeCard = ({ textContent, href }) => ({
+        textContent,
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]' && href) {
+                return { href };
+            }
+            return null;
+        },
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        }
+    });
+    const ownedCard = makeCard({
+        textContent: 'Owned asset 已保存在我的库中',
+        href: 'https://www.fab.com/listings/11111111-1111-4111-8111-111111111111'
+    });
+    const loadingCard = makeCard({
+        textContent: 'Still loading asset',
+        href: 'https://www.fab.com/listings/22222222-2222-4222-8222-222222222222'
+    });
+
+    globalThis.document = {
+        querySelectorAll: () => [loadingCard, ownedCard],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        scheduled.push({ callback, delay });
+        return scheduled.length;
+    };
+    Utils.logger = (type, message) => {
+        logs.push({ type, message });
+    };
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.db.done = [];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(ownedCard.attributes['data-fab-processed'], 'true');
+        assert.equal(loadingCard.attributes['data-fab-processed'] ?? null, null);
+        assert.equal(scheduled.some(timer => timer.delay === 2000), true);
+        assert.equal(logs.some(log => log.type === 'info' && log.message === 'log_unsettled_cards'), false);
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
         globalThis.setTimeout = originalSetTimeout;
         Utils.logger = originalLogger;
         State.hideRetryTimer = null;

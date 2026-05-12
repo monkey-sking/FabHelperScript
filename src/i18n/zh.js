@@ -61,6 +61,7 @@ export const zh = {
     log_auto_resume_start: '🔄 429自动恢复启动！将在{0}秒后刷新页面尝试恢复...',
     log_auto_resume_detect: '🔄 检测到429错误，将在{0}秒后自动刷新页面尝试恢复...',
     log_refresh_error: '状态同步过程中出错:',
+    log_unsettled_cards: '还有 {0} 张卡片正在加载，稍后再检查。',
 
     // 调试日志消息
     debug_save_cursor: '保存新的恢复点: {0}',

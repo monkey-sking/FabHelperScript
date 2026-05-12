@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260512022449
+// @version      3.5.1-20260512035557
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -95,6 +95,7 @@
     log_auto_resume_start: "\u{1F504} 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...",
     log_auto_resume_detect: "\u{1F504} Detected 429 error, will auto refresh page in {0} seconds to attempt recovery...",
     log_refresh_error: "Error during state synchronization:",
+    log_unsettled_cards: "{0} cards are still loading. Will check again shortly.",
     // 调试日志消息
     debug_save_cursor: "Saving new recovery point: {0}",
     debug_prepare_hide: "Preparing to hide {0} cards, will use longer delay...",
@@ -407,6 +408,7 @@
     log_auto_resume_start: "\u{1F504} 429\u81EA\u52A8\u6062\u590D\u542F\u52A8\uFF01\u5C06\u5728{0}\u79D2\u540E\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...",
     log_auto_resume_detect: "\u{1F504} \u68C0\u6D4B\u5230429\u9519\u8BEF\uFF0C\u5C06\u5728{0}\u79D2\u540E\u81EA\u52A8\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...",
     log_refresh_error: "\u72B6\u6001\u540C\u6B65\u8FC7\u7A0B\u4E2D\u51FA\u9519:",
+    log_unsettled_cards: "\u8FD8\u6709 {0} \u5F20\u5361\u7247\u6B63\u5728\u52A0\u8F7D\uFF0C\u7A0D\u540E\u518D\u68C0\u67E5\u3002",
     // 调试日志消息
     debug_save_cursor: "\u4FDD\u5B58\u65B0\u7684\u6062\u590D\u70B9: {0}",
     debug_prepare_hide: "\u51C6\u5907\u9690\u85CF {0} \u5F20\u5361\u7247\uFF0C\u5C06\u4F7F\u7528\u66F4\u957F\u7684\u5EF6\u8FDF...",
@@ -3360,20 +3362,21 @@
       });
       if (hasUnsettledCards && unsettledCards.length > 0) {
         if (!State.hideRetryTimer) {
-          Utils.logger("info", Utils.getText("log_unsettled_cards", unsettledCards.length));
+          Utils.logger("debug", Utils.getText("log_unsettled_cards", unsettledCards.length));
           State.hideRetryTimer = setTimeout(() => {
             State.hideRetryTimer = null;
             TaskRunner2.runHideOrShow();
           }, 2e3);
         }
-        return;
-      }
-      if (State.hideRetryTimer) {
+      } else if (State.hideRetryTimer) {
         clearTimeout(State.hideRetryTimer);
         State.hideRetryTimer = null;
       }
       const cardsToHide = [];
       cards.forEach((card) => {
+        if (!TaskRunner2.isCardSettled(card)) {
+          return;
+        }
         const isProcessed = card.getAttribute("data-fab-processed") === "true";
         if (isProcessed && card.style.display === "none") {
           State.hiddenThisPageCount++;
@@ -3449,7 +3452,7 @@
       let needsReprocessing = false;
       cards.forEach((card) => {
         const isProcessed = card.getAttribute("data-fab-processed") === "true";
-        if (!isProcessed) needsReprocessing = true;
+        if (!isProcessed && TaskRunner2.isCardSettled(card)) needsReprocessing = true;
       });
       if (needsReprocessing) {
         if (State.debugMode) {
