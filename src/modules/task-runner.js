@@ -572,9 +572,7 @@ export const TaskRunner = {
                     dbUpdated = true;
                     ownedUids.forEach(uid => {
                         const url = `${window.location.origin}${langPath}/listings/${uid}`;
-                        if (!Database.isDone(url)) {
-                            State.db.done.push(url);
-                        }
+                        Database.addDoneUrl(url);
                     });
                     Utils.logger('info', Utils.getText('log_cleared_from_failed', initialFailedCount - State.db.failed.length));
                 }
@@ -1487,7 +1485,7 @@ export const TaskRunner = {
                     const uid = uidMatch[1];
                     const url = link.href.split('?')[0];
 
-                    if (State.db.done.includes(url)) return;
+                    if (Database.isDone(url)) return;
                     allItems.push({ uid, url, element: card });
                 }
             });
@@ -1510,8 +1508,7 @@ export const TaskRunner = {
 
             for (const item of allItems) {
                 if (ownedUids.has(item.uid)) {
-                    if (!State.db.done.includes(item.url)) {
-                        State.db.done.push(item.url);
+                    if (Database.addDoneUrl(item.url)) {
                         confirmedOwned++;
                     }
                     State.db.failed = State.db.failed.filter(f => f.uid !== item.uid);

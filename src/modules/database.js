@@ -10,6 +10,41 @@ let UI = null;
 export const setUIReference = (uiModule) => { UI = uiModule; };
 
 export const Database = {
+    normalizeListingUrl: (url) => {
+        if (!url) return '';
+        const cleanUrl = String(url).split('?')[0];
+        const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
+        if (uidMatch && uidMatch[1]) {
+            return `https://www.fab.com/listings/${uidMatch[1]}`;
+        }
+        return cleanUrl;
+    },
+
+    normalizeDoneList: () => {
+        const normalized = [];
+        const seen = new Set();
+        State.db.done.forEach(url => {
+            const cleanUrl = Database.normalizeListingUrl(url);
+            if (!cleanUrl || seen.has(cleanUrl)) return;
+            seen.add(cleanUrl);
+            normalized.push(cleanUrl);
+        });
+
+        const changed = normalized.length !== State.db.done.length ||
+            normalized.some((url, index) => url !== State.db.done[index]);
+        State.db.done = normalized;
+        return changed;
+    },
+
+    addDoneUrl: (url) => {
+        const normalizedChanged = Database.normalizeDoneList();
+        const cleanUrl = Database.normalizeListingUrl(url);
+        if (!cleanUrl) return normalizedChanged;
+        if (Database.isDone(cleanUrl)) return normalizedChanged;
+        State.db.done.push(cleanUrl);
+        return true;
+    },
+
     load: async () => {
         // 从存储中加载待办列表
         State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
@@ -36,6 +71,10 @@ export const Database = {
             Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
         }
         State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
+
+        if (Database.normalizeDoneList()) {
+            await Database.saveDone();
+        }
 
         Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     },
@@ -75,7 +114,8 @@ export const Database = {
 
     isDone: (url) => {
         if (!url) return false;
-        return State.db.done.includes(url.split('?')[0]);
+        const cleanUrl = Database.normalizeListingUrl(url);
+        return State.db.done.some(doneUrl => Database.normalizeListingUrl(doneUrl) === cleanUrl);
     },
     isFailed: (url) => {
         if (!url) return false;
@@ -117,9 +157,7 @@ export const Database = {
         }
 
         // The 'done' list can still use URLs for simplicity, as it's for display/hiding.
-        const cleanUrl = task.url.split('?')[0];
-        if (!Database.isDone(cleanUrl)) {
-            State.db.done.push(cleanUrl);
+        if (Database.addDoneUrl(task.url)) {
             changed = true;
         }
 

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260512053202
+// @version      3.5.1-20260512053546
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1538,6 +1538,36 @@
     UI2 = uiModule;
   }, "setUIReference");
   var Database = {
+    normalizeListingUrl: /* @__PURE__ */ __name((url) => {
+      if (!url) return "";
+      const cleanUrl = String(url).split("?")[0];
+      const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
+      if (uidMatch && uidMatch[1]) {
+        return `https://www.fab.com/listings/${uidMatch[1]}`;
+      }
+      return cleanUrl;
+    }, "normalizeListingUrl"),
+    normalizeDoneList: /* @__PURE__ */ __name(() => {
+      const normalized = [];
+      const seen = /* @__PURE__ */ new Set();
+      State.db.done.forEach((url) => {
+        const cleanUrl = Database.normalizeListingUrl(url);
+        if (!cleanUrl || seen.has(cleanUrl)) return;
+        seen.add(cleanUrl);
+        normalized.push(cleanUrl);
+      });
+      const changed = normalized.length !== State.db.done.length || normalized.some((url, index) => url !== State.db.done[index]);
+      State.db.done = normalized;
+      return changed;
+    }, "normalizeDoneList"),
+    addDoneUrl: /* @__PURE__ */ __name((url) => {
+      const normalizedChanged = Database.normalizeDoneList();
+      const cleanUrl = Database.normalizeListingUrl(url);
+      if (!cleanUrl) return normalizedChanged;
+      if (Database.isDone(cleanUrl)) return normalizedChanged;
+      State.db.done.push(cleanUrl);
+      return true;
+    }, "addDoneUrl"),
     load: /* @__PURE__ */ __name(async () => {
       State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
       State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
@@ -1560,6 +1590,9 @@
         Utils.logger("warn", `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
       }
       State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
+      if (Database.normalizeDoneList()) {
+        await Database.saveDone();
+      }
       Utils.logger("info", Utils.getText("log_db_loaded"), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     }, "load"),
     // 添加保存待办列表的方法
@@ -1600,7 +1633,8 @@
     }, "resetAllData"),
     isDone: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
-      return State.db.done.includes(url.split("?")[0]);
+      const cleanUrl = Database.normalizeListingUrl(url);
+      return State.db.done.some((doneUrl) => Database.normalizeListingUrl(doneUrl) === cleanUrl);
     }, "isDone"),
     isFailed: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
@@ -1632,9 +1666,7 @@
         changed = true;
         await Database.saveFailed();
       }
-      const cleanUrl = task.url.split("?")[0];
-      if (!Database.isDone(cleanUrl)) {
-        State.db.done.push(cleanUrl);
+      if (Database.addDoneUrl(task.url)) {
         changed = true;
       }
       if (changed) {
@@ -2805,9 +2837,7 @@
             dbUpdated = true;
             ownedUids.forEach((uid) => {
               const url = `${window.location.origin}${langPath}/listings/${uid}`;
-              if (!Database.isDone(url)) {
-                State.db.done.push(url);
-              }
+              Database.addDoneUrl(url);
             });
             Utils.logger("info", Utils.getText("log_cleared_from_failed", initialFailedCount - State.db.failed.length));
           }
@@ -3541,7 +3571,7 @@
           if (uidMatch && uidMatch[1]) {
             const uid = uidMatch[1];
             const url = link.href.split("?")[0];
-            if (State.db.done.includes(url)) return;
+            if (Database.isDone(url)) return;
             allItems.push({ uid, url, element: card });
           }
         });
@@ -3556,8 +3586,7 @@
         );
         for (const item of allItems) {
           if (ownedUids.has(item.uid)) {
-            if (!State.db.done.includes(item.url)) {
-              State.db.done.push(item.url);
+            if (Database.addDoneUrl(item.url)) {
               confirmedOwned++;
             }
             State.db.failed = State.db.failed.filter((f) => f.uid !== item.uid);
@@ -4885,7 +4914,7 @@
       const initialTodoCount = State.db.todo.length;
       State.db.todo = State.db.todo.filter((task) => {
         const url = task.url.split("?")[0];
-        return !State.db.done.includes(url);
+        return !Database.isDone(url);
       });
       if (State.db.todo.length < initialTodoCount) {
         Utils.logger("info", `[\u81EA\u52A8\u6E05\u7406] \u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\u4E86 ${initialTodoCount - State.db.todo.length} \u4E2A\u5DF2\u5B8C\u6210\u7684\u4EFB\u52A1\u3002`);

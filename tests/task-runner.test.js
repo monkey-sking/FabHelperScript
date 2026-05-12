@@ -68,6 +68,34 @@ test('markAsDone clears stale failed entries for the same uid', async () => {
     assert.ok(saved.some(entry => entry.value === State.db.failed));
 });
 
+test('done URLs are normalized so language paths do not double count', async () => {
+    const saved = [];
+    globalThis.GM_setValue = async (key, value) => {
+        saved.push({ key, value });
+    };
+
+    State.db.todo = [];
+    State.db.done = ['https://www.fab.com/zh-cn/listings/listing-2'];
+    State.db.failed = [];
+
+    await Database.markAsDone({
+        uid: 'listing-2',
+        url: 'https://www.fab.com/listings/listing-2?ref=abc',
+        name: 'Already counted'
+    });
+
+    assert.deepEqual(State.db.done, ['https://www.fab.com/listings/listing-2']);
+    assert.equal(saved.some(entry => entry.value === State.db.done), true);
+});
+
+test('isDone matches relative, localized, and canonical listing URLs', () => {
+    State.db.done = ['https://www.fab.com/listings/listing-3'];
+
+    assert.equal(Database.isDone('/zh-cn/listings/listing-3'), true);
+    assert.equal(Database.isDone('https://www.fab.com/listings/listing-3?foo=bar'), true);
+    assert.equal(Database.isDone('https://www.fab.com/listings/listing-other'), false);
+});
+
 function createLicenseNode(options) {
     return {
         querySelectorAll: (selector) => {

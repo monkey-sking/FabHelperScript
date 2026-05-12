@@ -490,7 +490,7 @@ async function runDomDependentPart() {
         const initialTodoCount = State.db.todo.length;
         State.db.todo = State.db.todo.filter(task => {
             const url = task.url.split('?')[0];
-            return !State.db.done.includes(url);
+            return !Database.isDone(url);
         });
 
         if (State.db.todo.length < initialTodoCount) {
