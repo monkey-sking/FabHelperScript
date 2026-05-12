@@ -5,6 +5,7 @@ import { TaskRunner } from '../src/modules/task-runner.js';
 import { Database } from '../src/modules/database.js';
 import { State } from '../src/state.js';
 import { Utils } from '../src/modules/utils.js';
+import { API } from '../src/modules/api.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -288,5 +289,60 @@ test('does not block owned cards when another card is still loading', () => {
         globalThis.setTimeout = originalSetTimeout;
         Utils.logger = originalLogger;
         State.hideRetryTimer = null;
+    }
+});
+
+test('refreshing visible ownership state triggers hiding confirmed owned cards', async () => {
+    const originalDocument = globalThis.document;
+    const originalCheckItemsOwnership = API.checkItemsOwnership;
+    const originalSaveDone = Database.saveDone;
+    const originalSaveFailed = Database.saveFailed;
+    const originalRunHideOrShow = TaskRunner.runHideOrShow;
+    const originalLogger = Utils.logger;
+
+    let hideRuns = 0;
+    const card = {
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/33333333-3333-4333-8333-333333333333'
+                };
+            }
+            return null;
+        }
+    };
+
+    globalThis.document = {
+        querySelectorAll: () => [card]
+    };
+    API.checkItemsOwnership = async () => [{
+        uid: '33333333-3333-4333-8333-333333333333',
+        acquired: true
+    }];
+    Database.saveDone = async () => {};
+    Database.saveFailed = async () => {};
+    TaskRunner.runHideOrShow = () => {
+        hideRuns++;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = true;
+    State.isCheckingStatus = false;
+    State.db.done = [];
+    State.db.failed = [];
+    State.db.todo = [];
+
+    try {
+        await TaskRunner.checkVisibleCardsStatus();
+
+        assert.equal(hideRuns, 1);
+        assert.deepEqual(State.db.done, ['https://www.fab.com/listings/33333333-3333-4333-8333-333333333333']);
+    } finally {
+        globalThis.document = originalDocument;
+        API.checkItemsOwnership = originalCheckItemsOwnership;
+        Database.saveDone = originalSaveDone;
+        Database.saveFailed = originalSaveFailed;
+        TaskRunner.runHideOrShow = originalRunHideOrShow;
+        Utils.logger = originalLogger;
+        State.isCheckingStatus = false;
     }
 });

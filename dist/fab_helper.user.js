@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.1-20260512035557
+// @version      3.5.1-20260512053202
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -3569,6 +3569,9 @@
           await Database.saveFailed();
           Utils.logger("info", Utils.getText("fab_dom_api_complete", confirmedOwned));
           Utils.logger("info", Utils.getText("fab_dom_refresh_complete", confirmedOwned));
+          if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
+            TaskRunner2.runHideOrShow();
+          }
         } else {
           Utils.logger("debug", Utils.getText("fab_dom_no_new_owned"));
         }

@@ -1524,6 +1524,9 @@ export const TaskRunner = {
                 await Database.saveFailed();
                 Utils.logger('info', Utils.getText('fab_dom_api_complete', confirmedOwned));
                 Utils.logger('info', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
+                if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
+                    TaskRunner.runHideOrShow();
+                }
             } else {
                 Utils.logger('debug', Utils.getText('fab_dom_no_new_owned'));
             }
