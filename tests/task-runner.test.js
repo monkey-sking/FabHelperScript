@@ -522,3 +522,136 @@ test('auto add queues mixed-license cards that show a free option', async () => 
         State.autoAddRetryTimer = null;
     }
 });
+
+test('hides auto-completed free cards even before the page text changes to saved', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const scheduled = [];
+    const card = {
+        textContent: 'Auto completed listing 选择许可（从 免费 到 $6.99）',
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/zh-cn/listings/66666666-6666-4666-8666-666666666666?foo=bar'
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => [],
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        }
+    };
+
+    globalThis.document = {
+        querySelectorAll: () => [card],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        scheduled.push({ callback, delay });
+        if (delay !== 2000) callback();
+        return scheduled.length;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.hiddenThisPageCount = 0;
+    State.db.done = ['https://www.fab.com/listings/66666666-6666-4666-8666-666666666666'];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(card.attributes['data-fab-processed'], 'true');
+        assert.equal(card.style.display, 'none');
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
+test('done records hide cards even when list card status text is missing', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const card = {
+        textContent: 'Auto completed listing without visible price text',
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/77777777-7777-4777-8777-777777777777'
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => [],
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        }
+    };
+
+    globalThis.document = {
+        querySelectorAll: () => [card],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        if (delay !== 2000) callback();
+        return 1;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.db.done = ['https://www.fab.com/listings/77777777-7777-4777-8777-777777777777'];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(card.attributes['data-fab-processed'], 'true');
+        assert.equal(card.style.display, 'none');
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});

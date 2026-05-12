@@ -15,6 +15,7 @@
 - Additional audit finding: `Config.DB_KEYS.HIDE_PAID` was referenced but not defined, so the hidden-paid preference could persist under an undefined key. Added the key.
 - Additional audit finding: `TaskRunner.stop()` deleted `Config.DB_KEYS.TASK`, but that key was not defined and no active code used it. Removed the stale delete.
 - Auto-add skipped free cards because `scanAndAddTasks()` required `isCardSettled()` first, while `isCardSettled()` only recognized old free/owned classes or saved-library text. Mixed-license list cards with text like `选择许可（从 免费 到 $6.99）` were free by `isFreeCard()` but not settled, so they only retried and never queued. Fixed by treating explicit free signals as settled and scheduling retries for genuinely unsettled cards.
+- Auto-completed cards could still fail to hide when the list card did not expose price/free/saved text after worker success. `isCardSettled()` skipped these cards before `isCardFinished()` could consult `Database.isDone()`. Fixed by treating local done/failed/session-completed state as settled and canonicalizing session-completed URLs.
 
 ## 2026-04-15
 

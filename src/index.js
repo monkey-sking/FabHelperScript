@@ -688,7 +688,7 @@ async function main() {
             if (success) {
                 Utils.logger('info', `✅ 任务完成: ${task.name}`);
                 await Database.markAsDone(task);
-                State.sessionCompleted.add(task.url);
+                State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
                 State.executionCompletedTasks++;
             } else {
                 Utils.logger('warn', `❌ 任务失败: ${task.name}`);

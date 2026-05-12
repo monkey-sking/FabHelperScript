@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.2-20260512054329
+// @version      3.5.2-20260512054935
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -2476,7 +2476,9 @@
       return [...Config.SAVED_TEXT_SET].some((savedText) => cardText.includes(savedText));
     }, "hasSavedLibraryText"),
     isCardSettled: /* @__PURE__ */ __name((card) => {
-      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card) || TaskRunner2.isFreeCard(card);
+      const link = card.querySelector(Config.SELECTORS.cardLink);
+      const url = link ? link.href.split("?")[0] : null;
+      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card) || TaskRunner2.isFreeCard(card) || url && (Database.isDone(url) || Database.isFailed(url) || State.sessionCompleted.has(Database.normalizeListingUrl(url)));
     }, "isCardSettled"),
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: /* @__PURE__ */ __name((card) => {
@@ -2508,7 +2510,7 @@
       if (url) {
         if (Database.isDone(url)) return true;
         if (Database.isFailed(url)) return true;
-        if (State.sessionCompleted.has(url)) return true;
+        if (State.sessionCompleted.has(Database.normalizeListingUrl(url))) return true;
       }
       return false;
     }, "isCardFinished"),
@@ -5088,7 +5090,7 @@
         if (success) {
           Utils.logger("info", `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}`);
           await Database.markAsDone(task);
-          State.sessionCompleted.add(task.url);
+          State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
         } else {
           Utils.logger("warn", `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name}`);

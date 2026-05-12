@@ -109,9 +109,13 @@ export const TaskRunner = {
     },
 
     isCardSettled: (card) => {
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const url = link ? link.href.split('?')[0] : null;
+
         return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null ||
             TaskRunner.hasSavedLibraryText(card) ||
-            TaskRunner.isFreeCard(card);
+            TaskRunner.isFreeCard(card) ||
+            (url && (Database.isDone(url) || Database.isFailed(url) || State.sessionCompleted.has(Database.normalizeListingUrl(url))));
     },
 
     // Check if a card is finished (owned, done, or failed)
@@ -151,7 +155,7 @@ export const TaskRunner = {
         if (url) {
             if (Database.isDone(url)) return true;
             if (Database.isFailed(url)) return true;
-            if (State.sessionCompleted.has(url)) return true;
+            if (State.sessionCompleted.has(Database.normalizeListingUrl(url))) return true;
         }
 
         return false;
