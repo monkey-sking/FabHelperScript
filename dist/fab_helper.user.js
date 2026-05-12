@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.2-20260512053904
+// @version      3.5.2-20260512054329
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -845,6 +845,8 @@
     observerDebounceTimer: null,
     // Pending retry for hide/show while card status labels are still loading
     hideRetryTimer: null,
+    // Pending retry for auto-add while card status labels are still loading
+    autoAddRetryTimer: null,
     // UI element references - populated by UI.create()
     UI: {
       container: null,
@@ -2474,7 +2476,7 @@
       return [...Config.SAVED_TEXT_SET].some((savedText) => cardText.includes(savedText));
     }, "hasSavedLibraryText"),
     isCardSettled: /* @__PURE__ */ __name((card) => {
-      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card);
+      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card) || TaskRunner2.isFreeCard(card);
     }, "isCardSettled"),
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: /* @__PURE__ */ __name((card) => {
@@ -3682,10 +3684,15 @@
         const newlyAddedList = [];
         let skippedAlreadyOwned = 0;
         let skippedInTodo = 0;
+        let skippedUnsettled = 0;
         cardsToProcess.forEach((card) => {
           const link = card.querySelector(Config.SELECTORS.cardLink);
           const url = link ? link.href.split("?")[0] : null;
           if (!url) return;
+          if (!TaskRunner2.isCardSettled(card)) {
+            skippedUnsettled++;
+            return;
+          }
           if (Database.isDone(url)) {
             skippedAlreadyOwned++;
             return;
@@ -3719,6 +3726,17 @@
           const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
           newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
         });
+        if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
+          State.autoAddRetryTimer = setTimeout(() => {
+            State.autoAddRetryTimer = null;
+            if (State.autoAddOnScroll) {
+              TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u91CD\u8BD5\u5931\u8D25: ${error.message}`));
+            }
+          }, 2e3);
+        } else if (skippedUnsettled === 0 && State.autoAddRetryTimer) {
+          clearTimeout(State.autoAddRetryTimer);
+          State.autoAddRetryTimer = null;
+        }
         if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
           if (newlyAddedList.length > 0) {
             const existingUids = new Set(State.db.todo.map((t) => t.uid));

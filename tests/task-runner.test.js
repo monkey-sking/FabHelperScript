@@ -381,3 +381,144 @@ test('refreshing visible ownership state triggers hiding confirmed owned cards',
         State.isCheckingStatus = false;
     }
 });
+
+test('auto add schedules a retry when cards are not settled yet', async () => {
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const originalLogger = Utils.logger;
+    const originalDateNow = Date.now;
+
+    const scheduled = [];
+    const card = {
+        textContent: 'Loading free listing',
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/44444444-4444-4444-8444-444444444444'
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => []
+    };
+
+    globalThis.window = {
+        _apiWaitStatus: null,
+        fetch: async () => ({})
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        scheduled.push({ callback, delay });
+        return scheduled.length;
+    };
+    globalThis.setInterval = (callback) => {
+        callback();
+        return 1;
+    };
+    globalThis.clearInterval = () => {};
+    let nowCall = 0;
+    Date.now = () => {
+        nowCall++;
+        return nowCall < 3 ? 0 : 3000;
+    };
+    Utils.logger = () => {};
+    State.autoAddOnScroll = true;
+    State.isScanningTasks = false;
+    State.autoAddRetryTimer = null;
+    State.db.todo = [];
+    State.db.done = [];
+    State.db.failed = [];
+
+    try {
+        await TaskRunner.scanAndAddTasks([card]);
+
+        assert.equal(State.db.todo.length, 0);
+        assert.equal(scheduled.some(timer => timer.delay === 2000), true);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+        Date.now = originalDateNow;
+        Utils.logger = originalLogger;
+        State.isScanningTasks = false;
+        State.autoAddRetryTimer = null;
+    }
+});
+
+test('auto add queues mixed-license cards that show a free option', async () => {
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const originalLogger = Utils.logger;
+    const originalDateNow = Date.now;
+    const originalSaveTodo = Database.saveTodo;
+    const originalStartExecution = TaskRunner.startExecution;
+
+    const card = {
+        textContent: 'Vintage Chair 选择许可（从 免费 到 $6.99）',
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/55555555-5555-4555-8555-555555555555',
+                    textContent: 'Vintage Chair'
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => []
+    };
+
+    globalThis.window = {
+        _apiWaitStatus: null,
+        fetch: async () => ({})
+    };
+    globalThis.setTimeout = () => 1;
+    globalThis.setInterval = (callback) => {
+        callback();
+        return 1;
+    };
+    globalThis.clearInterval = () => {};
+    let nowCall = 0;
+    Date.now = () => {
+        nowCall++;
+        return nowCall < 3 ? 0 : 3000;
+    };
+    Utils.logger = () => {};
+    Database.saveTodo = () => {};
+    TaskRunner.startExecution = () => {};
+    State.autoAddOnScroll = true;
+    State.isScanningTasks = false;
+    State.autoAddRetryTimer = null;
+    State.db.todo = [];
+    State.db.done = [];
+    State.db.failed = [];
+
+    try {
+        await TaskRunner.scanAndAddTasks([card]);
+
+        assert.equal(State.db.todo.length, 1);
+        assert.equal(State.db.todo[0].uid, '55555555-5555-4555-8555-555555555555');
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+        Date.now = originalDateNow;
+        Utils.logger = originalLogger;
+        Database.saveTodo = originalSaveTodo;
+        TaskRunner.startExecution = originalStartExecution;
+        State.isScanningTasks = false;
+        State.autoAddRetryTimer = null;
+    }
+});

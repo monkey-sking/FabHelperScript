@@ -13,6 +13,7 @@
 - Audited adjacent persistence keys; found and fixed missing `HIDE_PAID` key and stale `TASK` delete call.
 - Updated root and docs changelogs with 3.5.2 notes.
 - Bumped package version to 3.5.2 and rebuilt dist so the userscript header matches the changelog.
+- Investigated free cards not auto-queuing; added retry coverage for unsettled auto-add cards and mixed-license free list cards, then fixed `isCardSettled()` / auto-add retry behavior.
 
 ## 2026-04-15
 

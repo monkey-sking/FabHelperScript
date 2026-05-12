@@ -110,7 +110,8 @@ export const TaskRunner = {
 
     isCardSettled: (card) => {
         return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null ||
-            TaskRunner.hasSavedLibraryText(card);
+            TaskRunner.hasSavedLibraryText(card) ||
+            TaskRunner.isFreeCard(card);
     },
 
     // Check if a card is finished (owned, done, or failed)
@@ -1620,11 +1621,17 @@ export const TaskRunner = {
             const newlyAddedList = [];
             let skippedAlreadyOwned = 0;
             let skippedInTodo = 0;
+            let skippedUnsettled = 0;
 
             cardsToProcess.forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
                 const url = link ? link.href.split('?')[0] : null;
                 if (!url) return;
+
+                if (!TaskRunner.isCardSettled(card)) {
+                    skippedUnsettled++;
+                    return;
+                }
 
                 if (Database.isDone(url)) {
                     skippedAlreadyOwned++;
@@ -1670,6 +1677,19 @@ export const TaskRunner = {
                     Utils.getText('untitled');
                 newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
             });
+
+            if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
+                State.autoAddRetryTimer = setTimeout(() => {
+                    State.autoAddRetryTimer = null;
+                    if (State.autoAddOnScroll) {
+                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                            .catch(error => Utils.logger('error', `自动添加重试失败: ${error.message}`));
+                    }
+                }, 2000);
+            } else if (skippedUnsettled === 0 && State.autoAddRetryTimer) {
+                clearTimeout(State.autoAddRetryTimer);
+                State.autoAddRetryTimer = null;
+            }
 
             if (newlyAddedList.length > 0 || skippedAlreadyOwned > 0 || skippedInTodo > 0) {
                 if (newlyAddedList.length > 0) {

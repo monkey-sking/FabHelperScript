@@ -67,6 +67,8 @@ export const State = {
     observerDebounceTimer: null,
     // Pending retry for hide/show while card status labels are still loading
     hideRetryTimer: null,
+    // Pending retry for auto-add while card status labels are still loading
+    autoAddRetryTimer: null,
     // UI element references - populated by UI.create()
     UI: {
         container: null,

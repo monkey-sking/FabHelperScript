@@ -14,6 +14,7 @@
   This caused `已入库` to overcount. Canonicalizing to `https://www.fab.com/listings/<uid>` fixes duplicates and makes `Database.isDone()` robust.
 - Additional audit finding: `Config.DB_KEYS.HIDE_PAID` was referenced but not defined, so the hidden-paid preference could persist under an undefined key. Added the key.
 - Additional audit finding: `TaskRunner.stop()` deleted `Config.DB_KEYS.TASK`, but that key was not defined and no active code used it. Removed the stale delete.
+- Auto-add skipped free cards because `scanAndAddTasks()` required `isCardSettled()` first, while `isCardSettled()` only recognized old free/owned classes or saved-library text. Mixed-license list cards with text like `选择许可（从 免费 到 $6.99）` were free by `isFreeCard()` but not settled, so they only retried and never queued. Fixed by treating explicit free signals as settled and scheduling retries for genuinely unsettled cards.
 
 ## 2026-04-15
 
