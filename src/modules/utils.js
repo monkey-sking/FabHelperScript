@@ -265,9 +265,90 @@ export const Utils = {
                 // 显示警告信息
                 alert(Utils.getText('auth_error_alert'));
             }
+            State.isAuthenticated = false;
+            return false;
+        }
+        State.isAuthenticated = true;
+        return true;
+    },
+
+    // 通过实际请求 /i/users/me 校验服务端 session 是否仍然有效。
+    // 仅在 cookie 校验通过后调用，结果会缓存在 State.isAuthenticated 上。
+    // 5 秒超时；网络错误时不下结论（保持上一次的判断），避免误伤离线场景。
+    verifyServerSession: () => {
+        return new Promise((resolve) => {
+            const csrfToken = Utils.getCookie('fab_csrftoken');
+            if (!csrfToken) {
+                State.isAuthenticated = false;
+                resolve(false);
+                return;
+            }
+            try {
+                GM_xmlhttpRequest({
+                    method: 'GET',
+                    url: 'https://www.fab.com/i/users/me',
+                    headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' },
+                    anonymous: false,
+                    timeout: 5000,
+                    onload: (response) => {
+                        if (response.status === 401 || response.status === 403) {
+                            State.isAuthenticated = false;
+                            resolve(false);
+                            return;
+                        }
+                        if (response.status >= 200 && response.status < 300) {
+                            try {
+                                const data = JSON.parse(response.responseText);
+                                // /i/users/me 已登录时返回的对象至少带 id 字段
+                                if (data && (data.id || data.uid || data.email || data.username)) {
+                                    State.isAuthenticated = true;
+                                    resolve(true);
+                                    return;
+                                }
+                            } catch (e) { /* fallthrough */ }
+                            // 状态码 2xx 但 body 不像登录用户 → 视为未登录
+                            State.isAuthenticated = false;
+                            resolve(false);
+                            return;
+                        }
+                        // 其它状态码（5xx 等）不下结论
+                        resolve(State.isAuthenticated);
+                    },
+                    onerror: () => resolve(State.isAuthenticated),
+                    ontimeout: () => resolve(State.isAuthenticated)
+                });
+            } catch (e) {
+                resolve(State.isAuthenticated);
+            }
+        });
+    },
+
+    // 强校验：cookie + 服务端 session 一起验。返回 boolean。
+    // notify=true 时对用户提示并停止当前执行。
+    ensureAuthenticated: async (notify = true) => {
+        if (!Utils.checkAuthentication(true)) {
+            if (notify) Utils.notifyAuthFailure();
+            return false;
+        }
+        const sessionOk = await Utils.verifyServerSession();
+        if (!sessionOk) {
+            if (notify) Utils.notifyAuthFailure();
             return false;
         }
         return true;
+    },
+
+    notifyAuthFailure: () => {
+        Utils.logger('error', Utils.getText('auth_error'));
+        if (State.isExecuting) {
+            State.isExecuting = false;
+            try { GM_setValue(Config.DB_KEYS.IS_EXECUTING, false); } catch (e) { }
+        }
+        if (State.UI && State.UI.execBtn) {
+            State.UI.execBtn.textContent = Utils.getText('execute');
+            State.UI.execBtn.disabled = true;
+        }
+        try { alert(Utils.getText('auth_error_alert')); } catch (e) { }
     },
     // 将所有空白字符（包括换行、多个空格）统一替换为单个空格
     normalizeWhitespace: (text) => {

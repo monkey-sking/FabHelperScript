@@ -342,5 +342,8 @@ export const zh = {
 
     // 账号验证
     auth_error: '账号失效：未找到 CSRF token，请重新登录',
-    auth_error_alert: '账号失效：请重新登录后再使用脚本'
+    auth_error_alert: '账号失效：请重新登录后再使用脚本',
+    auth_session_invalid: '检测到登录会话已失效，请重新登录后再启动任务。',
+    auth_worker_aborted: '工作标签页检测到未登录，已中止任务处理。',
+    auth_scan_blocked: '未登录或会话已失效，本次扫描被跳过（避免把所有商品误判为免费空跑）。'
 };

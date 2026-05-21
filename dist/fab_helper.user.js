@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.3-20260521051525
+// @version      3.5.4-20260521054741
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -334,7 +334,10 @@
     opening_failed_items: "Opening {0} failed items...",
     // 账号验证
     auth_error: "Session expired: CSRF token not found, please log in again",
-    auth_error_alert: "Session expired: Please log in again before using the script"
+    auth_error_alert: "Session expired: Please log in again before using the script",
+    auth_session_invalid: "Login session is invalid. Please log in again before starting a run.",
+    auth_worker_aborted: "Worker tab detected no active login; task processing aborted.",
+    auth_scan_blocked: "Not logged in (or session expired). Scan skipped to avoid treating every paid item as free."
   };
 
   // src/i18n/zh.js
@@ -648,7 +651,10 @@
     opening_failed_items: "\u6B63\u5728\u6253\u5F00 {0} \u4E2A\u5931\u8D25\u9879\u76EE...",
     // 账号验证
     auth_error: "\u8D26\u53F7\u5931\u6548\uFF1A\u672A\u627E\u5230 CSRF token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55",
-    auth_error_alert: "\u8D26\u53F7\u5931\u6548\uFF1A\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u4F7F\u7528\u811A\u672C"
+    auth_error_alert: "\u8D26\u53F7\u5931\u6548\uFF1A\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u4F7F\u7528\u811A\u672C",
+    auth_session_invalid: "\u68C0\u6D4B\u5230\u767B\u5F55\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u542F\u52A8\u4EFB\u52A1\u3002",
+    auth_worker_aborted: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u68C0\u6D4B\u5230\u672A\u767B\u5F55\uFF0C\u5DF2\u4E2D\u6B62\u4EFB\u52A1\u5904\u7406\u3002",
+    auth_scan_blocked: "\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548\uFF0C\u672C\u6B21\u626B\u63CF\u88AB\u8DF3\u8FC7\uFF08\u907F\u514D\u628A\u6240\u6709\u5546\u54C1\u8BEF\u5224\u4E3A\u514D\u8D39\u7A7A\u8DD1\uFF09\u3002"
   };
 
   // src/config.js
@@ -810,6 +816,9 @@
     // 最后一次限速的来源
     isCheckingRateLimit: false,
     // 是否正在检查限速状态
+    // --- 登录态 ---
+    isAuthenticated: false,
+    // 当前是否检测到有效的登录态（fab_csrftoken cookie）
     // --- End New State ---
     showAdvanced: false,
     activeWorkers: 0,
@@ -1088,10 +1097,92 @@
           }
           alert(Utils.getText("auth_error_alert"));
         }
+        State.isAuthenticated = false;
+        return false;
+      }
+      State.isAuthenticated = true;
+      return true;
+    }, "checkAuthentication"),
+    // 通过实际请求 /i/users/me 校验服务端 session 是否仍然有效。
+    // 仅在 cookie 校验通过后调用，结果会缓存在 State.isAuthenticated 上。
+    // 5 秒超时；网络错误时不下结论（保持上一次的判断），避免误伤离线场景。
+    verifyServerSession: /* @__PURE__ */ __name(() => {
+      return new Promise((resolve) => {
+        const csrfToken = Utils.getCookie("fab_csrftoken");
+        if (!csrfToken) {
+          State.isAuthenticated = false;
+          resolve(false);
+          return;
+        }
+        try {
+          GM_xmlhttpRequest({
+            method: "GET",
+            url: "https://www.fab.com/i/users/me",
+            headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" },
+            anonymous: false,
+            timeout: 5e3,
+            onload: /* @__PURE__ */ __name((response) => {
+              if (response.status === 401 || response.status === 403) {
+                State.isAuthenticated = false;
+                resolve(false);
+                return;
+              }
+              if (response.status >= 200 && response.status < 300) {
+                try {
+                  const data = JSON.parse(response.responseText);
+                  if (data && (data.id || data.uid || data.email || data.username)) {
+                    State.isAuthenticated = true;
+                    resolve(true);
+                    return;
+                  }
+                } catch (e) {
+                }
+                State.isAuthenticated = false;
+                resolve(false);
+                return;
+              }
+              resolve(State.isAuthenticated);
+            }, "onload"),
+            onerror: /* @__PURE__ */ __name(() => resolve(State.isAuthenticated), "onerror"),
+            ontimeout: /* @__PURE__ */ __name(() => resolve(State.isAuthenticated), "ontimeout")
+          });
+        } catch (e) {
+          resolve(State.isAuthenticated);
+        }
+      });
+    }, "verifyServerSession"),
+    // 强校验：cookie + 服务端 session 一起验。返回 boolean。
+    // notify=true 时对用户提示并停止当前执行。
+    ensureAuthenticated: /* @__PURE__ */ __name(async (notify = true) => {
+      if (!Utils.checkAuthentication(true)) {
+        if (notify) Utils.notifyAuthFailure();
+        return false;
+      }
+      const sessionOk = await Utils.verifyServerSession();
+      if (!sessionOk) {
+        if (notify) Utils.notifyAuthFailure();
         return false;
       }
       return true;
-    }, "checkAuthentication"),
+    }, "ensureAuthenticated"),
+    notifyAuthFailure: /* @__PURE__ */ __name(() => {
+      Utils.logger("error", Utils.getText("auth_error"));
+      if (State.isExecuting) {
+        State.isExecuting = false;
+        try {
+          GM_setValue(Config.DB_KEYS.IS_EXECUTING, false);
+        } catch (e) {
+        }
+      }
+      if (State.UI && State.UI.execBtn) {
+        State.UI.execBtn.textContent = Utils.getText("execute");
+        State.UI.execBtn.disabled = true;
+      }
+      try {
+        alert(Utils.getText("auth_error_alert"));
+      } catch (e) {
+      }
+    }, "notifyAuthFailure"),
     // 将所有空白字符（包括换行、多个空格）统一替换为单个空格
     normalizeWhitespace: /* @__PURE__ */ __name((text) => {
       if (!text) return "";
@@ -2560,7 +2651,7 @@
       return false;
     }, "isDiscountedPaidCard"),
     // Toggle execution state
-    toggleExecution: /* @__PURE__ */ __name(() => {
+    toggleExecution: /* @__PURE__ */ __name(async () => {
       if (!Utils.checkAuthentication()) return;
       if (State.isExecuting) {
         State.isExecuting = false;
@@ -2572,6 +2663,11 @@
         State.executionFailedTasks = 0;
         Utils.logger("info", Utils.getText("log_execution_stopped"));
         if (UI4) UI4.update();
+        return;
+      }
+      const sessionOk = await Utils.verifyServerSession();
+      if (!sessionOk) {
+        Utils.notifyAuthFailure();
         return;
       }
       if (State.autoAddOnScroll) {
@@ -3115,7 +3211,44 @@
           if (!pageReady) {
             logBuffer.push(`\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25`);
           }
-          await new Promise((resolve) => setTimeout(resolve, 2e3));
+          await (/* @__PURE__ */ __name(function waitForKeyElement(maxWait = 2e3) {
+            const matchKey = /* @__PURE__ */ __name(() => {
+              const buttons = document.querySelectorAll("button");
+              for (const btn of buttons) {
+                const t = Utils.normalizeWhitespace(btn.textContent || "");
+                if (!t) continue;
+                if (Config.ACQUISITION_TEXT_SET.has(t)) return true;
+                if (Config.SAVED_TEXT_SET.has(t)) return true;
+                if (Config.EXTERNAL_CTA_TEXT_SET.has(t)) return true;
+              }
+              const bodyText = document.body && document.body.textContent;
+              if (bodyText) {
+                for (const phrase of Config.SAVED_TEXT_SET) {
+                  if (bodyText.includes(phrase)) return true;
+                }
+              }
+              return false;
+            }, "matchKey");
+            if (matchKey()) return Promise.resolve();
+            return new Promise((resolve) => {
+              let done = false;
+              const finish = /* @__PURE__ */ __name(() => {
+                if (done) return;
+                done = true;
+                try {
+                  observer.disconnect();
+                } catch (e) {
+                }
+                clearTimeout(timer);
+                resolve();
+              }, "finish");
+              const observer = new MutationObserver(() => {
+                if (matchKey()) finish();
+              });
+              observer.observe(document.body, { childList: true, subtree: true });
+              const timer = setTimeout(finish, maxWait);
+            });
+          }, "waitForKeyElement"))();
           const adultContentWarning = document.querySelector(".fabkit-Heading--xl");
           if (adultContentWarning && (adultContentWarning.textContent.includes("\u6210\u4EBA\u5185\u5BB9") || adultContentWarning.textContent.includes("Adult Content") || adultContentWarning.textContent.includes("Mature Content"))) {
             logBuffer.push(`\u68C0\u6D4B\u5230\u6210\u4EBA\u5185\u5BB9\u8B66\u544A\u5BF9\u8BDD\u6846\uFF0C\u81EA\u52A8\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE...`);
@@ -3631,6 +3764,12 @@
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
       if (!State.autoAddOnScroll) return;
+      if (!State.isAuthenticated) {
+        if (State.debugMode) {
+          Utils.logger("debug", Utils.getText("auth_scan_blocked"));
+        }
+        return;
+      }
       if (State.isScanningTasks) {
         Utils.logger("debug", `\u5DF2\u6709\u626B\u63CF\u4EFB\u52A1\u8FDB\u884C\u4E2D\uFF0C\u8DF3\u8FC7\u672C\u6B21\u8C03\u7528 (${cards.length} \u5F20\u5361\u7247)`);
         return;
@@ -5054,15 +5193,22 @@
     window.pageLoadTime = Date.now();
     Utils.logger("info", Utils.getText("log_script_starting"));
     Utils.detectLanguage();
-    const isLoggedIn = Utils.checkAuthentication(true);
-    if (!isLoggedIn) {
+    const hasCookie = Utils.checkAuthentication(true);
+    if (!hasCookie) {
       Utils.logger("warn", "\u8D26\u53F7\u672A\u767B\u5F55\uFF0C\u90E8\u5206\u529F\u80FD\u53EF\u80FD\u53D7\u9650");
+      State.isAuthenticated = false;
+    } else {
+      State.isAuthenticated = true;
     }
     const urlParams = new URLSearchParams(window.location.search);
     const workerId = urlParams.get("workerId");
     if (workerId) {
       State.isWorkerTab = true;
       State.workerTaskId = workerId;
+      if (!hasCookie || !await Utils.verifyServerSession()) {
+        Utils.logger("error", Utils.getText("auth_worker_aborted"));
+        return;
+      }
       await InstanceManager.init();
       Utils.logger("info", `\u5DE5\u4F5C\u6807\u7B7E\u9875\u521D\u59CB\u5316\u5B8C\u6210\uFF0C\u5F00\u59CB\u5904\u7406\u4EFB\u52A1...`);
       await TaskRunner2.processDetailPage();
@@ -5070,6 +5216,14 @@
     }
     await InstanceManager.init();
     await Database.load();
+    if (hasCookie) {
+      Utils.verifyServerSession().then((ok) => {
+        if (!ok) {
+          Utils.logger("warn", Utils.getText("auth_session_invalid"));
+          State.isAuthenticated = false;
+        }
+      });
+    }
     const storedExecutingState = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
     if (State.isExecuting !== storedExecutingState) {
       Utils.logger("info", Utils.getText("log_execution_state_inconsistent", storedExecutingState ? "\u6267\u884C\u4E2D" : "\u5DF2\u505C\u6B62"));

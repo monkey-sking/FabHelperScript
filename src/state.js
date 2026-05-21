@@ -37,6 +37,8 @@ export const State = {
     requiredSuccessCount: 3, // 退出限速需要的连续成功请求数
     lastLimitSource: '', // 最后一次限速的来源
     isCheckingRateLimit: false, // 是否正在检查限速状态
+    // --- 登录态 ---
+    isAuthenticated: false, // 当前是否检测到有效的登录态（fab_csrftoken cookie）
     // --- End New State ---
     showAdvanced: false,
     activeWorkers: 0,

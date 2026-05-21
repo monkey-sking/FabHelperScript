@@ -424,6 +424,7 @@ test('auto add schedules a retry when cards are not settled yet', async () => {
     };
     Utils.logger = () => {};
     State.autoAddOnScroll = true;
+    State.isAuthenticated = true;
     State.isScanningTasks = false;
     State.autoAddRetryTimer = null;
     State.db.todo = [];

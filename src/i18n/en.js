@@ -339,5 +339,8 @@ export const en = {
 
     // 账号验证
     auth_error: 'Session expired: CSRF token not found, please log in again',
-    auth_error_alert: 'Session expired: Please log in again before using the script'
+    auth_error_alert: 'Session expired: Please log in again before using the script',
+    auth_session_invalid: 'Login session is invalid. Please log in again before starting a run.',
+    auth_worker_aborted: 'Worker tab detected no active login; task processing aborted.',
+    auth_scan_blocked: 'Not logged in (or session expired). Scan skipped to avoid treating every paid item as free.'
 };

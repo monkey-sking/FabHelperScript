@@ -615,10 +615,13 @@ async function main() {
     Utils.logger('info', Utils.getText('log_script_starting'));
     Utils.detectLanguage();
 
-    // Check auth but don't block - UI should still show
-    const isLoggedIn = Utils.checkAuthentication(true); // silent mode
-    if (!isLoggedIn) {
+    // Cookie 级别快速判断
+    const hasCookie = Utils.checkAuthentication(true); // silent mode
+    if (!hasCookie) {
         Utils.logger('warn', '账号未登录，部分功能可能受限');
+        State.isAuthenticated = false;
+    } else {
+        State.isAuthenticated = true;
     }
 
     // Check if worker tab
@@ -628,6 +631,12 @@ async function main() {
         State.isWorkerTab = true;
         State.workerTaskId = workerId;
 
+        // worker tab: 启动前强校验 session，避免在未登录页里空跑
+        if (!hasCookie || !(await Utils.verifyServerSession())) {
+            Utils.logger('error', Utils.getText('auth_worker_aborted'));
+            return;
+        }
+
         await InstanceManager.init();
         Utils.logger('info', `工作标签页初始化完成，开始处理任务...`);
         await TaskRunner.processDetailPage();
@@ -636,6 +645,17 @@ async function main() {
 
     await InstanceManager.init();
     await Database.load();
+
+    // 在 UI 起来后再异步校验一次 session（cookie 还在但服务端已过期的常见场景）。
+    // 不阻塞 UI，结果落到 State.isAuthenticated，后续 toggleExecution 时会再次硬校验。
+    if (hasCookie) {
+        Utils.verifyServerSession().then(ok => {
+            if (!ok) {
+                Utils.logger('warn', Utils.getText('auth_session_invalid'));
+                State.isAuthenticated = false;
+            }
+        });
+    }
 
     const storedExecutingState = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
     if (State.isExecuting !== storedExecutingState) {

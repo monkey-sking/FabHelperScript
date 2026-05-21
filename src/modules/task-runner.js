@@ -223,7 +223,7 @@ export const TaskRunner = {
     },
 
     // Toggle execution state
-    toggleExecution: () => {
+    toggleExecution: async () => {
         if (!Utils.checkAuthentication()) return;
 
         if (State.isExecuting) {
@@ -236,6 +236,14 @@ export const TaskRunner = {
             State.executionFailedTasks = 0;
             Utils.logger('info', Utils.getText('log_execution_stopped'));
             if (UI) UI.update();
+            return;
+        }
+
+        // 在启动任务之前再次硬校验服务端 session，避免 cookie 还在但 session 已过期时
+        // 把所有商品当作免费空跑（未登录态卡片上拿不到价格信息）。
+        const sessionOk = await Utils.verifyServerSession();
+        if (!sessionOk) {
+            Utils.notifyAuthFailure();
             return;
         }
 
@@ -889,8 +897,44 @@ export const TaskRunner = {
                     logBuffer.push(`⚠️ 警告: 页面可能未完全加载，这可能导致操作失败`);
                 }
 
-                // 额外等待以确保动态内容加载完成
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // 等待关键 UI 元素出现（领取按钮 / 已保存指示器 / 外部 CTA），
+                // 最长 2000ms 保留旧行为上限；如果元素已经在 DOM 上则立即继续。
+                // 之前这里是无条件 setTimeout(2000)，是单任务耗时的主要来源。
+                await (function waitForKeyElement(maxWait = 2000) {
+                    const matchKey = () => {
+                        const buttons = document.querySelectorAll('button');
+                        for (const btn of buttons) {
+                            const t = Utils.normalizeWhitespace(btn.textContent || '');
+                            if (!t) continue;
+                            if (Config.ACQUISITION_TEXT_SET.has(t)) return true;
+                            if (Config.SAVED_TEXT_SET.has(t)) return true;
+                            if (Config.EXTERNAL_CTA_TEXT_SET.has(t)) return true;
+                        }
+                        const bodyText = document.body && document.body.textContent;
+                        if (bodyText) {
+                            for (const phrase of Config.SAVED_TEXT_SET) {
+                                if (bodyText.includes(phrase)) return true;
+                            }
+                        }
+                        return false;
+                    };
+                    if (matchKey()) return Promise.resolve();
+                    return new Promise(resolve => {
+                        let done = false;
+                        const finish = () => {
+                            if (done) return;
+                            done = true;
+                            try { observer.disconnect(); } catch (e) { }
+                            clearTimeout(timer);
+                            resolve();
+                        };
+                        const observer = new MutationObserver(() => {
+                            if (matchKey()) finish();
+                        });
+                        observer.observe(document.body, { childList: true, subtree: true });
+                        const timer = setTimeout(finish, maxWait);
+                    });
+                })();
 
 
                 // Check for adult content warning
@@ -1543,6 +1587,15 @@ export const TaskRunner = {
 
     scanAndAddTasks: async (cards) => {
         if (!State.autoAddOnScroll) return;
+
+        // 未登录或 session 已过期时，卡片上拿不到价格信息，isFreeCard 会把所有商品
+        // 误判为免费。直接跳过扫描，避免队列被付费商品塞满后 worker 空跑。
+        if (!State.isAuthenticated) {
+            if (State.debugMode) {
+                Utils.logger('debug', Utils.getText('auth_scan_blocked'));
+            }
+            return;
+        }
 
         // 防止并发调用
         if (State.isScanningTasks) {
