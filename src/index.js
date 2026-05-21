@@ -193,6 +193,20 @@ setRateLimitDeps({
     countdownRefresh
 });
 
+// Triggers hide/show + status check when ownership data arrives, debounced so
+// multiple listings-states responses in a burst coalesce into a single DOM pass.
+let _ownedStatusUpdateTimer = null;
+function triggerOwnedStatusUpdate() {
+    if (State.isWorkerTab) return;
+    clearTimeout(_ownedStatusUpdateTimer);
+    _ownedStatusUpdateTimer = setTimeout(() => {
+        if (State.hideSaved) {
+            try { TaskRunner.runHideOrShow(); } catch (e) { }
+        }
+        try { TaskRunner.checkVisibleCardsStatus().catch(() => { }); } catch (e) { }
+    }, 50);
+}
+
 // Setup XHR interceptor for caching
 function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
@@ -217,10 +231,12 @@ function setupXHRInterceptor() {
                         } else if (xhr._url.includes('/i/users/me/listings-states')) {
                             if (Array.isArray(responseData)) {
                                 DataCache.saveOwnedStatus(responseData);
+                                triggerOwnedStatusUpdate();
                             } else {
                                 const extractedData = API.extractStateData(responseData, 'XHRInterceptor');
                                 if (Array.isArray(extractedData) && extractedData.length > 0) {
                                     DataCache.saveOwnedStatus(extractedData);
+                                    triggerOwnedStatusUpdate();
                                 }
                             }
                         } else if (xhr._url.includes('/i/listings/prices-infos') && responseData.offers && Array.isArray(responseData.offers)) {
@@ -267,10 +283,12 @@ function setupFetchInterceptor() {
                         } else if (url.includes('/i/users/me/listings-states')) {
                             if (Array.isArray(data)) {
                                 DataCache.saveOwnedStatus(data);
+                                triggerOwnedStatusUpdate();
                             } else {
                                 const extractedData = API.extractStateData(data, 'FetchInterceptor');
                                 if (Array.isArray(extractedData) && extractedData.length > 0) {
                                     DataCache.saveOwnedStatus(extractedData);
+                                    triggerOwnedStatusUpdate();
                                 }
                             }
                         } else if (url.includes('/i/listings/prices-infos') && data.offers && Array.isArray(data.offers)) {
@@ -413,29 +431,23 @@ async function runDomDependentPart() {
                     Utils.logger('debug', `[Observer] ${Utils.getText('debug_new_content_loading')}`);
                 }
 
-                setTimeout(() => {
-                    TaskRunner.checkVisibleCardsStatus().then(() => {
-                        setTimeout(() => {
-                            if (State.hideSaved) {
-                                TaskRunner.runHideOrShow();
-                            }
-                        }, 1000);
-
-                        if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
-                            setTimeout(() => {
-                                TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
-                                    .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
-                            }, 500);
-                        }
-                    }).catch(() => {
-                        setTimeout(() => {
-                            if (State.hideSaved) {
-                                TaskRunner.runHideOrShow();
-                            }
-                        }, 1500);
-                    });
-                }, 2000);
-            }, 500);
+                // Cache-first hide: if ownership data is already cached for these UIDs,
+                // hide immediately. The listings-states interceptor handles the case
+                // where data arrives later via triggerOwnedStatusUpdate().
+                TaskRunner.checkVisibleCardsStatus().then(() => {
+                    if (State.hideSaved) {
+                        TaskRunner.runHideOrShow();
+                    }
+                    if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
+                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                            .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
+                    }
+                }).catch(() => {
+                    if (State.hideSaved) {
+                        TaskRunner.runHideOrShow();
+                    }
+                });
+            }, 300);
         }
     });
 

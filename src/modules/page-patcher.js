@@ -21,6 +21,7 @@ export const PagePatcher = {
     // State for request debouncing
     _debounceXhrTimer: null,
     _pendingXhr: null,
+    _lastDebounceXhrFire: 0,
 
     async init() {
         // 初始化时，从存储中加载上次保存的cursor
@@ -240,6 +241,10 @@ export const PagePatcher = {
         const originalXhrOpen = XMLHttpRequest.prototype.open;
         const originalXhrSend = XMLHttpRequest.prototype.send;
         const DEBOUNCE_DELAY_MS = 350;
+        // Only treat a new request as "definitely not part of a typing burst" if the
+        // last actual fire was ≥1.5s ago. Inside that window we keep the trailing
+        // 350ms debounce so rapid typing still coalesces and 429 risk stays bounded.
+        const LEADING_EDGE_QUIET_MS = 1500;
 
         const listenerAwareSend = function (...args) {
             const request = this;
@@ -369,13 +374,26 @@ export const PagePatcher = {
 
             self._pendingXhr = this;
 
-            self._debounceXhrTimer = setTimeout(() => {
+            // Leading-edge: if we're outside the burst window, fire immediately (0 latency).
+            // Trailing-edge fallback: inside the burst window, debounce as before so
+            // rapid typing still gets coalesced into one final request.
+            const now = Date.now();
+            const sendArgs = args;
+            const sendNow = () => {
                 if (State.debugMode) {
-                    Utils.logger('debug', Utils.getText('log_debounce_sending', this._url));
+                    Utils.logger('debug', Utils.getText('log_debounce_sending', self._pendingXhr && self._pendingXhr._url));
                 }
-                listenerAwareSend.apply(self._pendingXhr, args);
+                self._lastDebounceXhrFire = Date.now();
+                const xhr = self._pendingXhr;
                 self._pendingXhr = null;
-            }, DEBOUNCE_DELAY_MS);
+                listenerAwareSend.apply(xhr, sendArgs);
+            };
+
+            if (now - self._lastDebounceXhrFire >= LEADING_EDGE_QUIET_MS) {
+                sendNow();
+            } else {
+                self._debounceXhrTimer = setTimeout(sendNow, DEBOUNCE_DELAY_MS);
+            }
         };
 
         const originalFetch = window.fetch;

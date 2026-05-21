@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.2-20260512054935
+// @version      3.5.2-20260521035133
 // @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
 // @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
@@ -1947,6 +1947,7 @@
     // State for request debouncing
     _debounceXhrTimer: null,
     _pendingXhr: null,
+    _lastDebounceXhrFire: 0,
     async init() {
       try {
         const savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR);
@@ -2121,6 +2122,7 @@
       const originalXhrOpen = XMLHttpRequest.prototype.open;
       const originalXhrSend = XMLHttpRequest.prototype.send;
       const DEBOUNCE_DELAY_MS = 350;
+      const LEADING_EDGE_QUIET_MS = 1500;
       const listenerAwareSend = /* @__PURE__ */ __name(function(...args) {
         const request = this;
         const onLoad = /* @__PURE__ */ __name(() => {
@@ -2226,13 +2228,22 @@
         }
         clearTimeout(self._debounceXhrTimer);
         self._pendingXhr = this;
-        self._debounceXhrTimer = setTimeout(() => {
+        const now = Date.now();
+        const sendArgs = args;
+        const sendNow = /* @__PURE__ */ __name(() => {
           if (State.debugMode) {
-            Utils.logger("debug", Utils.getText("log_debounce_sending", this._url));
+            Utils.logger("debug", Utils.getText("log_debounce_sending", self._pendingXhr && self._pendingXhr._url));
           }
-          listenerAwareSend.apply(self._pendingXhr, args);
+          self._lastDebounceXhrFire = Date.now();
+          const xhr = self._pendingXhr;
           self._pendingXhr = null;
-        }, DEBOUNCE_DELAY_MS);
+          listenerAwareSend.apply(xhr, sendArgs);
+        }, "sendNow");
+        if (now - self._lastDebounceXhrFire >= LEADING_EDGE_QUIET_MS) {
+          sendNow();
+        } else {
+          self._debounceXhrTimer = setTimeout(sendNow, DEBOUNCE_DELAY_MS);
+        }
       };
       const originalFetch = window.fetch;
       window.fetch = function(input, init) {
@@ -4693,6 +4704,25 @@
     TaskRunner: TaskRunner2,
     countdownRefresh: countdownRefresh2
   });
+  var _ownedStatusUpdateTimer = null;
+  function triggerOwnedStatusUpdate() {
+    if (State.isWorkerTab) return;
+    clearTimeout(_ownedStatusUpdateTimer);
+    _ownedStatusUpdateTimer = setTimeout(() => {
+      if (State.hideSaved) {
+        try {
+          TaskRunner2.runHideOrShow();
+        } catch (e) {
+        }
+      }
+      try {
+        TaskRunner2.checkVisibleCardsStatus().catch(() => {
+        });
+      } catch (e) {
+      }
+    }, 50);
+  }
+  __name(triggerOwnedStatusUpdate, "triggerOwnedStatusUpdate");
   function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
@@ -4712,10 +4742,12 @@
               } else if (xhr._url.includes("/i/users/me/listings-states")) {
                 if (Array.isArray(responseData)) {
                   DataCache.saveOwnedStatus(responseData);
+                  triggerOwnedStatusUpdate();
                 } else {
                   const extractedData = API.extractStateData(responseData, "XHRInterceptor");
                   if (Array.isArray(extractedData) && extractedData.length > 0) {
                     DataCache.saveOwnedStatus(extractedData);
+                    triggerOwnedStatusUpdate();
                   }
                 }
               } else if (xhr._url.includes("/i/listings/prices-infos") && responseData.offers && Array.isArray(responseData.offers)) {
@@ -4753,10 +4785,12 @@
               } else if (url.includes("/i/users/me/listings-states")) {
                 if (Array.isArray(data)) {
                   DataCache.saveOwnedStatus(data);
+                  triggerOwnedStatusUpdate();
                 } else {
                   const extractedData = API.extractStateData(data, "FetchInterceptor");
                   if (Array.isArray(extractedData) && extractedData.length > 0) {
                     DataCache.saveOwnedStatus(extractedData);
+                    triggerOwnedStatusUpdate();
                   }
                 }
               } else if (url.includes("/i/listings/prices-infos") && data.offers && Array.isArray(data.offers)) {
@@ -4873,27 +4907,19 @@
           if (State.debugMode) {
             Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
           }
-          setTimeout(() => {
-            TaskRunner2.checkVisibleCardsStatus().then(() => {
-              setTimeout(() => {
-                if (State.hideSaved) {
-                  TaskRunner2.runHideOrShow();
-                }
-              }, 1e3);
-              if (State.appStatus === "NORMAL" || State.autoAddOnScroll) {
-                setTimeout(() => {
-                  TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
-                }, 500);
-              }
-            }).catch(() => {
-              setTimeout(() => {
-                if (State.hideSaved) {
-                  TaskRunner2.runHideOrShow();
-                }
-              }, 1500);
-            });
-          }, 2e3);
-        }, 500);
+          TaskRunner2.checkVisibleCardsStatus().then(() => {
+            if (State.hideSaved) {
+              TaskRunner2.runHideOrShow();
+            }
+            if (State.appStatus === "NORMAL" || State.autoAddOnScroll) {
+              TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
+            }
+          }).catch(() => {
+            if (State.hideSaved) {
+              TaskRunner2.runHideOrShow();
+            }
+          });
+        }, 300);
       }
     });
     observer.observe(targetNode, { childList: true, subtree: true });
