@@ -20,9 +20,9 @@ const userscriptBanner = `// ==UserScript==
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
 // @version      ${version}
-// @description  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
-// @description:zh-CN  Fab Helper 优化版 - 减少API请求，提高性能，增强稳定性，修复限速刷新
-// @description:en  Fab Helper Optimized - Reduced API requests, improved performance, enhanced stability, fixed rate limit refresh
+// @description  Fab Helper 优化版 - 减少API请求，提升响应速度，已拥有商品即时隐藏，智能限速保护
+// @description:zh-CN  Fab Helper 优化版 - 减少API请求，提升响应速度，已拥有商品即时隐藏，智能限速保护
+// @description:en  Fab Helper Optimized - Reduced API requests, instant owned-item hide, snappier search, smart rate-limit protection
 // @author       RunKing
 // @match        https://www.fab.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=fab.com

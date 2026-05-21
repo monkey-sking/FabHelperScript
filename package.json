@@ -1,6 +1,6 @@
 {
   "name": "fab-helper-userscript",
-  "version": "3.5.2",
+  "version": "3.5.3",
   "description": "Fab Helper 优化版 - 模块化开发版本",
   "type": "module",
   "scripts": {

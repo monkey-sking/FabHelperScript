@@ -1,5 +1,21 @@
 # 更新日志
 
+## 3.5.3 (2026-05-21)
+
+### 性能优化
+
+- **已拥有卡片隐藏延迟从 ~3.5s 降到 ~50ms**：
+  - listings-states 响应拦截器在写入缓存后立即触发 `runHideOrShow()` + `checkVisibleCardsStatus()`，不再被动等 MutationObserver 兜底
+  - MutationObserver 内三层 setTimeout（500+2000+1000ms）合并为单层 300ms 防抖
+- **搜索/翻页/筛选请求从 +350ms 延迟降到 0**：
+  - `/i/listings/search` XHR 防抖改为保守 leading-edge：距上次实际请求 ≥1.5s 时立即发出（翻页、滚动、点筛选器场景），1.5s 内仍走原 trailing 350ms 防抖
+  - 两次实际请求最小间隔保持 ≥350ms，429 风险与旧版相同
+  - 搜索框打字 burst 行为不变（仍合并为单次请求）
+
+### 验证
+
+- 通过 `npm run build`
+
 ## 3.5.2 (2026-05-12)
 
 ### 功能修复
