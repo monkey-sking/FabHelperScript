@@ -1,5 +1,19 @@
 # 更新日志
 
+## 3.5.5 (2026-05-21)
+
+### 功能修复
+
+- 优化 **登录态检测**，不再依赖 `/i/users/me` 探测请求：
+  - 改读 Fab SSR 直接写在每个页面里的 `window._epicAccountId`（空 = 未登录、UUID = 已登录）和 `#js-json-data-prefetched-data` 里的 `"/i/users/me".isAnonymous` 字段
+  - 同步、零网络、不会触发 Cloudflare bot 挑战
+  - 极端情况（DOM 信号缺失）仍会退到 `/i/users/me` API 兜底
+
+### 验证
+
+- 通过 `npm run build`
+- 14 个 task-runner 单元测试全部通过
+
 ## 3.5.4 (2026-05-21)
 
 ### 功能修复

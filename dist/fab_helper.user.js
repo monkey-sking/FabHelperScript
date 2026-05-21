@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.4-20260521054741
+// @version      3.5.5-20260521062130
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1103,17 +1103,60 @@
       State.isAuthenticated = true;
       return true;
     }, "checkAuthentication"),
-    // 通过实际请求 /i/users/me 校验服务端 session 是否仍然有效。
-    // 仅在 cookie 校验通过后调用，结果会缓存在 State.isAuthenticated 上。
-    // 5 秒超时；网络错误时不下结论（保持上一次的判断），避免误伤离线场景。
-    verifyServerSession: /* @__PURE__ */ __name(() => {
-      return new Promise((resolve) => {
-        const csrfToken = Utils.getCookie("fab_csrftoken");
-        if (!csrfToken) {
-          State.isAuthenticated = false;
-          resolve(false);
-          return;
+    // 从当前页面的 SSR 数据里同步读取登录态。fab.com 在每个页面都内嵌了：
+    //   1. window._epicAccountId        — 已登录是真实 UUID，未登录是空字符串
+    //   2. <script id="js-json-data-prefetched-data"> 里 "/i/users/me".isAnonymous
+    //   3. 同一块 JSON 里的 result UUID — 全零（00000000-...）也代表匿名
+    // 三者任一明确指向匿名 → 返回 false；任一明确指向已登录 → 返回 true；
+    // 都拿不到 → 返回 null，留给调用方决定要不要走 API 兜底。
+    detectLoginFromPage: /* @__PURE__ */ __name(() => {
+      const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+      try {
+        if (typeof window !== "undefined" && Object.prototype.hasOwnProperty.call(window, "_epicAccountId")) {
+          const id = window._epicAccountId;
+          if (typeof id === "string") {
+            if (id === "" || id === ZERO_UUID) return false;
+            if (/^[0-9a-f-]{32,36}$/i.test(id)) return true;
+          }
         }
+      } catch (e) {
+      }
+      try {
+        const tag = document && document.getElementById && document.getElementById("js-json-data-prefetched-data");
+        if (tag && tag.textContent) {
+          const data = JSON.parse(tag.textContent);
+          const userInfo = data && data["/i/users/me"];
+          if (userInfo) {
+            if (userInfo.isAnonymous === true) return false;
+            if (userInfo.isAnonymous === false) return true;
+            if (typeof userInfo.result === "string") {
+              if (userInfo.result === ZERO_UUID) return false;
+              if (/^[0-9a-f-]{32,36}$/i.test(userInfo.result)) return true;
+            }
+          }
+        }
+      } catch (e) {
+      }
+      return null;
+    }, "detectLoginFromPage"),
+    // 校验登录态。优先用页面 SSR 数据（同步、零网络、零 Cloudflare 风险），
+    // 拿不到再退回 /i/users/me API 探测。结果缓存到 State.isAuthenticated。
+    verifyServerSession: /* @__PURE__ */ __name(() => {
+      const csrfToken = Utils.getCookie("fab_csrftoken");
+      if (!csrfToken) {
+        State.isAuthenticated = false;
+        return Promise.resolve(false);
+      }
+      const fromPage = Utils.detectLoginFromPage();
+      if (fromPage === true) {
+        State.isAuthenticated = true;
+        return Promise.resolve(true);
+      }
+      if (fromPage === false) {
+        State.isAuthenticated = false;
+        return Promise.resolve(false);
+      }
+      return new Promise((resolve) => {
         try {
           GM_xmlhttpRequest({
             method: "GET",
@@ -1130,7 +1173,7 @@
               if (response.status >= 200 && response.status < 300) {
                 try {
                   const data = JSON.parse(response.responseText);
-                  if (data && (data.id || data.uid || data.email || data.username)) {
+                  if (data && (data.id || data.uid || data.email || data.username || data.isAnonymous === false)) {
                     State.isAuthenticated = true;
                     resolve(true);
                     return;
