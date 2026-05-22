@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260522033337
+// @version      3.5.5-20260522050852
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -295,6 +295,11 @@
     log_other_instance_report_ignore: "Received report from other instance [{0}], current [{1}] will ignore.",
     // 失败和重试
     log_failed_list_empty: "Failed list empty, no action needed.",
+    log_cleared_from_failed: "Cleared {0} actually-owned items from the failed list.",
+    // Wake/visibility recovery
+    log_wake_recovery: "\u{1F514} Tab re-activated (lock screen / tab switch recovery). Checking execution state...",
+    log_wake_cleanup_stale: "\u{1F9F9} Cleaned up {0} stale workers frozen by lock screen. Restarting execution.",
+    log_wake_restarting: "\u25B6\uFE0F Re-activating execution ({0} pending tasks).",
     // 调试模式
     log_debug_mode_toggled: "Debug mode {0}. {1}",
     log_debug_mode_detail_info: "Will display detailed log information",
@@ -612,6 +617,11 @@
     log_other_instance_report_ignore: "\u6536\u5230\u6765\u81EA\u5176\u4ED6\u5B9E\u4F8B [{0}] \u7684\u5DE5\u4F5C\u62A5\u544A\uFF0C\u5F53\u524D\u5B9E\u4F8B [{1}] \u5C06\u5FFD\u7565\u3002",
     // 失败和重试
     log_failed_list_empty: "\u5931\u8D25\u5217\u8868\u4E3A\u7A7A\uFF0C\u65E0\u9700\u64CD\u4F5C\u3002",
+    log_cleared_from_failed: "\u5DF2\u4ECE\u5931\u8D25\u5217\u8868\u4E2D\u6E05\u9664 {0} \u4E2A\u5B9E\u9645\u5DF2\u5165\u5E93\u7684\u5546\u54C1\u3002",
+    // 锁屏/后台恢复
+    log_wake_recovery: "\u{1F514} \u68C0\u6D4B\u5230\u6807\u7B7E\u9875\u91CD\u65B0\u6FC0\u6D3B\uFF08\u9501\u5C4F/\u5207\u6362\u540E\u6062\u590D\uFF09\uFF0C\u6B63\u5728\u68C0\u67E5\u6267\u884C\u72B6\u6001...",
+    log_wake_cleanup_stale: "\u{1F9F9} \u6E05\u7406 {0} \u4E2A\u56E0\u9501\u5C4F\u51BB\u7ED3\u8D85\u65F6\u7684\u5DE5\u4F5C\u7EBF\u7A0B\uFF0C\u91CD\u65B0\u542F\u52A8\u6267\u884C\u3002",
+    log_wake_restarting: "\u25B6\uFE0F \u91CD\u65B0\u6FC0\u6D3B\u6267\u884C\uFF08\u5171 {0} \u4E2A\u5F85\u529E\u4EFB\u52A1\uFF09\u3002",
     // 调试模式
     log_debug_mode_toggled: "\u8C03\u8BD5\u6A21\u5F0F\u5DF2{0}\u3002{1}",
     log_debug_mode_detail_info: "\u5C06\u663E\u793A\u8BE6\u7EC6\u65E5\u5FD7\u4FE1\u606F",
@@ -5397,10 +5407,46 @@
   window.addEventListener("load", () => {
     setTimeout(ensureUILoaded, 2e3);
   });
+  function handleWakeRecovery() {
+    if (State.isWorkerTab) return;
+    if (!State.isExecuting && State.db.todo.length === 0) return;
+    Utils.logger("info", Utils.getText("log_wake_recovery"));
+    const now = Date.now();
+    const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
+    let cleaned = 0;
+    for (const workerId in State.runningWorkers) {
+      const workerInfo = State.runningWorkers[workerId];
+      if (!workerInfo) continue;
+      if (now - workerInfo.startTime > STALL_TIMEOUT) {
+        delete State.runningWorkers[workerId];
+        State.activeWorkers = Math.max(0, State.activeWorkers - 1);
+        GM_deleteValue(workerId).catch(() => {
+        });
+        cleaned++;
+      }
+    }
+    if (cleaned > 0) {
+      Utils.logger("warn", Utils.getText("log_wake_cleanup_stale", cleaned));
+    }
+    if (State.db.todo.length > 0) {
+      if (!State.isExecuting) {
+        Utils.logger("info", Utils.getText("log_wake_restarting", State.db.todo.length));
+        TaskRunner2.startExecution();
+      } else if (State.activeWorkers < Config.MAX_CONCURRENT_WORKERS) {
+        Utils.logger("info", Utils.getText("log_wake_restarting", State.db.todo.length));
+        TaskRunner2.executeBatch();
+      }
+    }
+  }
+  __name(handleWakeRecovery, "handleWakeRecovery");
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       setTimeout(ensureUILoaded, 500);
+      setTimeout(handleWakeRecovery, 1e3);
     }
+  });
+  window.addEventListener("focus", () => {
+    setTimeout(handleWakeRecovery, 1e3);
   });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", main);

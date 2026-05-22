@@ -296,6 +296,12 @@ export const zh = {
 
     // 失败和重试
     log_failed_list_empty: '失败列表为空，无需操作。',
+    log_cleared_from_failed: '已从失败列表中清除 {0} 个实际已入库的商品。',
+
+    // 锁屏/后台恢复
+    log_wake_recovery: '🔔 检测到标签页重新激活（锁屏/切换后恢复），正在检查执行状态...',
+    log_wake_cleanup_stale: '🧹 清理 {0} 个因锁屏冻结超时的工作线程，重新启动执行。',
+    log_wake_restarting: '▶️ 重新激活执行（共 {0} 个待办任务）。',
 
     // 调试模式
     log_debug_mode_toggled: '调试模式已{0}。{1}',

@@ -841,11 +841,64 @@ window.addEventListener('load', () => {
     setTimeout(ensureUILoaded, 2000);
 });
 
+// ─── 锁屏 / 后台冻结恢复 ───────────────────────────────────────────────────
+// 浏览器在标签页不可见（锁屏、切换到其他应用）时会暂停或大幅节流
+// setInterval / setTimeout，导致 watchdog、任务调度全部冻结。
+// 当标签页重新可见时，主动做一次恢复：
+//   1. 清理冻结期间已超时但 watchdog 来不及处理的 stale workers
+//   2. 若 isExecuting && todo 有任务，重新踢起 executeBatch
+// ─────────────────────────────────────────────────────────────────────────────
+function handleWakeRecovery() {
+    // 只在主标签页（非 worker tab）执行恢复逻辑
+    if (State.isWorkerTab) return;
+    if (!State.isExecuting && State.db.todo.length === 0) return;
+
+    Utils.logger('info', Utils.getText('log_wake_recovery'));
+
+    // 1. 强制清理超时 worker（watchdog 在冻结期间无法运行）
+    const now = Date.now();
+    const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
+    let cleaned = 0;
+
+    for (const workerId in State.runningWorkers) {
+        const workerInfo = State.runningWorkers[workerId];
+        if (!workerInfo) continue;
+        if (now - workerInfo.startTime > STALL_TIMEOUT) {
+            delete State.runningWorkers[workerId];
+            State.activeWorkers = Math.max(0, State.activeWorkers - 1);
+            GM_deleteValue(workerId).catch(() => {});
+            cleaned++;
+        }
+    }
+
+    if (cleaned > 0) {
+        Utils.logger('warn', Utils.getText('log_wake_cleanup_stale', cleaned));
+    }
+
+    // 2. 重新启动执行循环
+    if (State.db.todo.length > 0) {
+        if (!State.isExecuting) {
+            Utils.logger('info', Utils.getText('log_wake_restarting', State.db.todo.length));
+            TaskRunner.startExecution();
+        } else if (State.activeWorkers < Config.MAX_CONCURRENT_WORKERS) {
+            Utils.logger('info', Utils.getText('log_wake_restarting', State.db.todo.length));
+            TaskRunner.executeBatch();
+        }
+    }
+}
+
 // Check UI on visibility change
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         setTimeout(ensureUILoaded, 500);
+        // 延迟一点让页面 JS 引擎完全恢复后再处理
+        setTimeout(handleWakeRecovery, 1000);
     }
+});
+
+// focus 事件作为双重保险（某些锁屏场景只触发 focus 不触发 visibilitychange）
+window.addEventListener('focus', () => {
+    setTimeout(handleWakeRecovery, 1000);
 });
 
 // Run main function

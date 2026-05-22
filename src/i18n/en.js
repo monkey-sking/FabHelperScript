@@ -293,6 +293,12 @@ export const en = {
 
     // 失败和重试
     log_failed_list_empty: 'Failed list empty, no action needed.',
+    log_cleared_from_failed: 'Cleared {0} actually-owned items from the failed list.',
+
+    // Wake/visibility recovery
+    log_wake_recovery: '🔔 Tab re-activated (lock screen / tab switch recovery). Checking execution state...',
+    log_wake_cleanup_stale: '🧹 Cleaned up {0} stale workers frozen by lock screen. Restarting execution.',
+    log_wake_restarting: '▶️ Re-activating execution ({0} pending tasks).',
 
     // 调试模式
     log_debug_mode_toggled: 'Debug mode {0}. {1}',
