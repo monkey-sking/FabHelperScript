@@ -272,6 +272,12 @@ function setupFetchInterceptor() {
             url.includes('/i/users/me/listings-states') ||
             url.includes('/i/listings/prices-infos')) {
 
+            // 通知 scanAndAddTasks 的 waitForApiCompletion 有 API 活动，
+            // 这样它就不必自行 wrap window.fetch（避免嵌套叠加）。
+            if (window._apiWaitStatus) {
+                window._apiWaitStatus.lastApiActivity = Date.now();
+            }
+
             try {
                 const response = await originalFetch.apply(this, args);
 
@@ -540,10 +546,9 @@ async function runDomDependentPart() {
     setInterval(async () => {
         try {
             const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+            // 只用 style.display 判断，避免 getComputedStyle 对每张卡片触发强制 reflow
             const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter(card => {
-                if (card.style.display === 'none') return false;
-                const computedStyle = window.getComputedStyle(card);
-                return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+                return card.style.display !== 'none';
             });
 
             const actualVisibleCards = visibleCards.length;

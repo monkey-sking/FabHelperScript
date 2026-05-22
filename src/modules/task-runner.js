@@ -1308,13 +1308,14 @@ export const TaskRunner = {
         });
 
         if (hasUnsettledCards && unsettledCards.length > 0) {
-            if (!State.hideRetryTimer) {
-                Utils.logger('debug', Utils.getText('log_unsettled_cards', unsettledCards.length));
-                State.hideRetryTimer = setTimeout(() => {
-                    State.hideRetryTimer = null;
-                    TaskRunner.runHideOrShow();
-                }, 2000);
-            }
+            // 已有 timer 挂起时直接返回，避免重复 schedule 形成无限累积
+            if (State.hideRetryTimer) return;
+            Utils.logger('debug', Utils.getText('log_unsettled_cards', unsettledCards.length));
+            State.hideRetryTimer = setTimeout(() => {
+                State.hideRetryTimer = null;
+                TaskRunner.runHideOrShow();
+            }, 2000);
+            // 有未就绪卡片时仍继续处理已就绪的，但本轮不再重入
         } else if (State.hideRetryTimer) {
             clearTimeout(State.hideRetryTimer);
             State.hideRetryTimer = null;
@@ -1421,10 +1422,9 @@ export const TaskRunner = {
             return;
         }
 
+        // 只用 style.display 判断，避免 getComputedStyle 对每张卡片触发强制 reflow
         const visibleCards = Array.from(cards).filter(card => {
-            if (card.style.display === 'none') return false;
-            const computedStyle = window.getComputedStyle(card);
-            return computedStyle.display !== 'none' && computedStyle.visibility !== 'hidden';
+            return card.style.display !== 'none';
         }).length;
 
         if (State.debugMode) {
@@ -1633,20 +1633,15 @@ export const TaskRunner = {
                 return new Promise((resolve) => {
                     if (window._apiWaitStatus.apiCheckInterval) {
                         clearInterval(window._apiWaitStatus.apiCheckInterval);
+                        window._apiWaitStatus.apiCheckInterval = null;
                     }
 
                     const maxWaitTime = 10000;
                     const startTime = Date.now();
 
-                    const originalFetch = window.fetch;
-                    window.fetch = function (...args) {
-                        const url = args[0]?.toString() || '';
-                        if (url.includes('/listings-states') || url.includes('/listings/search')) {
-                            window._apiWaitStatus.lastApiActivity = Date.now();
-                        }
-                        return originalFetch.apply(this, args);
-                    };
-
+                    // 不再 wrap window.fetch（每次调用都嵌套一层会导致随时间推移越来越慢）。
+                    // 改为仅靠 lastApiActivity 时间戳判断：页面发出 fetch 请求时
+                    // 由下方已安装的全局拦截器（initFetchTracker）负责更新该时间戳。
                     window._apiWaitStatus.apiCheckInterval = setInterval(() => {
                         const now = Date.now();
                         const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
@@ -1654,7 +1649,7 @@ export const TaskRunner = {
 
                         if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2000) {
                             clearInterval(window._apiWaitStatus.apiCheckInterval);
-                            window.fetch = originalFetch;
+                            window._apiWaitStatus.apiCheckInterval = null;
                             resolve();
                         }
                     }, 200);

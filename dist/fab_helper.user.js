@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260521062130
+// @version      3.5.5-20260522033337
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3583,13 +3583,12 @@
         }
       });
       if (hasUnsettledCards && unsettledCards.length > 0) {
-        if (!State.hideRetryTimer) {
-          Utils.logger("debug", Utils.getText("log_unsettled_cards", unsettledCards.length));
-          State.hideRetryTimer = setTimeout(() => {
-            State.hideRetryTimer = null;
-            TaskRunner2.runHideOrShow();
-          }, 2e3);
-        }
+        if (State.hideRetryTimer) return;
+        Utils.logger("debug", Utils.getText("log_unsettled_cards", unsettledCards.length));
+        State.hideRetryTimer = setTimeout(() => {
+          State.hideRetryTimer = null;
+          TaskRunner2.runHideOrShow();
+        }, 2e3);
       } else if (State.hideRetryTimer) {
         clearTimeout(State.hideRetryTimer);
         State.hideRetryTimer = null;
@@ -3684,9 +3683,7 @@
         return;
       }
       const visibleCards = Array.from(cards).filter((card) => {
-        if (card.style.display === "none") return false;
-        const computedStyle = window.getComputedStyle(card);
-        return computedStyle.display !== "none" && computedStyle.visibility !== "hidden";
+        return card.style.display !== "none";
       }).length;
       if (State.debugMode) {
         Utils.logger("debug", Utils.getText("debug_visible_after_hide", visibleCards, State.hiddenThisPageCount));
@@ -3842,24 +3839,17 @@
           return new Promise((resolve) => {
             if (window._apiWaitStatus.apiCheckInterval) {
               clearInterval(window._apiWaitStatus.apiCheckInterval);
+              window._apiWaitStatus.apiCheckInterval = null;
             }
             const maxWaitTime = 1e4;
             const startTime = Date.now();
-            const originalFetch = window.fetch;
-            window.fetch = function(...args) {
-              const url = args[0]?.toString() || "";
-              if (url.includes("/listings-states") || url.includes("/listings/search")) {
-                window._apiWaitStatus.lastApiActivity = Date.now();
-              }
-              return originalFetch.apply(this, args);
-            };
             window._apiWaitStatus.apiCheckInterval = setInterval(() => {
               const now = Date.now();
               const timeSinceLastActivity = now - window._apiWaitStatus.lastApiActivity;
               const totalWaitTime = now - startTime;
               if (totalWaitTime > maxWaitTime || timeSinceLastActivity > 2e3) {
                 clearInterval(window._apiWaitStatus.apiCheckInterval);
-                window.fetch = originalFetch;
+                window._apiWaitStatus.apiCheckInterval = null;
                 resolve();
               }
             }, 200);
@@ -4957,6 +4947,9 @@
     window.fetch = async function(...args) {
       const url = args[0]?.toString() || "";
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
+        if (window._apiWaitStatus) {
+          window._apiWaitStatus.lastApiActivity = Date.now();
+        }
         try {
           const response = await originalFetch.apply(this, args);
           if (response.ok) {
@@ -5173,9 +5166,7 @@
       try {
         const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
         const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter((card) => {
-          if (card.style.display === "none") return false;
-          const computedStyle = window.getComputedStyle(card);
-          return computedStyle.display !== "none" && computedStyle.visibility !== "hidden";
+          return card.style.display !== "none";
         });
         const actualVisibleCards = visibleCards.length;
         const hiddenCards = totalCards - actualVisibleCards;
