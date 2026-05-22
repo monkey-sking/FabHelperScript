@@ -1292,15 +1292,34 @@ export const TaskRunner = {
         }
     },
 
+    // 节流标记：100ms 内多次调用只执行一次，消除 Observer/timer 风暴
+    _runHideOrShowTimer: null,
+
+    scheduleHideOrShow: () => {
+        if (TaskRunner._runHideOrShowTimer) return;
+        TaskRunner._runHideOrShowTimer = setTimeout(() => {
+            TaskRunner._runHideOrShowTimer = null;
+            TaskRunner.runHideOrShow();
+        }, 100);
+    },
+
     runHideOrShow: () => {
-        State.hiddenThisPageCount = 0;
+        // 清除节流 timer（直接调用时也需清除，避免重入）
+        if (TaskRunner._runHideOrShowTimer) {
+            clearTimeout(TaskRunner._runHideOrShowTimer);
+            TaskRunner._runHideOrShowTimer = null;
+        }
+
         const cards = document.querySelectorAll(Config.SELECTORS.card);
+        State.hiddenThisPageCount = 0;
 
         let actuallyHidden = 0;
         let hasUnsettledCards = false;
         const unsettledCards = [];
 
         cards.forEach(card => {
+            // 已处理且已隐藏的卡片状态稳定，跳过昂贵的 isCardSettled 判断
+            if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return;
             if (!TaskRunner.isCardSettled(card)) {
                 hasUnsettledCards = true;
                 unsettledCards.push(card);
@@ -1355,39 +1374,68 @@ export const TaskRunner = {
 
             cardsToHide.sort(() => Math.random() - 0.5);
 
-            const batchSize = 10;
-            const batches = Math.ceil(cardsToHide.length / batchSize);
-            const initialDelay = 1000;
-
-            for (let i = 0; i < batches; i++) {
-                const start = i * batchSize;
-                const end = Math.min(start + batchSize, cardsToHide.length);
-                const currentBatch = cardsToHide.slice(start, end);
-                const batchDelay = initialDelay + i * 300 + Math.random() * 300;
-
-                setTimeout(() => {
-                    currentBatch.forEach((card, index) => {
-                        const cardDelay = index * 50 + Math.random() * 100;
+            if (cardsToHide.length > 30) {
+                // 大批量：用 requestAnimationFrame 分帧同步隐藏，避免创建上百个 setTimeout
+                const FRAME_BATCH = 20;
+                let offset = 0;
+                const hideNextFrame = () => {
+                    const end = Math.min(offset + FRAME_BATCH, cardsToHide.length);
+                    for (let i = offset; i < end; i++) {
+                        cardsToHide[i].style.display = 'none';
+                        actuallyHidden++;
+                    }
+                    offset = end;
+                    if (offset < cardsToHide.length) {
+                        requestAnimationFrame(hideNextFrame);
+                    } else {
+                        if (State.debugMode) {
+                            Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                        }
                         setTimeout(() => {
-                            card.style.display = 'none';
-                            actuallyHidden++;
-                            if (actuallyHidden === cardsToHide.length) {
-                                if (State.debugMode) {
-                                    Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                            if (UI) UI.update();
+                            TaskRunner.checkVisibilityAndRefresh();
+                        }, 300);
+                    }
+                };
+                requestAnimationFrame(hideNextFrame);
+            } else {
+                // 少量卡片：保留原有随机延迟动画（更自然）
+                const batchSize = 10;
+                const batches = Math.ceil(cardsToHide.length / batchSize);
+                const initialDelay = 1000;
+
+                for (let i = 0; i < batches; i++) {
+                    const start = i * batchSize;
+                    const end = Math.min(start + batchSize, cardsToHide.length);
+                    const currentBatch = cardsToHide.slice(start, end);
+                    const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+
+                    setTimeout(() => {
+                        currentBatch.forEach((card, index) => {
+                            const cardDelay = index * 50 + Math.random() * 100;
+                            setTimeout(() => {
+                                card.style.display = 'none';
+                                actuallyHidden++;
+                                if (actuallyHidden === cardsToHide.length) {
+                                    if (State.debugMode) {
+                                        Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                                    }
+                                    setTimeout(() => {
+                                        if (UI) UI.update();
+                                        TaskRunner.checkVisibilityAndRefresh();
+                                    }, 300);
                                 }
-                                setTimeout(() => {
-                                    if (UI) UI.update();
-                                    TaskRunner.checkVisibilityAndRefresh();
-                                }, 300);
-                            }
-                        }, cardDelay);
-                    });
-                }, batchDelay);
+                            }, cardDelay);
+                        });
+                    }, batchDelay);
+                }
             }
         }
 
         if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
             const visibleCards = Array.from(cards).filter(card => {
+                // 已处理且已隐藏→状态稳定，跳过重分类（这是最大的性能痑点）
+                if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return false;
                 if (State.hideSaved && TaskRunner.isCardFinished(card)) return false;
                 if (State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card)) return false;
                 if (State.hidePaid && !TaskRunner.isFreeCard(card)) return false;

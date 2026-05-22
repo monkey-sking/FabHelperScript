@@ -201,7 +201,7 @@ function triggerOwnedStatusUpdate() {
     clearTimeout(_ownedStatusUpdateTimer);
     _ownedStatusUpdateTimer = setTimeout(() => {
         if (State.hideSaved) {
-            try { TaskRunner.runHideOrShow(); } catch (e) { }
+            try { TaskRunner.scheduleHideOrShow(); } catch (e) { }
         }
         try { TaskRunner.checkVisibleCardsStatus().catch(() => { }); } catch (e) { }
     }, 50);
@@ -442,7 +442,7 @@ async function runDomDependentPart() {
                 // where data arrives later via triggerOwnedStatusUpdate().
                 TaskRunner.checkVisibleCardsStatus().then(() => {
                     if (State.hideSaved) {
-                        TaskRunner.runHideOrShow();
+                        TaskRunner.scheduleHideOrShow();
                     }
                     if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
@@ -450,7 +450,7 @@ async function runDomDependentPart() {
                     }
                 }).catch(() => {
                     if (State.hideSaved) {
-                        TaskRunner.runHideOrShow();
+                        TaskRunner.scheduleHideOrShow();
                     }
                 });
             }, 300);
@@ -473,16 +473,21 @@ async function runDomDependentPart() {
     }
 
     // Periodic card processing check
+    // 间隔 10s：跳过已处理隐藏卡片（状态稳定），只检查可见未处理卡片
     setInterval(() => {
-        if (!State.hideSaved) return;
+        if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
         const cards = document.querySelectorAll(Config.SELECTORS.card);
         let unprocessedCount = 0;
 
         cards.forEach(card => {
+            // 已处理且已隐藏 → 状态完全稳定，跳过所有检查（这是最大 CPU 热点）
+            if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return;
+
             const isProcessed = card.getAttribute('data-fab-processed') === 'true';
             if (!isProcessed) {
                 unprocessedCount++;
             } else {
+                // 只对可见的已处理卡片做状态一致性检查
                 const isFinished = TaskRunner.isCardFinished(card);
                 const shouldBeHidden = isFinished && State.hideSaved;
                 const isHidden = card.style.display === 'none';
@@ -498,9 +503,9 @@ async function runDomDependentPart() {
             if (State.debugMode) {
                 Utils.logger('debug', Utils.getText('debug_unprocessed_cards', unprocessedCount));
             }
-            TaskRunner.runHideOrShow();
+            TaskRunner.scheduleHideOrShow();
         }
-    }, Config.STATUS_CHECK_INTERVAL);
+    }, 10000);
 
     // Clean completed tasks from todo
     setInterval(() => {

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260522050852
+// @version      3.5.5-20260522054111
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3580,13 +3580,27 @@
         closeWorkerTab();
       }
     }, "processDetailPage"),
+    // 节流标记：100ms 内多次调用只执行一次，消除 Observer/timer 风暴
+    _runHideOrShowTimer: null,
+    scheduleHideOrShow: /* @__PURE__ */ __name(() => {
+      if (TaskRunner2._runHideOrShowTimer) return;
+      TaskRunner2._runHideOrShowTimer = setTimeout(() => {
+        TaskRunner2._runHideOrShowTimer = null;
+        TaskRunner2.runHideOrShow();
+      }, 100);
+    }, "scheduleHideOrShow"),
     runHideOrShow: /* @__PURE__ */ __name(() => {
-      State.hiddenThisPageCount = 0;
+      if (TaskRunner2._runHideOrShowTimer) {
+        clearTimeout(TaskRunner2._runHideOrShowTimer);
+        TaskRunner2._runHideOrShowTimer = null;
+      }
       const cards = document.querySelectorAll(Config.SELECTORS.card);
+      State.hiddenThisPageCount = 0;
       let actuallyHidden = 0;
       let hasUnsettledCards = false;
       const unsettledCards = [];
       cards.forEach((card) => {
+        if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return;
         if (!TaskRunner2.isCardSettled(card)) {
           hasUnsettledCards = true;
           unsettledCards.push(card);
@@ -3629,36 +3643,62 @@
           Utils.logger("debug", Utils.getText("debug_prepare_hide", cardsToHide.length));
         }
         cardsToHide.sort(() => Math.random() - 0.5);
-        const batchSize = 10;
-        const batches = Math.ceil(cardsToHide.length / batchSize);
-        const initialDelay = 1e3;
-        for (let i = 0; i < batches; i++) {
-          const start = i * batchSize;
-          const end = Math.min(start + batchSize, cardsToHide.length);
-          const currentBatch = cardsToHide.slice(start, end);
-          const batchDelay = initialDelay + i * 300 + Math.random() * 300;
-          setTimeout(() => {
-            currentBatch.forEach((card, index) => {
-              const cardDelay = index * 50 + Math.random() * 100;
+        if (cardsToHide.length > 30) {
+          const FRAME_BATCH = 20;
+          let offset = 0;
+          const hideNextFrame = /* @__PURE__ */ __name(() => {
+            const end = Math.min(offset + FRAME_BATCH, cardsToHide.length);
+            for (let i = offset; i < end; i++) {
+              cardsToHide[i].style.display = "none";
+              actuallyHidden++;
+            }
+            offset = end;
+            if (offset < cardsToHide.length) {
+              requestAnimationFrame(hideNextFrame);
+            } else {
+              if (State.debugMode) {
+                Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+              }
               setTimeout(() => {
-                card.style.display = "none";
-                actuallyHidden++;
-                if (actuallyHidden === cardsToHide.length) {
-                  if (State.debugMode) {
-                    Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+                if (UI4) UI4.update();
+                TaskRunner2.checkVisibilityAndRefresh();
+              }, 300);
+            }
+          }, "hideNextFrame");
+          requestAnimationFrame(hideNextFrame);
+        } else {
+          const batchSize = 10;
+          const batches = Math.ceil(cardsToHide.length / batchSize);
+          const initialDelay = 1e3;
+          for (let i = 0; i < batches; i++) {
+            const start = i * batchSize;
+            const end = Math.min(start + batchSize, cardsToHide.length);
+            const currentBatch = cardsToHide.slice(start, end);
+            const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+            setTimeout(() => {
+              currentBatch.forEach((card, index) => {
+                const cardDelay = index * 50 + Math.random() * 100;
+                setTimeout(() => {
+                  card.style.display = "none";
+                  actuallyHidden++;
+                  if (actuallyHidden === cardsToHide.length) {
+                    if (State.debugMode) {
+                      Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+                    }
+                    setTimeout(() => {
+                      if (UI4) UI4.update();
+                      TaskRunner2.checkVisibilityAndRefresh();
+                    }, 300);
                   }
-                  setTimeout(() => {
-                    if (UI4) UI4.update();
-                    TaskRunner2.checkVisibilityAndRefresh();
-                  }, 300);
-                }
-              }, cardDelay);
-            });
-          }, batchDelay);
+                }, cardDelay);
+              });
+            }, batchDelay);
+          }
         }
       }
       if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
         const visibleCards = Array.from(cards).filter((card) => {
+          if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return false;
           if (State.hideSaved && TaskRunner2.isCardFinished(card)) return false;
           if (State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card)) return false;
           if (State.hidePaid && !TaskRunner2.isFreeCard(card)) return false;
@@ -4893,7 +4933,7 @@
     _ownedStatusUpdateTimer = setTimeout(() => {
       if (State.hideSaved) {
         try {
-          TaskRunner2.runHideOrShow();
+          TaskRunner2.scheduleHideOrShow();
         } catch (e) {
         }
       }
@@ -5094,14 +5134,14 @@
           }
           TaskRunner2.checkVisibleCardsStatus().then(() => {
             if (State.hideSaved) {
-              TaskRunner2.runHideOrShow();
+              TaskRunner2.scheduleHideOrShow();
             }
             if (State.appStatus === "NORMAL" || State.autoAddOnScroll) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
             if (State.hideSaved) {
-              TaskRunner2.runHideOrShow();
+              TaskRunner2.scheduleHideOrShow();
             }
           });
         }, 300);
@@ -5117,10 +5157,11 @@
       }, 3e3);
     }
     setInterval(() => {
-      if (!State.hideSaved) return;
+      if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
       const cards = document.querySelectorAll(Config.SELECTORS.card);
       let unprocessedCount = 0;
       cards.forEach((card) => {
+        if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return;
         const isProcessed = card.getAttribute("data-fab-processed") === "true";
         if (!isProcessed) {
           unprocessedCount++;
@@ -5138,9 +5179,9 @@
         if (State.debugMode) {
           Utils.logger("debug", Utils.getText("debug_unprocessed_cards", unprocessedCount));
         }
-        TaskRunner2.runHideOrShow();
+        TaskRunner2.scheduleHideOrShow();
       }
-    }, Config.STATUS_CHECK_INTERVAL);
+    }, 1e4);
     setInterval(() => {
       if (State.db.todo.length === 0) return;
       const initialTodoCount = State.db.todo.length;
