@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523051514
+// @version      3.5.5-20260523052339
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -201,7 +201,7 @@
     setting_auto_resume_429: "Auto resume after 429 errors",
     setting_hide_discounted: "Hide discounted paid items",
     setting_hide_paid: "Hide all paid items",
-    setting_block_large_resources: "Disable large resources in worker tabs",
+    setting_block_large_resources: "Disable images/media/large resources universally (list & detail pages)",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
     status_enabled: "enabled",
@@ -524,7 +524,7 @@
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
     setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
     setting_hide_paid: "\u9690\u85CF\u6240\u6709\u4ED8\u8D39\u5546\u54C1",
-    setting_block_large_resources: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u7981\u7528\u56FE\u7247/\u5A92\u4F53\u7B49\u5927\u8D44\u6E90",
+    setting_block_large_resources: "\u5168\u9762\u7981\u7528\u56FE\u7247/\u5A92\u4F53\u7B49\u5927\u8D44\u6E90\u4EE5\u52A0\u901F\uFF08\u542B\u5217\u8868\u9875\u4E0E\u8BE6\u60C5\u9875\uFF09",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
     status_enabled: "\u5F00\u542F",
@@ -4805,21 +4805,17 @@
   // src/index.js
   (function() {
     try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const workerId = urlParams.get("workerId");
-      if (workerId) {
-        const blockEnabled = typeof GM_getValue !== "undefined" ? GM_getValue("fab_block_resources_v1", true) : true;
-        if (blockEnabled) {
-          const meta = document.createElement("meta");
-          meta.httpEquiv = "Content-Security-Policy";
-          meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
-          if (document.documentElement) {
-            document.documentElement.appendChild(meta);
-          } else {
-            document.appendChild(meta);
-          }
-          console.log("[Fab Helper] Worker tab detected. Injected CSP to block images/media/iframes/fonts.");
+      const blockEnabled = typeof GM_getValue !== "undefined" ? GM_getValue("fab_block_resources_v1", true) : true;
+      if (blockEnabled) {
+        const meta = document.createElement("meta");
+        meta.httpEquiv = "Content-Security-Policy";
+        meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
+        if (document.documentElement) {
+          document.documentElement.appendChild(meta);
+        } else {
+          document.appendChild(meta);
         }
+        console.log("[Fab Helper] Injected CSP to block images/media/iframes/fonts.");
       }
     } catch (e) {
       console.error("[Fab Helper] Failed to inject CSP:", e);
