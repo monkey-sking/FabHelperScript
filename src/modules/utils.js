@@ -10,30 +10,6 @@ export const setUIReference = (uiModule) => { UI = uiModule; };
 
 export const Utils = {
     logger: (type, ...args) => {
-        // 支持debug级别日志
-        if (type === 'debug') {
-            // 只有在调试模式下才显示debug日志（控制台和面板都需要开启调试模式）
-            if (!State.debugMode) {
-                return; // 调试模式关闭时，完全不显示debug日志
-            }
-
-            // 调试模式下在控制台输出日志
-            console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
-
-            // 调试模式下记录到日志面板
-            if (State.UI && State.UI.logPanel) {
-                const logEntry = document.createElement('div');
-                logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px; color: #888;';
-                const timestamp = new Date().toLocaleTimeString();
-                logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> <span style="color: #8a8;">[DEBUG]</span> ${args.join(' ')}`;
-                State.UI.logPanel.prepend(logEntry);
-                while (State.UI.logPanel.children.length > 100) {
-                    State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
-                }
-            }
-            return;
-        }
-
         // 在工作标签页中，只记录关键日志
         if (State.isWorkerTab) {
             if (type === 'error' || args.some(arg => typeof arg === 'string' && arg.includes('Worker'))) {
@@ -42,15 +18,41 @@ export const Utils = {
             return;
         }
 
-        console[type](`${Config.SCRIPT_NAME}`, ...args);
-        // The actual logging to screen will be handled by the UI module
-        // to keep modules decoupled.
+        // 支持debug级别日志
+        if (type === 'debug') {
+            if (!State.debugMode) {
+                return; // 调试模式关闭时，不输出debug日志
+            }
+            console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
+        } else {
+            console[type](`${Config.SCRIPT_NAME}`, ...args);
+        }
+
+        // 记录到日志面板
         if (State.UI && State.UI.logPanel) {
             const logEntry = document.createElement('div');
-            logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px;';
+            logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;';
+            
+            // 根据日志类型应用色彩样式（符合暗色玻璃态控制台的主题色）
+            if (type === 'error') {
+                logEntry.style.color = '#ff3b30'; // 亮红 (System Red)
+                logEntry.style.fontWeight = '500';
+            } else if (type === 'warn') {
+                logEntry.style.color = '#ff9500'; // 亮橙 (System Orange)
+                logEntry.style.fontWeight = '500';
+            } else if (type === 'debug') {
+                logEntry.style.color = '#8e8e93'; // 灰字 (System Gray)
+            } else {
+                logEntry.style.color = '#f5f5f7'; // 亮灰白 (Primary Text)
+            }
+
             const timestamp = new Date().toLocaleTimeString();
-            logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${args.join(' ')}`;
+            const debugPrefix = type === 'debug' ? '<span style="color: #34c759;">[DEBUG]</span> ' : '';
+            logEntry.innerHTML = `<span style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> ${debugPrefix}${args.join(' ')}`;
+            
             State.UI.logPanel.prepend(logEntry);
+            
+            // 限制最大日志行数
             while (State.UI.logPanel.children.length > 100) {
                 State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
             }

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523-1347
+// @version      3.5.5-20260523-1425
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -900,35 +900,37 @@
   }, "setUIReference");
   var Utils = {
     logger: /* @__PURE__ */ __name((type, ...args) => {
-      if (type === "debug") {
-        if (!State.debugMode) {
-          return;
-        }
-        console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
-        if (State.UI && State.UI.logPanel) {
-          const logEntry = document.createElement("div");
-          logEntry.style.cssText = "padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px; color: #888;";
-          const timestamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
-          logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> <span style="color: #8a8;">[DEBUG]</span> ${args.join(" ")}`;
-          State.UI.logPanel.prepend(logEntry);
-          while (State.UI.logPanel.children.length > 100) {
-            State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
-          }
-        }
-        return;
-      }
       if (State.isWorkerTab) {
         if (type === "error" || args.some((arg) => typeof arg === "string" && arg.includes("Worker"))) {
           console[type](`${Config.SCRIPT_NAME} [Worker]`, ...args);
         }
         return;
       }
-      console[type](`${Config.SCRIPT_NAME}`, ...args);
+      if (type === "debug") {
+        if (!State.debugMode) {
+          return;
+        }
+        console.log(`${Config.SCRIPT_NAME} [DEBUG]`, ...args);
+      } else {
+        console[type](`${Config.SCRIPT_NAME}`, ...args);
+      }
       if (State.UI && State.UI.logPanel) {
         const logEntry = document.createElement("div");
-        logEntry.style.cssText = "padding: 2px 4px; border-bottom: 1px solid #444; font-size: 11px;";
+        logEntry.style.cssText = "padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;";
+        if (type === "error") {
+          logEntry.style.color = "#ff3b30";
+          logEntry.style.fontWeight = "500";
+        } else if (type === "warn") {
+          logEntry.style.color = "#ff9500";
+          logEntry.style.fontWeight = "500";
+        } else if (type === "debug") {
+          logEntry.style.color = "#8e8e93";
+        } else {
+          logEntry.style.color = "#f5f5f7";
+        }
         const timestamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
-        logEntry.innerHTML = `<span style="color: #888;">[${timestamp}]</span> ${args.join(" ")}`;
+        const debugPrefix = type === "debug" ? '<span style="color: #34c759;">[DEBUG]</span> ' : "";
+        logEntry.innerHTML = `<span style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> ${debugPrefix}${args.join(" ")}`;
         State.UI.logPanel.prepend(logEntry);
         while (State.UI.logPanel.children.length > 100) {
           State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
@@ -5586,25 +5588,30 @@
           Utils.logger("error", "\u6536\u5230\u65E0\u6548\u7684\u5DE5\u4F5C\u62A5\u544A\u3002\u7F3A\u5C11workerId\u6216task\u3002");
           return;
         }
-        if (executionTime) {
-          Utils.logger("info", Utils.getText("task_execution_time", executionTime ? (executionTime / 1e3).toFixed(2) : Utils.getText("status_unknown_duration")));
-        }
         if (State.runningWorkers[workerId2]) {
           delete State.runningWorkers[workerId2];
           State.activeWorkers--;
         }
         if (logs && logs.length) {
-          logs.forEach((log) => Utils.logger("info", log));
+          logs.forEach((log) => {
+            Utils.logger("debug", log);
+          });
         }
+        const isZh = State.lang === "zh";
+        const timeSuffix = executionTime ? ` (${Utils.getText("task_execution_time", (executionTime / 1e3).toFixed(2))})` : "";
         if (success) {
-          Utils.logger("info", `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}`);
+          const successMsg = isZh ? `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}` : `\u2705 Task completed: ${task.name}`;
+          Utils.logger("info", successMsg + timeSuffix);
           await Database.markAsDone(task);
           State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
         } else {
-          Utils.logger("warn", `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name}`);
+          const errorLog = logs && logs.length ? logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
+          const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
+          Utils.logger("warn", failMsg + timeSuffix);
           await Database.markAsFailed(task, {
-            reason: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25",
+            reason: cleanError,
             logs: logs || [],
             details: {
               executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",

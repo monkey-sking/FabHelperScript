@@ -964,28 +964,38 @@ async function main() {
                 return;
             }
 
-            if (executionTime) {
-                Utils.logger('info', Utils.getText('task_execution_time', executionTime ? (executionTime / 1000).toFixed(2) : Utils.getText('status_unknown_duration')));
-            }
-
             if (State.runningWorkers[workerId]) {
                 delete State.runningWorkers[workerId];
                 State.activeWorkers--;
             }
 
             if (logs && logs.length) {
-                logs.forEach(log => Utils.logger('info', log));
+                logs.forEach(log => {
+                    // 工作线程的详细步骤默认作为 debug 级别输出，避免刷屏主控制台
+                    Utils.logger('debug', log);
+                });
             }
 
+            const isZh = State.lang === 'zh';
+            const timeSuffix = executionTime ? ` (${Utils.getText('task_execution_time', (executionTime / 1000).toFixed(2))})` : '';
+
             if (success) {
-                Utils.logger('info', `✅ 任务完成: ${task.name}`);
+                const successMsg = isZh ? `✅ 任务完成: ${task.name}` : `✅ Task completed: ${task.name}`;
+                Utils.logger('info', successMsg + timeSuffix);
                 await Database.markAsDone(task);
                 State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
                 State.executionCompletedTasks++;
             } else {
-                Utils.logger('warn', `❌ 任务失败: ${task.name}`);
+                // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
+                const errorLog = logs && logs.length ? 
+                    (logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) : 
+                    (isZh ? '工作标签页报告失败' : 'Worker tab reported failure');
+                const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, '') : (isZh ? '未知原因' : 'Unknown reason');
+
+                const failMsg = isZh ? `❌ 任务失败: ${task.name} (${cleanError})` : `❌ Task failed: ${task.name} (${cleanError})`;
+                Utils.logger('warn', failMsg + timeSuffix);
                 await Database.markAsFailed(task, {
-                    reason: '工作标签页报告失败',
+                    reason: cleanError,
                     logs: logs || [],
                     details: {
                         executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
