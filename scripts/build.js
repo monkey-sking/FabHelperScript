@@ -9,8 +9,10 @@ const projectRoot = resolve(__dirname, '..');
 // 读取 package.json 获取版本号
 const pkg = JSON.parse(readFileSync(resolve(projectRoot, 'package.json'), 'utf-8'));
 
-// 生成构建时间戳
-const buildTime = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+/, '').replace('T', '');
+// 生成本地时间的构建时间戳 (格式: YYYYMMDD-HHmm)
+const now = new Date();
+const pad = (num) => String(num).padStart(2, '0');
+const buildTime = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
 const version = `${pkg.version}-${buildTime}`;
 
 // UserScript 元数据头
