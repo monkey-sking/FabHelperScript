@@ -199,10 +199,13 @@ export const PagePatcher = {
                 const container = State.UI.savedPositionDisplay.parentElement;
                 if (container) {
                     const originalBg = container.style.backgroundColor;
-                    container.style.transition = 'background-color 0.5s';
-                    container.style.backgroundColor = '#d4edda'; // 浅绿色高亮
+                    const originalColor = container.style.color;
+                    container.style.transition = 'background-color 0.5s, color 0.5s';
+                    container.style.backgroundColor = 'rgba(52, 199, 89, 0.2)'; // 软绿色玻璃感背景
+                    container.style.color = 'var(--green)'; // 亮绿色字体高亮
                     setTimeout(() => {
                         container.style.backgroundColor = originalBg;
+                        container.style.color = originalColor;
                     }, 5000); // 5秒后恢复
                 }
             }
