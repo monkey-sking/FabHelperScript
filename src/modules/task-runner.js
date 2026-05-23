@@ -1492,10 +1492,8 @@ export const TaskRunner = {
             Utils.logger('debug', Utils.getText('debug_visible_after_hide', visibleCards, State.hiddenThisPageCount));
         }
 
-        const visibleCountElement = document.getElementById('fab-status-visible');
-        if (visibleCountElement) {
-            visibleCountElement.textContent = visibleCards.toString();
-        }
+        // Use UI.update() so both visible AND hidden counts are refreshed from real DOM state
+        if (UI) UI.update();
 
         if (visibleCards === 0) {
             if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {

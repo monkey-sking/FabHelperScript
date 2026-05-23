@@ -717,12 +717,26 @@ export const UI = {
         const todoCount = State.db.todo.length;
         const doneCount = State.db.done.length;
         const failedCount = State.db.failed.length;
-        const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+
+        // Derive visible/hidden counts directly from DOM state to avoid stale
+        // values caused by async/delayed card-hiding animations. State.hiddenThisPageCount
+        // is updated synchronously at the start of runHideOrShow() but the actual
+        // DOM display:none is applied later in batched timeouts/rAF callbacks.
+        const allCards = document.querySelectorAll(Config.SELECTORS.card);
+        let hiddenCount = 0;
+        let visibleCount = 0;
+        allCards.forEach(card => {
+            if (card.style.display === 'none') {
+                hiddenCount++;
+            } else {
+                visibleCount++;
+            }
+        });
 
         if (State.UI.statusTodo) State.UI.statusTodo.querySelector('span').textContent = todoCount;
         if (State.UI.statusDone) State.UI.statusDone.querySelector('span').textContent = doneCount;
         if (State.UI.statusFailed) State.UI.statusFailed.querySelector('span').textContent = failedCount;
-        if (State.UI.statusHidden) State.UI.statusHidden.querySelector('span').textContent = State.hiddenThisPageCount;
+        if (State.UI.statusHidden) State.UI.statusHidden.querySelector('span').textContent = hiddenCount;
         if (State.UI.statusVisible) State.UI.statusVisible.querySelector('span').textContent = visibleCount;
 
         // Update status labels
