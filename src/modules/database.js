@@ -12,10 +12,10 @@ export const setUIReference = (uiModule) => { UI = uiModule; };
 export const Database = {
     normalizeListingUrl: (url) => {
         if (!url) return '';
-        const cleanUrl = String(url).split('?')[0];
+        const cleanUrl = String(url).split('?')[0].toLowerCase();
         const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
         if (uidMatch && uidMatch[1]) {
-            return `https://www.fab.com/listings/${uidMatch[1]}`;
+            return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
         }
         return cleanUrl;
     },

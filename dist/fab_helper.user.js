@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523-1425
+// @version      3.5.5-20260523-1450
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1697,10 +1697,10 @@
   var Database = {
     normalizeListingUrl: /* @__PURE__ */ __name((url) => {
       if (!url) return "";
-      const cleanUrl = String(url).split("?")[0];
+      const cleanUrl = String(url).split("?")[0].toLowerCase();
       const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
       if (uidMatch && uidMatch[1]) {
-        return `https://www.fab.com/listings/${uidMatch[1]}`;
+        return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
       }
       return cleanUrl;
     }, "normalizeListingUrl"),
@@ -3019,7 +3019,7 @@
             await new Promise((r) => setTimeout(r, 250));
           }
         }
-        Utils.logger("info", Utils.getText("fab_dom_api_complete", ownedUids.size));
+        Utils.logger("debug", Utils.getText("fab_dom_api_complete", ownedUids.size));
         let dbUpdated = false;
         const langPath = State.lang === "zh" ? "/zh-cn" : "";
         if (ownedUids.size > 0) {
@@ -3862,8 +3862,8 @@
         if (confirmedOwned > 0) {
           await Database.saveDone();
           await Database.saveFailed();
-          Utils.logger("info", Utils.getText("fab_dom_api_complete", confirmedOwned));
-          Utils.logger("info", Utils.getText("fab_dom_refresh_complete", confirmedOwned));
+          Utils.logger("debug", Utils.getText("fab_dom_api_complete", confirmedOwned));
+          Utils.logger("debug", Utils.getText("fab_dom_refresh_complete", confirmedOwned));
           if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
             TaskRunner2.runHideOrShow();
           }

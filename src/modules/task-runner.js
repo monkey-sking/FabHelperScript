@@ -584,7 +584,7 @@ export const TaskRunner = {
                 }
             }
 
-            Utils.logger('info', Utils.getText('fab_dom_api_complete', ownedUids.size));
+            Utils.logger('debug', Utils.getText('fab_dom_api_complete', ownedUids.size));
 
             let dbUpdated = false;
             const langPath = State.lang === 'zh' ? '/zh-cn' : '';
@@ -1628,8 +1628,8 @@ export const TaskRunner = {
             if (confirmedOwned > 0) {
                 await Database.saveDone();
                 await Database.saveFailed();
-                Utils.logger('info', Utils.getText('fab_dom_api_complete', confirmedOwned));
-                Utils.logger('info', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
+                Utils.logger('debug', Utils.getText('fab_dom_api_complete', confirmedOwned));
+                Utils.logger('debug', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
                 if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                     TaskRunner.runHideOrShow();
                 }
