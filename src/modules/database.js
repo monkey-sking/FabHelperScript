@@ -57,6 +57,7 @@ export const Database = {
         State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
         State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false); // 加载隐藏打折付费设置
         State.hidePaid = await GM_getValue(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
+        State.blockLargeResources = await GM_getValue(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
         State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
         State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
@@ -89,6 +90,7 @@ export const Database = {
     saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
     saveHideDiscountedPref: () => GM_setValue(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), // 保存隐藏打折付费设置
     saveHidePaidPref: () => GM_setValue(Config.DB_KEYS.HIDE_PAID, State.hidePaid), // 保存隐藏所有付费设置
+    saveBlockResourcesPref: () => GM_setValue(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), // 保存禁用大资源设置
     saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
@@ -100,11 +102,13 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR); // 清除滚动记忆
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
+            await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
             State.db.todo = [];
             State.db.done = [];
             State.db.failed = [];
             State.savedCursor = null;
-            Utils.logger('info', '所有脚本数据（包括滚动记忆）已重置。');
+            State.blockLargeResources = true;
+            Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {
                 UI.removeAllOverlays();
                 UI.update();

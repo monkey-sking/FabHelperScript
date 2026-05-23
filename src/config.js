@@ -28,6 +28,7 @@ export const Config = {
         AUTO_REFRESH_EMPTY: 'fab_auto_refresh_empty_v1', // 无商品可见时自动刷新
         HIDE_DISCOUNTED: 'fab_hideDiscounted_v8', // 隐藏打折的付费商品
         HIDE_PAID: 'fab_hidePaid_v8', // 隐藏所有付费商品
+        BLOCK_RESOURCES: 'fab_block_resources_v1', // 禁用大资源设置键
         // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {

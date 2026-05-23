@@ -5,6 +5,30 @@
  * Build with: npm run build
  */
 
+// Immediate optimization for background worker tabs (runs at document-start)
+(function () {
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const workerId = urlParams.get('workerId');
+        if (workerId) {
+            const blockEnabled = typeof GM_getValue !== 'undefined' ? GM_getValue('fab_block_resources_v1', true) : true;
+            if (blockEnabled) {
+                const meta = document.createElement('meta');
+                meta.httpEquiv = 'Content-Security-Policy';
+                meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
+                if (document.documentElement) {
+                    document.documentElement.appendChild(meta);
+                } else {
+                    document.appendChild(meta);
+                }
+                console.log('[Fab Helper] Worker tab detected. Injected CSP to block images/media/iframes/fonts.');
+            }
+        }
+    } catch (e) {
+        console.error('[Fab Helper] Failed to inject CSP:', e);
+    }
+})();
+
 // Core modules
 import { Config } from './config.js';
 import { State } from './state.js';

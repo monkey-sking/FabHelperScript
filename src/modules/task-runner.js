@@ -450,6 +450,19 @@ export const TaskRunner = {
         if (UI) UI.update();
     },
 
+    toggleBlockResources: async () => {
+        State.blockLargeResources = !State.blockLargeResources;
+        await Database.saveBlockResourcesPref();
+
+        if (State.blockLargeResources) {
+            Utils.logger('info', '已开启工作标签页大资源过滤');
+        } else {
+            Utils.logger('info', '已关闭工作标签页大资源过滤');
+        }
+
+        if (UI) UI.update();
+    },
+
     stop: () => {
         if (!State.isExecuting) return;
         State.isExecuting = false;

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260522054111
+// @version      3.5.5-20260523051514
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -19,7 +19,7 @@
 // @grant        GM_openInTab
 // @connect      fab.com
 // @connect      www.fab.com
-// @run-at       document-idle
+// @run-at       document-start
 // @downloadURL https://update.greasyfork.org/scripts/541307/Fab%20Helper%20%28%E4%BC%98%E5%8C%96%E7%89%88%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/541307/Fab%20Helper%20%28%E4%BC%98%E5%8C%96%E7%89%88%29.meta.js
 // ==/UserScript==
@@ -200,6 +200,8 @@
     setting_remember_position: "Remember waterfall browsing position",
     setting_auto_resume_429: "Auto resume after 429 errors",
     setting_hide_discounted: "Hide discounted paid items",
+    setting_hide_paid: "Hide all paid items",
+    setting_block_large_resources: "Disable large resources in worker tabs",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
     status_enabled: "enabled",
@@ -522,6 +524,7 @@
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
     setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
     setting_hide_paid: "\u9690\u85CF\u6240\u6709\u4ED8\u8D39\u5546\u54C1",
+    setting_block_large_resources: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u7981\u7528\u56FE\u7247/\u5A92\u4F53\u7B49\u5927\u8D44\u6E90",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
     status_enabled: "\u5F00\u542F",
@@ -703,8 +706,10 @@
       // 无商品可见时自动刷新
       HIDE_DISCOUNTED: "fab_hideDiscounted_v8",
       // 隐藏打折的付费商品
-      HIDE_PAID: "fab_hidePaid_v8"
+      HIDE_PAID: "fab_hidePaid_v8",
       // 隐藏所有付费商品
+      BLOCK_RESOURCES: "fab_block_resources_v1"
+      // 禁用大资源设置键
       // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {
@@ -787,6 +792,8 @@
     // 是否隐藏打折的付费商品
     hidePaid: false,
     // 是否隐藏所有付费商品
+    blockLargeResources: true,
+    // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
     debugMode: false,
     // 是否启用调试模式
     lang: "zh",
@@ -1727,6 +1734,7 @@
       State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
       State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false);
       State.hidePaid = await GM_getValue(Config.DB_KEYS.HIDE_PAID, false);
+      State.blockLargeResources = await GM_getValue(Config.DB_KEYS.BLOCK_RESOURCES, true);
       State.debugMode = await GM_getValue("fab_helper_debug_mode", false);
       State.currentSortOption = await GM_getValue("fab_helper_sort_option", "title_desc");
       State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
@@ -1758,6 +1766,8 @@
     // 保存隐藏打折付费设置
     saveHidePaidPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE_PAID, State.hidePaid), "saveHidePaidPref"),
     // 保存隐藏所有付费设置
+    saveBlockResourcesPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
+    // 保存禁用大资源设置
     saveExecutingState: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
@@ -1768,11 +1778,13 @@
         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
         await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
+        await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
         State.db.todo = [];
         State.db.done = [];
         State.db.failed = [];
         State.savedCursor = null;
-        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\uFF09\u5DF2\u91CD\u7F6E\u3002");
+        State.blockLargeResources = true;
+        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI2) {
           UI2.removeAllOverlays();
           UI2.update();
@@ -2897,6 +2909,16 @@
       }
       if (UI4) UI4.update();
     }, "toggleHidePaid"),
+    toggleBlockResources: /* @__PURE__ */ __name(async () => {
+      State.blockLargeResources = !State.blockLargeResources;
+      await Database.saveBlockResourcesPref();
+      if (State.blockLargeResources) {
+        Utils.logger("info", "\u5DF2\u5F00\u542F\u5DE5\u4F5C\u6807\u7B7E\u9875\u5927\u8D44\u6E90\u8FC7\u6EE4");
+      } else {
+        Utils.logger("info", "\u5DF2\u5173\u95ED\u5DE5\u4F5C\u6807\u7B7E\u9875\u5927\u8D44\u6E90\u8FC7\u6EE4");
+      }
+      if (UI4) UI4.update();
+    }, "toggleBlockResources"),
     stop: /* @__PURE__ */ __name(() => {
       if (!State.isExecuting) return;
       State.isExecuting = false;
@@ -4491,6 +4513,8 @@
             TaskRunner3.toggleHideDiscountedPaid();
           } else if (stateKey === "hidePaid") {
             TaskRunner3.toggleHidePaid();
+          } else if (stateKey === "blockLargeResources") {
+            TaskRunner3.toggleBlockResources();
           }
           e.target.checked = State[stateKey];
         };
@@ -4512,6 +4536,8 @@
       settingsContent.appendChild(hideDiscountedPaidSetting);
       const hidePaidSetting = createSettingRow(Utils.getText("setting_hide_paid"), "hidePaid");
       settingsContent.appendChild(hidePaidSetting);
+      const blockResourcesSetting = createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources");
+      settingsContent.appendChild(blockResourcesSetting);
       const resetButton = document.createElement("button");
       resetButton.textContent = Utils.getText("clear_all_data");
       resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";
@@ -4777,6 +4803,28 @@
   };
 
   // src/index.js
+  (function() {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const workerId = urlParams.get("workerId");
+      if (workerId) {
+        const blockEnabled = typeof GM_getValue !== "undefined" ? GM_getValue("fab_block_resources_v1", true) : true;
+        if (blockEnabled) {
+          const meta = document.createElement("meta");
+          meta.httpEquiv = "Content-Security-Policy";
+          meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
+          if (document.documentElement) {
+            document.documentElement.appendChild(meta);
+          } else {
+            document.appendChild(meta);
+          }
+          console.log("[Fab Helper] Worker tab detected. Injected CSP to block images/media/iframes/fonts.");
+        }
+      }
+    } catch (e) {
+      console.error("[Fab Helper] Failed to inject CSP:", e);
+    }
+  })();
   var currentCountdownInterval = null;
   var currentRefreshTimeout = null;
   function countdownRefresh2(delay, reason = "\u5907\u9009\u65B9\u6848") {

@@ -517,6 +517,8 @@ export const UI = {
                     TaskRunner.toggleHideDiscountedPaid();
                 } else if (stateKey === 'hidePaid') {
                     TaskRunner.toggleHidePaid();
+                } else if (stateKey === 'blockLargeResources') {
+                    TaskRunner.toggleBlockResources();
                 }
                 e.target.checked = State[stateKey];
             };
@@ -547,6 +549,9 @@ export const UI = {
 
         const hidePaidSetting = createSettingRow(Utils.getText('setting_hide_paid'), 'hidePaid');
         settingsContent.appendChild(hidePaidSetting);
+
+        const blockResourcesSetting = createSettingRow(Utils.getText('setting_block_large_resources'), 'blockLargeResources');
+        settingsContent.appendChild(blockResourcesSetting);
 
         const resetButton = document.createElement('button');
         resetButton.textContent = Utils.getText('clear_all_data');

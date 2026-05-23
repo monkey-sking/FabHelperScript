@@ -35,7 +35,7 @@ const userscriptBanner = `// ==UserScript==
 // @grant        GM_openInTab
 // @connect      fab.com
 // @connect      www.fab.com
-// @run-at       document-idle
+// @run-at       document-start
 // @downloadURL https://update.greasyfork.org/scripts/541307/Fab%20Helper%20%28%E4%BC%98%E5%8C%96%E7%89%88%29.user.js
 // @updateURL https://update.greasyfork.org/scripts/541307/Fab%20Helper%20%28%E4%BC%98%E5%8C%96%E7%89%88%29.meta.js
 // ==/UserScript==

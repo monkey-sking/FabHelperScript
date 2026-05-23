@@ -41,6 +41,8 @@ test('detects external website CTA as a handled terminal state', () => {
 test('database keys used by persisted settings are defined', () => {
     assert.equal(typeof Config.DB_KEYS.HIDE_PAID, 'string');
     assert.equal(Config.DB_KEYS.HIDE_PAID.length > 0, true);
+    assert.equal(typeof Config.DB_KEYS.BLOCK_RESOURCES, 'string');
+    assert.equal(Config.DB_KEYS.BLOCK_RESOURCES.length > 0, true);
     assert.equal('TASK' in Config.DB_KEYS, false);
 });
 
