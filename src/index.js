@@ -285,22 +285,124 @@ function triggerOwnedStatusUpdate() {
     }, 50);
 }
 
+// 解析 listings-states URL 中的 listing_ids/listing_uids
+function parseListingsStatesUrl(urlString) {
+    try {
+        const urlObj = new URL(urlString, window.location.origin);
+        const uids = [];
+        let paramName = 'listing_ids';
+
+        if (urlObj.searchParams.has('listing_ids')) {
+            uids.push(...urlObj.searchParams.getAll('listing_ids'));
+            paramName = 'listing_ids';
+        } else if (urlObj.searchParams.has('listing_uids')) {
+            uids.push(...urlObj.searchParams.getAll('listing_uids'));
+            paramName = 'listing_uids';
+        }
+
+        return { uids, paramName, urlObj };
+    } catch (e) {
+        return { uids: [], paramName: 'listing_ids', urlObj: null };
+    }
+}
+
 // Setup XHR interceptor for caching
 function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
 
-    XMLHttpRequest.prototype.open = function (...args) {
-        this._url = args[1];
-        return originalOpen.apply(this, args);
+    XMLHttpRequest.prototype.open = function (method, url, ...args) {
+        if (url && typeof url === 'string' && url.includes('/i/users/me/listings-states')) {
+            const { uids, paramName, urlObj } = parseListingsStatesUrl(url);
+            if (uids.length > 0) {
+                const doneUids = [];
+                const activeUids = [];
+                uids.forEach(uid => {
+                    const itemUrl = `https://www.fab.com/listings/${uid}`;
+                    if (Database.isDone(itemUrl)) {
+                        doneUids.push(uid);
+                    } else {
+                        activeUids.push(uid);
+                    }
+                });
+
+                if (doneUids.length > 0) {
+                    this._doneUids = doneUids;
+                    this._allUids = uids;
+                    this._paramName = paramName;
+
+                    if (activeUids.length > 0) {
+                        // 只向服务器请求未入库的 ID
+                        urlObj.searchParams.delete(paramName);
+                        activeUids.forEach(uid => urlObj.searchParams.append(paramName, uid));
+                        url = urlObj.toString();
+                        Utils.logger('debug', `[XHR Intercept] 过滤已入库商品: 原请求 ${uids.length} 个, 过滤 ${doneUids.length} 个, 实际请求 ${activeUids.length} 个`);
+                    } else {
+                        // 所有商品都已入库，保留第一个 ID 触发一次超轻量请求以维持 XHR 状态机和 onload 事件的正常触发
+                        urlObj.searchParams.delete(paramName);
+                        urlObj.searchParams.append(paramName, uids[0]);
+                        url = urlObj.toString();
+                        this._allDoneBypass = true;
+                        Utils.logger('debug', `[XHR Intercept] 所有 ${uids.length} 个商品均已本地入库，转换为单 ID 占位请求`);
+                    }
+                }
+            }
+        }
+        this._url = url;
+        return originalOpen.apply(this, [method, url, ...args]);
     };
 
     XMLHttpRequest.prototype.send = function (...args) {
         const xhr = this;
 
         if (xhr._url && typeof xhr._url === 'string') {
+            xhr.addEventListener('readystatechange', function () {
+                if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
+                    try {
+                        const originalText = xhr.responseText;
+                        const rawData = JSON.parse(originalText);
+                        const serverResults = Array.isArray(rawData) ? rawData : (API.extractStateData(rawData, 'XHRInterceptor') || []);
+
+                        let mergedResults;
+                        if (xhr._allDoneBypass) {
+                            // 丢弃占位符的服务器结果，完全使用 Mock 数据
+                            mergedResults = xhr._allUids.map(uid => ({
+                                uid: uid,
+                                acquired: true,
+                                lastUpdatedAt: new Date().toISOString()
+                            }));
+                        } else {
+                            // 合并服务器返回的数据与 Mock 数据
+                            const mockDoneResponses = xhr._doneUids.map(uid => ({
+                                uid: uid,
+                                acquired: true,
+                                lastUpdatedAt: new Date().toISOString()
+                            }));
+                            mergedResults = [...serverResults, ...mockDoneResponses];
+                        }
+
+                        DataCache.saveOwnedStatus(mergedResults);
+                        triggerOwnedStatusUpdate();
+
+                        const mergedText = JSON.stringify(mergedResults);
+                        Object.defineProperty(xhr, 'responseText', { get: () => mergedText, configurable: true });
+                        Object.defineProperty(xhr, 'response', {
+                            get: () => {
+                                if (xhr.responseType === 'json') {
+                                    return mergedResults;
+                                }
+                                return mergedText;
+                            },
+                            configurable: true
+                        });
+                    } catch (e) {
+                        Utils.logger('error', `XHR 状态拦截合并失败: ${e.message}`);
+                    }
+                }
+            });
+
             xhr.addEventListener('load', function () {
-                if (xhr.readyState === 4 && xhr.status === 200) {
+                if (xhr.readyState === 4 && xhr.status === 200 && !xhr._doneUids) {
                     try {
                         const responseData = JSON.parse(xhr.responseText);
 
@@ -344,14 +446,84 @@ function setupFetchInterceptor() {
     const originalFetch = window.fetch;
 
     window.fetch = async function (...args) {
-        const url = args[0]?.toString() || '';
+        let url = args[0]?.toString() || '';
+
+        if (url.includes('/i/users/me/listings-states')) {
+            const { uids, paramName, urlObj } = parseListingsStatesUrl(url);
+            if (uids.length > 0) {
+                const doneUids = [];
+                const activeUids = [];
+                uids.forEach(uid => {
+                    const itemUrl = `https://www.fab.com/listings/${uid}`;
+                    if (Database.isDone(itemUrl)) {
+                        doneUids.push(uid);
+                    } else {
+                        activeUids.push(uid);
+                    }
+                });
+
+                if (doneUids.length > 0) {
+                    const mockDoneResponses = doneUids.map(uid => ({
+                        uid: uid,
+                        acquired: true,
+                        lastUpdatedAt: new Date().toISOString()
+                    }));
+
+                    // 情况 1: 全部已入库 -> 完全绕过网络请求，直接返回 Mock 响应
+                    if (activeUids.length === 0) {
+                        Utils.logger('info', `[Fetch Intercept] 所有 ${uids.length} 个商品均已本地入库，完全绕过网络请求`);
+                        
+                        DataCache.saveOwnedStatus(mockDoneResponses);
+                        triggerOwnedStatusUpdate();
+
+                        return new Response(JSON.stringify(mockDoneResponses), {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+
+                    // 情况 2: 部分未入库 -> 过滤掉已入库的商品 ID，只请求未知的 ID
+                    urlObj.searchParams.delete(paramName);
+                    activeUids.forEach(uid => urlObj.searchParams.append(paramName, uid));
+                    url = urlObj.toString();
+                    args[0] = url;
+                    Utils.logger('debug', `[Fetch Intercept] 过滤已入库商品: 原请求 ${uids.length} 个, 过滤 ${doneUids.length} 个, 实际请求 ${activeUids.length} 个`);
+
+                    if (window._apiWaitStatus) {
+                        window._apiWaitStatus.lastApiActivity = Date.now();
+                    }
+
+                    try {
+                        const response = await originalFetch.apply(this, args);
+                        if (response.ok) {
+                            const clonedResponse = response.clone();
+                            const rawData = await clonedResponse.json();
+                            const serverResults = Array.isArray(rawData) ? rawData : (API.extractStateData(rawData, 'FetchInterceptor') || []);
+
+                            const mergedResults = [...serverResults, ...mockDoneResponses];
+                            DataCache.saveOwnedStatus(mergedResults);
+                            triggerOwnedStatusUpdate();
+
+                            return new Response(JSON.stringify(mergedResults), {
+                                status: response.status,
+                                statusText: response.statusText,
+                                headers: response.headers
+                            });
+                        }
+                        return response;
+                    } catch (e) {
+                        Utils.logger('error', `拦截 fetch listings-states 失败，使用原始 fetch 回退: ${e.message}`);
+                        return originalFetch.apply(this, args);
+                    }
+                }
+            }
+        }
 
         if (url.includes('/i/listings/search') ||
             url.includes('/i/users/me/listings-states') ||
             url.includes('/i/listings/prices-infos')) {
 
-            // 通知 scanAndAddTasks 的 waitForApiCompletion 有 API 活动，
-            // 这样它就不必自行 wrap window.fetch（避免嵌套叠加）。
             if (window._apiWaitStatus) {
                 window._apiWaitStatus.lastApiActivity = Date.now();
             }

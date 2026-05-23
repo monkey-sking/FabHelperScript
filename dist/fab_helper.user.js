@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523-1341
+// @version      3.5.5-20260523-1347
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -5040,18 +5040,107 @@
     }, 50);
   }
   __name(triggerOwnedStatusUpdate, "triggerOwnedStatusUpdate");
+  function parseListingsStatesUrl(urlString) {
+    try {
+      const urlObj = new URL(urlString, window.location.origin);
+      const uids = [];
+      let paramName = "listing_ids";
+      if (urlObj.searchParams.has("listing_ids")) {
+        uids.push(...urlObj.searchParams.getAll("listing_ids"));
+        paramName = "listing_ids";
+      } else if (urlObj.searchParams.has("listing_uids")) {
+        uids.push(...urlObj.searchParams.getAll("listing_uids"));
+        paramName = "listing_uids";
+      }
+      return { uids, paramName, urlObj };
+    } catch (e) {
+      return { uids: [], paramName: "listing_ids", urlObj: null };
+    }
+  }
+  __name(parseListingsStatesUrl, "parseListingsStatesUrl");
   function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
-    XMLHttpRequest.prototype.open = function(...args) {
-      this._url = args[1];
-      return originalOpen.apply(this, args);
+    XMLHttpRequest.prototype.open = function(method, url, ...args) {
+      if (url && typeof url === "string" && url.includes("/i/users/me/listings-states")) {
+        const { uids, paramName, urlObj } = parseListingsStatesUrl(url);
+        if (uids.length > 0) {
+          const doneUids = [];
+          const activeUids = [];
+          uids.forEach((uid) => {
+            const itemUrl = `https://www.fab.com/listings/${uid}`;
+            if (Database.isDone(itemUrl)) {
+              doneUids.push(uid);
+            } else {
+              activeUids.push(uid);
+            }
+          });
+          if (doneUids.length > 0) {
+            this._doneUids = doneUids;
+            this._allUids = uids;
+            this._paramName = paramName;
+            if (activeUids.length > 0) {
+              urlObj.searchParams.delete(paramName);
+              activeUids.forEach((uid) => urlObj.searchParams.append(paramName, uid));
+              url = urlObj.toString();
+              Utils.logger("debug", `[XHR Intercept] \u8FC7\u6EE4\u5DF2\u5165\u5E93\u5546\u54C1: \u539F\u8BF7\u6C42 ${uids.length} \u4E2A, \u8FC7\u6EE4 ${doneUids.length} \u4E2A, \u5B9E\u9645\u8BF7\u6C42 ${activeUids.length} \u4E2A`);
+            } else {
+              urlObj.searchParams.delete(paramName);
+              urlObj.searchParams.append(paramName, uids[0]);
+              url = urlObj.toString();
+              this._allDoneBypass = true;
+              Utils.logger("debug", `[XHR Intercept] \u6240\u6709 ${uids.length} \u4E2A\u5546\u54C1\u5747\u5DF2\u672C\u5730\u5165\u5E93\uFF0C\u8F6C\u6362\u4E3A\u5355 ID \u5360\u4F4D\u8BF7\u6C42`);
+            }
+          }
+        }
+      }
+      this._url = url;
+      return originalOpen.apply(this, [method, url, ...args]);
     };
     XMLHttpRequest.prototype.send = function(...args) {
       const xhr = this;
       if (xhr._url && typeof xhr._url === "string") {
+        xhr.addEventListener("readystatechange", function() {
+          if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
+            try {
+              const originalText = xhr.responseText;
+              const rawData = JSON.parse(originalText);
+              const serverResults = Array.isArray(rawData) ? rawData : API.extractStateData(rawData, "XHRInterceptor") || [];
+              let mergedResults;
+              if (xhr._allDoneBypass) {
+                mergedResults = xhr._allUids.map((uid) => ({
+                  uid,
+                  acquired: true,
+                  lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+                }));
+              } else {
+                const mockDoneResponses = xhr._doneUids.map((uid) => ({
+                  uid,
+                  acquired: true,
+                  lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+                }));
+                mergedResults = [...serverResults, ...mockDoneResponses];
+              }
+              DataCache.saveOwnedStatus(mergedResults);
+              triggerOwnedStatusUpdate();
+              const mergedText = JSON.stringify(mergedResults);
+              Object.defineProperty(xhr, "responseText", { get: /* @__PURE__ */ __name(() => mergedText, "get"), configurable: true });
+              Object.defineProperty(xhr, "response", {
+                get: /* @__PURE__ */ __name(() => {
+                  if (xhr.responseType === "json") {
+                    return mergedResults;
+                  }
+                  return mergedText;
+                }, "get"),
+                configurable: true
+              });
+            } catch (e) {
+              Utils.logger("error", `XHR \u72B6\u6001\u62E6\u622A\u5408\u5E76\u5931\u8D25: ${e.message}`);
+            }
+          }
+        });
         xhr.addEventListener("load", function() {
-          if (xhr.readyState === 4 && xhr.status === 200) {
+          if (xhr.readyState === 4 && xhr.status === 200 && !xhr._doneUids) {
             try {
               const responseData = JSON.parse(xhr.responseText);
               if (xhr._url.includes("/i/listings/search") && responseData.results && Array.isArray(responseData.results)) {
@@ -5090,7 +5179,67 @@
   function setupFetchInterceptor() {
     const originalFetch = window.fetch;
     window.fetch = async function(...args) {
-      const url = args[0]?.toString() || "";
+      let url = args[0]?.toString() || "";
+      if (url.includes("/i/users/me/listings-states")) {
+        const { uids, paramName, urlObj } = parseListingsStatesUrl(url);
+        if (uids.length > 0) {
+          const doneUids = [];
+          const activeUids = [];
+          uids.forEach((uid) => {
+            const itemUrl = `https://www.fab.com/listings/${uid}`;
+            if (Database.isDone(itemUrl)) {
+              doneUids.push(uid);
+            } else {
+              activeUids.push(uid);
+            }
+          });
+          if (doneUids.length > 0) {
+            const mockDoneResponses = doneUids.map((uid) => ({
+              uid,
+              acquired: true,
+              lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }));
+            if (activeUids.length === 0) {
+              Utils.logger("info", `[Fetch Intercept] \u6240\u6709 ${uids.length} \u4E2A\u5546\u54C1\u5747\u5DF2\u672C\u5730\u5165\u5E93\uFF0C\u5B8C\u5168\u7ED5\u8FC7\u7F51\u7EDC\u8BF7\u6C42`);
+              DataCache.saveOwnedStatus(mockDoneResponses);
+              triggerOwnedStatusUpdate();
+              return new Response(JSON.stringify(mockDoneResponses), {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+            urlObj.searchParams.delete(paramName);
+            activeUids.forEach((uid) => urlObj.searchParams.append(paramName, uid));
+            url = urlObj.toString();
+            args[0] = url;
+            Utils.logger("debug", `[Fetch Intercept] \u8FC7\u6EE4\u5DF2\u5165\u5E93\u5546\u54C1: \u539F\u8BF7\u6C42 ${uids.length} \u4E2A, \u8FC7\u6EE4 ${doneUids.length} \u4E2A, \u5B9E\u9645\u8BF7\u6C42 ${activeUids.length} \u4E2A`);
+            if (window._apiWaitStatus) {
+              window._apiWaitStatus.lastApiActivity = Date.now();
+            }
+            try {
+              const response = await originalFetch.apply(this, args);
+              if (response.ok) {
+                const clonedResponse = response.clone();
+                const rawData = await clonedResponse.json();
+                const serverResults = Array.isArray(rawData) ? rawData : API.extractStateData(rawData, "FetchInterceptor") || [];
+                const mergedResults = [...serverResults, ...mockDoneResponses];
+                DataCache.saveOwnedStatus(mergedResults);
+                triggerOwnedStatusUpdate();
+                return new Response(JSON.stringify(mergedResults), {
+                  status: response.status,
+                  statusText: response.statusText,
+                  headers: response.headers
+                });
+              }
+              return response;
+            } catch (e) {
+              Utils.logger("error", `\u62E6\u622A fetch listings-states \u5931\u8D25\uFF0C\u4F7F\u7528\u539F\u59CB fetch \u56DE\u9000: ${e.message}`);
+              return originalFetch.apply(this, args);
+            }
+          }
+        }
+      }
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
         if (window._apiWaitStatus) {
           window._apiWaitStatus.lastApiActivity = Date.now();
