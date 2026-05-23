@@ -188,7 +188,7 @@ export const zh = {
     setting_auto_resume_429: '429后自动恢复并继续',
     setting_hide_discounted: '隐藏打折的付费商品',
     setting_hide_paid: '隐藏所有付费商品',
-    setting_block_large_resources: '全面禁用图片/媒体等大资源以加速（含列表页与详情页）',
+    setting_block_large_resources: '禁用图片/媒体等大资源',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 
     // 状态文本

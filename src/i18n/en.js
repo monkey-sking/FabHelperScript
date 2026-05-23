@@ -186,7 +186,7 @@ export const en = {
     setting_auto_resume_429: 'Auto resume after 429 errors',
     setting_hide_discounted: 'Hide discounted paid items',
     setting_hide_paid: 'Hide all paid items',
-    setting_block_large_resources: 'Disable images/media/large resources universally (list & detail pages)',
+    setting_block_large_resources: 'Disable images and media',
     setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
 
     // 状态文本
