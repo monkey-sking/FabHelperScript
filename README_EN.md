@@ -20,7 +20,10 @@ The Optimized Version (3.5.0, updated 2025-12-27) has been fully refactored into
 - **Request Interceptors**: Automatically caches API responses sent by the webpage.
 - **Smart Rate Limit Handling**: Automatically detects 429 errors and handles pause/resume logic.
 - **Background Task Processing**: Supports multi-tab collaboration for tasks.
-- **Enhanced UI**: Real-time status panel and operation controls.
+- **Large Resource Disabling**: Blocks images, media (video/audio), custom fonts, and iframes across both list and worker pages to save connection slots.
+- **Request Interceptor Optimization**: Intercepts listings-states queries, filters out already-owned UIDs from requests, and mock-merges responses to prevent 429s.
+- **UI Enhancements & Position Memory**: Real-time status panel, settings dashboard, scroll position cursor memory with readable highlight styling, and reset controls.
+- **Readable Version Formats**: Bundles script releases with local timezone suffixes `v[semver]-[YYYYMMDD]-[HHmm]` for easy version tracking.
 
 ## Installation
 
