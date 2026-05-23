@@ -10,6 +10,7 @@
     try {
         const blockEnabled = typeof GM_getValue !== 'undefined' ? GM_getValue('fab_block_resources_v1', true) : true;
         if (blockEnabled) {
+            // 1. Inject CSP to block network requests for images, media, fonts, frames
             const meta = document.createElement('meta');
             meta.httpEquiv = 'Content-Security-Policy';
             meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
@@ -18,7 +19,64 @@
             } else {
                 document.appendChild(meta);
             }
-            console.log('[Fab Helper] Injected CSP to block images/media/iframes/fonts.');
+
+            // 2. Inject CSS to hide images and background images visually
+            const style = document.createElement('style');
+            style.textContent = `
+                img, source, picture, video, iframe, [style*="background-image"] {
+                    display: none !important;
+                    background-image: none !important;
+                }
+            `;
+            if (document.documentElement) {
+                document.documentElement.appendChild(style);
+            } else {
+                document.appendChild(style);
+            }
+
+            // 3. Use MutationObserver to strip src/srcset from images to prevent preload requests
+            const blockImage = (el) => {
+                if (el.tagName === 'IMG') {
+                    if (el.src && !el.src.startsWith('data:')) {
+                        el.setAttribute('data-original-src', el.src);
+                        el.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+                    }
+                    if (el.srcset) {
+                        el.setAttribute('data-original-srcset', el.srcset);
+                        el.srcset = '';
+                    }
+                } else if (el.tagName === 'SOURCE') {
+                    if (el.srcset) {
+                        el.setAttribute('data-original-srcset', el.srcset);
+                        el.srcset = '';
+                    }
+                }
+            };
+
+            const traverseAndBlock = (node) => {
+                if (node.nodeType !== 1) return;
+                if (node.tagName === 'IMG' || node.tagName === 'SOURCE') {
+                    blockImage(node);
+                }
+                const descendants = node.querySelectorAll('img, source');
+                descendants.forEach(blockImage);
+            };
+
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    for (const node of mutation.addedNodes) {
+                        traverseAndBlock(node);
+                    }
+                }
+            });
+
+            // Start observing as early as possible
+            observer.observe(document.documentElement || document, {
+                childList: true,
+                subtree: true
+            });
+
+            console.log('[Fab Helper] Injected CSP, CSS, and MutationObserver to block images/media/iframes/fonts.');
         }
     } catch (e) {
         console.error('[Fab Helper] Failed to inject CSP:', e);

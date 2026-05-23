@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523052339
+// @version      3.5.5-20260523052704
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4815,7 +4815,55 @@
         } else {
           document.appendChild(meta);
         }
-        console.log("[Fab Helper] Injected CSP to block images/media/iframes/fonts.");
+        const style = document.createElement("style");
+        style.textContent = `
+                img, source, picture, video, iframe, [style*="background-image"] {
+                    display: none !important;
+                    background-image: none !important;
+                }
+            `;
+        if (document.documentElement) {
+          document.documentElement.appendChild(style);
+        } else {
+          document.appendChild(style);
+        }
+        const blockImage = /* @__PURE__ */ __name((el) => {
+          if (el.tagName === "IMG") {
+            if (el.src && !el.src.startsWith("data:")) {
+              el.setAttribute("data-original-src", el.src);
+              el.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+            }
+            if (el.srcset) {
+              el.setAttribute("data-original-srcset", el.srcset);
+              el.srcset = "";
+            }
+          } else if (el.tagName === "SOURCE") {
+            if (el.srcset) {
+              el.setAttribute("data-original-srcset", el.srcset);
+              el.srcset = "";
+            }
+          }
+        }, "blockImage");
+        const traverseAndBlock = /* @__PURE__ */ __name((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.tagName === "IMG" || node.tagName === "SOURCE") {
+            blockImage(node);
+          }
+          const descendants = node.querySelectorAll("img, source");
+          descendants.forEach(blockImage);
+        }, "traverseAndBlock");
+        const observer = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+              traverseAndBlock(node);
+            }
+          }
+        });
+        observer.observe(document.documentElement || document, {
+          childList: true,
+          subtree: true
+        });
+        console.log("[Fab Helper] Injected CSP, CSS, and MutationObserver to block images/media/iframes/fonts.");
       }
     } catch (e) {
       console.error("[Fab Helper] Failed to inject CSP:", e);
