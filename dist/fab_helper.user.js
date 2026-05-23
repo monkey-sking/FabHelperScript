@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.5-20260523-1450
+// @version      3.5.6-20260523-1749
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3765,10 +3765,7 @@
       if (State.debugMode) {
         Utils.logger("debug", Utils.getText("debug_visible_after_hide", visibleCards, State.hiddenThisPageCount));
       }
-      const visibleCountElement = document.getElementById("fab-status-visible");
-      if (visibleCountElement) {
-        visibleCountElement.textContent = visibleCards.toString();
-      }
+      if (UI4) UI4.update();
       if (visibleCards === 0) {
         if (State.appStatus === "RATE_LIMITED" && State.autoRefreshEmptyPage) {
           if (State.isRefreshScheduled) {
@@ -4682,11 +4679,20 @@
       const todoCount = State.db.todo.length;
       const doneCount = State.db.done.length;
       const failedCount = State.db.failed.length;
-      const visibleCount = document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount;
+      const allCards = document.querySelectorAll(Config.SELECTORS.card);
+      let hiddenCount = 0;
+      let visibleCount = 0;
+      allCards.forEach((card) => {
+        if (card.style.display === "none") {
+          hiddenCount++;
+        } else {
+          visibleCount++;
+        }
+      });
       if (State.UI.statusTodo) State.UI.statusTodo.querySelector("span").textContent = todoCount;
       if (State.UI.statusDone) State.UI.statusDone.querySelector("span").textContent = doneCount;
       if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;
-      if (State.UI.statusHidden) State.UI.statusHidden.querySelector("span").textContent = State.hiddenThisPageCount;
+      if (State.UI.statusHidden) State.UI.statusHidden.querySelector("span").textContent = hiddenCount;
       if (State.UI.statusVisible) State.UI.statusVisible.querySelector("span").textContent = visibleCount;
       const statusLabelUpdates = [
         { element: State.UI.statusVisible, icon: "\u{1F441}\uFE0F", key: "visible" },
