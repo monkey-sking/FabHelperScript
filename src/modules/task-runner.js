@@ -1412,28 +1412,34 @@ export const TaskRunner = {
                 // 少量卡片：保留原有随机延迟动画（更自然）
                 const batchSize = 10;
                 const batches = Math.ceil(cardsToHide.length / batchSize);
-                const initialDelay = 1000;
+                const initialDelay = 200; // 动画已由 cardDelay 提供，头部延迟缩短到 200ms
 
                 for (let i = 0; i < batches; i++) {
                     const start = i * batchSize;
                     const end = Math.min(start + batchSize, cardsToHide.length);
                     const currentBatch = cardsToHide.slice(start, end);
                     const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+                    const isLastBatch = i === batches - 1;
 
                     setTimeout(() => {
+                        let batchHidden = 0;
                         currentBatch.forEach((card, index) => {
                             const cardDelay = index * 50 + Math.random() * 100;
                             setTimeout(() => {
                                 card.style.display = 'none';
                                 actuallyHidden++;
-                                if (actuallyHidden === cardsToHide.length) {
-                                    if (State.debugMode) {
-                                        Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                                batchHidden++;
+                                // 每个 batch 最后一张卡片隐藏后即刻更新 UI，不再等到全部完成
+                                if (batchHidden === currentBatch.length) {
+                                    if (UI) UI.update();
+                                    if (isLastBatch) {
+                                        if (State.debugMode) {
+                                            Utils.logger('debug', Utils.getText('debug_hide_completed', actuallyHidden));
+                                        }
+                                        setTimeout(() => {
+                                            TaskRunner.checkVisibilityAndRefresh();
+                                        }, 300);
                                     }
-                                    setTimeout(() => {
-                                        if (UI) UI.update();
-                                        TaskRunner.checkVisibilityAndRefresh();
-                                    }, 300);
                                 }
                             }, cardDelay);
                         });
@@ -1625,6 +1631,8 @@ export const TaskRunner = {
                 await Database.saveFailed();
                 Utils.logger('debug', Utils.getText('fab_dom_api_complete', confirmedOwned));
                 Utils.logger('debug', Utils.getText('fab_dom_refresh_complete', confirmedOwned));
+                // 无论是否开启隐藏模式，都立即刷新状态栏（todo/done/failed 数字需同步）
+                if (UI) UI.update();
                 if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                     TaskRunner.runHideOrShow();
                 }

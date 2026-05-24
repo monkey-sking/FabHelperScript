@@ -301,6 +301,15 @@ export const en = {
     // 失败和重试
     log_failed_list_empty: 'Failed list empty, no action needed.',
     log_cleared_from_failed: 'Cleared {0} actually-owned items from the failed list.',
+    log_failed_check_start: 'Checking status of failed items (verifying local records and server status)...',
+    log_failed_check_local: '[Local Check] Found {0} items already marked done locally, removing from failed list...',
+    log_failed_check_network: '[Server Check] Querying server for acquisition status of remaining {0} items...',
+    log_failed_check_network_confirmed: '[Server Check] Confirmed {0} items actually acquired, updating database...',
+    log_failed_check_network_none: '[Server Check] No other acquired items detected.',
+    log_failed_check_complete: '✨ Check complete! Removed {0} successfully acquired items from the failed list.',
+    log_failed_check_all_done: '🎉 All failed items are verified as acquired! Failed list is now empty.',
+    confirm_open_failed_remaining: 'Status check complete. {0} items are still not in library.\nDo you want to open these {0} failed items in new tabs for manual processing?',
+    alert_failed_all_done: 'All failed items are verified as acquired. No manual action needed!',
 
     // Wake/visibility recovery
     log_wake_recovery: '🔔 Tab re-activated (lock screen / tab switch recovery). Checking execution state...',

@@ -303,6 +303,15 @@ export const zh = {
     // 失败和重试
     log_failed_list_empty: '失败列表为空，无需操作。',
     log_cleared_from_failed: '已从失败列表中清除 {0} 个实际已入库的商品。',
+    log_failed_check_start: '正在对失败项目进行状态检测（比对本地记录与联网状态）...',
+    log_failed_check_local: '[本地检测] 发现 {0} 个项目在本地已标记完成，正在从失败列表中移除...',
+    log_failed_check_network: '[联网检测] 正在向服务器查询剩余 {0} 个项目的入库状态...',
+    log_failed_check_network_confirmed: '[联网检测] 确认有 {0} 个项目实际已被加库，正在更新数据库...',
+    log_failed_check_network_none: '[联网检测] 未检测到其他已加库项目。',
+    log_failed_check_complete: '✨ 检测完成！共剔除了 {0} 个已成功入库的项目。',
+    log_failed_check_all_done: '🎉 所有失败项目检测均已确认入库，失败列表已清空！',
+    confirm_open_failed_remaining: '状态核对完成，仍有 {0} 个商品未入库。\n是否在新标签页中打开这 {0} 个失败商品以供手动处理？',
+    alert_failed_all_done: '所有失败项目检测均已确认入库，无需手动操作！',
 
     // 锁屏/后台恢复
     log_wake_recovery: '🔔 检测到标签页重新激活（锁屏/切换后恢复），正在检查执行状态...',

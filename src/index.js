@@ -797,23 +797,16 @@ async function runDomDependentPart() {
         lastScrollY = window.scrollY;
     }, 5000);
 
-    // Page status monitoring
+    // Page status monitoring — 全量刷新所有状态栏数字，避免各格数据割裂
     setInterval(async () => {
         try {
-            const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-            // 只用 style.display 判断，避免 getComputedStyle 对每张卡片触发强制 reflow
-            const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter(card => {
-                return card.style.display !== 'none';
-            });
+            // 用完整的 UI.update() 同步所有计数（visible/hidden/todo/done/failed）
+            if (UI) UI.update();
 
-            const actualVisibleCards = visibleCards.length;
-            const hiddenCards = totalCards - actualVisibleCards;
-
-            const visibleCountElement = document.getElementById('fab-status-visible');
-            if (visibleCountElement) {
-                visibleCountElement.textContent = actualVisibleCards.toString();
-            }
-            State.hiddenThisPageCount = hiddenCards;
+            // 同步 State.hiddenThisPageCount，供 checkVisibilityAndRefresh 使用
+            const cards = document.querySelectorAll(Config.SELECTORS.card);
+            const actualVisibleCards = Array.from(cards).filter(c => c.style.display !== 'none').length;
+            State.hiddenThisPageCount = cards.length - actualVisibleCards;
 
             if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
                 if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260524-0850
+// @version      3.5.6-20260524-1250
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -303,6 +303,15 @@
     // 失败和重试
     log_failed_list_empty: "Failed list empty, no action needed.",
     log_cleared_from_failed: "Cleared {0} actually-owned items from the failed list.",
+    log_failed_check_start: "Checking status of failed items (verifying local records and server status)...",
+    log_failed_check_local: "[Local Check] Found {0} items already marked done locally, removing from failed list...",
+    log_failed_check_network: "[Server Check] Querying server for acquisition status of remaining {0} items...",
+    log_failed_check_network_confirmed: "[Server Check] Confirmed {0} items actually acquired, updating database...",
+    log_failed_check_network_none: "[Server Check] No other acquired items detected.",
+    log_failed_check_complete: "\u2728 Check complete! Removed {0} successfully acquired items from the failed list.",
+    log_failed_check_all_done: "\u{1F389} All failed items are verified as acquired! Failed list is now empty.",
+    confirm_open_failed_remaining: "Status check complete. {0} items are still not in library.\nDo you want to open these {0} failed items in new tabs for manual processing?",
+    alert_failed_all_done: "All failed items are verified as acquired. No manual action needed!",
     // Wake/visibility recovery
     log_wake_recovery: "\u{1F514} Tab re-activated (lock screen / tab switch recovery). Checking execution state...",
     log_wake_cleanup_stale: "\u{1F9F9} Cleaned up {0} stale workers frozen by lock screen. Restarting execution.",
@@ -631,6 +640,15 @@
     // 失败和重试
     log_failed_list_empty: "\u5931\u8D25\u5217\u8868\u4E3A\u7A7A\uFF0C\u65E0\u9700\u64CD\u4F5C\u3002",
     log_cleared_from_failed: "\u5DF2\u4ECE\u5931\u8D25\u5217\u8868\u4E2D\u6E05\u9664 {0} \u4E2A\u5B9E\u9645\u5DF2\u5165\u5E93\u7684\u5546\u54C1\u3002",
+    log_failed_check_start: "\u6B63\u5728\u5BF9\u5931\u8D25\u9879\u76EE\u8FDB\u884C\u72B6\u6001\u68C0\u6D4B\uFF08\u6BD4\u5BF9\u672C\u5730\u8BB0\u5F55\u4E0E\u8054\u7F51\u72B6\u6001\uFF09...",
+    log_failed_check_local: "[\u672C\u5730\u68C0\u6D4B] \u53D1\u73B0 {0} \u4E2A\u9879\u76EE\u5728\u672C\u5730\u5DF2\u6807\u8BB0\u5B8C\u6210\uFF0C\u6B63\u5728\u4ECE\u5931\u8D25\u5217\u8868\u4E2D\u79FB\u9664...",
+    log_failed_check_network: "[\u8054\u7F51\u68C0\u6D4B] \u6B63\u5728\u5411\u670D\u52A1\u5668\u67E5\u8BE2\u5269\u4F59 {0} \u4E2A\u9879\u76EE\u7684\u5165\u5E93\u72B6\u6001...",
+    log_failed_check_network_confirmed: "[\u8054\u7F51\u68C0\u6D4B] \u786E\u8BA4\u6709 {0} \u4E2A\u9879\u76EE\u5B9E\u9645\u5DF2\u88AB\u52A0\u5E93\uFF0C\u6B63\u5728\u66F4\u65B0\u6570\u636E\u5E93...",
+    log_failed_check_network_none: "[\u8054\u7F51\u68C0\u6D4B] \u672A\u68C0\u6D4B\u5230\u5176\u4ED6\u5DF2\u52A0\u5E93\u9879\u76EE\u3002",
+    log_failed_check_complete: "\u2728 \u68C0\u6D4B\u5B8C\u6210\uFF01\u5171\u5254\u9664\u4E86 {0} \u4E2A\u5DF2\u6210\u529F\u5165\u5E93\u7684\u9879\u76EE\u3002",
+    log_failed_check_all_done: "\u{1F389} \u6240\u6709\u5931\u8D25\u9879\u76EE\u68C0\u6D4B\u5747\u5DF2\u786E\u8BA4\u5165\u5E93\uFF0C\u5931\u8D25\u5217\u8868\u5DF2\u6E05\u7A7A\uFF01",
+    confirm_open_failed_remaining: "\u72B6\u6001\u6838\u5BF9\u5B8C\u6210\uFF0C\u4ECD\u6709 {0} \u4E2A\u5546\u54C1\u672A\u5165\u5E93\u3002\n\u662F\u5426\u5728\u65B0\u6807\u7B7E\u9875\u4E2D\u6253\u5F00\u8FD9 {0} \u4E2A\u5931\u8D25\u5546\u54C1\u4EE5\u4F9B\u624B\u52A8\u5904\u7406\uFF1F",
+    alert_failed_all_done: "\u6240\u6709\u5931\u8D25\u9879\u76EE\u68C0\u6D4B\u5747\u5DF2\u786E\u8BA4\u5165\u5E93\uFF0C\u65E0\u9700\u624B\u52A8\u64CD\u4F5C\uFF01",
     // 锁屏/后台恢复
     log_wake_recovery: "\u{1F514} \u68C0\u6D4B\u5230\u6807\u7B7E\u9875\u91CD\u65B0\u6FC0\u6D3B\uFF08\u9501\u5C4F/\u5207\u6362\u540E\u6062\u590D\uFF09\uFF0C\u6B63\u5728\u68C0\u67E5\u6267\u884C\u72B6\u6001...",
     log_wake_cleanup_stale: "\u{1F9F9} \u6E05\u7406 {0} \u4E2A\u56E0\u9501\u5C4F\u51BB\u7ED3\u8D85\u65F6\u7684\u5DE5\u4F5C\u7EBF\u7A0B\uFF0C\u91CD\u65B0\u542F\u52A8\u6267\u884C\u3002",
@@ -3707,26 +3725,31 @@
         } else {
           const batchSize = 10;
           const batches = Math.ceil(cardsToHide.length / batchSize);
-          const initialDelay = 1e3;
+          const initialDelay = 200;
           for (let i = 0; i < batches; i++) {
             const start = i * batchSize;
             const end = Math.min(start + batchSize, cardsToHide.length);
             const currentBatch = cardsToHide.slice(start, end);
             const batchDelay = initialDelay + i * 300 + Math.random() * 300;
+            const isLastBatch = i === batches - 1;
             setTimeout(() => {
+              let batchHidden = 0;
               currentBatch.forEach((card, index) => {
                 const cardDelay = index * 50 + Math.random() * 100;
                 setTimeout(() => {
                   card.style.display = "none";
                   actuallyHidden++;
-                  if (actuallyHidden === cardsToHide.length) {
-                    if (State.debugMode) {
-                      Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+                  batchHidden++;
+                  if (batchHidden === currentBatch.length) {
+                    if (UI4) UI4.update();
+                    if (isLastBatch) {
+                      if (State.debugMode) {
+                        Utils.logger("debug", Utils.getText("debug_hide_completed", actuallyHidden));
+                      }
+                      setTimeout(() => {
+                        TaskRunner2.checkVisibilityAndRefresh();
+                      }, 300);
                     }
-                    setTimeout(() => {
-                      if (UI4) UI4.update();
-                      TaskRunner2.checkVisibilityAndRefresh();
-                    }, 300);
                   }
                 }, cardDelay);
               });
@@ -3872,6 +3895,7 @@
           await Database.saveFailed();
           Utils.logger("debug", Utils.getText("fab_dom_api_complete", confirmedOwned));
           Utils.logger("debug", Utils.getText("fab_dom_refresh_complete", confirmedOwned));
+          if (UI4) UI4.update();
           if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
             TaskRunner2.runHideOrShow();
           }
@@ -5537,17 +5561,10 @@
     }, 5e3);
     setInterval(async () => {
       try {
-        const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-        const visibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter((card) => {
-          return card.style.display !== "none";
-        });
-        const actualVisibleCards = visibleCards.length;
-        const hiddenCards = totalCards - actualVisibleCards;
-        const visibleCountElement = document.getElementById("fab-status-visible");
-        if (visibleCountElement) {
-          visibleCountElement.textContent = actualVisibleCards.toString();
-        }
-        State.hiddenThisPageCount = hiddenCards;
+        if (UI5) UI5.update();
+        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        const actualVisibleCards = Array.from(cards).filter((c) => c.style.display !== "none").length;
+        State.hiddenThisPageCount = cards.length - actualVisibleCards;
         if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
           if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {
             Utils.logger("info", `[\u72B6\u6001\u76D1\u63A7] \u68C0\u6D4B\u5230\u9650\u901F\u72B6\u6001\u4E0B\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u81EA\u52A8\u5237\u65B0\u5DF2\u5F00\u542F\uFF0C\u51C6\u5907\u5237\u65B0\u9875\u9762`);
