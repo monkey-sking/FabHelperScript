@@ -353,6 +353,7 @@ export const TaskRunner = {
         State.executionTotalTasks = State.db.todo.length;
         State.executionCompletedTasks = 0;
         State.executionFailedTasks = 0;
+        State.autoScrollAttempts = 0; // Reset scroll attempts
 
         if (UI) UI.update();
         TaskRunner.executeBatch();
@@ -711,16 +712,12 @@ export const TaskRunner = {
 
         try {
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                Utils.logger('info', Utils.getText('log_all_tasks_completed'));
-                State.isExecuting = false;
-                Database.saveExecutingState();
-                Database.saveTodo();
-                if (State.watchdogTimer) {
-                    clearInterval(State.watchdogTimer);
-                    State.watchdogTimer = null;
+                if (State.autoAddOnScroll) {
+                    State.isDispatchingTasks = false;
+                    TaskRunner.attemptAutoScroll();
+                    return;
                 }
-                TaskRunner.closeAllWorkerTabs();
-                if (UI) UI.update();
+                await TaskRunner.stopExecutionAndSettle();
                 State.isDispatchingTasks = false;
                 return;
             }
@@ -1824,6 +1821,7 @@ export const TaskRunner = {
                             Utils.logger('debug', `过滤了 ${newlyAddedList.length - uniqueNewTasks.length} 个重复任务`);
                         }
                         Database.saveTodo();
+                        State.autoScrollAttempts = 0; // Reset scroll attempts
                     } else {
                         Utils.logger('debug', `所有 ${newlyAddedList.length} 个任务都是重复的，已跳过`);
                     }
@@ -1866,5 +1864,85 @@ export const TaskRunner = {
         } catch (error) {
             Utils.logger('error', Utils.getText('log_report_error', error.message));
         }
+    },
+
+    onQueueCompleted: null,
+
+    stopExecutionAndSettle: async () => {
+        if (State.watchdogTimer) {
+            clearInterval(State.watchdogTimer);
+            State.watchdogTimer = null;
+        }
+        TaskRunner.closeAllWorkerTabs();
+
+        if (typeof TaskRunner.onQueueCompleted === 'function') {
+            await TaskRunner.onQueueCompleted();
+        } else {
+            Utils.logger('info', Utils.getText('log_all_tasks_completed'));
+            State.isExecuting = false;
+            Database.saveExecutingState();
+            Database.saveTodo();
+            if (UI) UI.update();
+        }
+    },
+
+    attemptAutoScroll: async () => {
+        if (State.isAutoScrolling) return;
+        State.isAutoScrolling = true;
+
+        if (typeof State.autoScrollAttempts === 'undefined') {
+            State.autoScrollAttempts = 0;
+        }
+
+        const maxScrollAttempts = 3;
+        Utils.logger('info', Utils.getText('auto_scroll_attempt', State.autoScrollAttempts + 1, maxScrollAttempts));
+
+        const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
+        const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
+
+        if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+            window.scrollTo(0, previousScrollHeight);
+        }
+
+        // Wait for potential content loading and scanning
+        setTimeout(async () => {
+            State.isAutoScrolling = false;
+
+            const currentScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
+            const currentScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
+            const newTodoCount = State.db.todo.length;
+
+            // 1. If we got new tasks, scanning will have reset State.autoScrollAttempts and executed.
+            if (newTodoCount > 0) {
+                Utils.logger('info', Utils.getText('auto_scroll_success', newTodoCount));
+                if (!State.isExecuting) {
+                    TaskRunner.startExecution();
+                }
+                return;
+            }
+
+            // 2. Check if we reached bottom
+            const reachedBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
+                                  (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY);
+
+            if (reachedBottom) {
+                Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
+                await TaskRunner.stopExecutionAndSettle();
+                return;
+            }
+
+            // 3. Increment attempts
+            State.autoScrollAttempts++;
+
+            if (State.autoScrollAttempts >= maxScrollAttempts) {
+                Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
+                await TaskRunner.stopExecutionAndSettle();
+                return;
+            }
+
+            // 4. Try again
+            Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
+            TaskRunner.attemptAutoScroll();
+        }, 3000);
     }
 };

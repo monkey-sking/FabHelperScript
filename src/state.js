@@ -10,6 +10,8 @@ export const State = {
     },
     hideSaved: false, // 是否隐藏已保存项目
     autoAddOnScroll: false, // 是否在滚动时自动添加任务
+    isAutoScrolling: false, // 是否正在自动滚动中
+    autoScrollAttempts: 0, // 连续自动滚动未发现新任务的次数
     rememberScrollPosition: false, // 是否记住滚动位置
     autoResumeAfter429: false, // 是否在429后自动恢复
     autoRefreshEmptyPage: true, // 新增：无商品可见时自动刷新（默认开启）

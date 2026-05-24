@@ -117,6 +117,11 @@ export const en = {
     auto_add_api_timeout: 'API wait timeout, waited {0}ms, will continue processing cards.',
     auto_add_api_error: 'Error while waiting for API: {0}',
     auto_add_new_tasks: 'Added {0} new tasks to queue.',
+    auto_scroll_attempt: '[Auto Scroll] Queue empty, attempting to scroll down to load more... (Attempt {0}/{1})',
+    auto_scroll_success: '[Auto Scroll] Successfully loaded and identified {0} new tasks, continuing...',
+    auto_scroll_reached_bottom: '[Auto Scroll] Reached page bottom, stopping scroll.',
+    auto_scroll_no_new_items: '[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.',
+    auto_scroll_waiting: '[Auto Scroll] No new eligible items found, waiting for next scroll attempt...',
 
     // HTTP状态检测
     http_status_check_performance_api: 'Using Performance API check, no longer sending HEAD requests',

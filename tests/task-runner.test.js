@@ -7,6 +7,7 @@ import { State } from '../src/state.js';
 import { Utils } from '../src/modules/utils.js';
 import { API } from '../src/modules/api.js';
 import { Config } from '../src/config.js';
+import { InstanceManager } from '../src/modules/instance-manager.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -656,5 +657,204 @@ test('done records hide cards even when list card status text is missing', () =>
         globalThis.setTimeout = originalSetTimeout;
         Utils.logger = originalLogger;
         State.hideRetryTimer = null;
+    }
+});
+
+test('executeBatch triggers attemptAutoScroll when queue is empty and autoAddOnScroll is true', async () => {
+    const originalDocument = globalThis.document;
+    globalThis.document = {
+        cookie: 'fab_csrftoken=mock_token'
+    };
+
+    const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
+    const originalIsActiveInstance = InstanceManager.isActive;
+    let autoScrollCalled = false;
+    TaskRunner.attemptAutoScroll = async () => {
+        autoScrollCalled = true;
+    };
+
+    State.isExecuting = true;
+    State.db.todo = [];
+    State.activeWorkers = 0;
+    State.autoAddOnScroll = true;
+    InstanceManager.isActive = true;
+
+    try {
+        await TaskRunner.executeBatch();
+        assert.equal(autoScrollCalled, true);
+    } finally {
+        TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
+        InstanceManager.isActive = originalIsActiveInstance;
+        globalThis.document = originalDocument;
+        State.isExecuting = false;
+        State.autoAddOnScroll = false;
+    }
+});
+
+test('attemptAutoScroll stops execution when it reaches bottom', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
+
+    let stopCalled = false;
+    let scrollCalled = false;
+    let timeoutCallback = null;
+
+    globalThis.window = {
+        scrollY: 100,
+        innerHeight: 800,
+        scrollTo: () => {
+            scrollCalled = true;
+        }
+    };
+
+    globalThis.document = {
+        documentElement: {
+            scrollHeight: 900 // 800 innerHeight + 100 scrollY = 900 scrollHeight (reached bottom)
+        }
+    };
+
+    globalThis.setTimeout = (callback, delay) => {
+        timeoutCallback = callback;
+        return 1;
+    };
+
+    TaskRunner.stopExecutionAndSettle = async () => {
+        stopCalled = true;
+    };
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 0;
+
+    try {
+        await TaskRunner.attemptAutoScroll();
+        assert.equal(scrollCalled, true);
+        assert.ok(timeoutCallback !== null);
+
+        // Run the timeout callback
+        await timeoutCallback();
+
+        assert.equal(stopCalled, true);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
+    }
+});
+
+test('attemptAutoScroll stops execution after max attempts', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
+
+    let stopCalled = false;
+    let timeoutCallback = null;
+
+    globalThis.window = {
+        scrollY: 100,
+        innerHeight: 800,
+        scrollTo: () => {}
+    };
+
+    globalThis.document = {
+        documentElement: {
+            scrollHeight: 2000 // Not at bottom
+        }
+    };
+
+    globalThis.setTimeout = (callback, delay) => {
+        timeoutCallback = callback;
+        return 1;
+    };
+
+    TaskRunner.stopExecutionAndSettle = async () => {
+        stopCalled = true;
+    };
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 2; // Next attempt will be the 3rd (max)
+
+    try {
+        await TaskRunner.attemptAutoScroll();
+        await timeoutCallback();
+
+        assert.equal(stopCalled, true);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
+    }
+});
+
+test('attemptAutoScroll resumes execution when new tasks are loaded', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStartExecution = TaskRunner.startExecution;
+
+    let startExecutionCalled = false;
+    let timeoutCallback = null;
+
+    globalThis.window = {
+        scrollY: 100,
+        innerHeight: 800,
+        scrollTo: () => {}
+    };
+
+    globalThis.document = {
+        documentElement: {
+            scrollHeight: 2000
+        }
+    };
+
+    globalThis.setTimeout = (callback, delay) => {
+        timeoutCallback = callback;
+        return 1;
+    };
+
+    TaskRunner.startExecution = () => {
+        startExecutionCalled = true;
+    };
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 1;
+    State.isExecuting = false;
+
+    try {
+        await TaskRunner.attemptAutoScroll();
+
+        // Simulate DOM observer adding a task and calling scanAndAddTasks
+        State.db.todo = [{ uid: 'task-new', url: 'https://www.fab.com/listings/task-new', name: 'New Task' }];
+
+        await timeoutCallback();
+
+        assert.equal(startExecutionCalled, true);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.startExecution = originalStartExecution;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
     }
 });

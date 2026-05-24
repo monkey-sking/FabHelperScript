@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260523-1749
+// @version      3.5.6-20260524-0850
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -144,6 +144,11 @@
     auto_add_api_timeout: "API wait timeout, waited {0}ms, will continue processing cards.",
     auto_add_api_error: "Error while waiting for API: {0}",
     auto_add_new_tasks: "Added {0} new tasks to queue.",
+    auto_scroll_attempt: "[Auto Scroll] Queue empty, attempting to scroll down to load more... (Attempt {0}/{1})",
+    auto_scroll_success: "[Auto Scroll] Successfully loaded and identified {0} new tasks, continuing...",
+    auto_scroll_reached_bottom: "[Auto Scroll] Reached page bottom, stopping scroll.",
+    auto_scroll_no_new_items: "[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.",
+    auto_scroll_waiting: "[Auto Scroll] No new eligible items found, waiting for next scroll attempt...",
     // HTTP状态检测
     http_status_check_performance_api: "Using Performance API check, no longer sending HEAD requests",
     // 页面状态检测
@@ -467,6 +472,11 @@
     auto_add_api_timeout: "API\u7B49\u5F85\u8D85\u65F6\uFF0C\u5DF2\u7B49\u5F85 {0}ms\uFF0C\u5C06\u7EE7\u7EED\u5904\u7406\u5361\u7247\u3002",
     auto_add_api_error: "\u7B49\u5F85API\u65F6\u51FA\u9519: {0}",
     auto_add_new_tasks: "\u65B0\u589E {0} \u4E2A\u4EFB\u52A1\u5230\u961F\u5217\u3002",
+    auto_scroll_attempt: "[\u81EA\u52A8\u6EDA\u52A8] \u961F\u5217\u5DF2\u7A7A\uFF0C\u5C1D\u8BD5\u5411\u4E0B\u6EDA\u52A8\u52A0\u8F7D\u66F4\u591A\u5546\u54C1... (\u5C1D\u8BD5 {0}/{1})",
+    auto_scroll_success: "[\u81EA\u52A8\u6EDA\u52A8] \u6210\u529F\u52A0\u8F7D\u5E76\u8BC6\u522B\u5230 {0} \u4E2A\u65B0\u4EFB\u52A1\uFF0C\u7EE7\u7EED\u6267\u884C...",
+    auto_scroll_reached_bottom: "[\u81EA\u52A8\u6EDA\u52A8] \u5DF2\u5230\u8FBE\u9875\u9762\u5E95\u90E8\uFF0C\u505C\u6B62\u6EDA\u52A8\u3002",
+    auto_scroll_no_new_items: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u6B21\u6EDA\u52A8\u5747\u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u505C\u6B62\u81EA\u52A8\u6EDA\u52A8\u3002",
+    auto_scroll_waiting: "[\u81EA\u52A8\u6EDA\u52A8] \u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B21\u6EDA\u52A8\u5C1D\u8BD5...",
     // HTTP状态检测
     http_status_check_performance_api: "\u4F7F\u7528Performance API\u68C0\u67E5\uFF0C\u4E0D\u518D\u53D1\u9001HEAD\u8BF7\u6C42",
     // 页面状态检测
@@ -782,6 +792,10 @@
     // 是否隐藏已保存项目
     autoAddOnScroll: false,
     // 是否在滚动时自动添加任务
+    isAutoScrolling: false,
+    // 是否正在自动滚动中
+    autoScrollAttempts: 0,
+    // 连续自动滚动未发现新任务的次数
     rememberScrollPosition: false,
     // 是否记住滚动位置
     autoResumeAfter429: false,
@@ -2826,6 +2840,7 @@
       State.executionTotalTasks = State.db.todo.length;
       State.executionCompletedTasks = 0;
       State.executionFailedTasks = 0;
+      State.autoScrollAttempts = 0;
       if (UI4) UI4.update();
       TaskRunner2.executeBatch();
     }, "startExecution"),
@@ -3120,16 +3135,12 @@
       State.isDispatchingTasks = true;
       try {
         if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-          Utils.logger("info", Utils.getText("log_all_tasks_completed"));
-          State.isExecuting = false;
-          Database.saveExecutingState();
-          Database.saveTodo();
-          if (State.watchdogTimer) {
-            clearInterval(State.watchdogTimer);
-            State.watchdogTimer = null;
+          if (State.autoAddOnScroll) {
+            State.isDispatchingTasks = false;
+            TaskRunner2.attemptAutoScroll();
+            return;
           }
-          TaskRunner2.closeAllWorkerTabs();
-          if (UI4) UI4.update();
+          await TaskRunner2.stopExecutionAndSettle();
           State.isDispatchingTasks = false;
           return;
         }
@@ -4015,6 +4026,7 @@
                 Utils.logger("debug", `\u8FC7\u6EE4\u4E86 ${newlyAddedList.length - uniqueNewTasks.length} \u4E2A\u91CD\u590D\u4EFB\u52A1`);
               }
               Database.saveTodo();
+              State.autoScrollAttempts = 0;
             } else {
               Utils.logger("debug", `\u6240\u6709 ${newlyAddedList.length} \u4E2A\u4EFB\u52A1\u90FD\u662F\u91CD\u590D\u7684\uFF0C\u5DF2\u8DF3\u8FC7`);
             }
@@ -4051,7 +4063,65 @@
       } catch (error) {
         Utils.logger("error", Utils.getText("log_report_error", error.message));
       }
-    }, "reportTaskDone")
+    }, "reportTaskDone"),
+    onQueueCompleted: null,
+    stopExecutionAndSettle: /* @__PURE__ */ __name(async () => {
+      if (State.watchdogTimer) {
+        clearInterval(State.watchdogTimer);
+        State.watchdogTimer = null;
+      }
+      TaskRunner2.closeAllWorkerTabs();
+      if (typeof TaskRunner2.onQueueCompleted === "function") {
+        await TaskRunner2.onQueueCompleted();
+      } else {
+        Utils.logger("info", Utils.getText("log_all_tasks_completed"));
+        State.isExecuting = false;
+        Database.saveExecutingState();
+        Database.saveTodo();
+        if (UI4) UI4.update();
+      }
+    }, "stopExecutionAndSettle"),
+    attemptAutoScroll: /* @__PURE__ */ __name(async () => {
+      if (State.isAutoScrolling) return;
+      State.isAutoScrolling = true;
+      if (typeof State.autoScrollAttempts === "undefined") {
+        State.autoScrollAttempts = 0;
+      }
+      const maxScrollAttempts = 3;
+      Utils.logger("info", Utils.getText("auto_scroll_attempt", State.autoScrollAttempts + 1, maxScrollAttempts));
+      const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
+      const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+      if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+        window.scrollTo(0, previousScrollHeight);
+      }
+      setTimeout(async () => {
+        State.isAutoScrolling = false;
+        const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
+        const currentScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+        const newTodoCount = State.db.todo.length;
+        if (newTodoCount > 0) {
+          Utils.logger("info", Utils.getText("auto_scroll_success", newTodoCount));
+          if (!State.isExecuting) {
+            TaskRunner2.startExecution();
+          }
+          return;
+        }
+        const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY;
+        if (reachedBottom) {
+          Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
+          await TaskRunner2.stopExecutionAndSettle();
+          return;
+        }
+        State.autoScrollAttempts++;
+        if (State.autoScrollAttempts >= maxScrollAttempts) {
+          Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
+          await TaskRunner2.stopExecutionAndSettle();
+          return;
+        }
+        Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
+        TaskRunner2.attemptAutoScroll();
+      }, 3e3);
+    }, "attemptAutoScroll")
   };
 
   // src/modules/ui.js
@@ -5528,6 +5598,18 @@
   __name(ensureUILoaded, "ensureUILoaded");
   async function main() {
     window.pageLoadTime = Date.now();
+    TaskRunner2.onQueueCompleted = async () => {
+      Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
+      State.isExecuting = false;
+      Database.saveExecutingState();
+      await Database.saveTodo();
+      if (State.appStatus === "RATE_LIMITED") {
+        Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...");
+        const randomDelay = 3e3 + Math.random() * 5e3;
+        countdownRefresh2(randomDelay, "\u4EFB\u52A1\u5B8C\u6210\u540E\u9650\u901F\u6062\u590D");
+      }
+      UI5.update();
+    };
     Utils.logger("info", Utils.getText("log_script_starting"));
     Utils.detectLanguage();
     const hasCookie = Utils.checkAuthentication(true);
@@ -5632,16 +5714,11 @@
           setTimeout(() => TaskRunner2.executeBatch(), 1e3);
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-          Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
-          State.isExecuting = false;
-          Database.saveExecutingState();
-          await Database.saveTodo();
-          if (State.appStatus === "RATE_LIMITED") {
-            Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...");
-            const randomDelay = 3e3 + Math.random() * 5e3;
-            countdownRefresh2(randomDelay, "\u4EFB\u52A1\u5B8C\u6210\u540E\u9650\u901F\u6062\u590D");
+          if (State.autoAddOnScroll) {
+            TaskRunner2.attemptAutoScroll();
+          } else {
+            await TaskRunner2.stopExecutionAndSettle();
           }
-          UI5.update();
         }
         TaskRunner2.runHideOrShow();
       } catch (error) {

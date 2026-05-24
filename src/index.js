@@ -872,6 +872,22 @@ function ensureUILoaded() {
 async function main() {
     window.pageLoadTime = Date.now();
 
+    // Register queue completion callback
+    TaskRunner.onQueueCompleted = async () => {
+        Utils.logger('info', '所有任务已完成。');
+        State.isExecuting = false;
+        Database.saveExecutingState();
+        await Database.saveTodo();
+
+        if (State.appStatus === 'RATE_LIMITED') {
+            Utils.logger('info', '所有任务已完成，且处于限速状态，将刷新页面尝试恢复...');
+            const randomDelay = 3000 + Math.random() * 5000;
+            countdownRefresh(randomDelay, '任务完成后限速恢复');
+        }
+
+        UI.update();
+    };
+
     Utils.logger('info', Utils.getText('log_script_starting'));
     Utils.detectLanguage();
 
@@ -1013,18 +1029,11 @@ async function main() {
             }
 
             if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-                Utils.logger('info', '所有任务已完成。');
-                State.isExecuting = false;
-                Database.saveExecutingState();
-                await Database.saveTodo();
-
-                if (State.appStatus === 'RATE_LIMITED') {
-                    Utils.logger('info', '所有任务已完成，且处于限速状态，将刷新页面尝试恢复...');
-                    const randomDelay = 3000 + Math.random() * 5000;
-                    countdownRefresh(randomDelay, '任务完成后限速恢复');
+                if (State.autoAddOnScroll) {
+                    TaskRunner.attemptAutoScroll();
+                } else {
+                    await TaskRunner.stopExecutionAndSettle();
                 }
-
-                UI.update();
             }
 
             TaskRunner.runHideOrShow();

@@ -119,6 +119,11 @@ export const zh = {
     auto_add_api_timeout: 'API等待超时，已等待 {0}ms，将继续处理卡片。',
     auto_add_api_error: '等待API时出错: {0}',
     auto_add_new_tasks: '新增 {0} 个任务到队列。',
+    auto_scroll_attempt: '[自动滚动] 队列已空，尝试向下滚动加载更多商品... (尝试 {0}/{1})',
+    auto_scroll_success: '[自动滚动] 成功加载并识别到 {0} 个新任务，继续执行...',
+    auto_scroll_reached_bottom: '[自动滚动] 已到达页面底部，停止滚动。',
+    auto_scroll_no_new_items: '[自动滚动] 连续 {0} 次滚动均未发现符合条件的新商品，停止自动滚动。',
+    auto_scroll_waiting: '[自动滚动] 未发现符合条件的新商品，等待下一次滚动尝试...',
 
     // HTTP状态检测
     http_status_check_performance_api: '使用Performance API检查，不再发送HEAD请求',
