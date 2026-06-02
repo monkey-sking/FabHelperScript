@@ -17,6 +17,15 @@ export const InstanceManager = {
     // 初始化实例管理
     init: async function () {
         try {
+            // worker tab（URL 带 workerId）只执行单个领取任务，绝不参与 active 实例竞争。
+            // 否则当主标签页在后台被节流、ping 暂停超过 10s 时，worker tab 会误判主实例
+            // 已死而把自己注册成 active instance —— 反过来让主标签页 isActive 失效而罢工，
+            // 并使后续 worker 的 payload.instanceId 与 active 不匹配，最终自报「完成前关闭」。
+            if (new URLSearchParams(window.location.search).has('workerId')) {
+                this.isActive = false;
+                return true;
+            }
+
             // 检查当前页面是否是搜索页面
             const isSearchPage = window.location.href.includes('/search') ||
                 window.location.pathname === '/' ||

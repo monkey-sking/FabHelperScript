@@ -222,6 +222,9 @@ export const zh = {
     cursor_mode: 'Cursor Mode',
     using_native_requests: '使用网页原生请求，等待中: {0}',
     worker_closed: '工作标签页在完成前关闭',
+    worker_captcha: '检测到人机验证 / 需要人工处理',
+    log_keepalive_on: '后台保活已启动（Worker 心跳 + 防冻结）',
+    log_keepalive_failed: '后台保活启动失败: {0}',
 
     // 脚本启动和初始化
     log_script_starting: '脚本开始运行...',

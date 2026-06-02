@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260602-1039
+// @version      3.5.6-20260602-1337
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -230,6 +230,9 @@
     cursor_mode: "Cursor Mode",
     using_native_requests: "Using native web requests, waiting: {0}",
     worker_closed: "Worker tab closed before completion",
+    worker_captcha: "CAPTCHA / human verification detected (manual action needed)",
+    log_keepalive_on: "Background keep-alive started (Worker heartbeat + freeze guard)",
+    log_keepalive_failed: "Failed to start keep-alive: {0}",
     // 脚本启动和初始化
     log_script_starting: "Script starting...",
     log_network_filter_deprecated: "NetworkFilter module deprecated, functionality handled by PagePatcher.",
@@ -567,6 +570,9 @@
     cursor_mode: "Cursor Mode",
     using_native_requests: "\u4F7F\u7528\u7F51\u9875\u539F\u751F\u8BF7\u6C42\uFF0C\u7B49\u5F85\u4E2D: {0}",
     worker_closed: "\u5DE5\u4F5C\u6807\u7B7E\u9875\u5728\u5B8C\u6210\u524D\u5173\u95ED",
+    worker_captcha: "\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u9700\u8981\u4EBA\u5DE5\u5904\u7406",
+    log_keepalive_on: "\u540E\u53F0\u4FDD\u6D3B\u5DF2\u542F\u52A8\uFF08Worker \u5FC3\u8DF3 + \u9632\u51BB\u7ED3\uFF09",
+    log_keepalive_failed: "\u540E\u53F0\u4FDD\u6D3B\u542F\u52A8\u5931\u8D25: {0}",
     // 脚本启动和初始化
     log_script_starting: "\u811A\u672C\u5F00\u59CB\u8FD0\u884C...",
     log_network_filter_deprecated: "\u7F51\u7EDC\u8FC7\u6EE4\u5668(NetworkFilter)\u6A21\u5757\u5DF2\u5F03\u7528\uFF0C\u529F\u80FD\u7531\u8865\u4E01\u7A0B\u5E8F(PagePatcher)\u5904\u7406\u3002",
@@ -705,8 +711,12 @@
     DB_NAME: "fab_helper_db",
     MAX_CONCURRENT_WORKERS: 7,
     // 最大并发工作标签页数量
-    WORKER_TIMEOUT: 3e4,
-    // 工作标签页超时时间
+    WORKER_TIMEOUT: 9e4,
+    // 工作标签页超时时间(watchdog 判定卡死)。领取一般 <1min，留足余量避免误杀慢任务
+    KEEPALIVE_TICK_MS: 2e3,
+    // 后台保活心跳间隔(Web Worker postMessage 频率)
+    ENABLE_FREEZE_GUARD: true,
+    // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
     UI_CONTAINER_ID: "fab-helper-container",
     UI_LOG_ID: "fab-helper-log",
     DB_KEYS: {
@@ -2534,6 +2544,10 @@
     // 初始化实例管理
     init: /* @__PURE__ */ __name(async function() {
       try {
+        if (new URLSearchParams(window.location.search).has("workerId")) {
+          this.isActive = false;
+          return true;
+        }
         const isSearchPage = window.location.href.includes("/search") || window.location.pathname === "/" || window.location.pathname === "/zh-cn/" || window.location.pathname === "/en/";
         if (isSearchPage) {
           this.isActive = true;
@@ -2611,6 +2625,128 @@
         this.pingInterval = setInterval(() => this.ping(), 3e3);
       }
     }, "activate")
+  };
+
+  // src/modules/keepalive.js
+  var KeepAlive = {
+    _worker: null,
+    _workerUrl: null,
+    _tickCb: null,
+    _running: false,
+    // WebRTC freeze-guard
+    _pc1: null,
+    _pc2: null,
+    _dc: null,
+    /** 注入心跳要执行的调度回调(由 index.js 提供，内含 ping/派发/watchdog) */
+    setTick(cb) {
+      this._tickCb = cb;
+    },
+    /** 启动后台保活(心跳 + 可选的防冻结)。幂等。 */
+    start() {
+      if (this._running) return;
+      this._running = true;
+      this._startHeartbeat();
+      if (Config.ENABLE_FREEZE_GUARD) {
+        this._startFreezeGuard();
+      }
+    },
+    /** 停止后台保活，释放 Worker 与 RTC 资源。幂等。 */
+    stop() {
+      if (!this._running) return;
+      this._running = false;
+      this._stopHeartbeat();
+      this._stopFreezeGuard();
+    },
+    _startHeartbeat() {
+      if (this._worker) return;
+      try {
+        const intervalMs = Config.KEEPALIVE_TICK_MS || 2e3;
+        const workerSrc = "let n=0;setInterval(function(){postMessage(++n);}," + intervalMs + ");";
+        const blob = new Blob([workerSrc], { type: "application/javascript" });
+        this._workerUrl = URL.createObjectURL(blob);
+        this._worker = new Worker(this._workerUrl);
+        this._worker.onmessage = () => {
+          try {
+            const r = this._tickCb && this._tickCb();
+            if (r && typeof r.catch === "function") {
+              r.catch((e) => console.error("[Fab Helper] keepalive tick error:", e));
+            }
+          } catch (e) {
+            console.error("[Fab Helper] keepalive tick error:", e);
+          }
+        };
+        Utils.logger("debug", Utils.getText("log_keepalive_on"));
+      } catch (e) {
+        Utils.logger("warn", Utils.getText("log_keepalive_failed", e.message));
+      }
+    },
+    _stopHeartbeat() {
+      if (this._worker) {
+        try {
+          this._worker.terminate();
+        } catch (e) {
+        }
+        this._worker = null;
+      }
+      if (this._workerUrl) {
+        try {
+          URL.revokeObjectURL(this._workerUrl);
+        } catch (e) {
+        }
+        this._workerUrl = null;
+      }
+    },
+    async _startFreezeGuard() {
+      if (this._pc1 || typeof RTCPeerConnection === "undefined") return;
+      try {
+        const pc1 = new RTCPeerConnection();
+        const pc2 = new RTCPeerConnection();
+        this._pc1 = pc1;
+        this._pc2 = pc2;
+        pc1.onicecandidate = (e) => {
+          if (e.candidate) pc2.addIceCandidate(e.candidate).catch(() => {
+          });
+        };
+        pc2.onicecandidate = (e) => {
+          if (e.candidate) pc1.addIceCandidate(e.candidate).catch(() => {
+          });
+        };
+        this._dc = pc1.createDataChannel("fab-keepalive");
+        const offer = await pc1.createOffer();
+        await pc1.setLocalDescription(offer);
+        await pc2.setRemoteDescription(offer);
+        const answer = await pc2.createAnswer();
+        await pc2.setLocalDescription(answer);
+        await pc1.setRemoteDescription(answer);
+      } catch (e) {
+        Utils.logger("warn", Utils.getText("log_keepalive_failed", e.message));
+        this._stopFreezeGuard();
+      }
+    },
+    _stopFreezeGuard() {
+      try {
+        if (this._dc) this._dc.close();
+      } catch (e) {
+      }
+      try {
+        if (this._pc1) this._pc1.close();
+      } catch (e) {
+      }
+      try {
+        if (this._pc2) this._pc2.close();
+      } catch (e) {
+      }
+      this._dc = null;
+      this._pc1 = null;
+      this._pc2 = null;
+    },
+    /** 由心跳驱动，偶尔通过 data channel 发一下保持活跃 */
+    poke() {
+      try {
+        if (this._dc && this._dc.readyState === "open") this._dc.send("p");
+      } catch (e) {
+      }
+    }
   };
 
   // src/modules/task-runner.js
@@ -2853,6 +2989,7 @@
       if (typeof InstanceManager !== "undefined" && InstanceManager.activate) {
         InstanceManager.activate();
       }
+      KeepAlive.start();
       State.isExecuting = true;
       Database.saveExecutingState();
       State.executionTotalTasks = State.db.todo.length;
@@ -3089,6 +3226,47 @@
       Utils.logger("info", Utils.getText("log_tasks_moved", count));
       if (UI4) UI4.update();
     }, "retryFailedTasks"),
+    // 检查并清理超时(卡死)的 worker。被 watchdog 定时器与后台心跳(KeepAlive)共同调用。
+    // 抽成独立方法，是为了让主线程定时器被后台节流时，心跳也能驱动这套清理。
+    // 返回被清理的 worker 数量。
+    checkStalledWorkers: /* @__PURE__ */ __name(async () => {
+      if (!State.isExecuting) return 0;
+      const now = Date.now();
+      const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
+      const stalledWorkers = [];
+      for (const workerId in State.runningWorkers) {
+        const workerInfo = State.runningWorkers[workerId];
+        if (!workerInfo) continue;
+        if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
+        if (now - workerInfo.startTime > STALL_TIMEOUT) {
+          stalledWorkers.push({ workerId, task: workerInfo.task });
+        }
+      }
+      if (stalledWorkers.length === 0) return 0;
+      Utils.logger("warn", Utils.getText("log_stalled_workers", stalledWorkers.length));
+      for (const stalledWorker of stalledWorkers) {
+        const { workerId, task } = stalledWorker;
+        const workerInfo = State.runningWorkers[workerId];
+        const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1e3).toFixed(2) : "\u672A\u77E5";
+        Utils.logger("error", Utils.getText("log_watchdog_stalled", workerId.substring(0, 12)));
+        await Database.markAsFailed(task, {
+          reason: "\u5DE5\u4F5C\u7EBF\u7A0B\u8D85\u65F6 (Watchdog)",
+          logs: [`Worker ${workerId.substring(0, 12)} \u8D85\u65F6`, `\u8D85\u65F6\u65F6\u957F: ${stallDuration}s`],
+          details: {
+            workerId,
+            stallDuration: `${stallDuration}s`,
+            timeout: `${Config.WORKER_TIMEOUT / 1e3}s`
+          }
+        });
+        State.executionFailedTasks++;
+        delete State.runningWorkers[workerId];
+        State.activeWorkers = Math.max(0, State.activeWorkers - 1);
+        await GM_deleteValue(workerId);
+      }
+      Utils.logger("info", Utils.getText("log_cleaned_workers", stalledWorkers.length, State.activeWorkers));
+      if (UI4) UI4.update();
+      return stalledWorkers.length;
+    }, "checkStalledWorkers"),
     runWatchdog: /* @__PURE__ */ __name(() => {
       if (State.watchdogTimer) clearInterval(State.watchdogTimer);
       State.watchdogTimer = setInterval(async () => {
@@ -3098,39 +3276,8 @@
           State.watchdogTimer = null;
           return;
         }
-        const now = Date.now();
-        const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
-        const stalledWorkers = [];
-        for (const workerId in State.runningWorkers) {
-          const workerInfo = State.runningWorkers[workerId];
-          if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
-          if (now - workerInfo.startTime > STALL_TIMEOUT) {
-            stalledWorkers.push({ workerId, task: workerInfo.task });
-          }
-        }
-        if (stalledWorkers.length > 0) {
-          Utils.logger("warn", Utils.getText("log_stalled_workers", stalledWorkers.length));
-          for (const stalledWorker of stalledWorkers) {
-            const { workerId, task } = stalledWorker;
-            const workerInfo = State.runningWorkers[workerId];
-            const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1e3).toFixed(2) : "\u672A\u77E5";
-            Utils.logger("error", Utils.getText("log_watchdog_stalled", workerId.substring(0, 12)));
-            await Database.markAsFailed(task, {
-              reason: "\u5DE5\u4F5C\u7EBF\u7A0B\u8D85\u65F6 (Watchdog)",
-              logs: [`Worker ${workerId.substring(0, 12)} \u8D85\u65F6`, `\u8D85\u65F6\u65F6\u957F: ${stallDuration}s`],
-              details: {
-                workerId,
-                stallDuration: `${stallDuration}s`,
-                timeout: `${Config.WORKER_TIMEOUT / 1e3}s`
-              }
-            });
-            State.executionFailedTasks++;
-            delete State.runningWorkers[workerId];
-            State.activeWorkers--;
-            await GM_deleteValue(workerId);
-          }
-          Utils.logger("info", Utils.getText("log_cleaned_workers", stalledWorkers.length, State.activeWorkers));
-          if (UI4) UI4.update();
+        const cleaned = await TaskRunner2.checkStalledWorkers();
+        if (cleaned > 0) {
           setTimeout(() => {
             if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
               TaskRunner2.executeBatch();
@@ -3241,14 +3388,10 @@
       let payload = null;
       const forceCloseTimer = setTimeout(() => {
         if (!closeAttempted) {
-          console.log("\u5F3A\u5236\u5173\u95ED\u5DE5\u4F5C\u6807\u7B7E\u9875");
-          try {
-            window.close();
-          } catch (e) {
-            console.error("\u5173\u95ED\u5DE5\u4F5C\u6807\u7B7E\u9875\u5931\u8D25:", e);
-          }
+          console.log("\u5DE5\u4F5C\u6807\u7B7E\u9875\u8D85\u65F6\uFF0C\u4E3B\u52A8\u4E0A\u62A5\u5E76\u5173\u95ED");
+          closeWorkerTab();
         }
-      }, 6e4);
+      }, Math.max(1e4, Config.WORKER_TIMEOUT - 5e3));
       function closeWorkerTab() {
         closeAttempted = true;
         clearTimeout(forceCloseTimer);
@@ -3611,6 +3754,17 @@
           logBuffer.push(`A critical error occurred: ${error.message}`);
           success = false;
         } finally {
+          if (!success) {
+            try {
+              const vIframe = document.querySelector('iframe[src*="hcaptcha"], iframe[src*="recaptcha"], iframe[src*="captcha"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]');
+              const bodyText = document.body && document.body.innerText || "";
+              const vPhrases = ["\u4EBA\u673A\u9A8C\u8BC1", "\u786E\u8BA4\u60A8\u662F\u771F\u4EBA", "\u8BF7\u5B8C\u6210\u5B89\u5168\u9A8C\u8BC1", "\u6211\u4E0D\u662F\u673A\u5668\u4EBA", "Verify you are human", "I'm not a robot", "Checking your browser", "complete the security check", "unusual traffic"];
+              if (vIframe || vPhrases.some((p) => bodyText.includes(p))) {
+                logBuffer.push(Utils.getText("worker_captcha"));
+              }
+            } catch (e) {
+            }
+          }
           try {
             hasReported = true;
             await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
@@ -4094,6 +4248,7 @@
         clearInterval(State.watchdogTimer);
         State.watchdogTimer = null;
       }
+      KeepAlive.stop();
       TaskRunner2.closeAllWorkerTabs();
       if (typeof TaskRunner2.onQueueCompleted === "function") {
         await TaskRunner2.onQueueCompleted();
@@ -4974,23 +5129,6 @@
       console.error("[Fab Helper] Failed to inject CSP:", e);
     }
   })();
-  (function() {
-    try {
-      const script = document.createElement("script");
-      script.textContent = `
-            Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
-            Object.defineProperty(document, 'hidden', { get: () => false });
-            document.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
-        `;
-      if (document.documentElement) {
-        document.documentElement.appendChild(script);
-        script.remove();
-      }
-      console.log("[Fab Helper] Injected visibility spoofing for background execution.");
-    } catch (e) {
-      console.warn("[Fab Helper] Failed to inject visibility spoof:", e);
-    }
-  })();
   var currentCountdownInterval = null;
   var currentRefreshTimeout = null;
   function countdownRefresh2(delay, reason = "\u5907\u9009\u65B9\u6848") {
@@ -5669,6 +5807,18 @@
     }
     await InstanceManager.init();
     await Database.load();
+    KeepAlive.setTick(async () => {
+      if (State.isWorkerTab || !State.isExecuting) {
+        KeepAlive.stop();
+        return;
+      }
+      InstanceManager.ping();
+      KeepAlive.poke();
+      await TaskRunner2.checkStalledWorkers();
+      if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+        TaskRunner2.executeBatch();
+      }
+    });
     if (hasCookie) {
       Utils.verifyServerSession().then((ok) => {
         if (!ok) {
@@ -5728,7 +5878,7 @@
           State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
         } else {
-          const errorLog = logs && logs.length ? logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const errorLog = logs && logs.length ? logs.find((log) => log.includes(Utils.getText("worker_captcha"))) || logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);
@@ -5816,24 +5966,11 @@
   window.addEventListener("load", () => {
     setTimeout(ensureUILoaded, 2e3);
   });
-  function handleWakeRecovery() {
+  async function handleWakeRecovery() {
     if (State.isWorkerTab) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
     Utils.logger("info", Utils.getText("log_wake_recovery"));
-    const now = Date.now();
-    const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
-    let cleaned = 0;
-    for (const workerId in State.runningWorkers) {
-      const workerInfo = State.runningWorkers[workerId];
-      if (!workerInfo) continue;
-      if (now - workerInfo.startTime > STALL_TIMEOUT) {
-        delete State.runningWorkers[workerId];
-        State.activeWorkers = Math.max(0, State.activeWorkers - 1);
-        GM_deleteValue(workerId).catch(() => {
-        });
-        cleaned++;
-      }
-    }
+    const cleaned = await TaskRunner2.checkStalledWorkers();
     if (cleaned > 0) {
       Utils.logger("warn", Utils.getText("log_wake_cleanup_stale", cleaned));
     }

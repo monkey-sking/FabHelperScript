@@ -220,6 +220,9 @@ export const en = {
     cursor_mode: 'Cursor Mode',
     using_native_requests: 'Using native web requests, waiting: {0}',
     worker_closed: 'Worker tab closed before completion',
+    worker_captcha: 'CAPTCHA / human verification detected (manual action needed)',
+    log_keepalive_on: 'Background keep-alive started (Worker heartbeat + freeze guard)',
+    log_keepalive_failed: 'Failed to start keep-alive: {0}',
 
     // 脚本启动和初始化
     log_script_starting: 'Script starting...',

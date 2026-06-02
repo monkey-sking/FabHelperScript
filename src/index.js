@@ -83,24 +83,10 @@
     }
 })();
 
-// Spoof visibility to prevent background tab throttling and rendering pauses
-(function() {
-    try {
-        const script = document.createElement('script');
-        script.textContent = `
-            Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
-            Object.defineProperty(document, 'hidden', { get: () => false });
-            document.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
-        `;
-        if (document.documentElement) {
-            document.documentElement.appendChild(script);
-            script.remove();
-        }
-        console.log('[Fab Helper] Injected visibility spoofing for background execution.');
-    } catch (e) {
-        console.warn('[Fab Helper] Failed to inject visibility spoof:', e);
-    }
-})();
+// 注: 曾经在此处注入 document.visibilityState/hidden 欺骗来对付后台节流，
+// 但后台节流/冻结由浏览器按标签页真实可见性在底层决定，与可被改写的
+// document.hidden 无关——欺骗无效，还会吞掉 visibilitychange 破坏唤醒恢复。
+// 真正的后台保活改由 KeepAlive 模块(Worker 心跳 + WebRTC 防冻结)实现。
 
 // Core modules
 import { Config } from './config.js';
@@ -117,6 +103,7 @@ import { PagePatcher } from './modules/page-patcher.js';
 import { TaskRunner, setUIReference as setTaskRunnerUIRef } from './modules/task-runner.js';
 import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.js';
 import { InstanceManager } from './modules/instance-manager.js';
+import { KeepAlive } from './modules/keepalive.js';
 
 // Global countdown variables
 let currentCountdownInterval = null;
@@ -934,6 +921,24 @@ async function main() {
     await InstanceManager.init();
     await Database.load();
 
+    // 注册后台保活心跳回调：即使主线程定时器被后台节流/冻结(由 WebRTC 防冻结兜底)，
+    // Worker 心跳也会周期性踢这里——续上实例 ping(防被 worker tab 抢占 active instance)、
+    // 清理卡死 worker、继续派发任务。心跳本身在 startExecution 时才启动。
+    KeepAlive.setTick(async () => {
+        // 任何原因导致不再执行(手动停止/队列完成/登录失效等)时，心跳自我清理，
+        // 一处兜底覆盖所有停止路径，避免 Worker/RTC 资源泄漏。
+        if (State.isWorkerTab || !State.isExecuting) {
+            KeepAlive.stop();
+            return;
+        }
+        InstanceManager.ping();
+        KeepAlive.poke();
+        await TaskRunner.checkStalledWorkers();
+        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+            TaskRunner.executeBatch();
+        }
+    });
+
     // 在 UI 起来后再异步校验一次 session（cookie 还在但服务端已过期的常见场景）。
     // 不阻塞 UI，结果落到 State.isAuthenticated，后续 toggleExecution 时会再次硬校验。
     if (hasCookie) {
@@ -1016,7 +1021,7 @@ async function main() {
             } else {
                 // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
                 const errorLog = logs && logs.length ? 
-                    (logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) : 
+                    (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
                     (isZh ? '工作标签页报告失败' : 'Worker tab reported failure');
                 const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, '') : (isZh ? '未知原因' : 'Unknown reason');
 
@@ -1134,29 +1139,18 @@ window.addEventListener('load', () => {
 //   1. 清理冻结期间已超时但 watchdog 来不及处理的 stale workers
 //   2. 若 isExecuting && todo 有任务，重新踢起 executeBatch
 // ─────────────────────────────────────────────────────────────────────────────
-function handleWakeRecovery() {
+async function handleWakeRecovery() {
     // 只在主标签页（非 worker tab）执行恢复逻辑
     if (State.isWorkerTab) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
 
     Utils.logger('info', Utils.getText('log_wake_recovery'));
 
-    // 1. 强制清理超时 worker（watchdog 在冻结期间无法运行）
-    const now = Date.now();
-    const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
-    let cleaned = 0;
-
-    for (const workerId in State.runningWorkers) {
-        const workerInfo = State.runningWorkers[workerId];
-        if (!workerInfo) continue;
-        if (now - workerInfo.startTime > STALL_TIMEOUT) {
-            delete State.runningWorkers[workerId];
-            State.activeWorkers = Math.max(0, State.activeWorkers - 1);
-            GM_deleteValue(workerId).catch(() => {});
-            cleaned++;
-        }
-    }
-
+    // 1. 清理冻结期间已超时的 worker（watchdog 在冻结期间无法运行）。
+    //    复用 checkStalledWorkers，它会正确 markAsFailed —— 消除原先「这里删了
+    //    worker 数据却不标记失败 → worker 醒来读到 null → 自报『工作标签页在
+    //    完成前关闭』」的竞态。
+    const cleaned = await TaskRunner.checkStalledWorkers();
     if (cleaned > 0) {
         Utils.logger('warn', Utils.getText('log_wake_cleanup_stale', cleaned));
     }

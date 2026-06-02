@@ -9,7 +9,9 @@ export const Config = {
     DB_VERSION: 3,
     DB_NAME: 'fab_helper_db',
     MAX_CONCURRENT_WORKERS: 7, // 最大并发工作标签页数量
-    WORKER_TIMEOUT: 30000, // 工作标签页超时时间
+    WORKER_TIMEOUT: 90000, // 工作标签页超时时间(watchdog 判定卡死)。领取一般 <1min，留足余量避免误杀慢任务
+    KEEPALIVE_TICK_MS: 2000, // 后台保活心跳间隔(Web Worker postMessage 频率)
+    ENABLE_FREEZE_GUARD: true, // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
     UI_CONTAINER_ID: 'fab-helper-container',
     UI_LOG_ID: 'fab-helper-log',
     DB_KEYS: {

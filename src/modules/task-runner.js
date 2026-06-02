@@ -18,6 +18,7 @@ import { RateLimitManager } from './rate-limit-manager.js';
 import { PageDiagnostics } from './page-diagnostics.js';
 import { PagePatcher } from './page-patcher.js';
 import { InstanceManager } from './instance-manager.js';
+import { KeepAlive } from './keepalive.js';
 
 // Forward declaration for UI (will be set via dependency injection)
 let UI = null;
@@ -348,6 +349,9 @@ export const TaskRunner = {
             InstanceManager.activate();
         }
 
+        // 启动后台保活：让本标签页在最小化/锁屏/切后台时仍能持续派发任务
+        KeepAlive.start();
+
         State.isExecuting = true;
         Database.saveExecutingState();
         State.executionTotalTasks = State.db.todo.length;
@@ -630,6 +634,58 @@ export const TaskRunner = {
         if (UI) UI.update();
     },
 
+    // 检查并清理超时(卡死)的 worker。被 watchdog 定时器与后台心跳(KeepAlive)共同调用。
+    // 抽成独立方法，是为了让主线程定时器被后台节流时，心跳也能驱动这套清理。
+    // 返回被清理的 worker 数量。
+    checkStalledWorkers: async () => {
+        if (!State.isExecuting) return 0;
+
+        const now = Date.now();
+        const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
+        const stalledWorkers = [];
+
+        for (const workerId in State.runningWorkers) {
+            const workerInfo = State.runningWorkers[workerId];
+            if (!workerInfo) continue;
+            if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
+            if (now - workerInfo.startTime > STALL_TIMEOUT) {
+                stalledWorkers.push({ workerId, task: workerInfo.task });
+            }
+        }
+
+        if (stalledWorkers.length === 0) return 0;
+
+        Utils.logger('warn', Utils.getText('log_stalled_workers', stalledWorkers.length));
+
+        for (const stalledWorker of stalledWorkers) {
+            const { workerId, task } = stalledWorker;
+            const workerInfo = State.runningWorkers[workerId];
+            const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1000).toFixed(2) : '未知';
+
+            Utils.logger('error', Utils.getText('log_watchdog_stalled', workerId.substring(0, 12)));
+
+            // 使用增强的 markAsFailed 记录详细信息
+            await Database.markAsFailed(task, {
+                reason: '工作线程超时 (Watchdog)',
+                logs: [`Worker ${workerId.substring(0, 12)} 超时`, `超时时长: ${stallDuration}s`],
+                details: {
+                    workerId: workerId,
+                    stallDuration: `${stallDuration}s`,
+                    timeout: `${Config.WORKER_TIMEOUT / 1000}s`
+                }
+            });
+            State.executionFailedTasks++;
+
+            delete State.runningWorkers[workerId];
+            State.activeWorkers = Math.max(0, State.activeWorkers - 1);
+            await GM_deleteValue(workerId);
+        }
+
+        Utils.logger('info', Utils.getText('log_cleaned_workers', stalledWorkers.length, State.activeWorkers));
+        if (UI) UI.update();
+        return stalledWorkers.length;
+    },
+
     runWatchdog: () => {
         if (State.watchdogTimer) clearInterval(State.watchdogTimer);
 
@@ -642,48 +698,8 @@ export const TaskRunner = {
                 return;
             }
 
-            const now = Date.now();
-            const STALL_TIMEOUT = Config.WORKER_TIMEOUT;
-            const stalledWorkers = [];
-
-            for (const workerId in State.runningWorkers) {
-                const workerInfo = State.runningWorkers[workerId];
-                if (workerInfo.instanceId !== Config.INSTANCE_ID) continue;
-                if (now - workerInfo.startTime > STALL_TIMEOUT) {
-                    stalledWorkers.push({ workerId, task: workerInfo.task });
-                }
-            }
-
-            if (stalledWorkers.length > 0) {
-                Utils.logger('warn', Utils.getText('log_stalled_workers', stalledWorkers.length));
-
-                for (const stalledWorker of stalledWorkers) {
-                    const { workerId, task } = stalledWorker;
-                    const workerInfo = State.runningWorkers[workerId];
-                    const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1000).toFixed(2) : '未知';
-
-                    Utils.logger('error', Utils.getText('log_watchdog_stalled', workerId.substring(0, 12)));
-
-                    // 使用增强的 markAsFailed 记录详细信息
-                    await Database.markAsFailed(task, {
-                        reason: '工作线程超时 (Watchdog)',
-                        logs: [`Worker ${workerId.substring(0, 12)} 超时`, `超时时长: ${stallDuration}s`],
-                        details: {
-                            workerId: workerId,
-                            stallDuration: `${stallDuration}s`,
-                            timeout: `${Config.WORKER_TIMEOUT / 1000}s`
-                        }
-                    });
-                    State.executionFailedTasks++;
-
-                    delete State.runningWorkers[workerId];
-                    State.activeWorkers--;
-                    await GM_deleteValue(workerId);
-                }
-
-                Utils.logger('info', Utils.getText('log_cleaned_workers', stalledWorkers.length, State.activeWorkers));
-                if (UI) UI.update();
-
+            const cleaned = await TaskRunner.checkStalledWorkers();
+            if (cleaned > 0) {
                 setTimeout(() => {
                     if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
                         TaskRunner.executeBatch();
@@ -820,12 +836,14 @@ export const TaskRunner = {
         let closeAttempted = false;
         let payload = null;
 
+        // worker 自身的超时兜底：略早于 manager 的 watchdog(WORKER_TIMEOUT)触发，
+        // 让 worker 先主动上报失败(带真实耗时)再关闭，而不是被 watchdog 远程判死。
         const forceCloseTimer = setTimeout(() => {
             if (!closeAttempted) {
-                console.log('强制关闭工作标签页');
-                try { window.close(); } catch (e) { console.error('关闭工作标签页失败:', e); }
+                console.log('工作标签页超时，主动上报并关闭');
+                closeWorkerTab();
             }
-        }, 60000);
+        }, Math.max(10000, Config.WORKER_TIMEOUT - 5000));
 
         function closeWorkerTab() {
             closeAttempted = true;
@@ -1274,6 +1292,18 @@ export const TaskRunner = {
                 logBuffer.push(`A critical error occurred: ${error.message}`);
                 success = false;
             } finally {
+                // 失败时检测是否撞上人机验证/安全校验，给出明确归因(而非笼统超时/关闭)，
+                // 便于事后区分「该适配的失败」与「被风控拦截的失败」。
+                if (!success) {
+                    try {
+                        const vIframe = document.querySelector('iframe[src*="hcaptcha"], iframe[src*="recaptcha"], iframe[src*="captcha"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]');
+                        const bodyText = (document.body && document.body.innerText) || '';
+                        const vPhrases = ['人机验证', '确认您是真人', '请完成安全验证', '我不是机器人', 'Verify you are human', "I'm not a robot", 'Checking your browser', 'complete the security check', 'unusual traffic'];
+                        if (vIframe || vPhrases.some(p => bodyText.includes(p))) {
+                            logBuffer.push(Utils.getText('worker_captcha'));
+                        }
+                    } catch (e) { /* ignore */ }
+                }
                 try {
                     hasReported = true;
                     await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
@@ -1881,6 +1911,7 @@ export const TaskRunner = {
             clearInterval(State.watchdogTimer);
             State.watchdogTimer = null;
         }
+        KeepAlive.stop();
         TaskRunner.closeAllWorkerTabs();
 
         if (typeof TaskRunner.onQueueCompleted === 'function') {
