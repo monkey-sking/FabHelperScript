@@ -225,6 +225,9 @@ export const zh = {
     worker_captcha: '检测到人机验证 / 需要人工处理',
     log_keepalive_on: '后台保活已启动（Worker 心跳 + 防冻结）',
     log_keepalive_failed: '后台保活启动失败: {0}',
+    log_auto_retry: '↻ 自动重试 ({0}/{1}): {2}',
+    keepalive_label: '保活',
+    keepalive_dead: '⚠️未启动(疑被CSP拦)',
 
     // 脚本启动和初始化
     log_script_starting: '脚本开始运行...',

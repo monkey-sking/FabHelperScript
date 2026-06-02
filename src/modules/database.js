@@ -169,25 +169,49 @@ export const Database = {
             await Database.saveDone();
         }
     },
+    // 根据失败原因判定自动重试上限：
+    //  - 人机验证/适配类：重试无意义且会招更多风控 → 0 次，直接进失败列表
+    //  - 环境类(超时/被远程判死/唤醒清理)：值得自动重试 → 3 次
+    //  - 其他(可能只是页面没加载好)：给 1 次机会
+    getMaxRetry: (reason) => {
+        if (!reason) return 1;
+        if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
+        if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
+        return 1;
+    },
+
+    // 返回 { retried: bool }。retried=true 表示已按归因自动放回待办重试，未计入最终失败；
+    // 调用方据此决定是否累加 executionFailedTasks。
     markAsFailed: async (task, failureInfo = {}) => {
         if (!task || !task.uid) {
             Utils.logger('error', '标记任务失败，收到无效任务:', JSON.stringify(task));
-            return;
+            return { retried: false };
         }
 
-        // Remove from todo
-        const initialTodoCount = State.db.todo.length;
-        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
-        let changed = State.db.todo.length < initialTodoCount;
+        const reason = failureInfo.reason || '未知原因';
+        const nextRetry = (task.retryCount || 0) + 1;
+        const maxRetry = Database.getMaxRetry(reason);
 
-        // 构建包含详细失败信息的任务对象
+        // 先从待办移除当前任务实例
+        State.db.todo = State.db.todo.filter(t => t.uid !== task.uid);
+
+        // 环境型失败且未超重试上限 → 放回待办自动重试，不计入失败
+        if (nextRetry <= maxRetry) {
+            State.db.todo.push({ ...task, retryCount: nextRetry });
+            Utils.logger('info', Utils.getText('log_auto_retry', nextRetry, maxRetry, task.name) + ` [${reason}]`);
+            await Database.saveTodo();
+            if (UI) UI.update();
+            return { retried: true };
+        }
+
+        // 否则记为最终失败
         const failedTask = {
             ...task,
             failedAt: new Date().toISOString(),
-            failureReason: failureInfo.reason || '未知原因',
+            failureReason: reason,
             errorDetails: failureInfo.details || null,
             workerLogs: failureInfo.logs || [],
-            retryCount: (task.retryCount || 0) + 1
+            retryCount: nextRetry
         };
 
         // 记录详细的失败日志
@@ -215,11 +239,9 @@ export const Database = {
         } else {
             State.db.failed.push(failedTask);
         }
-        changed = true;
 
-        if (changed) {
-            await Database.saveTodo();
-            await Database.saveFailed();
-        }
+        await Database.saveTodo();
+        await Database.saveFailed();
+        return { retried: false };
     },
 };

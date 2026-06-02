@@ -1027,7 +1027,7 @@ async function main() {
 
                 const failMsg = isZh ? `❌ 任务失败: ${task.name} (${cleanError})` : `❌ Task failed: ${task.name} (${cleanError})`;
                 Utils.logger('warn', failMsg + timeSuffix);
-                await Database.markAsFailed(task, {
+                const _failRes = await Database.markAsFailed(task, {
                     reason: cleanError,
                     logs: logs || [],
                     details: {
@@ -1036,7 +1036,7 @@ async function main() {
                         instanceId: instanceId
                     }
                 });
-                State.executionFailedTasks++;
+                if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
             }
 
             UI.update();

@@ -25,6 +25,7 @@ export const KeepAlive = {
     _workerUrl: null,
     _tickCb: null,
     _running: false,
+    _lastTickAt: null,
 
     // WebRTC freeze-guard
     _pc1: null,
@@ -65,6 +66,7 @@ export const KeepAlive = {
             this._workerUrl = URL.createObjectURL(blob);
             this._worker = new Worker(this._workerUrl);
             this._worker.onmessage = () => {
+                this._lastTickAt = Date.now();
                 try {
                     const r = this._tickCb && this._tickCb();
                     // tick 回调可能是 async，吞掉其 rejection，避免中断心跳
@@ -132,5 +134,15 @@ export const KeepAlive = {
         try {
             if (this._dc && this._dc.readyState === 'open') this._dc.send('p');
         } catch (e) { /* ignore */ }
+    },
+
+    /** 返回保活运行状态，供 UI 展示、用于实测验证(尤其判断 Worker 是否被 CSP 拦) */
+    getStatus() {
+        return {
+            running: this._running,
+            heartbeatAlive: !!this._worker,
+            lastTickAgoMs: this._lastTickAt ? (Date.now() - this._lastTickAt) : null,
+            freezeGuard: this._dc ? this._dc.readyState : (this._pc1 ? 'connecting' : 'off'),
+        };
     },
 };

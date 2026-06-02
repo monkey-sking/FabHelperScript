@@ -14,6 +14,7 @@ import { Utils } from './utils.js';
 import { PageDiagnostics } from './page-diagnostics.js';
 import { Database } from './database.js';
 import { RateLimitManager } from './rate-limit-manager.js';
+import { KeepAlive } from './keepalive.js';
 
 // Forward declaration for TaskRunner (will be set via dependency injection)
 let TaskRunner = null;
@@ -380,6 +381,12 @@ export const UI = {
         State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈');
         statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
 
+        // 后台保活状态行(实测用，执行时才显示)
+        State.UI.statusKeepAlive = document.createElement('div');
+        State.UI.statusKeepAlive.className = 'fab-helper-keepalive-status';
+        State.UI.statusKeepAlive.style.cssText = 'font-size:11px;opacity:0.8;margin:4px 2px 0;display:none;';
+        State.UI.statusKeepAlive.title = '后台保活：♥心跳(Worker,不被节流) + ❄️防冻结(WebRTC)。后台/锁屏时应持续刷新；若显示未启动说明 Worker 被页面 CSP 拦截';
+
         State.UI.execBtn = document.createElement('button');
         State.UI.execBtn.className = 'fab-helper-execute-btn';
         State.UI.execBtn.onclick = () => TaskRunner && TaskRunner.toggleExecution();
@@ -477,7 +484,7 @@ export const UI = {
         };
         positionContainer.appendChild(clearPositionBtn);
 
-        dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
+        dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.statusKeepAlive, State.UI.execBtn, actionButtons);
         container.appendChild(dashboardContent);
 
         // Settings Tab
@@ -770,6 +777,23 @@ export const UI = {
                 State.UI.execBtn.textContent = Utils.getText('execute');
                 State.UI.execBtn.classList.remove('executing');
                 State.UI.execBtn.title = Utils.getText('tooltip_start_tasks');
+            }
+        }
+
+        // 后台保活状态(实测用)：执行时显示心跳/防冻结状态，非执行时隐藏
+        if (State.UI.statusKeepAlive) {
+            if (!State.isExecuting) {
+                State.UI.statusKeepAlive.style.display = 'none';
+            } else {
+                State.UI.statusKeepAlive.style.display = '';
+                const ka = KeepAlive.getStatus();
+                if (!ka.heartbeatAlive) {
+                    State.UI.statusKeepAlive.textContent = `🛡️ ${Utils.getText('keepalive_label')}: ${Utils.getText('keepalive_dead')}`;
+                } else {
+                    const ago = ka.lastTickAgoMs == null ? '?' : Math.round(ka.lastTickAgoMs / 1000);
+                    const fg = ka.freezeGuard === 'open' ? '❄️on' : (ka.freezeGuard === 'off' ? '❄️off' : '❄️…');
+                    State.UI.statusKeepAlive.textContent = `🛡️ ${Utils.getText('keepalive_label')}: ♥${ago}s · ${fg}`;
+                }
             }
         }
 

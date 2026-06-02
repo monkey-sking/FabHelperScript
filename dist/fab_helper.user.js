@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260602-1337
+// @version      3.5.6-20260602-1356
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -233,6 +233,9 @@
     worker_captcha: "CAPTCHA / human verification detected (manual action needed)",
     log_keepalive_on: "Background keep-alive started (Worker heartbeat + freeze guard)",
     log_keepalive_failed: "Failed to start keep-alive: {0}",
+    log_auto_retry: "\u21BB Auto-retry ({0}/{1}): {2}",
+    keepalive_label: "KeepAlive",
+    keepalive_dead: "\u26A0\uFE0Foff (CSP?)",
     // 脚本启动和初始化
     log_script_starting: "Script starting...",
     log_network_filter_deprecated: "NetworkFilter module deprecated, functionality handled by PagePatcher.",
@@ -573,6 +576,9 @@
     worker_captcha: "\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u9700\u8981\u4EBA\u5DE5\u5904\u7406",
     log_keepalive_on: "\u540E\u53F0\u4FDD\u6D3B\u5DF2\u542F\u52A8\uFF08Worker \u5FC3\u8DF3 + \u9632\u51BB\u7ED3\uFF09",
     log_keepalive_failed: "\u540E\u53F0\u4FDD\u6D3B\u542F\u52A8\u5931\u8D25: {0}",
+    log_auto_retry: "\u21BB \u81EA\u52A8\u91CD\u8BD5 ({0}/{1}): {2}",
+    keepalive_label: "\u4FDD\u6D3B",
+    keepalive_dead: "\u26A0\uFE0F\u672A\u542F\u52A8(\u7591\u88ABCSP\u62E6)",
     // 脚本启动和初始化
     log_script_starting: "\u811A\u672C\u5F00\u59CB\u8FD0\u884C...",
     log_network_filter_deprecated: "\u7F51\u7EDC\u8FC7\u6EE4\u5668(NetworkFilter)\u6A21\u5757\u5DF2\u5F03\u7528\uFF0C\u529F\u80FD\u7531\u8865\u4E01\u7A0B\u5E8F(PagePatcher)\u5904\u7406\u3002",
@@ -1877,21 +1883,41 @@
         await Database.saveDone();
       }
     }, "markAsDone"),
+    // 根据失败原因判定自动重试上限：
+    //  - 人机验证/适配类：重试无意义且会招更多风控 → 0 次，直接进失败列表
+    //  - 环境类(超时/被远程判死/唤醒清理)：值得自动重试 → 3 次
+    //  - 其他(可能只是页面没加载好)：给 1 次机会
+    getMaxRetry: /* @__PURE__ */ __name((reason) => {
+      if (!reason) return 1;
+      if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
+      if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
+      return 1;
+    }, "getMaxRetry"),
+    // 返回 { retried: bool }。retried=true 表示已按归因自动放回待办重试，未计入最终失败；
+    // 调用方据此决定是否累加 executionFailedTasks。
     markAsFailed: /* @__PURE__ */ __name(async (task, failureInfo = {}) => {
       if (!task || !task.uid) {
         Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
-        return;
+        return { retried: false };
       }
-      const initialTodoCount = State.db.todo.length;
+      const reason = failureInfo.reason || "\u672A\u77E5\u539F\u56E0";
+      const nextRetry = (task.retryCount || 0) + 1;
+      const maxRetry = Database.getMaxRetry(reason);
       State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-      let changed = State.db.todo.length < initialTodoCount;
+      if (nextRetry <= maxRetry) {
+        State.db.todo.push({ ...task, retryCount: nextRetry });
+        Utils.logger("info", Utils.getText("log_auto_retry", nextRetry, maxRetry, task.name) + ` [${reason}]`);
+        await Database.saveTodo();
+        if (UI2) UI2.update();
+        return { retried: true };
+      }
       const failedTask = {
         ...task,
         failedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        failureReason: failureInfo.reason || "\u672A\u77E5\u539F\u56E0",
+        failureReason: reason,
         errorDetails: failureInfo.details || null,
         workerLogs: failureInfo.logs || [],
-        retryCount: (task.retryCount || 0) + 1
+        retryCount: nextRetry
       };
       Utils.logger("warn", `\u{1F4CB} \u4EFB\u52A1\u5931\u8D25\u8BE6\u60C5:`);
       Utils.logger("warn", `   - \u4EFB\u52A1\u540D\u79F0: ${task.name}`);
@@ -1914,11 +1940,9 @@
       } else {
         State.db.failed.push(failedTask);
       }
-      changed = true;
-      if (changed) {
-        await Database.saveTodo();
-        await Database.saveFailed();
-      }
+      await Database.saveTodo();
+      await Database.saveFailed();
+      return { retried: false };
     }, "markAsFailed")
   };
 
@@ -2633,6 +2657,7 @@
     _workerUrl: null,
     _tickCb: null,
     _running: false,
+    _lastTickAt: null,
     // WebRTC freeze-guard
     _pc1: null,
     _pc2: null,
@@ -2666,6 +2691,7 @@
         this._workerUrl = URL.createObjectURL(blob);
         this._worker = new Worker(this._workerUrl);
         this._worker.onmessage = () => {
+          this._lastTickAt = Date.now();
           try {
             const r = this._tickCb && this._tickCb();
             if (r && typeof r.catch === "function") {
@@ -2746,6 +2772,15 @@
         if (this._dc && this._dc.readyState === "open") this._dc.send("p");
       } catch (e) {
       }
+    },
+    /** 返回保活运行状态，供 UI 展示、用于实测验证(尤其判断 Worker 是否被 CSP 拦) */
+    getStatus() {
+      return {
+        running: this._running,
+        heartbeatAlive: !!this._worker,
+        lastTickAgoMs: this._lastTickAt ? Date.now() - this._lastTickAt : null,
+        freezeGuard: this._dc ? this._dc.readyState : this._pc1 ? "connecting" : "off"
+      };
     }
   };
 
@@ -3249,7 +3284,7 @@
         const workerInfo = State.runningWorkers[workerId];
         const stallDuration = workerInfo ? ((Date.now() - workerInfo.startTime) / 1e3).toFixed(2) : "\u672A\u77E5";
         Utils.logger("error", Utils.getText("log_watchdog_stalled", workerId.substring(0, 12)));
-        await Database.markAsFailed(task, {
+        const _failRes = await Database.markAsFailed(task, {
           reason: "\u5DE5\u4F5C\u7EBF\u7A0B\u8D85\u65F6 (Watchdog)",
           logs: [`Worker ${workerId.substring(0, 12)} \u8D85\u65F6`, `\u8D85\u65F6\u65F6\u957F: ${stallDuration}s`],
           details: {
@@ -3258,7 +3293,7 @@
             timeout: `${Config.WORKER_TIMEOUT / 1e3}s`
           }
         });
-        State.executionFailedTasks++;
+        if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
         delete State.runningWorkers[workerId];
         State.activeWorkers = Math.max(0, State.activeWorkers - 1);
         await GM_deleteValue(workerId);
@@ -4648,6 +4683,10 @@
       };
       State.UI.statusHidden = createStatusItem("fab-status-hidden", Utils.getText("hidden"), "\u{1F648}");
       statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+      State.UI.statusKeepAlive = document.createElement("div");
+      State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
+      State.UI.statusKeepAlive.style.cssText = "font-size:11px;opacity:0.8;margin:4px 2px 0;display:none;";
+      State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
       State.UI.execBtn = document.createElement("button");
       State.UI.execBtn.className = "fab-helper-execute-btn";
       State.UI.execBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleExecution();
@@ -4732,7 +4771,7 @@
         }
       };
       positionContainer.appendChild(clearPositionBtn);
-      dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.execBtn, actionButtons);
+      dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.statusKeepAlive, State.UI.execBtn, actionButtons);
       container.appendChild(dashboardContent);
       const settingsContent = document.createElement("div");
       settingsContent.className = "fab-helper-tab-content";
@@ -4971,6 +5010,21 @@
           State.UI.execBtn.textContent = Utils.getText("execute");
           State.UI.execBtn.classList.remove("executing");
           State.UI.execBtn.title = Utils.getText("tooltip_start_tasks");
+        }
+      }
+      if (State.UI.statusKeepAlive) {
+        if (!State.isExecuting) {
+          State.UI.statusKeepAlive.style.display = "none";
+        } else {
+          State.UI.statusKeepAlive.style.display = "";
+          const ka = KeepAlive.getStatus();
+          if (!ka.heartbeatAlive) {
+            State.UI.statusKeepAlive.textContent = `\u{1F6E1}\uFE0F ${Utils.getText("keepalive_label")}: ${Utils.getText("keepalive_dead")}`;
+          } else {
+            const ago = ka.lastTickAgoMs == null ? "?" : Math.round(ka.lastTickAgoMs / 1e3);
+            const fg = ka.freezeGuard === "open" ? "\u2744\uFE0Fon" : ka.freezeGuard === "off" ? "\u2744\uFE0Foff" : "\u2744\uFE0F\u2026";
+            State.UI.statusKeepAlive.textContent = `\u{1F6E1}\uFE0F ${Utils.getText("keepalive_label")}: \u2665${ago}s \xB7 ${fg}`;
+          }
         }
       }
       if (State.UI.hideBtn) {
@@ -5882,7 +5936,7 @@
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);
-          await Database.markAsFailed(task, {
+          const _failRes = await Database.markAsFailed(task, {
             reason: cleanError,
             logs: logs || [],
             details: {
@@ -5891,7 +5945,7 @@
               instanceId
             }
           });
-          State.executionFailedTasks++;
+          if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
         }
         UI5.update();
         if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {

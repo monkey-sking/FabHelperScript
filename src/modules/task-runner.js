@@ -665,7 +665,7 @@ export const TaskRunner = {
             Utils.logger('error', Utils.getText('log_watchdog_stalled', workerId.substring(0, 12)));
 
             // 使用增强的 markAsFailed 记录详细信息
-            await Database.markAsFailed(task, {
+            const _failRes = await Database.markAsFailed(task, {
                 reason: '工作线程超时 (Watchdog)',
                 logs: [`Worker ${workerId.substring(0, 12)} 超时`, `超时时长: ${stallDuration}s`],
                 details: {
@@ -674,7 +674,7 @@ export const TaskRunner = {
                     timeout: `${Config.WORKER_TIMEOUT / 1000}s`
                 }
             });
-            State.executionFailedTasks++;
+            if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
 
             delete State.runningWorkers[workerId];
             State.activeWorkers = Math.max(0, State.activeWorkers - 1);
