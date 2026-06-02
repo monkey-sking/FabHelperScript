@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260524-1250
+// @version      3.5.6-20260602-1039
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4972,6 +4972,23 @@
       }
     } catch (e) {
       console.error("[Fab Helper] Failed to inject CSP:", e);
+    }
+  })();
+  (function() {
+    try {
+      const script = document.createElement("script");
+      script.textContent = `
+            Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+            Object.defineProperty(document, 'hidden', { get: () => false });
+            document.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+        `;
+      if (document.documentElement) {
+        document.documentElement.appendChild(script);
+        script.remove();
+      }
+      console.log("[Fab Helper] Injected visibility spoofing for background execution.");
+    } catch (e) {
+      console.warn("[Fab Helper] Failed to inject visibility spoof:", e);
     }
   })();
   var currentCountdownInterval = null;

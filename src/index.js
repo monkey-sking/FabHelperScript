@@ -83,6 +83,25 @@
     }
 })();
 
+// Spoof visibility to prevent background tab throttling and rendering pauses
+(function() {
+    try {
+        const script = document.createElement('script');
+        script.textContent = `
+            Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
+            Object.defineProperty(document, 'hidden', { get: () => false });
+            document.addEventListener('visibilitychange', (e) => { e.stopImmediatePropagation(); }, true);
+        `;
+        if (document.documentElement) {
+            document.documentElement.appendChild(script);
+            script.remove();
+        }
+        console.log('[Fab Helper] Injected visibility spoofing for background execution.');
+    } catch (e) {
+        console.warn('[Fab Helper] Failed to inject visibility spoof:', e);
+    }
+})();
+
 // Core modules
 import { Config } from './config.js';
 import { State } from './state.js';
