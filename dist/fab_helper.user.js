@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260603-0950
+// @version      3.5.6-20260603-1003
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -963,23 +963,38 @@
         console[type](`${Config.SCRIPT_NAME}`, ...args);
       }
       if (State.UI && State.UI.logPanel) {
-        const logEntry = document.createElement("div");
-        logEntry.style.cssText = "padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;";
-        if (type === "error") {
-          logEntry.style.color = "#ff3b30";
-          logEntry.style.fontWeight = "500";
-        } else if (type === "warn") {
-          logEntry.style.color = "#ff9500";
-          logEntry.style.fontWeight = "500";
-        } else if (type === "debug") {
-          logEntry.style.color = "#8e8e93";
-        } else {
-          logEntry.style.color = "#f5f5f7";
-        }
+        const messageText = args.join(" ");
         const timestamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
         const debugPrefix = type === "debug" ? '<span style="color: #34c759;">[DEBUG]</span> ' : "";
-        logEntry.innerHTML = `<span style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> ${debugPrefix}${args.join(" ")}`;
-        State.UI.logPanel.prepend(logEntry);
+        const firstChild = State.UI.logPanel.firstChild;
+        if (firstChild && firstChild.dataset.rawText === messageText) {
+          const count = parseInt(firstChild.dataset.count || "1") + 1;
+          firstChild.dataset.count = count.toString();
+          const timeSpan = firstChild.querySelector(".log-timestamp");
+          if (timeSpan) timeSpan.textContent = `[${timestamp}]`;
+          const contentSpan = firstChild.querySelector(".log-content");
+          if (contentSpan) {
+            contentSpan.innerHTML = `${debugPrefix}${messageText} <span style="color: #007aff; font-weight: bold; margin-left: 4px;">(x${count})</span>`;
+          }
+        } else {
+          const logEntry = document.createElement("div");
+          logEntry.style.cssText = "padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;";
+          logEntry.dataset.rawText = messageText;
+          logEntry.dataset.count = "1";
+          if (type === "error") {
+            logEntry.style.color = "#ff3b30";
+            logEntry.style.fontWeight = "500";
+          } else if (type === "warn") {
+            logEntry.style.color = "#ff9500";
+            logEntry.style.fontWeight = "500";
+          } else if (type === "debug") {
+            logEntry.style.color = "#8e8e93";
+          } else {
+            logEntry.style.color = "#f5f5f7";
+          }
+          logEntry.innerHTML = `<span class="log-timestamp" style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> <span class="log-content">${debugPrefix}${messageText}</span>`;
+          State.UI.logPanel.prepend(logEntry);
+        }
         while (State.UI.logPanel.children.length > 100) {
           State.UI.logPanel.removeChild(State.UI.logPanel.lastChild);
         }
@@ -4973,16 +4988,9 @@
       const todoCount = State.db.todo.length;
       const doneCount = State.db.done.length;
       const failedCount = State.db.failed.length;
-      const allCards = document.querySelectorAll(Config.SELECTORS.card);
-      let hiddenCount = 0;
-      let visibleCount = 0;
-      allCards.forEach((card) => {
-        if (card.style.display === "none") {
-          hiddenCount++;
-        } else {
-          visibleCount++;
-        }
-      });
+      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
+      const hiddenCount = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
+      const visibleCount = totalCards - hiddenCount;
       if (State.UI.statusTodo) State.UI.statusTodo.querySelector("span").textContent = todoCount;
       if (State.UI.statusDone) State.UI.statusDone.querySelector("span").textContent = doneCount;
       if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;

@@ -30,27 +30,45 @@ export const Utils = {
 
         // 记录到日志面板
         if (State.UI && State.UI.logPanel) {
-            const logEntry = document.createElement('div');
-            logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;';
-            
-            // 根据日志类型应用色彩样式（符合暗色玻璃态控制台的主题色）
-            if (type === 'error') {
-                logEntry.style.color = '#ff3b30'; // 亮红 (System Red)
-                logEntry.style.fontWeight = '500';
-            } else if (type === 'warn') {
-                logEntry.style.color = '#ff9500'; // 亮橙 (System Orange)
-                logEntry.style.fontWeight = '500';
-            } else if (type === 'debug') {
-                logEntry.style.color = '#8e8e93'; // 灰字 (System Gray)
-            } else {
-                logEntry.style.color = '#f5f5f7'; // 亮灰白 (Primary Text)
-            }
-
+            const messageText = args.join(' ');
             const timestamp = new Date().toLocaleTimeString();
             const debugPrefix = type === 'debug' ? '<span style="color: #34c759;">[DEBUG]</span> ' : '';
-            logEntry.innerHTML = `<span style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> ${debugPrefix}${args.join(' ')}`;
             
-            State.UI.logPanel.prepend(logEntry);
+            const firstChild = State.UI.logPanel.firstChild;
+            if (firstChild && firstChild.dataset.rawText === messageText) {
+                // 同条日志连续触发时仅增加计数器，避免大量 DOM 渲染导致卡顿
+                const count = parseInt(firstChild.dataset.count || '1') + 1;
+                firstChild.dataset.count = count.toString();
+                
+                const timeSpan = firstChild.querySelector('.log-timestamp');
+                if (timeSpan) timeSpan.textContent = `[${timestamp}]`;
+                
+                const contentSpan = firstChild.querySelector('.log-content');
+                if (contentSpan) {
+                    contentSpan.innerHTML = `${debugPrefix}${messageText} <span style="color: #007aff; font-weight: bold; margin-left: 4px;">(x${count})</span>`;
+                }
+            } else {
+                const logEntry = document.createElement('div');
+                logEntry.style.cssText = 'padding: 2px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 11px;';
+                logEntry.dataset.rawText = messageText;
+                logEntry.dataset.count = '1';
+                
+                // 根据日志类型应用色彩样式（符合暗色玻璃态控制台的主题色）
+                if (type === 'error') {
+                    logEntry.style.color = '#ff3b30'; // 亮红 (System Red)
+                    logEntry.style.fontWeight = '500';
+                } else if (type === 'warn') {
+                    logEntry.style.color = '#ff9500'; // 亮橙 (System Orange)
+                    logEntry.style.fontWeight = '500';
+                } else if (type === 'debug') {
+                    logEntry.style.color = '#8e8e93'; // 灰字 (System Gray)
+                } else {
+                    logEntry.style.color = '#f5f5f7'; // 亮灰白 (Primary Text)
+                }
+
+                logEntry.innerHTML = `<span class="log-timestamp" style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> <span class="log-content">${debugPrefix}${messageText}</span>`;
+                State.UI.logPanel.prepend(logEntry);
+            }
             
             // 限制最大日志行数
             while (State.UI.logPanel.children.length > 100) {
