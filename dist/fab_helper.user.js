@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260603-0946
+// @version      3.5.6-20260603-0950
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3758,6 +3758,12 @@
                             if (rect.width === 0 || rect.height === 0) return false;
                             const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                             if (text.includes("buy now") || text.includes("\u7ACB\u5373\u8D2D\u4E70")) return false;
+                            const isCheckoutContext = btn.ownerDocument !== document || window.location.pathname.includes("/payment/");
+                            if (isCheckoutContext) {
+                              if (text.includes("add to library") || text.includes("\u6DFB\u52A0\u5230\u5E93") || text.includes("add to account") || text.includes("\u6DFB\u52A0\u5230\u8D26\u6237")) {
+                                return true;
+                              }
+                            }
                             return text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("confirm");
                           });
                         }

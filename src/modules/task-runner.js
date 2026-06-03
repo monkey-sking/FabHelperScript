@@ -1248,8 +1248,17 @@ export const TaskRunner = {
                                                     if (rect.width === 0 || rect.height === 0) return false;
 
                                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                                    // 排除掉之前的 "Buy Now" 或 "Add to Library" 按钮，只找结账相关的
+                                                    // 排除掉主页面的 "Buy Now"
                                                     if (text.includes('buy now') || text.includes('立即购买')) return false;
+
+                                                    // 如果处于支付/结账上下文中（例如在 iframe 内部，或 URL 包含 payment/purchase），
+                                                    // “Add to library”/“添加到库” 按钮即为最终的确认结账按钮
+                                                    const isCheckoutContext = (btn.ownerDocument !== document) || window.location.pathname.includes('/payment/');
+                                                    if (isCheckoutContext) {
+                                                        if (text.includes('add to library') || text.includes('添加到库') || text.includes('add to account') || text.includes('添加到账户')) {
+                                                            return true;
+                                                        }
+                                                    }
 
                                                     return text.includes('place order') || text.includes('下单') ||
                                                         text.includes('checkout') || text.includes('结账') ||
