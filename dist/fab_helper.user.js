@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260602-1356
+// @version      3.5.6-20260603-0946
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -5123,7 +5123,7 @@
       if (blockEnabled) {
         const meta = document.createElement("meta");
         meta.httpEquiv = "Content-Security-Policy";
-        meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
+        meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com; child-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com;";
         if (document.documentElement) {
           document.documentElement.appendChild(meta);
         } else {
@@ -5131,7 +5131,7 @@
         }
         const style = document.createElement("style");
         style.textContent = `
-                img, source, picture, video, iframe, [style*="background-image"] {
+                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]), [style*="background-image"] {
                     display: none !important;
                     background-image: none !important;
                 }

@@ -11,9 +11,10 @@
         const blockEnabled = typeof GM_getValue !== 'undefined' ? GM_getValue('fab_block_resources_v1', true) : true;
         if (blockEnabled) {
             // 1. Inject CSP to block network requests for images, media, fonts, frames
+            // Exempt 'self' (same-origin) and common captcha hosts to allow checkout and verification to function.
             const meta = document.createElement('meta');
             meta.httpEquiv = 'Content-Security-Policy';
-            meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'none'; child-src 'none';";
+            meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com; child-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com;";
             if (document.documentElement) {
                 document.documentElement.appendChild(meta);
             } else {
@@ -21,9 +22,10 @@
             }
 
             // 2. Inject CSS to hide images and background images visually
+            // Exempt the purchase iframe and captcha-related iframes from display: none.
             const style = document.createElement('style');
             style.textContent = `
-                img, source, picture, video, iframe, [style*="background-image"] {
+                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]), [style*="background-image"] {
                     display: none !important;
                     background-image: none !important;
                 }
