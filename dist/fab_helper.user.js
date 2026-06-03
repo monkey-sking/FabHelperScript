@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260603-1003
+// @version      3.5.6-20260603-1006
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3344,7 +3344,7 @@
       }
       if (!State.isExecuting) return;
       if (State.isDispatchingTasks) {
-        Utils.logger("info", Utils.getText("log_dispatching_in_progress"));
+        Utils.logger("debug", "Task dispatching already in progress, skipping executeBatch.");
         return;
       }
       State.isDispatchingTasks = true;
@@ -6053,14 +6053,19 @@
     }
   }
   __name(handleWakeRecovery, "handleWakeRecovery");
+  var wakeRecoveryTimer = null;
+  var triggerWakeRecovery = /* @__PURE__ */ __name(() => {
+    clearTimeout(wakeRecoveryTimer);
+    wakeRecoveryTimer = setTimeout(handleWakeRecovery, 1e3);
+  }, "triggerWakeRecovery");
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       setTimeout(ensureUILoaded, 500);
-      setTimeout(handleWakeRecovery, 1e3);
+      triggerWakeRecovery();
     }
   });
   window.addEventListener("focus", () => {
-    setTimeout(handleWakeRecovery, 1e3);
+    triggerWakeRecovery();
   });
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", main);

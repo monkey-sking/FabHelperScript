@@ -1170,17 +1170,23 @@ async function handleWakeRecovery() {
 }
 
 // Check UI on visibility change
+let wakeRecoveryTimer = null;
+const triggerWakeRecovery = () => {
+    clearTimeout(wakeRecoveryTimer);
+    wakeRecoveryTimer = setTimeout(handleWakeRecovery, 1000);
+};
+
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') {
         setTimeout(ensureUILoaded, 500);
-        // 延迟一点让页面 JS 引擎完全恢复后再处理
-        setTimeout(handleWakeRecovery, 1000);
+        // 延迟一点让页面 JS 引擎完全恢复后再处理，防抖处理 focus 事件的重叠触发
+        triggerWakeRecovery();
     }
 });
 
 // focus 事件作为双重保险（某些锁屏场景只触发 focus 不触发 visibilitychange）
 window.addEventListener('focus', () => {
-    setTimeout(handleWakeRecovery, 1000);
+    triggerWakeRecovery();
 });
 
 // Run main function

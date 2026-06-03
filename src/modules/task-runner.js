@@ -720,7 +720,7 @@ export const TaskRunner = {
         if (!State.isExecuting) return;
 
         if (State.isDispatchingTasks) {
-            Utils.logger('info', Utils.getText('log_dispatching_in_progress'));
+            Utils.logger('debug', 'Task dispatching already in progress, skipping executeBatch.');
             return;
         }
 
