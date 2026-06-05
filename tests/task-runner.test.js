@@ -607,6 +607,95 @@ test('hides auto-completed free cards even before the page text changes to saved
     }
 });
 
+test('hidden cards are marked and reflected in the card count cache', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const createCard = (uid, text) => ({
+        textContent: text,
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: `https://www.fab.com/listings/${uid}`
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => [],
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        removeAttribute(name) {
+            delete this.attributes[name];
+        }
+    });
+
+    const ownedCard = createCard('88888888-8888-4888-8888-888888888888', 'Owned free listing Free');
+    const visibleCard = createCard('99999999-9999-4999-8999-999999999999', 'Available free listing Free');
+    const cards = [ownedCard, visibleCard];
+
+    globalThis.document = {
+        querySelectorAll: () => cards,
+        getElementById: () => null
+    };
+    globalThis.window = {
+        location: { href: 'https://www.fab.com/search?is_free=1' },
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        if (delay !== 2000) callback();
+        return 1;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.cardCountCache = {
+        total: 0,
+        hidden: 0,
+        visible: 0,
+        dirty: true,
+        documentRef: null,
+        href: ''
+    };
+    State.lastHideModeKey = '';
+    State.db.done = ['https://www.fab.com/listings/88888888-8888-4888-8888-888888888888'];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(ownedCard.attributes['data-fab-processed'], 'true');
+        assert.equal(ownedCard.attributes['data-fab-hidden'], 'true');
+        assert.equal(ownedCard.style.display, 'none');
+        assert.equal(visibleCard.attributes['data-fab-hidden'], undefined);
+        assert.deepEqual(TaskRunner.getCardCounts(), {
+            total: 2,
+            hidden: 1,
+            visible: 1
+        });
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
 test('done records hide cards even when list card status text is missing', () => {
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;

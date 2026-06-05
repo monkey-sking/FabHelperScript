@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1530
+// @version      3.5.6-20260605-1648
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -892,6 +892,15 @@
     lastKnownHref: null,
     // To detect SPA navigation
     hiddenThisPageCount: 0,
+    cardCountCache: {
+      total: 0,
+      hidden: 0,
+      visible: 0,
+      dirty: true,
+      documentRef: null,
+      href: ""
+    },
+    lastHideModeKey: "",
     executionTotalTasks: 0,
     // For execution progress
     executionCompletedTasks: 0,
@@ -2036,14 +2045,11 @@
         UI3.updateDebugTab();
         UI3.update();
       }
-      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-      const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-      const actualVisibleCards = totalCards - hiddenCards;
+      const { visible: actualVisibleCards } = TaskRunner?.getCardCounts ? TaskRunner.getCardCounts() : { visible: document.querySelectorAll(Config.SELECTORS.card).length };
       const visibleCountElement = document.getElementById("fab-status-visible");
       if (visibleCountElement) {
         visibleCountElement.textContent = actualVisibleCards.toString();
       }
-      State.hiddenThisPageCount = hiddenCards;
       if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
         if (actualVisibleCards > 0) {
           Utils.logger("info", `\u68C0\u6D4B\u5230\u9875\u9762\u4E0A\u6709 ${actualVisibleCards} \u4E2A\u53EF\u89C1\u5546\u54C1\uFF0C\u6682\u4E0D\u81EA\u52A8\u5237\u65B0\u9875\u9762\u3002`);
@@ -2969,7 +2975,7 @@
         Utils.logger("debug", "\u542F\u52A8\u4EFB\u52A1\u524D\u6B63\u5728\u786E\u8BA4\u5F53\u524D\u9875\u9762\u5546\u54C1\u8BC6\u522B\u72B6\u6001...");
         TaskRunner2.checkVisibleCardsStatus().then(() => {
           Utils.logger("debug", "\u6B63\u5728\u626B\u63CF\u5F53\u524D\u9875\u9762\u7B26\u5408\u6761\u4EF6\u7684\u5546\u54C1...");
-          TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).then(() => {
+          TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).then(() => {
             TaskRunner2.startExecution();
           });
         });
@@ -2978,13 +2984,13 @@
       State.db.todo = [];
       Utils.logger("info", Utils.getText("log_todo_cleared"));
       Utils.logger("debug", Utils.getText("log_scanning_items"));
-      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       const newlyAddedList = [];
       let alreadyInQueueCount = 0;
       let ownedCount = 0;
       let skippedCount = 0;
       cards.forEach((card) => {
-        if (card.style.display === "none") return;
+        if (TaskRunner2.isCardHidden(card)) return;
         if (!TaskRunner2.isCardSettled(card)) {
           skippedCount++;
           return;
@@ -3061,7 +3067,7 @@
       await Database.saveHidePref();
       TaskRunner2.runHideOrShow();
       if (!State.hideSaved) {
-        const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+        const { visible: actualVisibleCount } = TaskRunner2.getCardCounts(true);
         Utils.logger("info", Utils.getText("log_display_mode_switched", actualVisibleCount));
       }
       if (UI4) UI4.update();
@@ -3208,7 +3214,7 @@
           Utils.checkAuthentication();
           throw new Error("CSRF token not found. Are you logged in?");
         }
-        const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)].filter(isElementInViewport).filter((card) => {
+        const uidsFromVisibleCards = new Set([...document.querySelectorAll(TaskRunner2.getVisibleCardSelector())].filter(isElementInViewport).filter((card) => {
           const link = card.querySelector(Config.SELECTORS.cardLink);
           if (!link) return false;
           const url = link.href.split("?")[0];
@@ -3853,6 +3859,100 @@
       }
     }, "processDetailPage"),
     // 节流标记：100ms 内多次调用只执行一次，消除 Observer/timer 风暴
+    selectorWithSuffix: /* @__PURE__ */ __name((selector, suffix) => {
+      return selector.split(",").map((part) => `${part.trim()}${suffix}`).join(", ");
+    }, "selectorWithSuffix"),
+    getVisibleCardSelector: /* @__PURE__ */ __name(() => {
+      return TaskRunner2.selectorWithSuffix(Config.SELECTORS.card, ':not([data-fab-hidden="true"])');
+    }, "getVisibleCardSelector"),
+    isHideModeActive: /* @__PURE__ */ __name(() => {
+      return State.hideSaved || State.hideDiscountedPaid || State.hidePaid;
+    }, "isHideModeActive"),
+    getHideModeKey: /* @__PURE__ */ __name(() => {
+      return [
+        State.hideSaved ? "saved" : "",
+        State.hideDiscountedPaid ? "discounted" : "",
+        State.hidePaid ? "paid" : ""
+      ].join("|");
+    }, "getHideModeKey"),
+    isCardHidden: /* @__PURE__ */ __name((card) => {
+      return card?.getAttribute?.("data-fab-hidden") === "true" || card?.style?.display === "none";
+    }, "isCardHidden"),
+    invalidateCardCountCache: /* @__PURE__ */ __name(() => {
+      State.cardCountCache.dirty = true;
+    }, "invalidateCardCountCache"),
+    refreshCardCountCache: /* @__PURE__ */ __name((cardsArg = null) => {
+      if (typeof document === "undefined") {
+        State.cardCountCache.total = 0;
+        State.cardCountCache.hidden = 0;
+        State.cardCountCache.visible = 0;
+        State.cardCountCache.dirty = false;
+        State.cardCountCache.documentRef = null;
+        State.cardCountCache.href = "";
+        State.hiddenThisPageCount = 0;
+        return { total: 0, hidden: 0, visible: 0 };
+      }
+      const cards = cardsArg ? Array.from(cardsArg) : Array.from(document.querySelectorAll(Config.SELECTORS.card));
+      const hidden = cards.reduce((count, card) => count + (TaskRunner2.isCardHidden(card) ? 1 : 0), 0);
+      const total = cards.length;
+      const visible = total - hidden;
+      State.cardCountCache.total = total;
+      State.cardCountCache.hidden = hidden;
+      State.cardCountCache.visible = visible;
+      State.cardCountCache.dirty = false;
+      State.cardCountCache.documentRef = document;
+      State.cardCountCache.href = typeof window !== "undefined" ? window.location?.href || "" : "";
+      State.hiddenThisPageCount = hidden;
+      return { total, hidden, visible };
+    }, "refreshCardCountCache"),
+    getCardCounts: /* @__PURE__ */ __name((forceRefresh = false) => {
+      const cache = State.cardCountCache;
+      const href = typeof window !== "undefined" ? window.location?.href || "" : "";
+      const documentChanged = typeof document !== "undefined" && cache.documentRef !== document;
+      const hrefChanged = cache.href !== href;
+      if (forceRefresh || cache.dirty || documentChanged || hrefChanged) {
+        return TaskRunner2.refreshCardCountCache();
+      }
+      return {
+        total: cache.total,
+        hidden: cache.hidden,
+        visible: cache.visible
+      };
+    }, "getCardCounts"),
+    adjustCardCountCacheHidden: /* @__PURE__ */ __name((delta) => {
+      const cache = State.cardCountCache;
+      if (cache.dirty) return;
+      cache.hidden = Math.max(0, Math.min(cache.total, cache.hidden + delta));
+      cache.visible = Math.max(0, cache.total - cache.hidden);
+      State.hiddenThisPageCount = cache.hidden;
+    }, "adjustCardCountCacheHidden"),
+    setCardHidden: /* @__PURE__ */ __name((card, hidden) => {
+      if (!card) return;
+      const wasHidden = TaskRunner2.isCardHidden(card);
+      if (hidden) {
+        if (card.style) card.style.display = "none";
+        card.setAttribute?.("data-fab-hidden", "true");
+      } else {
+        if (card.style) card.style.display = "";
+        card.removeAttribute?.("data-fab-hidden");
+      }
+      const isHidden = TaskRunner2.isCardHidden(card);
+      if (wasHidden !== isHidden) {
+        TaskRunner2.adjustCardCountCacheHidden(isHidden ? 1 : -1);
+      }
+    }, "setCardHidden"),
+    resetHiddenCardState: /* @__PURE__ */ __name((cardsArg) => {
+      Array.from(cardsArg || []).forEach((card) => {
+        card.removeAttribute?.("data-fab-processed");
+        TaskRunner2.setCardHidden(card, false);
+      });
+    }, "resetHiddenCardState"),
+    shouldHideCard: /* @__PURE__ */ __name((card) => {
+      const isFinished = State.hideSaved && TaskRunner2.isCardFinished(card);
+      const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card);
+      const isPaidAndHidden = State.hidePaid && !TaskRunner2.isFreeCard(card);
+      return isFinished || isDiscountedPaid || isPaidAndHidden;
+    }, "shouldHideCard"),
     _runHideOrShowTimer: null,
     scheduleHideOrShow: /* @__PURE__ */ __name(() => {
       if (TaskRunner2._runHideOrShowTimer) return;
@@ -3866,13 +3966,33 @@
         clearTimeout(TaskRunner2._runHideOrShowTimer);
         TaskRunner2._runHideOrShowTimer = null;
       }
-      const cards = document.querySelectorAll(Config.SELECTORS.card);
-      State.hiddenThisPageCount = 0;
+      if (!TaskRunner2.isHideModeActive()) {
+        const allCards = document.querySelectorAll(Config.SELECTORS.card);
+        TaskRunner2.refreshCardCountCache(allCards);
+        TaskRunner2.resetHiddenCardState(allCards);
+        State.lastHideModeKey = TaskRunner2.getHideModeKey();
+        if (UI4) UI4.update();
+        return;
+      }
+      const hideModeKey = TaskRunner2.getHideModeKey();
+      if (State.lastHideModeKey !== hideModeKey) {
+        State.lastHideModeKey = hideModeKey;
+        TaskRunner2.invalidateCardCountCache();
+        const allCards = document.querySelectorAll(Config.SELECTORS.card);
+        TaskRunner2.refreshCardCountCache(allCards);
+        TaskRunner2.resetHiddenCardState(allCards);
+      } else {
+        TaskRunner2.getCardCounts();
+      }
+      const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       let actuallyHidden = 0;
       let hasUnsettledCards = false;
       const unsettledCards = [];
       cards.forEach((card) => {
-        if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return;
+        if (card.getAttribute("data-fab-processed") === "true" && TaskRunner2.isCardHidden(card)) {
+          TaskRunner2.setCardHidden(card, true);
+          return;
+        }
         if (!TaskRunner2.isCardSettled(card)) {
           hasUnsettledCards = true;
           unsettledCards.push(card);
@@ -3894,20 +4014,13 @@
         if (!TaskRunner2.isCardSettled(card)) {
           return;
         }
-        const isProcessed = card.getAttribute("data-fab-processed") === "true";
-        if (isProcessed && card.style.display === "none") {
-          State.hiddenThisPageCount++;
+        if (TaskRunner2.isCardHidden(card)) {
+          TaskRunner2.setCardHidden(card, true);
           return;
         }
-        const isFinished = TaskRunner2.isCardFinished(card);
-        const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card);
-        const isPaidAndHidden = State.hidePaid && !TaskRunner2.isFreeCard(card);
-        if (State.hideSaved && isFinished || isDiscountedPaid || isPaidAndHidden) {
+        card.setAttribute("data-fab-processed", "true");
+        if (TaskRunner2.shouldHideCard(card)) {
           cardsToHide.push(card);
-          State.hiddenThisPageCount++;
-          card.setAttribute("data-fab-processed", "true");
-        } else {
-          card.setAttribute("data-fab-processed", "true");
         }
       });
       if (cardsToHide.length > 0) {
@@ -3921,7 +4034,7 @@
           const hideNextFrame = /* @__PURE__ */ __name(() => {
             const end = Math.min(offset + FRAME_BATCH, cardsToHide.length);
             for (let i = offset; i < end; i++) {
-              cardsToHide[i].style.display = "none";
+              TaskRunner2.setCardHidden(cardsToHide[i], true);
               actuallyHidden++;
             }
             offset = end;
@@ -3953,7 +4066,7 @@
               currentBatch.forEach((card, index) => {
                 const cardDelay = index * 50 + Math.random() * 100;
                 setTimeout(() => {
-                  card.style.display = "none";
+                  TaskRunner2.setCardHidden(card, true);
                   actuallyHidden++;
                   batchHidden++;
                   if (batchHidden === currentBatch.length) {
@@ -3973,30 +4086,14 @@
           }
         }
       }
-      if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
-        const visibleCards = Array.from(cards).filter((card) => {
-          if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return false;
-          if (State.hideSaved && TaskRunner2.isCardFinished(card)) return false;
-          if (State.hideDiscountedPaid && TaskRunner2.isDiscountedPaidCard(card)) return false;
-          if (State.hidePaid && !TaskRunner2.isFreeCard(card)) return false;
-          return true;
-        });
-        visibleCards.forEach((card) => {
-          card.style.display = "";
-        });
-        if (cardsToHide.length === 0) {
-          if (UI4) UI4.update();
-          TaskRunner2.checkVisibilityAndRefresh();
-        }
-      } else {
-        cards.forEach((card) => {
-          card.style.display = "";
-        });
+      if (cardsToHide.length === 0) {
         if (UI4) UI4.update();
+        TaskRunner2.checkVisibilityAndRefresh();
       }
+      return;
     }, "runHideOrShow"),
     checkVisibilityAndRefresh: /* @__PURE__ */ __name(() => {
-      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       let needsReprocessing = false;
       cards.forEach((card) => {
         const isProcessed = card.getAttribute("data-fab-processed") === "true";
@@ -4009,9 +4106,7 @@
         setTimeout(() => TaskRunner2.runHideOrShow(), 100);
         return;
       }
-      const visibleCards = Array.from(cards).filter((card) => {
-        return card.style.display !== "none";
-      }).length;
+      const { visible: visibleCards } = TaskRunner2.getCardCounts();
       if (State.debugMode) {
         Utils.logger("debug", Utils.getText("debug_visible_after_hide", visibleCards, State.hiddenThisPageCount));
       }
@@ -4025,7 +4120,7 @@
           Utils.logger("info", Utils.getText("log_all_hidden_rate_limited"));
           State.isRefreshScheduled = true;
           setTimeout(() => {
-            const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card)).filter((card) => card.style.display !== "none").length;
+            const { visible: currentVisibleCards } = TaskRunner2.getCardCounts(true);
             if (State.db.todo.length > 0 || State.activeWorkers > 0) {
               Utils.logger("info", Utils.getText("log_refresh_cancelled_tasks", State.db.todo.length, State.activeWorkers));
               State.isRefreshScheduled = false;
@@ -4062,7 +4157,7 @@
       }
       State.isCheckingStatus = true;
       try {
-        const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
+        const visibleCards = [...document.querySelectorAll(TaskRunner2.getVisibleCardSelector())];
         if (visibleCards.length === 0) {
           return;
         }
@@ -4240,7 +4335,7 @@
           State.autoAddRetryTimer = setTimeout(() => {
             State.autoAddRetryTimer = null;
             if (State.autoAddOnScroll) {
-              TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u91CD\u8BD5\u5931\u8D25: ${error.message}`));
+              TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u91CD\u8BD5\u5931\u8D25: ${error.message}`));
             }
           }, 2e3);
         } else if (skippedUnsettled === 0 && State.autoAddRetryTimer) {
@@ -4994,9 +5089,13 @@
       const todoCount = State.db.todo.length;
       const doneCount = State.db.done.length;
       const failedCount = State.db.failed.length;
-      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-      const hiddenCount = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-      const visibleCount = totalCards - hiddenCount;
+      const cardCounts = TaskRunner3?.getCardCounts ? TaskRunner3.getCardCounts() : {
+        total: document.querySelectorAll(Config.SELECTORS.card).length,
+        hidden: State.hiddenThisPageCount,
+        visible: Math.max(0, document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount)
+      };
+      const hiddenCount = cardCounts.hidden;
+      const visibleCount = cardCounts.visible;
       if (State.UI.statusTodo) State.UI.statusTodo.querySelector("span").textContent = todoCount;
       if (State.UI.statusDone) State.UI.statusDone.querySelector("span").textContent = doneCount;
       if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;
@@ -5312,14 +5411,11 @@
   __name(countdownRefresh2, "countdownRefresh");
   async function checkRateLimitStatus() {
     try {
-      const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-      const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-      const actualVisibleCards = totalCards - hiddenCards;
+      const { hidden: hiddenCards, visible: actualVisibleCards } = TaskRunner2.getCardCounts();
       const visibleCountElement = document.getElementById("fab-status-visible");
       if (visibleCountElement) {
         visibleCountElement.textContent = actualVisibleCards.toString();
       }
-      State.hiddenThisPageCount = hiddenCards;
       if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0) {
         return false;
       }
@@ -5702,6 +5798,7 @@
         )
       );
       if (hasNewContent) {
+        TaskRunner2.invalidateCardCountCache();
         clearTimeout(State.observerDebounceTimer);
         State.observerDebounceTimer = setTimeout(() => {
           if (State.debugMode) {
@@ -5714,7 +5811,7 @@
               TaskRunner2.scheduleHideOrShow();
             }
             if (State.autoAddOnScroll) {
-              TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
+              TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
@@ -5730,22 +5827,21 @@
     if (State.autoAddOnScroll) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
-        TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
+        TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
       }, 3e3);
     }
     setInterval(() => {
       if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
-      const cards = document.querySelectorAll(Config.SELECTORS.card);
+      const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       let unprocessedCount = 0;
       cards.forEach((card) => {
-        if (card.getAttribute("data-fab-processed") === "true" && card.style.display === "none") return;
+        if (card.getAttribute("data-fab-processed") === "true" && TaskRunner2.isCardHidden(card)) return;
         const isProcessed = card.getAttribute("data-fab-processed") === "true";
         if (!isProcessed) {
           unprocessedCount++;
         } else {
-          const isFinished = TaskRunner2.isCardFinished(card);
-          const shouldBeHidden = isFinished && State.hideSaved;
-          const isHidden = card.style.display === "none";
+          const shouldBeHidden = TaskRunner2.shouldHideCard(card);
+          const isHidden = TaskRunner2.isCardHidden(card);
           if (shouldBeHidden !== isHidden) {
             card.removeAttribute("data-fab-processed");
             unprocessedCount++;
@@ -5771,12 +5867,12 @@
         UI5.update();
       }
     }, 1e4);
-    let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+    let lastCardCount = TaskRunner2.getCardCounts().total;
     let noNewCardsCounter = 0;
     let lastScrollY = window.scrollY;
     setInterval(() => {
       if (State.appStatus !== "NORMAL") return;
-      const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+      const currentCardCount = TaskRunner2.getCardCounts().total;
       if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
         noNewCardsCounter++;
         if (noNewCardsCounter >= 3) {
@@ -5793,9 +5889,7 @@
     setInterval(async () => {
       try {
         if (UI5) UI5.update();
-        const cards = document.querySelectorAll(Config.SELECTORS.card);
-        const actualVisibleCards = Array.from(cards).filter((c) => c.style.display !== "none").length;
-        State.hiddenThisPageCount = cards.length - actualVisibleCards;
+        const { visible: actualVisibleCards } = TaskRunner2.getCardCounts();
         if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
           if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {
             Utils.logger("info", `[\u72B6\u6001\u76D1\u63A7] \u68C0\u6D4B\u5230\u9650\u901F\u72B6\u6001\u4E0B\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u81EA\u52A8\u5237\u65B0\u5DF2\u5F00\u542F\uFF0C\u51C6\u5907\u5237\u65B0\u9875\u9762`);

@@ -48,6 +48,15 @@ export const State = {
     runningWorkers: {}, // NEW: To track active workers for the watchdog { workerId: { task, startTime } }
     lastKnownHref: null, // To detect SPA navigation
     hiddenThisPageCount: 0,
+    cardCountCache: {
+        total: 0,
+        hidden: 0,
+        visible: 0,
+        dirty: true,
+        documentRef: null,
+        href: ''
+    },
+    lastHideModeKey: '',
     executionTotalTasks: 0, // For execution progress
     executionCompletedTasks: 0, // For execution progress
     executionFailedTasks: 0, // For execution progress

@@ -725,13 +725,15 @@ export const UI = {
         const doneCount = State.db.done.length;
         const failedCount = State.db.failed.length;
 
-        // Derive visible/hidden counts directly from DOM state to avoid stale
-        // values caused by async/delayed card-hiding animations. State.hiddenThisPageCount
-        // is updated synchronously at the start of runHideOrShow() but the actual
-        // DOM display:none is applied later in batched timeouts/rAF callbacks.
-        const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-        const hiddenCount = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-        const visibleCount = totalCards - hiddenCount;
+        const cardCounts = TaskRunner?.getCardCounts
+            ? TaskRunner.getCardCounts()
+            : {
+                total: document.querySelectorAll(Config.SELECTORS.card).length,
+                hidden: State.hiddenThisPageCount,
+                visible: Math.max(0, document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount)
+            };
+        const hiddenCount = cardCounts.hidden;
+        const visibleCount = cardCounts.visible;
 
         if (State.UI.statusTodo) State.UI.statusTodo.querySelector('span').textContent = todoCount;
         if (State.UI.statusDone) State.UI.statusDone.querySelector('span').textContent = doneCount;

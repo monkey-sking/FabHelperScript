@@ -254,7 +254,7 @@ export const TaskRunner = {
             Utils.logger('debug', '启动任务前正在确认当前页面商品识别状态...');
             TaskRunner.checkVisibleCardsStatus().then(() => {
                 Utils.logger('debug', '正在扫描当前页面符合条件的商品...');
-                TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).then(() => {
+                TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector())).then(() => {
                     TaskRunner.startExecution();
                 });
             });
@@ -265,14 +265,14 @@ export const TaskRunner = {
         Utils.logger('info', Utils.getText('log_todo_cleared'));
 
         Utils.logger('debug', Utils.getText('log_scanning_items'));
-        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());
         const newlyAddedList = [];
         let alreadyInQueueCount = 0;
         let ownedCount = 0;
         let skippedCount = 0;
 
         cards.forEach(card => {
-            if (card.style.display === 'none') return;
+            if (TaskRunner.isCardHidden(card)) return;
             if (!TaskRunner.isCardSettled(card)) {
                 skippedCount++;
                 return;
@@ -370,7 +370,7 @@ export const TaskRunner = {
         TaskRunner.runHideOrShow();
 
         if (!State.hideSaved) {
-            const actualVisibleCount = document.querySelectorAll(`${Config.SELECTORS.card}:not([style*="display: none"])`).length;
+            const { visible: actualVisibleCount } = TaskRunner.getCardCounts(true);
             Utils.logger('info', Utils.getText('log_display_mode_switched', actualVisibleCount));
         }
 
@@ -533,7 +533,7 @@ export const TaskRunner = {
                 throw new Error('CSRF token not found. Are you logged in?');
             }
 
-            const uidsFromVisibleCards = new Set([...document.querySelectorAll(Config.SELECTORS.card)]
+            const uidsFromVisibleCards = new Set([...document.querySelectorAll(TaskRunner.getVisibleCardSelector())]
                 .filter(isElementInViewport)
                 .filter(card => {
                     const link = card.querySelector(Config.SELECTORS.cardLink);
@@ -1342,6 +1342,123 @@ export const TaskRunner = {
     },
 
     // 节流标记：100ms 内多次调用只执行一次，消除 Observer/timer 风暴
+    selectorWithSuffix: (selector, suffix) => {
+        return selector
+            .split(',')
+            .map(part => `${part.trim()}${suffix}`)
+            .join(', ');
+    },
+
+    getVisibleCardSelector: () => {
+        return TaskRunner.selectorWithSuffix(Config.SELECTORS.card, ':not([data-fab-hidden="true"])');
+    },
+
+    isHideModeActive: () => {
+        return State.hideSaved || State.hideDiscountedPaid || State.hidePaid;
+    },
+
+    getHideModeKey: () => {
+        return [
+            State.hideSaved ? 'saved' : '',
+            State.hideDiscountedPaid ? 'discounted' : '',
+            State.hidePaid ? 'paid' : ''
+        ].join('|');
+    },
+
+    isCardHidden: (card) => {
+        return card?.getAttribute?.('data-fab-hidden') === 'true' || card?.style?.display === 'none';
+    },
+
+    invalidateCardCountCache: () => {
+        State.cardCountCache.dirty = true;
+    },
+
+    refreshCardCountCache: (cardsArg = null) => {
+        if (typeof document === 'undefined') {
+            State.cardCountCache.total = 0;
+            State.cardCountCache.hidden = 0;
+            State.cardCountCache.visible = 0;
+            State.cardCountCache.dirty = false;
+            State.cardCountCache.documentRef = null;
+            State.cardCountCache.href = '';
+            State.hiddenThisPageCount = 0;
+            return { total: 0, hidden: 0, visible: 0 };
+        }
+
+        const cards = cardsArg ? Array.from(cardsArg) : Array.from(document.querySelectorAll(Config.SELECTORS.card));
+        const hidden = cards.reduce((count, card) => count + (TaskRunner.isCardHidden(card) ? 1 : 0), 0);
+        const total = cards.length;
+        const visible = total - hidden;
+
+        State.cardCountCache.total = total;
+        State.cardCountCache.hidden = hidden;
+        State.cardCountCache.visible = visible;
+        State.cardCountCache.dirty = false;
+        State.cardCountCache.documentRef = document;
+        State.cardCountCache.href = typeof window !== 'undefined' ? (window.location?.href || '') : '';
+        State.hiddenThisPageCount = hidden;
+
+        return { total, hidden, visible };
+    },
+
+    getCardCounts: (forceRefresh = false) => {
+        const cache = State.cardCountCache;
+        const href = typeof window !== 'undefined' ? (window.location?.href || '') : '';
+        const documentChanged = typeof document !== 'undefined' && cache.documentRef !== document;
+        const hrefChanged = cache.href !== href;
+
+        if (forceRefresh || cache.dirty || documentChanged || hrefChanged) {
+            return TaskRunner.refreshCardCountCache();
+        }
+
+        return {
+            total: cache.total,
+            hidden: cache.hidden,
+            visible: cache.visible
+        };
+    },
+
+    adjustCardCountCacheHidden: (delta) => {
+        const cache = State.cardCountCache;
+        if (cache.dirty) return;
+
+        cache.hidden = Math.max(0, Math.min(cache.total, cache.hidden + delta));
+        cache.visible = Math.max(0, cache.total - cache.hidden);
+        State.hiddenThisPageCount = cache.hidden;
+    },
+
+    setCardHidden: (card, hidden) => {
+        if (!card) return;
+        const wasHidden = TaskRunner.isCardHidden(card);
+
+        if (hidden) {
+            if (card.style) card.style.display = 'none';
+            card.setAttribute?.('data-fab-hidden', 'true');
+        } else {
+            if (card.style) card.style.display = '';
+            card.removeAttribute?.('data-fab-hidden');
+        }
+
+        const isHidden = TaskRunner.isCardHidden(card);
+        if (wasHidden !== isHidden) {
+            TaskRunner.adjustCardCountCacheHidden(isHidden ? 1 : -1);
+        }
+    },
+
+    resetHiddenCardState: (cardsArg) => {
+        Array.from(cardsArg || []).forEach(card => {
+            card.removeAttribute?.('data-fab-processed');
+            TaskRunner.setCardHidden(card, false);
+        });
+    },
+
+    shouldHideCard: (card) => {
+        const isFinished = State.hideSaved && TaskRunner.isCardFinished(card);
+        const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card);
+        const isPaidAndHidden = State.hidePaid && !TaskRunner.isFreeCard(card);
+        return isFinished || isDiscountedPaid || isPaidAndHidden;
+    },
+
     _runHideOrShowTimer: null,
 
     scheduleHideOrShow: () => {
@@ -1359,8 +1476,27 @@ export const TaskRunner = {
             TaskRunner._runHideOrShowTimer = null;
         }
 
-        const cards = document.querySelectorAll(Config.SELECTORS.card);
-        State.hiddenThisPageCount = 0;
+        if (!TaskRunner.isHideModeActive()) {
+            const allCards = document.querySelectorAll(Config.SELECTORS.card);
+            TaskRunner.refreshCardCountCache(allCards);
+            TaskRunner.resetHiddenCardState(allCards);
+            State.lastHideModeKey = TaskRunner.getHideModeKey();
+            if (UI) UI.update();
+            return;
+        }
+
+        const hideModeKey = TaskRunner.getHideModeKey();
+        if (State.lastHideModeKey !== hideModeKey) {
+            State.lastHideModeKey = hideModeKey;
+            TaskRunner.invalidateCardCountCache();
+            const allCards = document.querySelectorAll(Config.SELECTORS.card);
+            TaskRunner.refreshCardCountCache(allCards);
+            TaskRunner.resetHiddenCardState(allCards);
+        } else {
+            TaskRunner.getCardCounts();
+        }
+
+        const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());
 
         let actuallyHidden = 0;
         let hasUnsettledCards = false;
@@ -1368,7 +1504,10 @@ export const TaskRunner = {
 
         cards.forEach(card => {
             // 已处理且已隐藏的卡片状态稳定，跳过昂贵的 isCardSettled 判断
-            if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return;
+            if (card.getAttribute('data-fab-processed') === 'true' && TaskRunner.isCardHidden(card)) {
+                TaskRunner.setCardHidden(card, true);
+                return;
+            }
             if (!TaskRunner.isCardSettled(card)) {
                 hasUnsettledCards = true;
                 unsettledCards.push(card);
@@ -1396,23 +1535,15 @@ export const TaskRunner = {
                 return;
             }
 
-            const isProcessed = card.getAttribute('data-fab-processed') === 'true';
-
-            if (isProcessed && card.style.display === 'none') {
-                State.hiddenThisPageCount++;
+            if (TaskRunner.isCardHidden(card)) {
+                TaskRunner.setCardHidden(card, true);
                 return;
             }
 
-            const isFinished = TaskRunner.isCardFinished(card);
-            const isDiscountedPaid = State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card);
-            const isPaidAndHidden = State.hidePaid && !TaskRunner.isFreeCard(card);
+            card.setAttribute('data-fab-processed', 'true');
 
-            if ((State.hideSaved && isFinished) || isDiscountedPaid || isPaidAndHidden) {
+            if (TaskRunner.shouldHideCard(card)) {
                 cardsToHide.push(card);
-                State.hiddenThisPageCount++;
-                card.setAttribute('data-fab-processed', 'true');
-            } else {
-                card.setAttribute('data-fab-processed', 'true');
             }
         });
 
@@ -1430,7 +1561,7 @@ export const TaskRunner = {
                 const hideNextFrame = () => {
                     const end = Math.min(offset + FRAME_BATCH, cardsToHide.length);
                     for (let i = offset; i < end; i++) {
-                        cardsToHide[i].style.display = 'none';
+                        TaskRunner.setCardHidden(cardsToHide[i], true);
                         actuallyHidden++;
                     }
                     offset = end;
@@ -1465,7 +1596,7 @@ export const TaskRunner = {
                         currentBatch.forEach((card, index) => {
                             const cardDelay = index * 50 + Math.random() * 100;
                             setTimeout(() => {
-                                card.style.display = 'none';
+                                TaskRunner.setCardHidden(card, true);
                                 actuallyHidden++;
                                 batchHidden++;
                                 // 每个 batch 最后一张卡片隐藏后即刻更新 UI，不再等到全部完成
@@ -1487,7 +1618,13 @@ export const TaskRunner = {
             }
         }
 
-        if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
+        if (cardsToHide.length === 0) {
+            if (UI) UI.update();
+            TaskRunner.checkVisibilityAndRefresh();
+        }
+        return;
+/*
+        if (false) {
             const visibleCards = Array.from(cards).filter(card => {
                 // 已处理且已隐藏→状态稳定，跳过重分类（这是最大的性能痑点）
                 if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return false;
@@ -1506,10 +1643,11 @@ export const TaskRunner = {
             cards.forEach(card => { card.style.display = ''; });
             if (UI) UI.update();
         }
+*/
     },
 
     checkVisibilityAndRefresh: () => {
-        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());
 
         let needsReprocessing = false;
         cards.forEach(card => {
@@ -1526,9 +1664,7 @@ export const TaskRunner = {
         }
 
         // 只用 style.display 判断，避免 getComputedStyle 对每张卡片触发强制 reflow
-        const visibleCards = Array.from(cards).filter(card => {
-            return card.style.display !== 'none';
-        }).length;
+        const { visible: visibleCards } = TaskRunner.getCardCounts();
 
         if (State.debugMode) {
             Utils.logger('debug', Utils.getText('debug_visible_after_hide', visibleCards, State.hiddenThisPageCount));
@@ -1547,8 +1683,7 @@ export const TaskRunner = {
                 State.isRefreshScheduled = true;
 
                 setTimeout(() => {
-                    const currentVisibleCards = Array.from(document.querySelectorAll(Config.SELECTORS.card))
-                        .filter(card => card.style.display !== 'none').length;
+                    const { visible: currentVisibleCards } = TaskRunner.getCardCounts(true);
 
                     if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                         Utils.logger('info', Utils.getText('log_refresh_cancelled_tasks', State.db.todo.length, State.activeWorkers));
@@ -1592,7 +1727,7 @@ export const TaskRunner = {
         State.isCheckingStatus = true;
 
         try {
-            const visibleCards = [...document.querySelectorAll(Config.SELECTORS.card)];
+            const visibleCards = [...document.querySelectorAll(TaskRunner.getVisibleCardSelector())];
 
             if (visibleCards.length === 0) {
                 // Utils.logger('info', Utils.getText('log_no_visible_cards')); // Reduce noise
@@ -1837,7 +1972,7 @@ export const TaskRunner = {
                 State.autoAddRetryTimer = setTimeout(() => {
                     State.autoAddRetryTimer = null;
                     if (State.autoAddOnScroll) {
-                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                        TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加重试失败: ${error.message}`));
                     }
                 }, 2000);

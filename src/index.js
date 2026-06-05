@@ -229,15 +229,12 @@ function countdownRefresh(delay, reason = '备选方案') {
 // Check rate limit status using Performance API
 async function checkRateLimitStatus() {
     try {
-        const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-        const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-        const actualVisibleCards = totalCards - hiddenCards;
+        const { hidden: hiddenCards, visible: actualVisibleCards } = TaskRunner.getCardCounts();
 
         const visibleCountElement = document.getElementById('fab-status-visible');
         if (visibleCountElement) {
             visibleCountElement.textContent = actualVisibleCards.toString();
         }
-        State.hiddenThisPageCount = hiddenCards;
 
         if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0) {
             return false;
@@ -689,6 +686,7 @@ async function runDomDependentPart() {
             )
         );
         if (hasNewContent) {
+            TaskRunner.invalidateCardCountCache();
             clearTimeout(State.observerDebounceTimer);
             State.observerDebounceTimer = setTimeout(() => {
                 if (State.debugMode) {
@@ -712,7 +710,7 @@ async function runDomDependentPart() {
                         TaskRunner.scheduleHideOrShow();
                     }
                     if (State.autoAddOnScroll) {
-                        TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+                        TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
                 }).catch(() => {
@@ -734,7 +732,7 @@ async function runDomDependentPart() {
     if (State.autoAddOnScroll) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
-            TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
+            TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                 .catch(error => Utils.logger('error', `初始扫描任务失败: ${error.message}`));
         }, 3000); // 给页面一点渲染时间
     }
@@ -743,21 +741,20 @@ async function runDomDependentPart() {
     // 间隔 10s：跳过已处理隐藏卡片（状态稳定），只检查可见未处理卡片
     setInterval(() => {
         if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
-        const cards = document.querySelectorAll(Config.SELECTORS.card);
+        const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());
         let unprocessedCount = 0;
 
         cards.forEach(card => {
             // 已处理且已隐藏 → 状态完全稳定，跳过所有检查（这是最大 CPU 热点）
-            if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return;
+            if (card.getAttribute('data-fab-processed') === 'true' && TaskRunner.isCardHidden(card)) return;
 
             const isProcessed = card.getAttribute('data-fab-processed') === 'true';
             if (!isProcessed) {
                 unprocessedCount++;
             } else {
                 // 只对可见的已处理卡片做状态一致性检查
-                const isFinished = TaskRunner.isCardFinished(card);
-                const shouldBeHidden = isFinished && State.hideSaved;
-                const isHidden = card.style.display === 'none';
+                const shouldBeHidden = TaskRunner.shouldHideCard(card);
+                const isHidden = TaskRunner.isCardHidden(card);
 
                 if (shouldBeHidden !== isHidden) {
                     card.removeAttribute('data-fab-processed');
@@ -790,14 +787,14 @@ async function runDomDependentPart() {
     }, 10000);
 
     // Implicit rate limit detection (no new cards on scroll)
-    let lastCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+    let lastCardCount = TaskRunner.getCardCounts().total;
     let noNewCardsCounter = 0;
     let lastScrollY = window.scrollY;
 
     setInterval(() => {
         if (State.appStatus !== 'NORMAL') return;
 
-        const currentCardCount = document.querySelectorAll(Config.SELECTORS.card).length;
+        const currentCardCount = TaskRunner.getCardCounts().total;
 
         if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
             noNewCardsCounter++;
@@ -821,9 +818,7 @@ async function runDomDependentPart() {
             if (UI) UI.update();
 
             // 同步 State.hiddenThisPageCount，供 checkVisibilityAndRefresh 使用
-            const cards = document.querySelectorAll(Config.SELECTORS.card);
-            const actualVisibleCards = Array.from(cards).filter(c => c.style.display !== 'none').length;
-            State.hiddenThisPageCount = cards.length - actualVisibleCards;
+            const { visible: actualVisibleCards } = TaskRunner.getCardCounts();
 
             if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
                 if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {

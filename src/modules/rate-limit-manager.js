@@ -119,9 +119,9 @@ export const RateLimitManager = {
         }
 
         // 重新计算实际可见的商品数量，确保与DOM状态同步
-        const totalCards = document.querySelectorAll(Config.SELECTORS.card).length;
-        const hiddenCards = document.querySelectorAll(`${Config.SELECTORS.card}[style*="display: none"]`).length;
-        const actualVisibleCards = totalCards - hiddenCards;
+        const { visible: actualVisibleCards } = TaskRunner?.getCardCounts
+            ? TaskRunner.getCardCounts()
+            : { visible: document.querySelectorAll(Config.SELECTORS.card).length };
 
         // 更新UI显示的可见商品数量，确保UI与实际DOM状态一致
         const visibleCountElement = document.getElementById('fab-status-visible');
@@ -130,7 +130,6 @@ export const RateLimitManager = {
         }
 
         // 更新全局状态
-        State.hiddenThisPageCount = hiddenCards;
 
         // 检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
         if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
