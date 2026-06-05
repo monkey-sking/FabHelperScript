@@ -4,6 +4,7 @@
 import { Config } from '../config.js';
 import { State } from '../state.js';
 import { Utils } from './utils.js';
+import { DataCache } from './data-cache.js';
 
 // Forward declaration for circular dependency
 let UI = null;
@@ -18,6 +19,26 @@ export const Database = {
             return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
         }
         return cleanUrl;
+    },
+
+    getListingUid: (url) => {
+        if (!url) return '';
+        const uidMatch = String(url).split('?')[0].match(/\/listings\/([^/?#]+)/i);
+        return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : '';
+    },
+
+    seedDoneOwnedStatusCache: () => {
+        const states = State.db.done
+            .map(url => Database.getListingUid(url))
+            .filter(Boolean)
+            .map(uid => ({
+                uid,
+                acquired: true,
+                lastUpdatedAt: new Date().toISOString()
+            }));
+
+        DataCache.saveOwnedStatus(states);
+        return states.length;
     },
 
     normalizeDoneList: () => {
@@ -42,6 +63,7 @@ export const Database = {
         if (!cleanUrl) return normalizedChanged;
         if (Database.isDone(cleanUrl)) return normalizedChanged;
         State.db.done.push(cleanUrl);
+        Database.seedDoneOwnedStatusCache();
         return true;
     },
 
@@ -76,6 +98,8 @@ export const Database = {
         if (Database.normalizeDoneList()) {
             await Database.saveDone();
         }
+
+        Database.seedDoneOwnedStatusCache();
 
         Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     },

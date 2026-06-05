@@ -311,6 +311,105 @@ function parseListingsStatesUrl(urlString) {
     }
 }
 
+function createOwnedStateResponses(uids) {
+    return uids.map(uid => ({
+        uid,
+        acquired: true,
+        lastUpdatedAt: new Date().toISOString()
+    }));
+}
+
+function defineMockXhrProperty(xhr, name, value) {
+    try {
+        Object.defineProperty(xhr, name, {
+            get: () => value,
+            configurable: true
+        });
+    } catch (e) { }
+}
+
+function dispatchMockXhrEvent(xhr, type) {
+    try {
+        xhr.dispatchEvent(new Event(type));
+    } catch (e) { }
+}
+
+function respondWithMockListingsStates(xhr, uids) {
+    const mockResponses = createOwnedStateResponses(uids);
+    const responseText = JSON.stringify(mockResponses);
+
+    DataCache.saveOwnedStatus(mockResponses);
+    triggerOwnedStatusUpdate();
+
+    defineMockXhrProperty(xhr, 'readyState', 4);
+    defineMockXhrProperty(xhr, 'status', 200);
+    defineMockXhrProperty(xhr, 'statusText', 'OK');
+    defineMockXhrProperty(xhr, 'responseURL', xhr._url || '');
+    defineMockXhrProperty(xhr, 'responseText', responseText);
+    defineMockXhrProperty(xhr, 'response', xhr.responseType === 'json' ? mockResponses : responseText);
+
+    setTimeout(() => {
+        dispatchMockXhrEvent(xhr, 'readystatechange');
+        dispatchMockXhrEvent(xhr, 'load');
+        dispatchMockXhrEvent(xhr, 'loadend');
+    }, 0);
+}
+
+function parsePricesInfoUrl(urlString) {
+    try {
+        const urlObj = new URL(urlString, window.location.origin);
+        return {
+            offerIds: urlObj.searchParams.getAll('offer_ids'),
+            urlObj
+        };
+    } catch (e) {
+        return { offerIds: [], urlObj: null };
+    }
+}
+
+function splitDoneOfferIds(offerIds) {
+    const doneOfferIds = [];
+    const activeOfferIds = [];
+
+    offerIds.forEach(offerId => {
+        const listingUid = DataCache.getListingUidForOffer(offerId);
+        if (listingUid && Database.isDone(`https://www.fab.com/listings/${listingUid}`)) {
+            doneOfferIds.push(offerId);
+        } else {
+            activeOfferIds.push(offerId);
+        }
+    });
+
+    return { doneOfferIds, activeOfferIds };
+}
+
+function createEmptyPricesResponse() {
+    return { offers: [] };
+}
+
+function createPricesResponse(offerIds) {
+    const { result: cachedOffers } = DataCache.getPrices(offerIds);
+    return { offers: cachedOffers };
+}
+
+function respondWithMockPricesInfo(xhr, offerIds = []) {
+    const responseData = offerIds.length > 0 ? createPricesResponse(offerIds) : createEmptyPricesResponse();
+    const responseText = JSON.stringify(responseData);
+
+    defineMockXhrProperty(xhr, 'readyState', 4);
+    defineMockXhrProperty(xhr, 'status', 200);
+    defineMockXhrProperty(xhr, 'statusText', 'OK');
+    defineMockXhrProperty(xhr, 'responseURL', xhr._url || '');
+    defineMockXhrProperty(xhr, 'responseText', responseText);
+    defineMockXhrProperty(xhr, 'response', xhr.responseType === 'json' ? responseData : responseText);
+
+    setTimeout(() => {
+        dispatchMockXhrEvent(xhr, 'readystatechange');
+        dispatchMockXhrEvent(xhr, 'load');
+        dispatchMockXhrEvent(xhr, 'loadend');
+    }, 0);
+}
+
 // Setup XHR interceptor for caching
 function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
@@ -344,11 +443,26 @@ function setupXHRInterceptor() {
                         Utils.logger('debug', `[XHR Intercept] 过滤已入库商品: 原请求 ${uids.length} 个, 过滤 ${doneUids.length} 个, 实际请求 ${activeUids.length} 个`);
                     } else {
                         // 所有商品都已入库，保留第一个 ID 触发一次超轻量请求以维持 XHR 状态机和 onload 事件的正常触发
-                        urlObj.searchParams.delete(paramName);
-                        urlObj.searchParams.append(paramName, uids[0]);
-                        url = urlObj.toString();
-                        this._allDoneBypass = true;
+                        this._allDoneLocalResponse = true;
                         Utils.logger('debug', `[XHR Intercept] 所有 ${uids.length} 个商品均已本地入库，转换为单 ID 占位请求`);
+                    }
+                }
+            }
+        } else if (url && typeof url === 'string' && url.includes('/i/listings/prices-infos')) {
+            const { offerIds, urlObj } = parsePricesInfoUrl(url);
+            if (offerIds.length > 0) {
+                const { doneOfferIds, activeOfferIds } = splitDoneOfferIds(offerIds);
+                if (doneOfferIds.length > 0) {
+                    this._donePriceOfferIds = doneOfferIds;
+
+                    if (activeOfferIds.length > 0) {
+                        urlObj.searchParams.delete('offer_ids');
+                        activeOfferIds.forEach(offerId => urlObj.searchParams.append('offer_ids', offerId));
+                        url = urlObj.toString();
+                        Utils.logger('debug', `[XHR Intercept] Filtered done listing price requests: original=${offerIds.length}, skipped=${doneOfferIds.length}, requested=${activeOfferIds.length}`);
+                    } else {
+                        this._allDonePricesLocalResponse = true;
+                        Utils.logger('debug', `[XHR Intercept] Skipped ${offerIds.length} price requests for local done listings`);
                     }
                 }
             }
@@ -360,6 +474,16 @@ function setupXHRInterceptor() {
     XMLHttpRequest.prototype.send = function (...args) {
         const xhr = this;
 
+        if (xhr._allDoneLocalResponse && xhr._allUids && xhr._allUids.length > 0) {
+            respondWithMockListingsStates(xhr, xhr._allUids);
+            return;
+        }
+
+        if (xhr._allDonePricesLocalResponse && xhr._donePriceOfferIds && xhr._donePriceOfferIds.length > 0) {
+            respondWithMockPricesInfo(xhr, xhr._donePriceOfferIds);
+            return;
+        }
+
         if (xhr._url && typeof xhr._url === 'string') {
             xhr.addEventListener('readystatechange', function () {
                 if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
@@ -368,23 +492,8 @@ function setupXHRInterceptor() {
                         const rawData = JSON.parse(originalText);
                         const serverResults = Array.isArray(rawData) ? rawData : (API.extractStateData(rawData, 'XHRInterceptor') || []);
 
-                        let mergedResults;
-                        if (xhr._allDoneBypass) {
-                            // 丢弃占位符的服务器结果，完全使用 Mock 数据
-                            mergedResults = xhr._allUids.map(uid => ({
-                                uid: uid,
-                                acquired: true,
-                                lastUpdatedAt: new Date().toISOString()
-                            }));
-                        } else {
-                            // 合并服务器返回的数据与 Mock 数据
-                            const mockDoneResponses = xhr._doneUids.map(uid => ({
-                                uid: uid,
-                                acquired: true,
-                                lastUpdatedAt: new Date().toISOString()
-                            }));
-                            mergedResults = [...serverResults, ...mockDoneResponses];
-                        }
+                        const mockDoneResponses = createOwnedStateResponses(xhr._doneUids);
+                        const mergedResults = [...serverResults, ...mockDoneResponses];
 
                         DataCache.saveOwnedStatus(mergedResults);
                         triggerOwnedStatusUpdate();
@@ -468,11 +577,7 @@ function setupFetchInterceptor() {
                 });
 
                 if (doneUids.length > 0) {
-                    const mockDoneResponses = doneUids.map(uid => ({
-                        uid: uid,
-                        acquired: true,
-                        lastUpdatedAt: new Date().toISOString()
-                    }));
+                    const mockDoneResponses = createOwnedStateResponses(doneUids);
 
                     // 情况 1: 全部已入库 -> 完全绕过网络请求，直接返回 Mock 响应
                     if (activeUids.length === 0) {
@@ -521,6 +626,29 @@ function setupFetchInterceptor() {
                         Utils.logger('error', `拦截 fetch listings-states 失败，使用原始 fetch 回退: ${e.message}`);
                         return originalFetch.apply(this, args);
                     }
+                }
+            }
+        }
+
+        if (url.includes('/i/listings/prices-infos')) {
+            const { offerIds, urlObj } = parsePricesInfoUrl(url);
+            if (offerIds.length > 0) {
+                const { doneOfferIds, activeOfferIds } = splitDoneOfferIds(offerIds);
+                if (doneOfferIds.length > 0) {
+                    if (activeOfferIds.length === 0) {
+                        Utils.logger('debug', `[Fetch Intercept] Skipped ${offerIds.length} price requests for local done listings`);
+                        return new Response(JSON.stringify(createPricesResponse(doneOfferIds)), {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                    }
+
+                    urlObj.searchParams.delete('offer_ids');
+                    activeOfferIds.forEach(offerId => urlObj.searchParams.append('offer_ids', offerId));
+                    url = urlObj.toString();
+                    args[0] = url;
+                    Utils.logger('debug', `[Fetch Intercept] Filtered done listing price requests: original=${offerIds.length}, skipped=${doneOfferIds.length}, requested=${activeOfferIds.length}`);
                 }
             }
         }

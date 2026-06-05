@@ -14,6 +14,9 @@ export const DataCache = {
     // 价格缓存 - 键为报价ID，值为价格信息对象
     prices: new Map(),
 
+    // Maps Fab offer ids back to listing uids so done listings can skip price requests.
+    offerListingUids: new Map(),
+
     // 等待网页原生请求更新的UID列表
     waitingList: new Set(),
 
@@ -42,8 +45,58 @@ export const DataCache = {
             if (item && item.uid) {
                 this.listings.set(item.uid, item);
                 this.timestamps.listings.set(item.uid, now);
+
+                this.extractOfferIds(item).forEach(offerId => {
+                    this.offerListingUids.set(offerId, item.uid);
+                });
             }
         });
+    },
+
+    extractOfferIds: function (item) {
+        const offerIds = new Set();
+        const add = (value) => {
+            if (typeof value === 'string' && value) offerIds.add(value);
+        };
+
+        add(item.offerId);
+        add(item.offer_id);
+        add(item.defaultOfferId);
+        add(item.default_offer_id);
+        add(item.offer?.offerId);
+        add(item.offer?.offer_id);
+        add(item.defaultOffer?.offerId);
+        add(item.defaultOffer?.offer_id);
+        add(item.startingPrice?.offerId);
+        add(item.startingPrice?.offer_id);
+        add(item.starting_price?.offerId);
+        add(item.starting_price?.offer_id);
+        add(item.price?.offerId);
+        add(item.price?.offer_id);
+        add(item.priceInfo?.offerId);
+        add(item.priceInfo?.offer_id);
+
+        if (Array.isArray(item.offers)) {
+            item.offers.forEach(offer => {
+                add(offer?.offerId);
+                add(offer?.offer_id);
+            });
+        }
+
+        if (Array.isArray(item.licenses)) {
+            item.licenses.forEach(license => {
+                add(license?.offerId);
+                add(license?.offer_id);
+                add(license?.offer?.offerId);
+                add(license?.offer?.offer_id);
+            });
+        }
+
+        return Array.from(offerIds);
+    },
+
+    getListingUidForOffer: function (offerId) {
+        return this.offerListingUids.get(offerId) || '';
     },
 
     // 添加到等待列表

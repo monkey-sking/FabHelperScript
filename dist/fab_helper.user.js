@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1648
+// @version      3.5.6-20260605-1726
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1501,6 +1501,8 @@
     ownedStatus: /* @__PURE__ */ new Map(),
     // 价格缓存 - 键为报价ID，值为价格信息对象
     prices: /* @__PURE__ */ new Map(),
+    // Maps Fab offer ids back to listing uids so done listings can skip price requests.
+    offerListingUids: /* @__PURE__ */ new Map(),
     // 等待网页原生请求更新的UID列表
     waitingList: /* @__PURE__ */ new Set(),
     // 缓存时间戳 - 用于判断缓存是否过期
@@ -1525,9 +1527,52 @@
         if (item && item.uid) {
           this.listings.set(item.uid, item);
           this.timestamps.listings.set(item.uid, now);
+          this.extractOfferIds(item).forEach((offerId) => {
+            this.offerListingUids.set(offerId, item.uid);
+          });
         }
       });
     }, "saveListings"),
+    extractOfferIds: /* @__PURE__ */ __name(function(item) {
+      const offerIds = /* @__PURE__ */ new Set();
+      const add = /* @__PURE__ */ __name((value) => {
+        if (typeof value === "string" && value) offerIds.add(value);
+      }, "add");
+      add(item.offerId);
+      add(item.offer_id);
+      add(item.defaultOfferId);
+      add(item.default_offer_id);
+      add(item.offer?.offerId);
+      add(item.offer?.offer_id);
+      add(item.defaultOffer?.offerId);
+      add(item.defaultOffer?.offer_id);
+      add(item.startingPrice?.offerId);
+      add(item.startingPrice?.offer_id);
+      add(item.starting_price?.offerId);
+      add(item.starting_price?.offer_id);
+      add(item.price?.offerId);
+      add(item.price?.offer_id);
+      add(item.priceInfo?.offerId);
+      add(item.priceInfo?.offer_id);
+      if (Array.isArray(item.offers)) {
+        item.offers.forEach((offer) => {
+          add(offer?.offerId);
+          add(offer?.offer_id);
+        });
+      }
+      if (Array.isArray(item.licenses)) {
+        item.licenses.forEach((license) => {
+          add(license?.offerId);
+          add(license?.offer_id);
+          add(license?.offer?.offerId);
+          add(license?.offer?.offer_id);
+        });
+      }
+      return Array.from(offerIds);
+    }, "extractOfferIds"),
+    getListingUidForOffer: /* @__PURE__ */ __name(function(offerId) {
+      return this.offerListingUids.get(offerId) || "";
+    }, "getListingUidForOffer"),
     // 添加到等待列表
     addToWaitingList: /* @__PURE__ */ __name(function(uids) {
       if (!uids || !Array.isArray(uids)) return;
@@ -1776,6 +1821,20 @@
       }
       return cleanUrl;
     }, "normalizeListingUrl"),
+    getListingUid: /* @__PURE__ */ __name((url) => {
+      if (!url) return "";
+      const uidMatch = String(url).split("?")[0].match(/\/listings\/([^/?#]+)/i);
+      return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : "";
+    }, "getListingUid"),
+    seedDoneOwnedStatusCache: /* @__PURE__ */ __name(() => {
+      const states = State.db.done.map((url) => Database.getListingUid(url)).filter(Boolean).map((uid) => ({
+        uid,
+        acquired: true,
+        lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      DataCache.saveOwnedStatus(states);
+      return states.length;
+    }, "seedDoneOwnedStatusCache"),
     normalizeDoneList: /* @__PURE__ */ __name(() => {
       const normalized = [];
       const seen = /* @__PURE__ */ new Set();
@@ -1795,6 +1854,7 @@
       if (!cleanUrl) return normalizedChanged;
       if (Database.isDone(cleanUrl)) return normalizedChanged;
       State.db.done.push(cleanUrl);
+      Database.seedDoneOwnedStatusCache();
       return true;
     }, "addDoneUrl"),
     load: /* @__PURE__ */ __name(async () => {
@@ -1823,6 +1883,7 @@
       if (Database.normalizeDoneList()) {
         await Database.saveDone();
       }
+      Database.seedDoneOwnedStatusCache();
       Utils.logger("info", Utils.getText("log_db_loaded"), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     }, "load"),
     // 添加保存待办列表的方法
@@ -5485,6 +5546,100 @@
     }
   }
   __name(parseListingsStatesUrl, "parseListingsStatesUrl");
+  function createOwnedStateResponses(uids) {
+    return uids.map((uid) => ({
+      uid,
+      acquired: true,
+      lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    }));
+  }
+  __name(createOwnedStateResponses, "createOwnedStateResponses");
+  function defineMockXhrProperty(xhr, name, value) {
+    try {
+      Object.defineProperty(xhr, name, {
+        get: /* @__PURE__ */ __name(() => value, "get"),
+        configurable: true
+      });
+    } catch (e) {
+    }
+  }
+  __name(defineMockXhrProperty, "defineMockXhrProperty");
+  function dispatchMockXhrEvent(xhr, type) {
+    try {
+      xhr.dispatchEvent(new Event(type));
+    } catch (e) {
+    }
+  }
+  __name(dispatchMockXhrEvent, "dispatchMockXhrEvent");
+  function respondWithMockListingsStates(xhr, uids) {
+    const mockResponses = createOwnedStateResponses(uids);
+    const responseText = JSON.stringify(mockResponses);
+    DataCache.saveOwnedStatus(mockResponses);
+    triggerOwnedStatusUpdate();
+    defineMockXhrProperty(xhr, "readyState", 4);
+    defineMockXhrProperty(xhr, "status", 200);
+    defineMockXhrProperty(xhr, "statusText", "OK");
+    defineMockXhrProperty(xhr, "responseURL", xhr._url || "");
+    defineMockXhrProperty(xhr, "responseText", responseText);
+    defineMockXhrProperty(xhr, "response", xhr.responseType === "json" ? mockResponses : responseText);
+    setTimeout(() => {
+      dispatchMockXhrEvent(xhr, "readystatechange");
+      dispatchMockXhrEvent(xhr, "load");
+      dispatchMockXhrEvent(xhr, "loadend");
+    }, 0);
+  }
+  __name(respondWithMockListingsStates, "respondWithMockListingsStates");
+  function parsePricesInfoUrl(urlString) {
+    try {
+      const urlObj = new URL(urlString, window.location.origin);
+      return {
+        offerIds: urlObj.searchParams.getAll("offer_ids"),
+        urlObj
+      };
+    } catch (e) {
+      return { offerIds: [], urlObj: null };
+    }
+  }
+  __name(parsePricesInfoUrl, "parsePricesInfoUrl");
+  function splitDoneOfferIds(offerIds) {
+    const doneOfferIds = [];
+    const activeOfferIds = [];
+    offerIds.forEach((offerId) => {
+      const listingUid = DataCache.getListingUidForOffer(offerId);
+      if (listingUid && Database.isDone(`https://www.fab.com/listings/${listingUid}`)) {
+        doneOfferIds.push(offerId);
+      } else {
+        activeOfferIds.push(offerId);
+      }
+    });
+    return { doneOfferIds, activeOfferIds };
+  }
+  __name(splitDoneOfferIds, "splitDoneOfferIds");
+  function createEmptyPricesResponse() {
+    return { offers: [] };
+  }
+  __name(createEmptyPricesResponse, "createEmptyPricesResponse");
+  function createPricesResponse(offerIds) {
+    const { result: cachedOffers } = DataCache.getPrices(offerIds);
+    return { offers: cachedOffers };
+  }
+  __name(createPricesResponse, "createPricesResponse");
+  function respondWithMockPricesInfo(xhr, offerIds = []) {
+    const responseData = offerIds.length > 0 ? createPricesResponse(offerIds) : createEmptyPricesResponse();
+    const responseText = JSON.stringify(responseData);
+    defineMockXhrProperty(xhr, "readyState", 4);
+    defineMockXhrProperty(xhr, "status", 200);
+    defineMockXhrProperty(xhr, "statusText", "OK");
+    defineMockXhrProperty(xhr, "responseURL", xhr._url || "");
+    defineMockXhrProperty(xhr, "responseText", responseText);
+    defineMockXhrProperty(xhr, "response", xhr.responseType === "json" ? responseData : responseText);
+    setTimeout(() => {
+      dispatchMockXhrEvent(xhr, "readystatechange");
+      dispatchMockXhrEvent(xhr, "load");
+      dispatchMockXhrEvent(xhr, "loadend");
+    }, 0);
+  }
+  __name(respondWithMockPricesInfo, "respondWithMockPricesInfo");
   function setupXHRInterceptor() {
     const originalOpen = XMLHttpRequest.prototype.open;
     const originalSend = XMLHttpRequest.prototype.send;
@@ -5512,11 +5667,25 @@
               url = urlObj.toString();
               Utils.logger("debug", `[XHR Intercept] \u8FC7\u6EE4\u5DF2\u5165\u5E93\u5546\u54C1: \u539F\u8BF7\u6C42 ${uids.length} \u4E2A, \u8FC7\u6EE4 ${doneUids.length} \u4E2A, \u5B9E\u9645\u8BF7\u6C42 ${activeUids.length} \u4E2A`);
             } else {
-              urlObj.searchParams.delete(paramName);
-              urlObj.searchParams.append(paramName, uids[0]);
-              url = urlObj.toString();
-              this._allDoneBypass = true;
+              this._allDoneLocalResponse = true;
               Utils.logger("debug", `[XHR Intercept] \u6240\u6709 ${uids.length} \u4E2A\u5546\u54C1\u5747\u5DF2\u672C\u5730\u5165\u5E93\uFF0C\u8F6C\u6362\u4E3A\u5355 ID \u5360\u4F4D\u8BF7\u6C42`);
+            }
+          }
+        }
+      } else if (url && typeof url === "string" && url.includes("/i/listings/prices-infos")) {
+        const { offerIds, urlObj } = parsePricesInfoUrl(url);
+        if (offerIds.length > 0) {
+          const { doneOfferIds, activeOfferIds } = splitDoneOfferIds(offerIds);
+          if (doneOfferIds.length > 0) {
+            this._donePriceOfferIds = doneOfferIds;
+            if (activeOfferIds.length > 0) {
+              urlObj.searchParams.delete("offer_ids");
+              activeOfferIds.forEach((offerId) => urlObj.searchParams.append("offer_ids", offerId));
+              url = urlObj.toString();
+              Utils.logger("debug", `[XHR Intercept] Filtered done listing price requests: original=${offerIds.length}, skipped=${doneOfferIds.length}, requested=${activeOfferIds.length}`);
+            } else {
+              this._allDonePricesLocalResponse = true;
+              Utils.logger("debug", `[XHR Intercept] Skipped ${offerIds.length} price requests for local done listings`);
             }
           }
         }
@@ -5526,6 +5695,14 @@
     };
     XMLHttpRequest.prototype.send = function(...args) {
       const xhr = this;
+      if (xhr._allDoneLocalResponse && xhr._allUids && xhr._allUids.length > 0) {
+        respondWithMockListingsStates(xhr, xhr._allUids);
+        return;
+      }
+      if (xhr._allDonePricesLocalResponse && xhr._donePriceOfferIds && xhr._donePriceOfferIds.length > 0) {
+        respondWithMockPricesInfo(xhr, xhr._donePriceOfferIds);
+        return;
+      }
       if (xhr._url && typeof xhr._url === "string") {
         xhr.addEventListener("readystatechange", function() {
           if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
@@ -5533,21 +5710,8 @@
               const originalText = xhr.responseText;
               const rawData = JSON.parse(originalText);
               const serverResults = Array.isArray(rawData) ? rawData : API.extractStateData(rawData, "XHRInterceptor") || [];
-              let mergedResults;
-              if (xhr._allDoneBypass) {
-                mergedResults = xhr._allUids.map((uid) => ({
-                  uid,
-                  acquired: true,
-                  lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-                }));
-              } else {
-                const mockDoneResponses = xhr._doneUids.map((uid) => ({
-                  uid,
-                  acquired: true,
-                  lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-                }));
-                mergedResults = [...serverResults, ...mockDoneResponses];
-              }
+              const mockDoneResponses = createOwnedStateResponses(xhr._doneUids);
+              const mergedResults = [...serverResults, ...mockDoneResponses];
               DataCache.saveOwnedStatus(mergedResults);
               triggerOwnedStatusUpdate();
               const mergedText = JSON.stringify(mergedResults);
@@ -5621,11 +5785,7 @@
             }
           });
           if (doneUids.length > 0) {
-            const mockDoneResponses = doneUids.map((uid) => ({
-              uid,
-              acquired: true,
-              lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-            }));
+            const mockDoneResponses = createOwnedStateResponses(doneUids);
             if (activeUids.length === 0) {
               Utils.logger("info", `[Fetch Intercept] \u6240\u6709 ${uids.length} \u4E2A\u5546\u54C1\u5747\u5DF2\u672C\u5730\u5165\u5E93\uFF0C\u5B8C\u5168\u7ED5\u8FC7\u7F51\u7EDC\u8BF7\u6C42`);
               DataCache.saveOwnedStatus(mockDoneResponses);
@@ -5664,6 +5824,27 @@
               Utils.logger("error", `\u62E6\u622A fetch listings-states \u5931\u8D25\uFF0C\u4F7F\u7528\u539F\u59CB fetch \u56DE\u9000: ${e.message}`);
               return originalFetch.apply(this, args);
             }
+          }
+        }
+      }
+      if (url.includes("/i/listings/prices-infos")) {
+        const { offerIds, urlObj } = parsePricesInfoUrl(url);
+        if (offerIds.length > 0) {
+          const { doneOfferIds, activeOfferIds } = splitDoneOfferIds(offerIds);
+          if (doneOfferIds.length > 0) {
+            if (activeOfferIds.length === 0) {
+              Utils.logger("debug", `[Fetch Intercept] Skipped ${offerIds.length} price requests for local done listings`);
+              return new Response(JSON.stringify(createPricesResponse(doneOfferIds)), {
+                status: 200,
+                statusText: "OK",
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+            urlObj.searchParams.delete("offer_ids");
+            activeOfferIds.forEach((offerId) => urlObj.searchParams.append("offer_ids", offerId));
+            url = urlObj.toString();
+            args[0] = url;
+            Utils.logger("debug", `[Fetch Intercept] Filtered done listing price requests: original=${offerIds.length}, skipped=${doneOfferIds.length}, requested=${activeOfferIds.length}`);
           }
         }
       }
