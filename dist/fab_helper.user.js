@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260603-1006
+// @version      3.5.6-20260605-1530
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2302,7 +2302,15 @@
       }
     },
     isDebounceableSearch(url) {
-      return typeof url === "string" && url.includes("/i/listings/search") && !url.includes("aggregate_on=") && !url.includes("count=0");
+      if (typeof url !== "string" || !url.includes("/i/listings/search")) return false;
+      if (url.includes("aggregate_on=") || url.includes("count=0")) return false;
+      try {
+        const urlObj = new URL(url, window.location.origin);
+        if (urlObj.searchParams.has("cursor")) return false;
+      } catch (e) {
+        if (url.includes("cursor=")) return false;
+      }
+      return true;
     },
     shouldPatchUrl(url) {
       if (typeof url !== "string") return false;
@@ -2501,7 +2509,7 @@
         } else {
           self.saveLatestCursorFromUrl(url);
         }
-        return originalFetch.apply(this, [modifiedInput, init]).then(async (response) => {
+        return originalFetch.apply(this, [modifiedInput, init]).then((response) => {
           if (typeof window.recordNetworkActivity === "function") {
             window.recordNetworkActivity();
           }
@@ -2518,9 +2526,7 @@
             );
           }
           if (response.status >= 200 && response.status < 300) {
-            try {
-              const clonedResponse = response.clone();
-              const text = await clonedResponse.text();
+            response.clone().text().then((text) => {
               if (text.includes("Too many requests") || text.includes("rate limit") || text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
                 Utils.logger("warn", Utils.getText("log_fetch_rate_limit_detect", text.substring(0, 100)));
                 RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94\u5185\u5BB9\u9650\u901F").catch(
@@ -2566,8 +2572,8 @@
               } catch (jsonError) {
                 Utils.logger("debug", Utils.getText("log_json_parse_error", jsonError.message));
               }
-            } catch (e) {
-            }
+            }).catch(() => {
+            });
           }
           return response;
         });
@@ -5701,15 +5707,17 @@
           if (State.debugMode) {
             Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
           }
+          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || State.autoAddOnScroll || State.isExecuting || State.db.todo.length > 0;
+          if (!shouldProcessNewCards) return;
           TaskRunner2.checkVisibleCardsStatus().then(() => {
-            if (State.hideSaved) {
+            if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if (State.appStatus === "NORMAL" || State.autoAddOnScroll) {
+            if (State.autoAddOnScroll) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card)).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
-            if (State.hideSaved) {
+            if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
           });

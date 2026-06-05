@@ -8,6 +8,7 @@ import { Utils } from '../src/modules/utils.js';
 import { API } from '../src/modules/api.js';
 import { Config } from '../src/config.js';
 import { InstanceManager } from '../src/modules/instance-manager.js';
+import { PagePatcher } from '../src/modules/page-patcher.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -45,6 +46,17 @@ test('database keys used by persisted settings are defined', () => {
     assert.equal(typeof Config.DB_KEYS.BLOCK_RESOURCES, 'string');
     assert.equal(Config.DB_KEYS.BLOCK_RESOURCES.length > 0, true);
     assert.equal('TASK' in Config.DB_KEYS, false);
+});
+
+test('does not debounce cursor based infinite-scroll search requests', () => {
+    assert.equal(
+        PagePatcher.isDebounceableSearch('https://www.fab.com/i/listings/search?is_free=1&sort_by=-firstPublishedAt&cursor=abc'),
+        false
+    );
+    assert.equal(
+        PagePatcher.isDebounceableSearch('https://www.fab.com/i/listings/search?is_free=1&sort_by=-firstPublishedAt'),
+        true
+    );
 });
 
 test('markAsDone clears stale failed entries for the same uid', async () => {

@@ -172,7 +172,19 @@ export const PagePatcher = {
     },
 
     isDebounceableSearch(url) {
-        return typeof url === 'string' && url.includes('/i/listings/search') && !url.includes('aggregate_on=') && !url.includes('count=0');
+        if (typeof url !== 'string' || !url.includes('/i/listings/search')) return false;
+        if (url.includes('aggregate_on=') || url.includes('count=0')) return false;
+
+        // Cursor requests are infinite-scroll page loads. Debouncing them delays
+        // new product batches and can cancel pending page fetches during fast scroll.
+        try {
+            const urlObj = new URL(url, window.location.origin);
+            if (urlObj.searchParams.has('cursor')) return false;
+        } catch (e) {
+            if (url.includes('cursor=')) return false;
+        }
+
+        return true;
     },
 
     shouldPatchUrl(url) {
@@ -415,7 +427,7 @@ export const PagePatcher = {
             }
 
             return originalFetch.apply(this, [modifiedInput, init])
-                .then(async response => {
+                .then(response => {
                     if (typeof window.recordNetworkActivity === 'function') {
                         window.recordNetworkActivity();
                     }
@@ -436,9 +448,9 @@ export const PagePatcher = {
                     }
 
                     if (response.status >= 200 && response.status < 300) {
-                        try {
-                            const clonedResponse = response.clone();
-                            const text = await clonedResponse.text();
+                        // Do not await body inspection here. Holding this promise blocks
+                        // Fab's infinite-scroll renderer from receiving the fetch result.
+                        response.clone().text().then(text => {
 
                             if (text.includes("Too many requests") ||
                                 text.includes("rate limit") ||
@@ -492,9 +504,9 @@ export const PagePatcher = {
                             } catch (jsonError) {
                                 Utils.logger('debug', Utils.getText('log_json_parse_error', jsonError.message));
                             }
-                        } catch (e) {
+                        }).catch(() => {
                             // 解析错误，忽略
-                        }
+                        });
                     }
 
                     return response;

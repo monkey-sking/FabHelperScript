@@ -695,19 +695,28 @@ async function runDomDependentPart() {
                     Utils.logger('debug', `[Observer] ${Utils.getText('debug_new_content_loading')}`);
                 }
 
+                const shouldProcessNewCards = State.hideSaved ||
+                    State.hideDiscountedPaid ||
+                    State.hidePaid ||
+                    State.autoAddOnScroll ||
+                    State.isExecuting ||
+                    State.db.todo.length > 0;
+
+                if (!shouldProcessNewCards) return;
+
                 // Cache-first hide: if ownership data is already cached for these UIDs,
                 // hide immediately. The listings-states interceptor handles the case
                 // where data arrives later via triggerOwnedStatusUpdate().
                 TaskRunner.checkVisibleCardsStatus().then(() => {
-                    if (State.hideSaved) {
+                    if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if (State.appStatus === 'NORMAL' || State.autoAddOnScroll) {
+                    if (State.autoAddOnScroll) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(Config.SELECTORS.card))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
                 }).catch(() => {
-                    if (State.hideSaved) {
+                    if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
                 });
