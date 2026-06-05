@@ -22,9 +22,14 @@ import { KeepAlive } from './keepalive.js';
 
 // Forward declaration for UI (will be set via dependency injection)
 let UI = null;
+let countdownRefresh = null;
 
 export function setUIReference(uiModule) {
     UI = uiModule;
+}
+
+export function setDependencies(deps = {}) {
+    countdownRefresh = deps.countdownRefresh || countdownRefresh;
 }
 
 export const TaskRunner = {
@@ -1676,29 +1681,20 @@ export const TaskRunner = {
         if (visibleCards === 0) {
             if (State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
                 if (State.isRefreshScheduled) {
-                    Utils.logger('info', Utils.getText('refresh_plan_exists'));
+                    Utils.logger('debug', Utils.getText('refresh_plan_exists'));
                     return;
                 }
+
+                if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                    Utils.logger('debug', Utils.getText('log_refresh_cancelled_tasks', State.db.todo.length, State.activeWorkers));
+                    return;
+                }
+
                 Utils.logger('info', Utils.getText('log_all_hidden_rate_limited'));
-                State.isRefreshScheduled = true;
-
-                setTimeout(() => {
-                    const { visible: currentVisibleCards } = TaskRunner.getCardCounts(true);
-
-                    if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-                        Utils.logger('info', Utils.getText('log_refresh_cancelled_tasks', State.db.todo.length, State.activeWorkers));
-                        State.isRefreshScheduled = false;
-                        return;
-                    }
-
-                    if (currentVisibleCards === 0 && State.appStatus === 'RATE_LIMITED' && State.autoRefreshEmptyPage) {
-                        Utils.logger('info', Utils.getText('log_refreshing'));
-                        window.location.href = window.location.href;
-                    } else {
-                        Utils.logger('info', Utils.getText('log_refresh_cancelled_visible', currentVisibleCards));
-                        State.isRefreshScheduled = false;
-                    }
-                }, 2000);
+                const randomDelay = 3000 + Math.random() * 2000;
+                if (countdownRefresh) {
+                    countdownRefresh(randomDelay, Utils.getText('rate_limit_no_visible_reason'));
+                }
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
             }

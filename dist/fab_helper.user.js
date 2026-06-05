@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1726
+// @version      3.5.6-20260605-1745
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -135,6 +135,11 @@
     page_content_rate_limit_detected: "[Page Content Detection] Detected page showing rate limit error message!",
     last_moment_check_cancelled: "\u26A0\uFE0F Last moment check: refresh conditions not met, auto refresh cancelled.",
     refresh_cancelled_visible_items: "\u23F9\uFE0F Detected {0} visible items on page before refresh, auto refresh cancelled.",
+    log_all_hidden_rate_limited: "Rate limited with no visible items; scheduling one recovery refresh.",
+    log_refresh_cancelled_tasks: "Detected {0} to-do tasks and {1} active workers; auto refresh cancelled.",
+    log_refresh_cancelled_visible: "Detected {0} visible items before refresh; auto refresh cancelled.",
+    log_refreshing: "No visible items and still rate limited; refreshing page.",
+    rate_limit_no_visible_reason: "rate limited with no visible items",
     // 限速检测来源
     rate_limit_source_page_content: "Page Content Detection",
     rate_limit_source_global_call: "Global Call",
@@ -478,6 +483,11 @@
     page_content_rate_limit_detected: "[\u9875\u9762\u5185\u5BB9\u68C0\u6D4B] \u68C0\u6D4B\u5230\u9875\u9762\u663E\u793A\u9650\u901F\u9519\u8BEF\u4FE1\u606F\uFF01",
     last_moment_check_cancelled: "\u26A0\uFE0F \u6700\u540E\u4E00\u523B\u68C0\u67E5\uFF1A\u5237\u65B0\u6761\u4EF6\u4E0D\u6EE1\u8DB3\uFF0C\u81EA\u52A8\u5237\u65B0\u5DF2\u53D6\u6D88\u3002",
     refresh_cancelled_visible_items: "\u23F9\uFE0F \u5237\u65B0\u524D\u68C0\u6D4B\u5230\u9875\u9762\u4E0A\u6709 {0} \u4E2A\u53EF\u89C1\u5546\u54C1\uFF0C\u5DF2\u53D6\u6D88\u81EA\u52A8\u5237\u65B0\u3002",
+    log_all_hidden_rate_limited: "\u9650\u901F\u72B6\u6001\u4E0B\u5F53\u524D\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\uFF0C\u51C6\u5907\u5B89\u6392\u4E00\u6B21\u6062\u590D\u5237\u65B0\u3002",
+    log_refresh_cancelled_tasks: "\u68C0\u6D4B\u5230\u6709 {0} \u4E2A\u5F85\u529E\u4EFB\u52A1\u548C {1} \u4E2A\u6D3B\u52A8\u5DE5\u4F5C\u7EBF\u7A0B\uFF0C\u5DF2\u53D6\u6D88\u81EA\u52A8\u5237\u65B0\u3002",
+    log_refresh_cancelled_visible: "\u5237\u65B0\u524D\u68C0\u6D4B\u5230\u9875\u9762\u4E0A\u6709 {0} \u4E2A\u53EF\u89C1\u5546\u54C1\uFF0C\u5DF2\u53D6\u6D88\u81EA\u52A8\u5237\u65B0\u3002",
+    log_refreshing: "\u9875\u9762\u4E0A\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762\u3002",
+    rate_limit_no_visible_reason: "\u9650\u901F\u72B6\u6001\u65E0\u53EF\u89C1\u5546\u54C1",
     // 限速检测来源
     rate_limit_source_page_content: "\u9875\u9762\u5185\u5BB9\u68C0\u6D4B",
     rate_limit_source_global_call: "\u5168\u5C40\u8C03\u7528",
@@ -2874,10 +2884,15 @@
 
   // src/modules/task-runner.js
   var UI4 = null;
+  var countdownRefresh2 = null;
   function setUIReference3(uiModule) {
     UI4 = uiModule;
   }
   __name(setUIReference3, "setUIReference");
+  function setDependencies2(deps = {}) {
+    countdownRefresh2 = deps.countdownRefresh || countdownRefresh2;
+  }
+  __name(setDependencies2, "setDependencies");
   var TaskRunner2 = {
     findFreeLicenseOption: /* @__PURE__ */ __name((root) => {
       if (!root || typeof root.querySelectorAll !== "function") {
@@ -4175,26 +4190,18 @@
       if (visibleCards === 0) {
         if (State.appStatus === "RATE_LIMITED" && State.autoRefreshEmptyPage) {
           if (State.isRefreshScheduled) {
-            Utils.logger("info", Utils.getText("refresh_plan_exists"));
+            Utils.logger("debug", Utils.getText("refresh_plan_exists"));
+            return;
+          }
+          if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+            Utils.logger("debug", Utils.getText("log_refresh_cancelled_tasks", State.db.todo.length, State.activeWorkers));
             return;
           }
           Utils.logger("info", Utils.getText("log_all_hidden_rate_limited"));
-          State.isRefreshScheduled = true;
-          setTimeout(() => {
-            const { visible: currentVisibleCards } = TaskRunner2.getCardCounts(true);
-            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
-              Utils.logger("info", Utils.getText("log_refresh_cancelled_tasks", State.db.todo.length, State.activeWorkers));
-              State.isRefreshScheduled = false;
-              return;
-            }
-            if (currentVisibleCards === 0 && State.appStatus === "RATE_LIMITED" && State.autoRefreshEmptyPage) {
-              Utils.logger("info", Utils.getText("log_refreshing"));
-              window.location.href = window.location.href;
-            } else {
-              Utils.logger("info", Utils.getText("log_refresh_cancelled_visible", currentVisibleCards));
-              State.isRefreshScheduled = false;
-            }
-          }, 2e3);
+          const randomDelay = 3e3 + Math.random() * 2e3;
+          if (countdownRefresh2) {
+            countdownRefresh2(randomDelay, Utils.getText("rate_limit_no_visible_reason"));
+          }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
         }
@@ -5365,9 +5372,9 @@
   })();
   var currentCountdownInterval = null;
   var currentRefreshTimeout = null;
-  function countdownRefresh2(delay, reason = "\u5907\u9009\u65B9\u6848") {
+  function countdownRefresh3(delay, reason = "\u5907\u9009\u65B9\u6848") {
     if (State.isRefreshScheduled) {
-      Utils.logger("info", Utils.getText("refresh_plan_exists").replace("(429\u81EA\u52A8\u6062\u590D)", `(${reason})`));
+      Utils.logger("debug", Utils.getText("refresh_plan_exists").replace("(429\u81EA\u52A8\u6062\u590D)", `(${reason})`));
       return;
     }
     State.isRefreshScheduled = true;
@@ -5469,7 +5476,7 @@
       }
     }, delay);
   }
-  __name(countdownRefresh2, "countdownRefresh");
+  __name(countdownRefresh3, "countdownRefresh");
   async function checkRateLimitStatus() {
     try {
       const { hidden: hiddenCards, visible: actualVisibleCards } = TaskRunner2.getCardCounts();
@@ -5503,11 +5510,14 @@
   setUIReference(UI5);
   setUIReference2(UI5);
   setUIReference3(UI5);
+  setDependencies2({
+    countdownRefresh: countdownRefresh3
+  });
   setTaskRunnerReference(TaskRunner2);
   setDependencies({
     UI: UI5,
     TaskRunner: TaskRunner2,
-    countdownRefresh: countdownRefresh2
+    countdownRefresh: countdownRefresh3
   });
   var _ownedStatusUpdateTimer = null;
   function triggerOwnedStatusUpdate() {
@@ -5961,7 +5971,7 @@
         Utils.logger("warn", Utils.getText("log_recovery_probe_failed"));
         if (State.activeWorkers === 0 && State.db.todo.length === 0) {
           const randomDelay = 5e3 + Math.random() * 1e4;
-          countdownRefresh2(randomDelay, Utils.getText("countdown_refresh_source"));
+          countdownRefresh3(randomDelay, Utils.getText("countdown_refresh_source"));
         }
       }
     }
@@ -6072,10 +6082,10 @@
         if (UI5) UI5.update();
         const { visible: actualVisibleCards } = TaskRunner2.getCardCounts();
         if (State.appStatus === "RATE_LIMITED" && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
-          if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {
-            Utils.logger("info", `[\u72B6\u6001\u76D1\u63A7] \u68C0\u6D4B\u5230\u9650\u901F\u72B6\u6001\u4E0B\u6CA1\u6709\u53EF\u89C1\u5546\u54C1\u4E14\u81EA\u52A8\u5237\u65B0\u5DF2\u5F00\u542F\uFF0C\u51C6\u5907\u5237\u65B0\u9875\u9762`);
+          if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout) {
+            Utils.logger("debug", Utils.getText("log_all_hidden_rate_limited"));
             const randomDelay = 3e3 + Math.random() * 2e3;
-            countdownRefresh2(randomDelay, "\u9650\u901F\u72B6\u6001\u65E0\u53EF\u89C1\u5546\u54C1");
+            countdownRefresh3(randomDelay, Utils.getText("rate_limit_no_visible_reason"));
           }
         }
       } catch (error) {
@@ -6129,7 +6139,7 @@
       if (State.appStatus === "RATE_LIMITED") {
         Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...");
         const randomDelay = 3e3 + Math.random() * 5e3;
-        countdownRefresh2(randomDelay, "\u4EFB\u52A1\u5B8C\u6210\u540E\u9650\u901F\u6062\u590D");
+        countdownRefresh3(randomDelay, "\u4EFB\u52A1\u5B8C\u6210\u540E\u9650\u901F\u6062\u590D");
       }
       UI5.update();
     };

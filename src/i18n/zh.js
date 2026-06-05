@@ -107,6 +107,11 @@ export const zh = {
     page_content_rate_limit_detected: '[页面内容检测] 检测到页面显示限速错误信息！',
     last_moment_check_cancelled: '⚠️ 最后一刻检查：刷新条件不满足，自动刷新已取消。',
     refresh_cancelled_visible_items: '⏹️ 刷新前检测到页面上有 {0} 个可见商品，已取消自动刷新。',
+    log_all_hidden_rate_limited: '限速状态下当前没有可见商品，准备安排一次恢复刷新。',
+    log_refresh_cancelled_tasks: '检测到有 {0} 个待办任务和 {1} 个活动工作线程，已取消自动刷新。',
+    log_refresh_cancelled_visible: '刷新前检测到页面上有 {0} 个可见商品，已取消自动刷新。',
+    log_refreshing: '页面上没有可见商品且处于限速状态，正在刷新页面。',
+    rate_limit_no_visible_reason: '限速状态无可见商品',
 
     // 限速检测来源
     rate_limit_source_page_content: '页面内容检测',

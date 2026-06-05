@@ -102,7 +102,7 @@ import { API } from './modules/api.js';
 import { Database, setUIReference as setDbUIRef } from './modules/database.js';
 import { RateLimitManager, setDependencies as setRateLimitDeps } from './modules/rate-limit-manager.js';
 import { PagePatcher } from './modules/page-patcher.js';
-import { TaskRunner, setUIReference as setTaskRunnerUIRef } from './modules/task-runner.js';
+import { TaskRunner, setUIReference as setTaskRunnerUIRef, setDependencies as setTaskRunnerDeps } from './modules/task-runner.js';
 import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.js';
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
@@ -114,7 +114,7 @@ let currentRefreshTimeout = null;
 // Helper function for countdown refresh
 function countdownRefresh(delay, reason = '备选方案') {
     if (State.isRefreshScheduled) {
-        Utils.logger('info', Utils.getText('refresh_plan_exists').replace('(429自动恢复)', `(${reason})`));
+        Utils.logger('debug', Utils.getText('refresh_plan_exists').replace('(429自动恢复)', `(${reason})`));
         return;
     }
 
@@ -269,6 +269,9 @@ async function checkRateLimitStatus() {
 setUtilsUIRef(UI);
 setDbUIRef(UI);
 setTaskRunnerUIRef(UI);
+setTaskRunnerDeps({
+    countdownRefresh
+});
 setUITaskRunnerRef(TaskRunner);
 setRateLimitDeps({
     UI,
@@ -949,10 +952,10 @@ async function runDomDependentPart() {
             const { visible: actualVisibleCards } = TaskRunner.getCardCounts();
 
             if (State.appStatus === 'RATE_LIMITED' && actualVisibleCards === 0 && State.autoRefreshEmptyPage) {
-                if (!window._pendingZeroVisibleRefresh && !currentCountdownInterval && !currentRefreshTimeout) {
-                    Utils.logger('info', `[状态监控] 检测到限速状态下没有可见商品且自动刷新已开启，准备刷新页面`);
+                if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout) {
+                    Utils.logger('debug', Utils.getText('log_all_hidden_rate_limited'));
                     const randomDelay = 3000 + Math.random() * 2000;
-                    countdownRefresh(randomDelay, '限速状态无可见商品');
+                    countdownRefresh(randomDelay, Utils.getText('rate_limit_no_visible_reason'));
                 }
             }
         } catch (error) {

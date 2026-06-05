@@ -105,6 +105,11 @@ export const en = {
     page_content_rate_limit_detected: '[Page Content Detection] Detected page showing rate limit error message!',
     last_moment_check_cancelled: '⚠️ Last moment check: refresh conditions not met, auto refresh cancelled.',
     refresh_cancelled_visible_items: '⏹️ Detected {0} visible items on page before refresh, auto refresh cancelled.',
+    log_all_hidden_rate_limited: 'Rate limited with no visible items; scheduling one recovery refresh.',
+    log_refresh_cancelled_tasks: 'Detected {0} to-do tasks and {1} active workers; auto refresh cancelled.',
+    log_refresh_cancelled_visible: 'Detected {0} visible items before refresh; auto refresh cancelled.',
+    log_refreshing: 'No visible items and still rate limited; refreshing page.',
+    rate_limit_no_visible_reason: 'rate limited with no visible items',
 
     // 限速检测来源
     rate_limit_source_page_content: 'Page Content Detection',
