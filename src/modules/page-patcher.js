@@ -310,7 +310,8 @@ export const PagePatcher = {
 
                                     const urlObj = new URL(request._url, window.location.origin);
                                     const params = urlObj.searchParams;
-                                    const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
+                                    const nonFilteringParams = new Set(['cursor', 'count', 'limit', 'offset', 'workerId']);
+                                    const hasSpecialFilters = Array.from(params.keys()).some(key => !nonFilteringParams.has(key));
 
                                     if (isEndOfList) {
                                         Utils.logger('info', Utils.getText('log_list_end_normal', JSON.stringify(data).substring(0, 200)));
@@ -480,7 +481,8 @@ export const PagePatcher = {
 
                                     const urlObj = new URL(responseUrl, window.location.origin);
                                     const params = urlObj.searchParams;
-                                    const hasSpecialFilters = params.has('query') || params.has('category') || params.has('subcategory') || params.has('tag');
+                                    const nonFilteringParams = new Set(['cursor', 'count', 'limit', 'offset', 'workerId']);
+                                    const hasSpecialFilters = Array.from(params.keys()).some(key => !nonFilteringParams.has(key));
 
                                     if (isEndOfList) {
                                         Utils.logger('info', Utils.getText('log_fetch_list_end', JSON.stringify(data).substring(0, 200)));

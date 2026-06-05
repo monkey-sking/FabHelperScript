@@ -5,6 +5,7 @@ import { Config } from '../config.js';
 import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { Database } from './database.js';
+import { API } from './api.js';
 
 // Forward declarations for circular dependencies
 let UI = null;
@@ -129,8 +130,6 @@ export const RateLimitManager = {
             visibleCountElement.textContent = actualVisibleCards.toString();
         }
 
-        // 更新全局状态
-
         // 检查是否有待办任务、活动工作线程，或者可见的商品数量不为0
         if (State.db.todo.length > 0 || State.activeWorkers > 0 || actualVisibleCards > 0) {
             if (actualVisibleCards > 0) {
@@ -187,7 +186,6 @@ export const RateLimitManager = {
                 return;
             }
         }
-
 
         // 如果请求没有返回有效结果，不计入连续成功
         if (!hasResults) {
@@ -246,7 +244,7 @@ export const RateLimitManager = {
         State.normalStartTime = Date.now();
         State.consecutiveSuccessCount = 0;
 
-        // 删除存储的限速状态
+        // 删除存储 of 限速状态
         await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
 
         // 更新UI
@@ -279,8 +277,18 @@ export const RateLimitManager = {
         try {
             Utils.logger('debug', Utils.getText('log_rate_limit_check_start'));
 
-            // 首先检查页面内容是否包含限速信息
-            const pageText = document.body.innerText || '';
+            // 首先检查页面内容是否包含限速信息（排除UI容器）
+            let pageText = '';
+            const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
+            if (uiContainer) {
+                const originalDisplay = uiContainer.style.display;
+                uiContainer.style.display = 'none';
+                pageText = document.body.innerText || '';
+                uiContainer.style.display = originalDisplay;
+            } else {
+                pageText = document.body.innerText || '';
+            }
+
             if (pageText.includes('Too many requests') ||
                 pageText.includes('rate limit') ||
                 pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
@@ -314,6 +322,39 @@ export const RateLimitManager = {
                         Utils.logger('info', `检测到最近10秒内有成功的API请求，判断为正常状态`);
                         await this.recordSuccessfulRequest('Performance API检测成功', true);
                         return true;
+                    }
+                }
+            }
+
+            // 如果没有足够的信息判断，且处于限速状态下，冷静期过后主动发送轻量级探测请求
+            if (State.appStatus === 'RATE_LIMITED') {
+                const cooldownPassed = State.rateLimitStartTime ? (Date.now() - State.rateLimitStartTime > 40000) : true;
+                if (cooldownPassed) {
+                    Utils.logger('info', '限速冷静期已过，主动发送轻量探测请求以确认状态...');
+                    try {
+                        const csrfToken = Utils.getCookie('fab_csrftoken');
+                        if (csrfToken) {
+                            const response = await API.gmFetch({
+                                method: 'GET',
+                                url: 'https://www.fab.com/i/users/context',
+                                headers: { 'x-csrftoken': csrfToken, 'x-requested-with': 'XMLHttpRequest' }
+                            });
+                            if (response.status === 200) {
+                                Utils.logger('info', '探测请求成功，API限速已解除');
+                                return true;
+                            } else if (response.status === 429) {
+                                Utils.logger('warn', '探测请求返回429，确认仍处于限速状态');
+                                State.rateLimitStartTime = Date.now(); // 重置限速时间，重新冷静
+                                await GM_setValue(Config.DB_KEYS.APP_STATUS, {
+                                    status: 'RATE_LIMITED',
+                                    startTime: State.rateLimitStartTime,
+                                    source: '探测请求429'
+                                });
+                                return false;
+                            }
+                        }
+                    } catch (probeError) {
+                        Utils.logger('error', `探测请求发送失败: ${probeError.message}`);
                     }
                 }
             }

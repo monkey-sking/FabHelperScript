@@ -755,7 +755,17 @@ async function runDomDependentPart() {
     // Rate limit page content detection
     setInterval(() => {
         if (State.appStatus === 'NORMAL') {
-            const pageText = document.body.innerText || '';
+            let pageText = '';
+            const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
+            if (uiContainer) {
+                const originalDisplay = uiContainer.style.display;
+                uiContainer.style.display = 'none';
+                pageText = document.body.innerText || '';
+                uiContainer.style.display = originalDisplay;
+            } else {
+                pageText = document.body.innerText || '';
+            }
+
             if (pageText.includes('Too many requests') ||
                 pageText.includes('rate limit') ||
                 pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {

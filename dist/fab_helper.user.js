@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1745
+// @version      3.5.6-20260605-1851
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2219,7 +2219,16 @@
       State.isCheckingRateLimit = true;
       try {
         Utils.logger("debug", Utils.getText("log_rate_limit_check_start"));
-        const pageText = document.body.innerText || "";
+        let pageText = "";
+        const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
+        if (uiContainer) {
+          const originalDisplay = uiContainer.style.display;
+          uiContainer.style.display = "none";
+          pageText = document.body.innerText || "";
+          uiContainer.style.display = originalDisplay;
+        } else {
+          pageText = document.body.innerText || "";
+        }
         if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
           Utils.logger("warn", "\u9875\u9762\u5185\u5BB9\u5305\u542B\u9650\u901F\u4FE1\u606F\uFF0C\u786E\u8BA4\u4ECD\u5904\u4E8E\u9650\u901F\u72B6\u6001");
           await this.enterRateLimitedState("\u9875\u9762\u5185\u5BB9\u68C0\u6D4B");
@@ -2240,6 +2249,37 @@
               Utils.logger("info", `\u68C0\u6D4B\u5230\u6700\u8FD110\u79D2\u5185\u6709\u6210\u529F\u7684API\u8BF7\u6C42\uFF0C\u5224\u65AD\u4E3A\u6B63\u5E38\u72B6\u6001`);
               await this.recordSuccessfulRequest("Performance API\u68C0\u6D4B\u6210\u529F", true);
               return true;
+            }
+          }
+        }
+        if (State.appStatus === "RATE_LIMITED") {
+          const cooldownPassed = State.rateLimitStartTime ? Date.now() - State.rateLimitStartTime > 4e4 : true;
+          if (cooldownPassed) {
+            Utils.logger("info", "\u9650\u901F\u51B7\u9759\u671F\u5DF2\u8FC7\uFF0C\u4E3B\u52A8\u53D1\u9001\u8F7B\u91CF\u63A2\u6D4B\u8BF7\u6C42\u4EE5\u786E\u8BA4\u72B6\u6001...");
+            try {
+              const csrfToken = Utils.getCookie("fab_csrftoken");
+              if (csrfToken) {
+                const response = await API.gmFetch({
+                  method: "GET",
+                  url: "https://www.fab.com/i/users/context",
+                  headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+                });
+                if (response.status === 200) {
+                  Utils.logger("info", "\u63A2\u6D4B\u8BF7\u6C42\u6210\u529F\uFF0CAPI\u9650\u901F\u5DF2\u89E3\u9664");
+                  return true;
+                } else if (response.status === 429) {
+                  Utils.logger("warn", "\u63A2\u6D4B\u8BF7\u6C42\u8FD4\u56DE429\uFF0C\u786E\u8BA4\u4ECD\u5904\u4E8E\u9650\u901F\u72B6\u6001");
+                  State.rateLimitStartTime = Date.now();
+                  await GM_setValue(Config.DB_KEYS.APP_STATUS, {
+                    status: "RATE_LIMITED",
+                    startTime: State.rateLimitStartTime,
+                    source: "\u63A2\u6D4B\u8BF7\u6C42429"
+                  });
+                  return false;
+                }
+              }
+            } catch (probeError) {
+              Utils.logger("error", `\u63A2\u6D4B\u8BF7\u6C42\u53D1\u9001\u5931\u8D25: ${probeError.message}`);
             }
           }
         }
@@ -2488,7 +2528,8 @@
                     const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
                     const urlObj = new URL(request._url, window.location.origin);
                     const params = urlObj.searchParams;
-                    const hasSpecialFilters = params.has("query") || params.has("category") || params.has("subcategory") || params.has("tag");
+                    const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
+                    const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                     if (isEndOfList) {
                       Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data).substring(0, 200)));
                       RateLimitManager.recordSuccessfulRequest("XHR\u5217\u8868\u672B\u5C3E", true);
@@ -2626,7 +2667,8 @@
                   const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
                   const urlObj = new URL(responseUrl, window.location.origin);
                   const params = urlObj.searchParams;
-                  const hasSpecialFilters = params.has("query") || params.has("category") || params.has("subcategory") || params.has("tag");
+                  const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
+                  const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                   if (isEndOfList) {
                     Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data).substring(0, 200)));
                     RateLimitManager.recordSuccessfulRequest("Fetch\u5217\u8868\u672B\u5C3E", true);
@@ -5938,7 +5980,16 @@
     };
     setInterval(() => {
       if (State.appStatus === "NORMAL") {
-        const pageText = document.body.innerText || "";
+        let pageText = "";
+        const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
+        if (uiContainer) {
+          const originalDisplay = uiContainer.style.display;
+          uiContainer.style.display = "none";
+          pageText = document.body.innerText || "";
+          uiContainer.style.display = originalDisplay;
+        } else {
+          pageText = document.body.innerText || "";
+        }
         if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
           Utils.logger("warn", Utils.getText("page_content_rate_limit_detected"));
           RateLimitManager.enterRateLimitedState(Utils.getText("rate_limit_source_page_content"));
