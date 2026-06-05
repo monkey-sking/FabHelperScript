@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1851
+// @version      3.5.6-20260605-1901
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2266,6 +2266,7 @@
                 });
                 if (response.status === 200) {
                   Utils.logger("info", "\u63A2\u6D4B\u8BF7\u6C42\u6210\u529F\uFF0CAPI\u9650\u901F\u5DF2\u89E3\u9664");
+                  await this.exitRateLimitedState("\u63A2\u6D4B\u8BF7\u6C42\u6210\u529F");
                   return true;
                 } else if (response.status === 429) {
                   Utils.logger("warn", "\u63A2\u6D4B\u8BF7\u6C42\u8FD4\u56DE429\uFF0C\u786E\u8BA4\u4ECD\u5904\u4E8E\u9650\u901F\u72B6\u6001");
@@ -6012,6 +6013,9 @@
       const isRecovered = await RateLimitManager.checkRateLimitStatus();
       if (isRecovered) {
         Utils.logger("info", Utils.getText("log_recovery_probe_success"));
+        if (State.appStatus === "RATE_LIMITED") {
+          await RateLimitManager.exitRateLimitedState("\u9875\u9762\u52A0\u8F7D\u63A2\u6D4B\u6210\u529F");
+        }
         if (State.db.todo.length > 0 && !State.isExecuting) {
           Utils.logger("info", Utils.getText("log_found_todo_auto_resume", State.db.todo.length));
           State.isExecuting = true;
@@ -6358,10 +6362,10 @@
       lastNetworkActivityTime = Date.now();
     };
     setInterval(() => {
-      if (State.appStatus === "RATE_LIMITED") {
+      if (State.appStatus === "NORMAL" && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
         const inactiveTime = Date.now() - lastNetworkActivityTime;
         if (inactiveTime > 3e4) {
-          Utils.logger("warn", `\u26A0\uFE0F \u68C0\u6D4B\u5230\u5728\u9650\u901F\u72B6\u6001\u4E0B ${Math.floor(inactiveTime / 1e3)} \u79D2\u65E0\u7F51\u7EDC\u6D3B\u52A8\uFF0C\u5373\u5C06\u5F3A\u5236\u5237\u65B0\u9875\u9762...`);
+          Utils.logger("warn", `\u26A0\uFE0F \u68C0\u6D4B\u5230\u5728\u4EFB\u52A1\u6267\u884C\u72B6\u6001\u4E0B\u5DF2\u6301\u7EED ${Math.floor(inactiveTime / 1e3)} \u79D2\u65E0\u7F51\u7EDC\u6D3B\u52A8\uFF0C\u5373\u5C06\u5F3A\u5236\u5237\u65B0\u9875\u9762\u4EE5\u6062\u590D\u4EFB\u52A1...`);
           setTimeout(() => {
             window.location.reload();
           }, 1500);

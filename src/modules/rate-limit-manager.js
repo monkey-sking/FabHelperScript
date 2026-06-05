@@ -341,6 +341,7 @@ export const RateLimitManager = {
                             });
                             if (response.status === 200) {
                                 Utils.logger('info', '探测请求成功，API限速已解除');
+                                await this.exitRateLimitedState('探测请求成功');
                                 return true;
                             } else if (response.status === 429) {
                                 Utils.logger('warn', '探测请求返回429，确认仍处于限速状态');

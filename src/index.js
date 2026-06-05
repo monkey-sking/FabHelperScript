@@ -796,6 +796,9 @@ async function runDomDependentPart() {
 
         if (isRecovered) {
             Utils.logger('info', Utils.getText('log_recovery_probe_success'));
+            if (State.appStatus === 'RATE_LIMITED') {
+                await RateLimitManager.exitRateLimitedState('页面加载探测成功');
+            }
             if (State.db.todo.length > 0 && !State.isExecuting) {
                 Utils.logger('info', Utils.getText('log_found_todo_auto_resume', State.db.todo.length));
                 State.isExecuting = true;
@@ -1254,10 +1257,10 @@ async function main() {
     };
 
     setInterval(() => {
-        if (State.appStatus === 'RATE_LIMITED') {
+        if (State.appStatus === 'NORMAL' && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
             const inactiveTime = Date.now() - lastNetworkActivityTime;
             if (inactiveTime > 30000) {
-                Utils.logger('warn', `⚠️ 检测到在限速状态下 ${Math.floor(inactiveTime / 1000)} 秒无网络活动，即将强制刷新页面...`);
+                Utils.logger('warn', `⚠️ 检测到在任务执行状态下已持续 ${Math.floor(inactiveTime / 1000)} 秒无网络活动，即将强制刷新页面以恢复任务...`);
                 setTimeout(() => {
                     window.location.reload();
                 }, 1500);
