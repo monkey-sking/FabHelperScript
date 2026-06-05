@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1901
+// @version      3.5.6-20260605-1914
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2946,7 +2946,10 @@
         const clickTarget = el.closest('[role="option"], button, label, input[type="radio"]');
         return { text, clickTarget };
       }).filter((candidate) => candidate.text && candidate.clickTarget);
-      const hasExplicitFreeSignal = /* @__PURE__ */ __name((text) => [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord)), "hasExplicitFreeSignal");
+      const hasExplicitFreeSignal = /* @__PURE__ */ __name((text) => {
+        const cleanText = text.replace(/royalty\s*-?\s*free/gi, "");
+        return [...Config.FREE_TEXT_SET].some((freeWord) => cleanText.includes(freeWord));
+      }, "hasExplicitFreeSignal");
       const explicitFree = candidates.find((candidate) => hasExplicitFreeSignal(candidate.text));
       if (explicitFree) {
         return explicitFree.clickTarget;
@@ -3039,8 +3042,9 @@
     isFreeCard: /* @__PURE__ */ __name((card) => {
       const rawText = card.textContent || "";
       const cardText = Utils.normalizeWhitespace(rawText);
-      const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cardText.includes(freeWord));
-      const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cardText);
+      const cleanText = cardText.replace(/royalty\s*-?\s*free/gi, "");
+      const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cleanText.includes(freeWord));
+      const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cleanText);
       const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
       if (priceMatches) {
         const hasPositivePrice = priceMatches.some((priceStr) => {

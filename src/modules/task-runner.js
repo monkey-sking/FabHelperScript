@@ -46,8 +46,10 @@ export const TaskRunner = {
             })
             .filter(candidate => candidate.text && candidate.clickTarget);
 
-        const hasExplicitFreeSignal = (text) =>
-            [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+        const hasExplicitFreeSignal = (text) => {
+            const cleanText = text.replace(/royalty\s*-?\s*free/gi, '');
+            return [...Config.FREE_TEXT_SET].some(freeWord => cleanText.includes(freeWord));
+        };
 
         const explicitFree = candidates.find(candidate => hasExplicitFreeSignal(candidate.text));
         if (explicitFree) {
@@ -172,11 +174,13 @@ export const TaskRunner = {
         const rawText = card.textContent || '';
         const cardText = Utils.normalizeWhitespace(rawText);
 
+        const cleanText = cardText.replace(/royalty\s*-?\s*free/gi, '');
+
         // 1. Check for explicit keywords
-        const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cardText.includes(freeWord));
+        const hasFreeKeyword = [...Config.FREE_TEXT_SET].some(freeWord => cleanText.includes(freeWord));
 
         // 2. Check for -100% discount (handles various spacings like -100%, - 100%, -100 % etc.)
-        const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cardText);
+        const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cleanText);
 
         // Extract all price-like strings (e.g. $1.99, $0.00)
         // Using a more robust regex that catches price formats
