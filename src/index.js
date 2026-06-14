@@ -1106,14 +1106,8 @@ async function main() {
         State.isExecuting = storedExecutingState;
     }
 
-    const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
-    if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
-        State.appStatus = 'RATE_LIMITED';
-        State.rateLimitStartTime = persistedStatus.startTime;
-        const previousDuration = persistedStatus && persistedStatus.startTime ?
-            ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
-        Utils.logger('warn', Utils.getText('startup_rate_limited', previousDuration, persistedStatus.source || Utils.getText('status_unknown_source')));
-    }
+    // 加载持久化限速状态、检测休眠区间、启动活跃心跳（统一由 RateLimitManager.initStatus 处理）
+    await RateLimitManager.initStatus();
 
     // Initialize request interceptors
     setupRequestInterceptors();
@@ -1295,6 +1289,9 @@ async function handleWakeRecovery() {
     if (!State.isExecuting && State.db.todo.length === 0) return;
 
     Utils.logger('info', Utils.getText('log_wake_recovery'));
+
+    // 0. 检测并修正因冻结/休眠导致的限速期时间误差
+    await RateLimitManager.checkInactivity(false);
 
     // 1. 清理冻结期间已超时的 worker（watchdog 在冻结期间无法运行）。
     //    复用 checkStalledWorkers，它会正确 markAsFailed —— 消除原先「这里删了

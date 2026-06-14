@@ -24,6 +24,10 @@ export const RateLimitManager = {
     _lastLogType: null,
     _duplicateLogCount: 0,
 
+    // 活跃心跳跟踪
+    _lastActiveTime: 0,          // 本实例上次写入活跃时间戳的时刻
+    _trackingInterval: null,     // 心跳 setInterval 句柄
+
     // 检查是否与最后一条记录重复
     isDuplicateRecord: function (newEntry) {
         if (State.statusHistory.length === 0) return false;
@@ -369,5 +373,113 @@ export const RateLimitManager = {
         } finally {
             State.isCheckingRateLimit = false;
         }
+    },
+
+    /**
+     * 检测不活动区间（浏览器关闭 / 标签页冻结），并修正限速期时长。
+     * @param {boolean} isStartup - 是否为脚本启动时的首次检查
+     */
+    checkInactivity: async function (isStartup = false) {
+        const GM_KEY = 'fab_last_active_time';
+        const now = Date.now();
+
+        // 读取上次记录的活跃时间
+        const lastActive = await GM_getValue(GM_KEY, 0);
+
+        // 若有历史记录，计算不活动区间
+        if (lastActive > 0) {
+            const gap = now - lastActive;
+
+            // 超过 15 秒的区间视为不活动（浏览器休眠/关闭）
+            if (gap > 15000 && State.appStatus === 'RATE_LIMITED' && State.rateLimitStartTime) {
+                if (gap > 120000) {
+                    // 超过 2 分钟：服务器 429 应已自然恢复，直接解除限速
+                    const activeDuration = lastActive > State.rateLimitStartTime
+                        ? ((lastActive - State.rateLimitStartTime) / 1000).toFixed(2)
+                        : '0.00';
+                    Utils.logger('warn',
+                        `[休眠检测] 检测到 ${(gap / 1000).toFixed(0)}s 不活动区间（浏览器关闭或标签冻结），` +
+                        `429 限速已自然恢复，有效限速时长约 ${activeDuration}s，自动解除限速状态。`
+                    );
+                    // 用修正后的持续时间写入历史
+                    const logEntry = {
+                        type: 'RATE_LIMITED',
+                        duration: parseFloat(activeDuration),
+                        endTime: new Date(lastActive).toISOString(),
+                        source: '休眠/关闭后自动恢复'
+                    };
+                    await this.addToHistory(logEntry);
+
+                    // 直接更新状态，不再走 exitRateLimitedState（避免重复记录）
+                    State.appStatus = 'NORMAL';
+                    State.rateLimitStartTime = null;
+                    State.normalStartTime = now;
+                    State.consecutiveSuccessCount = 0;
+                    await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+
+                    if (UI) { UI.updateDebugTab(); UI.update(); }
+                } else {
+                    // 15s ~ 2min：把限速开始时间向后顺移，扣除不活动区间
+                    const oldStart = State.rateLimitStartTime;
+                    State.rateLimitStartTime += gap;
+                    Utils.logger('debug',
+                        `[休眠检测] 检测到 ${(gap / 1000).toFixed(0)}s 不活动区间，` +
+                        `限速开始时间由 ${new Date(oldStart).toLocaleTimeString()} ` +
+                        `顺移至 ${new Date(State.rateLimitStartTime).toLocaleTimeString()}。`
+                    );
+                    // 同步到持久化存储
+                    const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+                    if (persistedStatus) {
+                        persistedStatus.startTime = State.rateLimitStartTime;
+                        await GM_setValue(Config.DB_KEYS.APP_STATUS, persistedStatus);
+                    }
+                }
+            } else if (gap > 15000 && State.appStatus === 'NORMAL' && State.normalStartTime) {
+                // 正常状态下检测到长时间不活动，顺移正常运行开始时间
+                State.normalStartTime += gap;
+                Utils.logger('debug',
+                    `[休眠检测] 正常状态下检测到 ${(gap / 1000).toFixed(0)}s 不活动区间，正常运行计时已顺移。`
+                );
+            }
+        }
+
+        // 更新活跃时间戳
+        this._lastActiveTime = now;
+        await GM_setValue(GM_KEY, now);
+    },
+
+    /** 启动周期性活跃心跳（每 2 秒更新一次时间戳，用于检测不活动区间）。幂等。 */
+    startActivityTracking: function () {
+        if (this._trackingInterval) return;
+        this._trackingInterval = setInterval(async () => {
+            const now = Date.now();
+            this._lastActiveTime = now;
+            try {
+                await GM_setValue('fab_last_active_time', now);
+            } catch (e) {
+                // 忽略存储错误，不影响主流程
+            }
+        }, 2000);
+        Utils.logger('debug', '[活跃心跳] 已启动，每 2s 更新活跃时间戳。');
+    },
+
+    /** 脚本启动时调用：加载持久化限速状态、执行启动时不活动检测、启动活跃心跳。 */
+    initStatus: async function () {
+        // 1. 加载持久化限速状态
+        const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+        if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
+            State.appStatus = 'RATE_LIMITED';
+            State.rateLimitStartTime = persistedStatus.startTime;
+            const rawDuration = persistedStatus.startTime
+                ? ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2)
+                : '0.00';
+            Utils.logger('warn', Utils.getText('startup_rate_limited', rawDuration, persistedStatus.source || Utils.getText('status_unknown_source')));
+        }
+
+        // 2. 检测是否存在不活动区间（启动时）
+        await this.checkInactivity(true);
+
+        // 3. 启动活跃心跳
+        this.startActivityTracking();
     }
 };

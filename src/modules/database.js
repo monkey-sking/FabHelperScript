@@ -84,15 +84,6 @@ export const Database = {
         State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
-        const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
-        if (persistedStatus && persistedStatus.status === 'RATE_LIMITED') {
-            State.appStatus = 'RATE_LIMITED';
-            State.rateLimitStartTime = persistedStatus.startTime;
-            // 添加空值检查，防止persistedStatus.startTime为null
-            const previousDuration = persistedStatus && persistedStatus.startTime ?
-                ((Date.now() - persistedStatus.startTime) / 1000).toFixed(2) : '0.00';
-            Utils.logger('warn', `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
-        }
         State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
 
         if (Database.normalizeDoneList()) {

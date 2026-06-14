@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260605-1914
+// @version      3.5.6-20260613-1613
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1882,13 +1882,6 @@
       State.debugMode = await GM_getValue("fab_helper_debug_mode", false);
       State.currentSortOption = await GM_getValue("fab_helper_sort_option", "title_desc");
       State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
-      const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
-      if (persistedStatus && persistedStatus.status === "RATE_LIMITED") {
-        State.appStatus = "RATE_LIMITED";
-        State.rateLimitStartTime = persistedStatus.startTime;
-        const previousDuration = persistedStatus && persistedStatus.startTime ? ((Date.now() - persistedStatus.startTime) / 1e3).toFixed(2) : "0.00";
-        Utils.logger("warn", `Script starting in RATE_LIMITED state. 429 period has lasted at least ${previousDuration}s.`);
-      }
       State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
       if (Database.normalizeDoneList()) {
         await Database.saveDone();
@@ -2055,6 +2048,11 @@
     _lastLogTime: 0,
     _lastLogType: null,
     _duplicateLogCount: 0,
+    // 活跃心跳跟踪
+    _lastActiveTime: 0,
+    // 本实例上次写入活跃时间戳的时刻
+    _trackingInterval: null,
+    // 心跳 setInterval 句柄
     // 检查是否与最后一条记录重复
     isDuplicateRecord: /* @__PURE__ */ __name(function(newEntry) {
       if (State.statusHistory.length === 0) return false;
@@ -2292,7 +2290,89 @@
       } finally {
         State.isCheckingRateLimit = false;
       }
-    }, "checkRateLimitStatus")
+    }, "checkRateLimitStatus"),
+    /**
+     * 检测不活动区间（浏览器关闭 / 标签页冻结），并修正限速期时长。
+     * @param {boolean} isStartup - 是否为脚本启动时的首次检查
+     */
+    checkInactivity: /* @__PURE__ */ __name(async function(isStartup = false) {
+      const GM_KEY = "fab_last_active_time";
+      const now = Date.now();
+      const lastActive = await GM_getValue(GM_KEY, 0);
+      if (lastActive > 0) {
+        const gap = now - lastActive;
+        if (gap > 15e3 && State.appStatus === "RATE_LIMITED" && State.rateLimitStartTime) {
+          if (gap > 12e4) {
+            const activeDuration = lastActive > State.rateLimitStartTime ? ((lastActive - State.rateLimitStartTime) / 1e3).toFixed(2) : "0.00";
+            Utils.logger(
+              "warn",
+              `[\u4F11\u7720\u68C0\u6D4B] \u68C0\u6D4B\u5230 ${(gap / 1e3).toFixed(0)}s \u4E0D\u6D3B\u52A8\u533A\u95F4\uFF08\u6D4F\u89C8\u5668\u5173\u95ED\u6216\u6807\u7B7E\u51BB\u7ED3\uFF09\uFF0C429 \u9650\u901F\u5DF2\u81EA\u7136\u6062\u590D\uFF0C\u6709\u6548\u9650\u901F\u65F6\u957F\u7EA6 ${activeDuration}s\uFF0C\u81EA\u52A8\u89E3\u9664\u9650\u901F\u72B6\u6001\u3002`
+            );
+            const logEntry = {
+              type: "RATE_LIMITED",
+              duration: parseFloat(activeDuration),
+              endTime: new Date(lastActive).toISOString(),
+              source: "\u4F11\u7720/\u5173\u95ED\u540E\u81EA\u52A8\u6062\u590D"
+            };
+            await this.addToHistory(logEntry);
+            State.appStatus = "NORMAL";
+            State.rateLimitStartTime = null;
+            State.normalStartTime = now;
+            State.consecutiveSuccessCount = 0;
+            await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
+            if (UI3) {
+              UI3.updateDebugTab();
+              UI3.update();
+            }
+          } else {
+            const oldStart = State.rateLimitStartTime;
+            State.rateLimitStartTime += gap;
+            Utils.logger(
+              "debug",
+              `[\u4F11\u7720\u68C0\u6D4B] \u68C0\u6D4B\u5230 ${(gap / 1e3).toFixed(0)}s \u4E0D\u6D3B\u52A8\u533A\u95F4\uFF0C\u9650\u901F\u5F00\u59CB\u65F6\u95F4\u7531 ${new Date(oldStart).toLocaleTimeString()} \u987A\u79FB\u81F3 ${new Date(State.rateLimitStartTime).toLocaleTimeString()}\u3002`
+            );
+            const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+            if (persistedStatus) {
+              persistedStatus.startTime = State.rateLimitStartTime;
+              await GM_setValue(Config.DB_KEYS.APP_STATUS, persistedStatus);
+            }
+          }
+        } else if (gap > 15e3 && State.appStatus === "NORMAL" && State.normalStartTime) {
+          State.normalStartTime += gap;
+          Utils.logger(
+            "debug",
+            `[\u4F11\u7720\u68C0\u6D4B] \u6B63\u5E38\u72B6\u6001\u4E0B\u68C0\u6D4B\u5230 ${(gap / 1e3).toFixed(0)}s \u4E0D\u6D3B\u52A8\u533A\u95F4\uFF0C\u6B63\u5E38\u8FD0\u884C\u8BA1\u65F6\u5DF2\u987A\u79FB\u3002`
+          );
+        }
+      }
+      this._lastActiveTime = now;
+      await GM_setValue(GM_KEY, now);
+    }, "checkInactivity"),
+    /** 启动周期性活跃心跳（每 2 秒更新一次时间戳，用于检测不活动区间）。幂等。 */
+    startActivityTracking: /* @__PURE__ */ __name(function() {
+      if (this._trackingInterval) return;
+      this._trackingInterval = setInterval(async () => {
+        const now = Date.now();
+        this._lastActiveTime = now;
+        try {
+          await GM_setValue("fab_last_active_time", now);
+        } catch (e) {
+        }
+      }, 2e3);
+      Utils.logger("debug", "[\u6D3B\u8DC3\u5FC3\u8DF3] \u5DF2\u542F\u52A8\uFF0C\u6BCF 2s \u66F4\u65B0\u6D3B\u8DC3\u65F6\u95F4\u6233\u3002");
+    }, "startActivityTracking"),
+    /** 脚本启动时调用：加载持久化限速状态、执行启动时不活动检测、启动活跃心跳。 */
+    initStatus: /* @__PURE__ */ __name(async function() {
+      const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
+      if (persistedStatus && persistedStatus.status === "RATE_LIMITED") {
+        State.appStatus = "RATE_LIMITED";
+        State.rateLimitStartTime = persistedStatus.startTime;
+        const rawDuration = persistedStatus.startTime ? ((Date.now() - persistedStatus.startTime) / 1e3).toFixed(2) : "0.00";
+        Utils.logger("warn", Utils.getText("startup_rate_limited", rawDuration, persistedStatus.source || Utils.getText("status_unknown_source")));
+      }
+      await this.checkInactivity(true);
+      this.startActivityTracking();
+    }, "initStatus")
   };
 
   // src/modules/page-patcher.js
@@ -6252,13 +6332,7 @@
       Utils.logger("info", Utils.getText("log_execution_state_inconsistent", storedExecutingState ? "\u6267\u884C\u4E2D" : "\u5DF2\u505C\u6B62"));
       State.isExecuting = storedExecutingState;
     }
-    const persistedStatus = await GM_getValue(Config.DB_KEYS.APP_STATUS);
-    if (persistedStatus && persistedStatus.status === "RATE_LIMITED") {
-      State.appStatus = "RATE_LIMITED";
-      State.rateLimitStartTime = persistedStatus.startTime;
-      const previousDuration = persistedStatus && persistedStatus.startTime ? ((Date.now() - persistedStatus.startTime) / 1e3).toFixed(2) : "0.00";
-      Utils.logger("warn", Utils.getText("startup_rate_limited", previousDuration, persistedStatus.source || Utils.getText("status_unknown_source")));
-    }
+    await RateLimitManager.initStatus();
     setupRequestInterceptors();
     await PagePatcher.init();
     const tempTasks = await GM_getValue("temp_todo_tasks", null);
@@ -6390,6 +6464,7 @@
     if (State.isWorkerTab) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
     Utils.logger("info", Utils.getText("log_wake_recovery"));
+    await RateLimitManager.checkInactivity(false);
     const cleaned = await TaskRunner2.checkStalledWorkers();
     if (cleaned > 0) {
       Utils.logger("warn", Utils.getText("log_wake_cleanup_stale", cleaned));
