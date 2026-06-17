@@ -116,6 +116,16 @@ export const TaskRunner = {
         return [...Config.SAVED_TEXT_SET].some(savedText => cardText.includes(savedText));
     },
 
+    hasPositivePriceText: (text) => {
+        const priceMatches = Utils.normalizeWhitespace(text || '').match(/\$\s*(\d+(?:\.\d{2})?)/g);
+        if (!priceMatches) return false;
+
+        return priceMatches.some(priceStr => {
+            const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
+            return numValue > 0.00;
+        });
+    },
+
     isCardSettled: (card) => {
         const link = card.querySelector(Config.SELECTORS.cardLink);
         const url = link ? link.href.split('?')[0] : null;
@@ -123,6 +133,7 @@ export const TaskRunner = {
         return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null ||
             TaskRunner.hasSavedLibraryText(card) ||
             TaskRunner.isFreeCard(card) ||
+            TaskRunner.hasPositivePriceText(card.textContent || '') ||
             (url && (Database.isDone(url) || Database.isFailed(url) || State.sessionCompleted.has(Database.normalizeListingUrl(url))));
     },
 
@@ -184,21 +195,14 @@ export const TaskRunner = {
 
         // Extract all price-like strings (e.g. $1.99, $0.00)
         // Using a more robust regex that catches price formats
-        const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
+        const hasPositivePrice = TaskRunner.hasPositivePriceText(cardText);
 
-        if (priceMatches) {
-            // Check if there is ANY price that is strictly greater than 0
-            const hasPositivePrice = priceMatches.some(priceStr => {
-                // Remove '$' and whitespace to parse number
-                const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
-                return numValue > 0.00; // Strictly greater than 0
-            });
-
+        if (hasPositivePrice) {
             // STRICT RULE: If there is a price > 0, it is PAID, UNLESS:
             // 1. There is a -100% discount tag, OR
             // 2. There is also a "Free" keyword present (mixed license: e.g. Personal=$X, Professional=Free)
             // This overrides any non-license "Free" keyword (like "Royalty Free" or "Hassle Free").
-            if (hasPositivePrice && !has100PercentDiscount && !hasFreeKeyword) {
+            if (!has100PercentDiscount && !hasFreeKeyword) {
                 return false;
             }
         }
@@ -222,14 +226,7 @@ export const TaskRunner = {
         if (!hasDiscountTag) return false;
 
         // Double check positive price
-        const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
-        if (priceMatches) {
-            return priceMatches.some(priceStr => {
-                const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
-                return numValue > 0.00;
-            });
-        }
-        return false;
+        return TaskRunner.hasPositivePriceText(cardText);
     },
 
     // Toggle execution state

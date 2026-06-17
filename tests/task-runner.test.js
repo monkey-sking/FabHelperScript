@@ -266,6 +266,84 @@ test('treats linked cards with saved library text as ready to hide', () => {
     }
 });
 
+test('hides paid cards that expose only starting price text', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const card = {
+        textContent: 'The Orbitator Mist Polygon 3D fbx gltf +2 起始价格 $2.99',
+        style: {},
+        attributes: {},
+        querySelector: (selector) => {
+            if (selector === 'a[href*="/listings/"]') {
+                return {
+                    href: 'https://www.fab.com/listings/12345678-1234-4234-8234-123456789abc'
+                };
+            }
+            return null;
+        },
+        querySelectorAll: () => [],
+        getAttribute(name) {
+            return this.attributes[name] ?? null;
+        },
+        setAttribute(name, value) {
+            this.attributes[name] = value;
+        },
+        removeAttribute(name) {
+            delete this.attributes[name];
+        }
+    };
+
+    globalThis.document = {
+        querySelectorAll: () => [card],
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        if (delay !== 2000) callback();
+        return 1;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = false;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = true;
+    State.hideRetryTimer = null;
+    State.cardCountCache = {
+        total: 0,
+        hidden: 0,
+        visible: 0,
+        dirty: true,
+        documentRef: null,
+        href: ''
+    };
+    State.lastHideModeKey = '';
+    State.db.done = [];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        assert.equal(card.attributes['data-fab-processed'], 'true');
+        assert.equal(card.attributes['data-fab-hidden'], 'true');
+        assert.equal(card.style.display, 'none');
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
 test('does not block owned cards when another card is still loading', () => {
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;

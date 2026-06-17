@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260613-1613
+// @version      3.5.6-20260617-0858
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3079,10 +3079,18 @@
       const cardText = Utils.normalizeWhitespace(card.textContent || "");
       return [...Config.SAVED_TEXT_SET].some((savedText) => cardText.includes(savedText));
     }, "hasSavedLibraryText"),
+    hasPositivePriceText: /* @__PURE__ */ __name((text) => {
+      const priceMatches = Utils.normalizeWhitespace(text || "").match(/\$\s*(\d+(?:\.\d{2})?)/g);
+      if (!priceMatches) return false;
+      return priceMatches.some((priceStr) => {
+        const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
+        return numValue > 0;
+      });
+    }, "hasPositivePriceText"),
     isCardSettled: /* @__PURE__ */ __name((card) => {
       const link = card.querySelector(Config.SELECTORS.cardLink);
       const url = link ? link.href.split("?")[0] : null;
-      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card) || TaskRunner2.isFreeCard(card) || url && (Database.isDone(url) || Database.isFailed(url) || State.sessionCompleted.has(Database.normalizeListingUrl(url)));
+      return card.querySelector(`${Config.SELECTORS.freeStatus}, ${Config.SELECTORS.ownedStatus}`) !== null || TaskRunner2.hasSavedLibraryText(card) || TaskRunner2.isFreeCard(card) || TaskRunner2.hasPositivePriceText(card.textContent || "") || url && (Database.isDone(url) || Database.isFailed(url) || State.sessionCompleted.has(Database.normalizeListingUrl(url)));
     }, "isCardSettled"),
     // Check if a card is finished (owned, done, or failed)
     isCardFinished: /* @__PURE__ */ __name((card) => {
@@ -3125,13 +3133,9 @@
       const cleanText = cardText.replace(/royalty\s*-?\s*free/gi, "");
       const hasFreeKeyword = [...Config.FREE_TEXT_SET].some((freeWord) => cleanText.includes(freeWord));
       const has100PercentDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(cleanText);
-      const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
-      if (priceMatches) {
-        const hasPositivePrice = priceMatches.some((priceStr) => {
-          const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
-          return numValue > 0;
-        });
-        if (hasPositivePrice && !has100PercentDiscount && !hasFreeKeyword) {
+      const hasPositivePrice = TaskRunner2.hasPositivePriceText(cardText);
+      if (hasPositivePrice) {
+        if (!has100PercentDiscount && !hasFreeKeyword) {
           return false;
         }
       }
@@ -3144,14 +3148,7 @@
       const cardText = Utils.normalizeWhitespace(rawText);
       const hasDiscountTag = /-\d+%/.test(cardText) || cardText.includes("% off") || cardText.includes("% Off");
       if (!hasDiscountTag) return false;
-      const priceMatches = cardText.match(/\$\s*(\d+(?:\.\d{2})?)/g);
-      if (priceMatches) {
-        return priceMatches.some((priceStr) => {
-          const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
-          return numValue > 0;
-        });
-      }
-      return false;
+      return TaskRunner2.hasPositivePriceText(cardText);
     }, "isDiscountedPaidCard"),
     // Toggle execution state
     toggleExecution: /* @__PURE__ */ __name(async () => {
