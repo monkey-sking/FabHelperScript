@@ -758,9 +758,11 @@ export const TaskRunner = {
             const todoList = [...State.db.todo];
             let dispatchedCount = 0;
             const dispatchedUIDs = new Set();
+            const slotsAvailable = Config.MAX_CONCURRENT_WORKERS - State.activeWorkers;
 
+            const tasksToDispatch = [];
             for (const task of todoList) {
-                if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+                if (tasksToDispatch.length >= slotsAvailable) break;
 
                 if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
                     Utils.logger('debug', Utils.getText('log_task_already_running', task.name));
@@ -774,6 +776,10 @@ export const TaskRunner = {
                     continue;
                 }
 
+                tasksToDispatch.push(task);
+            }
+
+            for (const task of tasksToDispatch) {
                 dispatchedUIDs.add(task.uid);
                 State.activeWorkers++;
                 dispatchedCount++;
@@ -787,16 +793,15 @@ export const TaskRunner = {
 
                 Utils.logger('debug', Utils.getText('log_dispatching_worker', workerId.substring(0, 12), task.name));
 
+                const workerUrl = new URL(task.url);
+                workerUrl.searchParams.set('workerId', workerId);
+
                 await GM_setValue(workerId, {
                     task,
                     instanceId: Config.INSTANCE_ID
                 });
 
-                const workerUrl = new URL(task.url);
-                workerUrl.searchParams.set('workerId', workerId);
-
                 GM_openInTab(workerUrl.href, { active: false, insert: true });
-                await new Promise(resolve => setTimeout(resolve, 500));
             }
 
             if (dispatchedCount > 0) {

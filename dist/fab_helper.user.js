@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260617-0858
+// @version      3.5.6-20260621-1533
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3583,8 +3583,10 @@
         const todoList = [...State.db.todo];
         let dispatchedCount = 0;
         const dispatchedUIDs = /* @__PURE__ */ new Set();
+        const slotsAvailable = Config.MAX_CONCURRENT_WORKERS - State.activeWorkers;
+        const tasksToDispatch = [];
         for (const task of todoList) {
-          if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) break;
+          if (tasksToDispatch.length >= slotsAvailable) break;
           if (inFlightUIDs.has(task.uid) || dispatchedUIDs.has(task.uid)) {
             Utils.logger("debug", Utils.getText("log_task_already_running", task.name));
             continue;
@@ -3595,6 +3597,9 @@
             Database.saveTodo();
             continue;
           }
+          tasksToDispatch.push(task);
+        }
+        for (const task of tasksToDispatch) {
           dispatchedUIDs.add(task.uid);
           State.activeWorkers++;
           dispatchedCount++;
@@ -3605,14 +3610,13 @@
             instanceId: Config.INSTANCE_ID
           };
           Utils.logger("debug", Utils.getText("log_dispatching_worker", workerId.substring(0, 12), task.name));
+          const workerUrl = new URL(task.url);
+          workerUrl.searchParams.set("workerId", workerId);
           await GM_setValue(workerId, {
             task,
             instanceId: Config.INSTANCE_ID
           });
-          const workerUrl = new URL(task.url);
-          workerUrl.searchParams.set("workerId", workerId);
           GM_openInTab(workerUrl.href, { active: false, insert: true });
-          await new Promise((resolve) => setTimeout(resolve, 500));
         }
         if (dispatchedCount > 0) {
           Utils.logger("debug", Utils.getText("log_batch_dispatched", dispatchedCount));
