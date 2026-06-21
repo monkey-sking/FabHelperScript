@@ -3,7 +3,7 @@
  */
 export const en = {
     // 基础UI
-    hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop',
+    hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', retry_failed: 'Retry Failed',
     added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', visible: 'Visible',
     clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!',
     tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug',

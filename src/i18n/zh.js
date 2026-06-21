@@ -3,7 +3,7 @@
  */
 export const zh = {
     // 基础UI
-    hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止',
+    hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止', retry_failed: '重试失败',
     hideDiscounted: '隐藏打折', showDiscounted: '显示打折',
     hidePaid: '隐藏付费', showPaid: '显示付费',
     added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', visible: '可见',

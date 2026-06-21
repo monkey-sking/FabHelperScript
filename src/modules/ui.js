@@ -409,7 +409,11 @@ export const UI = {
         State.UI.hideBtn = document.createElement('button');
         State.UI.hideBtn.onclick = () => TaskRunner && TaskRunner.toggleHideSaved();
 
-        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
+        State.UI.retryFailedBtn = document.createElement('button');
+        State.UI.retryFailedBtn.textContent = '🔁 ' + Utils.getText('retry_failed');
+        State.UI.retryFailedBtn.onclick = () => TaskRunner && TaskRunner.retryFailedTasks();
+
+        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.retryFailedBtn);
 
         // Log Panel
         const logContainer = document.createElement('div');
@@ -794,6 +798,13 @@ export const UI = {
 
         if (State.UI.hideBtn) {
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
+        }
+
+        if (State.UI.retryFailedBtn) {
+            State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
+            State.UI.retryFailedBtn.title = State.db.failed.length > 0
+                ? Utils.getText('retry_failed') + ` (${State.db.failed.length})`
+                : Utils.getText('no_failed_tasks');
         }
 
 

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260621-1533
+// @version      3.5.6-20260621-1545
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -37,6 +37,7 @@
     execute: "Start Tasks",
     executing: "Executing...",
     stopExecute: "Stop",
+    retry_failed: "Retry Failed",
     added: "Done",
     failed: "Failed",
     todo: "To-Do",
@@ -381,6 +382,7 @@
     execute: "\u4E00\u952E\u5F00\u5237",
     executing: "\u6267\u884C\u4E2D...",
     stopExecute: "\u505C\u6B62",
+    retry_failed: "\u91CD\u8BD5\u5931\u8D25",
     hideDiscounted: "\u9690\u85CF\u6253\u6298",
     showDiscounted: "\u663E\u793A\u6253\u6298",
     hidePaid: "\u9690\u85CF\u4ED8\u8D39",
@@ -5022,7 +5024,10 @@
       State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
       State.UI.hideBtn = document.createElement("button");
       State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
-      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn);
+      State.UI.retryFailedBtn = document.createElement("button");
+      State.UI.retryFailedBtn.textContent = "\u{1F501} " + Utils.getText("retry_failed");
+      State.UI.retryFailedBtn.onclick = () => TaskRunner3 && TaskRunner3.retryFailedTasks();
+      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.retryFailedBtn);
       const logContainer = document.createElement("div");
       logContainer.className = "fab-log-container";
       const logHeader = document.createElement("div");
@@ -5344,6 +5349,10 @@
       }
       if (State.UI.hideBtn) {
         State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
+      }
+      if (State.UI.retryFailedBtn) {
+        State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
+        State.UI.retryFailedBtn.title = State.db.failed.length > 0 ? Utils.getText("retry_failed") + ` (${State.db.failed.length})` : Utils.getText("no_failed_tasks");
       }
     }, "update"),
     removeAllOverlays: /* @__PURE__ */ __name(() => {
