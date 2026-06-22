@@ -2085,6 +2085,14 @@ export const TaskRunner = {
         const maxScrollAttempts = 3;
         Utils.logger('info', Utils.getText('auto_scroll_attempt', State.autoScrollAttempts + 1, maxScrollAttempts));
 
+        const getCurrentCardTotal = () => {
+            try {
+                return TaskRunner.getCardCounts().total;
+            } catch (_error) {
+                return 0;
+            }
+        };
+        const previousCardTotal = getCurrentCardTotal();
         const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
@@ -2099,6 +2107,7 @@ export const TaskRunner = {
             const currentScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
             const currentScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
             const newTodoCount = State.db.todo.length;
+            const currentCardTotal = getCurrentCardTotal();
 
             // 1. If we got new tasks, scanning will have reset State.autoScrollAttempts and executed.
             if (newTodoCount > 0) {
@@ -2106,6 +2115,15 @@ export const TaskRunner = {
                 if (!State.isExecuting) {
                     TaskRunner.startExecution();
                 }
+                return;
+            }
+
+            const newCardCount = currentCardTotal - previousCardTotal;
+            if (newCardCount > 0) {
+                State.autoScrollAttempts = 0;
+                Utils.logger('debug', Utils.getText('auto_scroll_cards_loaded', newCardCount));
+                TaskRunner.runHideOrShow();
+                TaskRunner.attemptAutoScroll();
                 return;
             }
 

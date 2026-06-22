@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260622-1409
+// @version      3.5.6-20260622-1434
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -152,6 +152,7 @@
     auto_add_new_tasks: "Added {0} new tasks to queue.",
     auto_scroll_attempt: "[Auto Scroll] Queue empty, attempting to scroll down to load more... (Attempt {0}/{1})",
     auto_scroll_success: "[Auto Scroll] Successfully loaded and identified {0} new tasks, continuing...",
+    auto_scroll_cards_loaded: "[Auto Scroll] Detected {0} new cards, continuing hide/scan and scroll...",
     auto_scroll_reached_bottom: "[Auto Scroll] Reached page bottom, stopping scroll.",
     auto_scroll_no_new_items: "[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.",
     auto_scroll_waiting: "[Auto Scroll] No new eligible items found, waiting for next scroll attempt...",
@@ -501,6 +502,7 @@
     auto_add_new_tasks: "\u65B0\u589E {0} \u4E2A\u4EFB\u52A1\u5230\u961F\u5217\u3002",
     auto_scroll_attempt: "[\u81EA\u52A8\u6EDA\u52A8] \u961F\u5217\u5DF2\u7A7A\uFF0C\u5C1D\u8BD5\u5411\u4E0B\u6EDA\u52A8\u52A0\u8F7D\u66F4\u591A\u5546\u54C1... (\u5C1D\u8BD5 {0}/{1})",
     auto_scroll_success: "[\u81EA\u52A8\u6EDA\u52A8] \u6210\u529F\u52A0\u8F7D\u5E76\u8BC6\u522B\u5230 {0} \u4E2A\u65B0\u4EFB\u52A1\uFF0C\u7EE7\u7EED\u6267\u884C...",
+    auto_scroll_cards_loaded: "[\u81EA\u52A8\u6EDA\u52A8] \u68C0\u6D4B\u5230 {0} \u5F20\u65B0\u5361\u7247\uFF0C\u7EE7\u7EED\u9690\u85CF/\u626B\u63CF\u5E76\u6EDA\u52A8...",
     auto_scroll_reached_bottom: "[\u81EA\u52A8\u6EDA\u52A8] \u5DF2\u5230\u8FBE\u9875\u9762\u5E95\u90E8\uFF0C\u505C\u6B62\u6EDA\u52A8\u3002",
     auto_scroll_no_new_items: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u6B21\u6EDA\u52A8\u5747\u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u505C\u6B62\u81EA\u52A8\u6EDA\u52A8\u3002",
     auto_scroll_waiting: "[\u81EA\u52A8\u6EDA\u52A8] \u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B21\u6EDA\u52A8\u5C1D\u8BD5...",
@@ -4626,6 +4628,14 @@
       }
       const maxScrollAttempts = 3;
       Utils.logger("info", Utils.getText("auto_scroll_attempt", State.autoScrollAttempts + 1, maxScrollAttempts));
+      const getCurrentCardTotal = /* @__PURE__ */ __name(() => {
+        try {
+          return TaskRunner2.getCardCounts().total;
+        } catch (_error) {
+          return 0;
+        }
+      }, "getCurrentCardTotal");
+      const previousCardTotal = getCurrentCardTotal();
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
       if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
@@ -4636,11 +4646,20 @@
         const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
         const currentScrollY = typeof window !== "undefined" ? window.scrollY : 0;
         const newTodoCount = State.db.todo.length;
+        const currentCardTotal = getCurrentCardTotal();
         if (newTodoCount > 0) {
           Utils.logger("info", Utils.getText("auto_scroll_success", newTodoCount));
           if (!State.isExecuting) {
             TaskRunner2.startExecution();
           }
+          return;
+        }
+        const newCardCount = currentCardTotal - previousCardTotal;
+        if (newCardCount > 0) {
+          State.autoScrollAttempts = 0;
+          Utils.logger("debug", Utils.getText("auto_scroll_cards_loaded", newCardCount));
+          TaskRunner2.runHideOrShow();
+          TaskRunner2.attemptAutoScroll();
           return;
         }
         const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY;

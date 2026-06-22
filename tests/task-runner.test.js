@@ -1093,6 +1093,83 @@ test('attemptAutoScroll stops execution after max attempts', async () => {
     }
 });
 
+test('attemptAutoScroll keeps going when scrolling loads cards but no eligible tasks', async () => {
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
+    const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
+    const originalGetCardCounts = TaskRunner.getCardCounts;
+    const originalRunHideOrShow = TaskRunner.runHideOrShow;
+
+    let stopCalled = false;
+    let recursiveScrollCalled = false;
+    let hideRunCalled = false;
+    let timeoutCallback = null;
+    let afterScroll = false;
+
+    globalThis.window = {
+        scrollY: 100,
+        innerHeight: 800,
+        scrollTo: () => {}
+    };
+
+    globalThis.document = {
+        documentElement: {
+            scrollHeight: 2000
+        }
+    };
+
+    globalThis.setTimeout = (callback) => {
+        timeoutCallback = callback;
+        return 1;
+    };
+
+    TaskRunner.stopExecutionAndSettle = async () => {
+        stopCalled = true;
+    };
+    TaskRunner.getCardCounts = () => ({
+        total: afterScroll ? 12 : 10,
+        hidden: afterScroll ? 12 : 10,
+        visible: 0
+    });
+    TaskRunner.runHideOrShow = () => {
+        hideRunCalled = true;
+    };
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 2;
+
+    try {
+        await originalAttemptAutoScroll();
+        TaskRunner.attemptAutoScroll = async () => {
+            recursiveScrollCalled = true;
+        };
+        afterScroll = true;
+
+        await timeoutCallback();
+
+        assert.equal(stopCalled, false);
+        assert.equal(hideRunCalled, true);
+        assert.equal(recursiveScrollCalled, true);
+        assert.equal(State.autoScrollAttempts, 0);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
+        TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
+        TaskRunner.getCardCounts = originalGetCardCounts;
+        TaskRunner.runHideOrShow = originalRunHideOrShow;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
+    }
+});
+
 test('attemptAutoScroll resumes execution when new tasks are loaded', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
