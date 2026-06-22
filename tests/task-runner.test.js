@@ -870,6 +870,60 @@ test('executeBatch triggers attemptAutoScroll when queue is empty and autoAddOnS
     }
 });
 
+test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto add is enabled', () => {
+    const originalDocument = globalThis.document;
+    const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
+    const originalLogger = Utils.logger;
+
+    let autoScrollCalled = false;
+
+    globalThis.document = {
+        querySelectorAll: (selector) => {
+            if (selector.includes(':not([data-fab-hidden="true"])')) return [];
+            return [];
+        }
+    };
+    TaskRunner.attemptAutoScroll = async () => {
+        autoScrollCalled = true;
+    };
+    Utils.logger = () => {};
+    State.cardCountCache = {
+        total: 3,
+        hidden: 3,
+        visible: 0,
+        dirty: false,
+        documentRef: globalThis.document,
+        href: ''
+    };
+    State.hiddenThisPageCount = 3;
+    State.appStatus = 'NORMAL';
+    State.autoAddOnScroll = true;
+    State.isExecuting = true;
+    State.isAutoScrolling = false;
+
+    try {
+        TaskRunner.checkVisibilityAndRefresh();
+
+        assert.equal(autoScrollCalled, true);
+    } finally {
+        globalThis.document = originalDocument;
+        TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
+        Utils.logger = originalLogger;
+        State.autoAddOnScroll = false;
+        State.isExecuting = false;
+        State.isAutoScrolling = false;
+        State.hiddenThisPageCount = 0;
+        State.cardCountCache = {
+            total: 0,
+            hidden: 0,
+            visible: 0,
+            dirty: true,
+            documentRef: null,
+            href: ''
+        };
+    }
+});
+
 test('attemptAutoScroll stops execution when it reaches bottom', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;

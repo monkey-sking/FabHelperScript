@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260621-1545
+// @version      3.5.6-20260622-1340
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4334,6 +4334,9 @@
           }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
+          if (State.autoAddOnScroll && State.isExecuting) {
+            TaskRunner2.attemptAutoScroll();
+          }
         }
       }
     }, "checkVisibilityAndRefresh"),

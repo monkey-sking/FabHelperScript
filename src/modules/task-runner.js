@@ -1703,6 +1703,9 @@ export const TaskRunner = {
                 }
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
+                if (State.autoAddOnScroll && State.isExecuting) {
+                    TaskRunner.attemptAutoScroll();
+                }
             }
         }
     },
