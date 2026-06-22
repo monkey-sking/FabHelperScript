@@ -482,6 +482,7 @@ test('auto add schedules a retry when cards are not settled yet', async () => {
     const originalClearInterval = globalThis.clearInterval;
     const originalLogger = Utils.logger;
     const originalDateNow = Date.now;
+    const originalAutoAddOnScroll = State.autoAddOnScroll;
 
     const scheduled = [];
     const card = {
@@ -540,6 +541,7 @@ test('auto add schedules a retry when cards are not settled yet', async () => {
         globalThis.clearInterval = originalClearInterval;
         Date.now = originalDateNow;
         Utils.logger = originalLogger;
+        State.autoAddOnScroll = originalAutoAddOnScroll;
         State.isScanningTasks = false;
         State.autoAddRetryTimer = null;
     }
@@ -554,6 +556,7 @@ test('auto add queues mixed-license cards that show a free option', async () => 
     const originalDateNow = Date.now;
     const originalSaveTodo = Database.saveTodo;
     const originalStartExecution = TaskRunner.startExecution;
+    const originalAutoAddOnScroll = State.autoAddOnScroll;
 
     const card = {
         textContent: 'Vintage Chair 选择许可（从 免费 到 $6.99）',
@@ -612,6 +615,7 @@ test('auto add queues mixed-license cards that show a free option', async () => 
         Utils.logger = originalLogger;
         Database.saveTodo = originalSaveTodo;
         TaskRunner.startExecution = originalStartExecution;
+        State.autoAddOnScroll = originalAutoAddOnScroll;
         State.isScanningTasks = false;
         State.autoAddRetryTimer = null;
     }
@@ -899,6 +903,60 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto
     State.appStatus = 'NORMAL';
     State.autoAddOnScroll = true;
     State.isExecuting = true;
+    State.isAutoScrolling = false;
+
+    try {
+        TaskRunner.checkVisibilityAndRefresh();
+
+        assert.equal(autoScrollCalled, true);
+    } finally {
+        globalThis.document = originalDocument;
+        TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
+        Utils.logger = originalLogger;
+        State.autoAddOnScroll = false;
+        State.isExecuting = false;
+        State.isAutoScrolling = false;
+        State.hiddenThisPageCount = 0;
+        State.cardCountCache = {
+            total: 0,
+            hidden: 0,
+            visible: 0,
+            dirty: true,
+            documentRef: null,
+            href: ''
+        };
+    }
+});
+
+test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when execution is idle', () => {
+    const originalDocument = globalThis.document;
+    const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
+    const originalLogger = Utils.logger;
+
+    let autoScrollCalled = false;
+
+    globalThis.document = {
+        querySelectorAll: (selector) => {
+            if (selector.includes(':not([data-fab-hidden="true"])')) return [];
+            return [];
+        }
+    };
+    TaskRunner.attemptAutoScroll = async () => {
+        autoScrollCalled = true;
+    };
+    Utils.logger = () => {};
+    State.cardCountCache = {
+        total: 3,
+        hidden: 3,
+        visible: 0,
+        dirty: false,
+        documentRef: globalThis.document,
+        href: ''
+    };
+    State.hiddenThisPageCount = 3;
+    State.appStatus = 'NORMAL';
+    State.autoAddOnScroll = true;
+    State.isExecuting = false;
     State.isAutoScrolling = false;
 
     try {

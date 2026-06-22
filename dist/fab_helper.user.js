@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260622-1340
+// @version      3.5.6-20260622-1409
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4334,7 +4334,7 @@
           }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
-          if (State.autoAddOnScroll && State.isExecuting) {
+          if (State.autoAddOnScroll) {
             TaskRunner2.attemptAutoScroll();
           }
         }
@@ -5451,10 +5451,24 @@
         const meta = document.createElement("meta");
         meta.httpEquiv = "Content-Security-Policy";
         meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com; child-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com;";
-        if (document.documentElement) {
-          document.documentElement.appendChild(meta);
-        } else {
-          document.appendChild(meta);
+        const appendCspToHead = /* @__PURE__ */ __name(() => {
+          if (!document.head || meta.isConnected) return false;
+          document.head.appendChild(meta);
+          return true;
+        }, "appendCspToHead");
+        if (!appendCspToHead()) {
+          const onHeadReady = /* @__PURE__ */ __name(() => {
+            if (appendCspToHead()) {
+              document.removeEventListener("DOMContentLoaded", onHeadReady);
+            }
+          }, "onHeadReady");
+          document.addEventListener("DOMContentLoaded", onHeadReady, { once: true });
+          if (document.documentElement && typeof MutationObserver !== "undefined") {
+            const headObserver = new MutationObserver(() => {
+              if (appendCspToHead()) headObserver.disconnect();
+            });
+            headObserver.observe(document.documentElement, { childList: true });
+          }
         }
         const style = document.createElement("style");
         style.textContent = `

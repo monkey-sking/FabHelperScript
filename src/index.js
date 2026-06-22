@@ -15,10 +15,24 @@
             const meta = document.createElement('meta');
             meta.httpEquiv = 'Content-Security-Policy';
             meta.content = "img-src 'none'; media-src 'none'; font-src 'none'; frame-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com; child-src 'self' https://*.hcaptcha.com https://*.recaptcha.net https://*.google.com https://challenges.cloudflare.com;";
-            if (document.documentElement) {
-                document.documentElement.appendChild(meta);
-            } else {
-                document.appendChild(meta);
+            const appendCspToHead = () => {
+                if (!document.head || meta.isConnected) return false;
+                document.head.appendChild(meta);
+                return true;
+            };
+            if (!appendCspToHead()) {
+                const onHeadReady = () => {
+                    if (appendCspToHead()) {
+                        document.removeEventListener('DOMContentLoaded', onHeadReady);
+                    }
+                };
+                document.addEventListener('DOMContentLoaded', onHeadReady, { once: true });
+                if (document.documentElement && typeof MutationObserver !== 'undefined') {
+                    const headObserver = new MutationObserver(() => {
+                        if (appendCspToHead()) headObserver.disconnect();
+                    });
+                    headObserver.observe(document.documentElement, { childList: true });
+                }
             }
 
             // 2. Inject CSS to hide images and background images visually
