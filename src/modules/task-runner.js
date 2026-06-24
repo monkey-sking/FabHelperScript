@@ -2093,11 +2093,35 @@ export const TaskRunner = {
             }
         };
         const previousCardTotal = getCurrentCardTotal();
-        const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
+
+        // --- 关键修复：从页首开始时，隐藏卡片会使页面变矮，导致无法滚动触发无限加载 ---
+        // 临时将隐藏的卡片设为 visibility:hidden（占位但不可见），恢复页面真实高度后再滚动
+        const tempRestoredCards = [];
+        if (typeof document !== 'undefined') {
+            document.querySelectorAll('[data-fab-hidden="true"]').forEach(card => {
+                if (card.style && card.style.display === 'none') {
+                    card.style.display = '';
+                    card.style.visibility = 'hidden';
+                    tempRestoredCards.push(card);
+                }
+            });
+        }
+
+        const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
 
         if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
             window.scrollTo(0, previousScrollHeight);
+        }
+
+        // 滚动指令发出后，下一帧立即恢复 display:none，避免视觉闪烁
+        if (tempRestoredCards.length > 0) {
+            requestAnimationFrame(() => {
+                tempRestoredCards.forEach(card => {
+                    card.style.visibility = '';
+                    card.style.display = 'none';
+                });
+            });
         }
 
         // Wait for potential content loading and scanning
@@ -2128,8 +2152,10 @@ export const TaskRunner = {
             }
 
             // 2. Check if we reached bottom
+            // 注意：第二个条件加 previousScrollY > 0，防止页面因隐藏变矮时
+            // (previousScrollY 和 currentScrollY 均为 0) 被误判为已到达底部
             const reachedBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
-                                  (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY);
+                                  (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0);
 
             if (reachedBottom) {
                 Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));

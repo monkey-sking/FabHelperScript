@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260622-1434
+// @version      3.5.6-20260624-0925
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4636,10 +4636,28 @@
         }
       }, "getCurrentCardTotal");
       const previousCardTotal = getCurrentCardTotal();
-      const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+      const tempRestoredCards = [];
+      if (typeof document !== "undefined") {
+        document.querySelectorAll('[data-fab-hidden="true"]').forEach((card) => {
+          if (card.style && card.style.display === "none") {
+            card.style.display = "";
+            card.style.visibility = "hidden";
+            tempRestoredCards.push(card);
+          }
+        });
+      }
+      const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
         window.scrollTo(0, previousScrollHeight);
+      }
+      if (tempRestoredCards.length > 0) {
+        requestAnimationFrame(() => {
+          tempRestoredCards.forEach((card) => {
+            card.style.visibility = "";
+            card.style.display = "none";
+          });
+        });
       }
       setTimeout(async () => {
         State.isAutoScrolling = false;
@@ -4662,7 +4680,7 @@
           TaskRunner2.attemptAutoScroll();
           return;
         }
-        const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY;
+        const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0;
         if (reachedBottom) {
           Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
           await TaskRunner2.stopExecutionAndSettle();
