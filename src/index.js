@@ -1200,7 +1200,8 @@ async function main() {
             UI.update();
 
             if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-                setTimeout(() => TaskRunner.executeBatch(), 1000);
+                // 优化：当一个工作线程结束时，仅等待 200ms 就派发下一个，提高插槽利用效率（原为 1000ms）
+                setTimeout(() => TaskRunner.executeBatch(), 200);
             }
 
             if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {

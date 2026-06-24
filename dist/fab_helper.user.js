@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.6-20260624-0943
+// @version      3.5.6-20260624-0957
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3720,11 +3720,12 @@
                 logBuffer.push(`\u9875\u9762\u72B6\u6001: ${currentState}`);
                 lastState = currentState;
               }
-              if (currentState === "complete" && hasMainContent && (hasButtons || hasTitle)) {
+              const isReadyState = currentState === "interactive" || currentState === "complete";
+              if (isReadyState && hasMainContent && (hasButtons || hasTitle)) {
                 logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u901A\u8FC7: readyState=${currentState}, hasContent=true`);
                 return true;
               }
-              await new Promise((r) => setTimeout(r, 500));
+              await new Promise((r) => setTimeout(r, 100));
             }
             logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u8D85\u65F6 (${maxWait}ms)\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u64CD\u4F5C`);
             return false;
@@ -6484,7 +6485,7 @@
         }
         UI5.update();
         if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-          setTimeout(() => TaskRunner2.executeBatch(), 1e3);
+          setTimeout(() => TaskRunner2.executeBatch(), 200);
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
           if (State.autoAddOnScroll) {

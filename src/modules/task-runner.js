@@ -919,12 +919,15 @@ export const TaskRunner = {
                             lastState = currentState;
                         }
 
-                        if (currentState === 'complete' && hasMainContent && (hasButtons || hasTitle)) {
+                        // 优化：在 'interactive' 或 'complete' 状态下，如果关键 DOM 元素已渲染，即可认定为就绪
+                        const isReadyState = currentState === 'interactive' || currentState === 'complete';
+                        if (isReadyState && hasMainContent && (hasButtons || hasTitle)) {
                             logBuffer.push(`页面就绪检测通过: readyState=${currentState}, hasContent=true`);
                             return true;
                         }
 
-                        await new Promise(r => setTimeout(r, 500));
+                        // 优化：将轮询检测间隔从 500ms 缩短到 100ms
+                        await new Promise(r => setTimeout(r, 100));
                     }
 
                     logBuffer.push(`页面就绪检测超时 (${maxWait}ms)，继续尝试操作`);
