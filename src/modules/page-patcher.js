@@ -152,6 +152,9 @@ export const PagePatcher = {
             }
             Utils.logger('info', `${Utils.getText('log_sort_changed_position_cleared')} (${reason})`);
         }
+        // 同时复位 patch 标志，否则清除位置后新保存的 cursor 将永远无法再次注入
+        this._patchHasBeenApplied = false;
+        this._lastSeenCursor = null;
     },
 
     async handleSearchResponse(request) {

@@ -1,5 +1,19 @@
 # 更新日志
 
+## 3.5.7 (2026-07-01)
+
+### 功能修复
+
+- 修复 **记住浏览位置（瀑布流 cursor）在排序/搜索变更后永久失效** 问题：
+  - `clearSavedPosition` 在清除 cursor 时未复位 `_patchHasBeenApplied` 标志
+  - 导致用户切换排序或搜索词后，cursor 被清除，但 patch 标志仍为 `true`
+  - 后续重新浏览并保存的新位置，在刷新页面时永远无法被注入到请求中，位置恢复功能完全失效
+  - 修复方案：`clearSavedPosition` 末尾统一复位 `_patchHasBeenApplied = false` 和 `_lastSeenCursor = null`
+
+### 验证
+
+- 通过 `npm run build`
+
 ## 3.5.6 (2026-05-24)
 
 ### 功能修复
