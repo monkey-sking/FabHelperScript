@@ -2199,6 +2199,9 @@ export const TaskRunner = {
 
             if (reachedBottom) {
                 Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
+                if (UI && typeof UI.showToast === 'function') {
+                    UI.showToast(Utils.getText('toast_reached_bottom'), true);
+                }
                 await TaskRunner.stopExecutionAndSettle();
                 return;
             }
@@ -2208,6 +2211,9 @@ export const TaskRunner = {
 
             if (State.autoScrollAttempts >= maxScrollAttempts) {
                 Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
+                if (UI && typeof UI.showToast === 'function') {
+                    UI.showToast(Utils.getText('toast_reached_bottom'), true);
+                }
                 await TaskRunner.stopExecutionAndSettle();
                 return;
             }

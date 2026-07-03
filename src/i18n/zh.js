@@ -9,6 +9,9 @@ export const zh = {
     added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', visible: '可见',
     clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!',
     tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试',
+    toast_all_tasks_completed: '🎉 所有任务已处理完成！',
+    toast_reached_bottom: '🏁 已到达商品列表底部，全部商品扫描完毕！',
+    close: '关闭',
 
     // 应用标题和标签
     app_title: 'Fab Helper',

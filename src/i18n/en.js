@@ -7,6 +7,9 @@ export const en = {
     added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', visible: 'Visible',
     clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!',
     tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug',
+    toast_all_tasks_completed: '🎉 All tasks have been completed!',
+    toast_reached_bottom: '🏁 Reached the bottom of the list, all items scanned!',
+    close: 'Close',
 
     // 应用标题和标签
     app_title: 'Fab Helper',

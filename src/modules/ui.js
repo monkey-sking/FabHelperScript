@@ -308,6 +308,67 @@ export const UI = {
                 background: rgba(255,255,255,0.3);
                 border-radius: 4px;
             }
+            .fab-helper-toast-container {
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                z-index: 10000;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                pointer-events: none;
+            }
+            .fab-helper-toast {
+                pointer-events: auto;
+                background: var(--bg-color);
+                backdrop-filter: blur(15px) saturate(1.8);
+                -webkit-backdrop-filter: blur(15px) saturate(1.8);
+                border: 1px solid var(--border-color);
+                border-radius: var(--radius-m);
+                padding: 12px 16px;
+                color: var(--text-color-primary);
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                min-width: 250px;
+                max-width: 350px;
+                animation: fab-helper-slide-in 0.3s ease-out;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            }
+            .fab-helper-toast-content {
+                flex: 1;
+                font-size: 13px;
+                line-height: 1.4;
+            }
+            .fab-helper-toast-close {
+                cursor: pointer;
+                background: transparent;
+                border: none;
+                color: var(--text-color-secondary);
+                font-size: 18px;
+                font-weight: bold;
+                padding: 0 4px;
+                line-height: 1;
+                transition: color 0.2s;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .fab-helper-toast-close:hover {
+                color: var(--pink);
+            }
+            @keyframes fab-helper-slide-in {
+                from {
+                    transform: translateY(20px);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateY(0);
+                    opacity: 1;
+                }
+            }
         `;
 
         const styleSheet = document.createElement("style");
@@ -816,6 +877,55 @@ export const UI = {
             if (overlay) overlay.remove();
             card.style.opacity = '1';
         });
+    },
+
+    showToast: (message, isPersistent = false) => {
+        let container = document.getElementById('fab-helper-toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'fab-helper-toast-container';
+            container.className = 'fab-helper-toast-container';
+            document.body.appendChild(container);
+        }
+
+        // 避免重复弹出相同内容的长久提示
+        const existingToasts = container.querySelectorAll('.fab-helper-toast');
+        for (const existing of existingToasts) {
+            if (existing.querySelector('.fab-helper-toast-content')?.textContent === message) {
+                return; // 已经有相同的气泡了，不再重复弹
+            }
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'fab-helper-toast';
+        
+        const content = document.createElement('div');
+        content.className = 'fab-helper-toast-content';
+        content.textContent = message;
+        toast.appendChild(content);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'fab-helper-toast-close';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.title = Utils.getText('close') || 'Close';
+        closeBtn.onclick = () => {
+            toast.style.animation = 'none';
+            toast.style.transition = 'opacity 0.2s, transform 0.2s';
+            toast.style.opacity = '0';
+            toast.style.transform = 'translateY(10px)';
+            setTimeout(() => toast.remove(), 200);
+        };
+        toast.appendChild(closeBtn);
+
+        container.appendChild(toast);
+
+        if (!isPersistent) {
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    closeBtn.click();
+                }
+            }, 5000); // 5秒后自动关闭
+        }
     },
 
     switchTab: (tabName) => {

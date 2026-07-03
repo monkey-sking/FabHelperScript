@@ -1042,6 +1042,10 @@ async function main() {
         Database.saveExecutingState();
         await Database.saveTodo();
 
+        if (UI && typeof UI.showToast === 'function') {
+            UI.showToast(Utils.getText('toast_all_tasks_completed'), true);
+        }
+
         if (State.appStatus === 'RATE_LIMITED') {
             Utils.logger('info', '所有任务已完成，且处于限速状态，将刷新页面尝试恢复...');
             const randomDelay = 3000 + Math.random() * 5000;
