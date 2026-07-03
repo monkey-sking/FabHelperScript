@@ -2152,16 +2152,19 @@ export const TaskRunner = {
 
         if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
             window.scrollTo(0, previousScrollHeight);
+            // 额外派发原生滚动事件，确保那些监听 window.scroll 的脚本或组件被激活
+            window.dispatchEvent(new Event('scroll'));
         }
 
-        // 滚动指令发出后，下一帧立即恢复 display:none，避免视觉闪烁
+        // 滚动指令发出后，延迟 200ms 恢复 display:none，确保浏览器有足够时间完成 Layout
+        // 并让 IntersectionObserver 触发“离开视口 -> 进入视口”的位置变化判定
         if (tempRestoredCards.length > 0) {
-            requestAnimationFrame(() => {
+            setTimeout(() => {
                 tempRestoredCards.forEach(card => {
                     card.style.visibility = '';
                     card.style.display = 'none';
                 });
-            });
+            }, 200);
         }
 
         // Wait for potential content loading and scanning
