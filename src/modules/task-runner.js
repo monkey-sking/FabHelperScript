@@ -2138,7 +2138,7 @@ export const TaskRunner = {
         // --- 关键修复：从页首开始时，隐藏卡片会使页面变矮，导致无法滚动触发无限加载 ---
         // 临时将隐藏的卡片设为 visibility:hidden（占位但不可见），恢复页面真实高度后再滚动
         const tempRestoredCards = [];
-        if (typeof document !== 'undefined') {
+        if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
             document.querySelectorAll('[data-fab-hidden="true"]').forEach(card => {
                 if (card.style && card.style.display === 'none') {
                     card.style.display = '';
@@ -2153,7 +2153,9 @@ export const TaskRunner = {
         if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
             window.scrollTo(0, previousScrollHeight);
             // 额外派发原生滚动事件，确保那些监听 window.scroll 的脚本或组件被激活
-            window.dispatchEvent(new Event('scroll'));
+            if (typeof window.dispatchEvent === 'function') {
+                window.dispatchEvent(new Event('scroll'));
+            }
         }
 
         // 滚动指令发出后，延迟 200ms 恢复 display:none，确保浏览器有足够时间完成 Layout

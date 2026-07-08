@@ -89,6 +89,18 @@ export const PagePatcher = {
     checkUrlChanges() {
         try {
             const url = new URL(window.location.href);
+
+            // 仅在搜索/商品列表页面下做条件变化监测，防止跳入商品详情页时误清除已保存的滚动游标
+            const isSearchOrList = url.pathname.includes('/search') ||
+                url.pathname === '/' ||
+                url.pathname === '/zh-cn/' ||
+                url.pathname === '/en/' ||
+                url.pathname.includes('/sellers/');
+
+            if (!isSearchOrList) {
+                return;
+            }
+
             const currentSort = url.searchParams.get('sort_by');
             const currentQuery = url.searchParams.get('query') || url.searchParams.get('q'); // 兼容不同搜索参数
             const currentCategory = url.searchParams.get('category'); // 或 path 变化，这里主要看参数

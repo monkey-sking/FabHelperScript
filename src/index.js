@@ -1269,6 +1269,16 @@ async function main() {
         lastNetworkActivityTime = Date.now();
     };
 
+    // 当页面从后台/挂起状态重新可见时，重置不活动计时器，防止唤醒时立刻触发强制刷新
+    if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                lastNetworkActivityTime = Date.now();
+                Utils.logger('debug', '[Visibility] 页面重新可见，重置无网络活动计时。');
+            }
+        });
+    }
+
     setInterval(() => {
         if (State.appStatus === 'NORMAL' && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
             const inactiveTime = Date.now() - lastNetworkActivityTime;

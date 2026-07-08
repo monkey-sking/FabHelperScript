@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260703-1642
+// @version      3.5.7-20260708-1327
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2443,6 +2443,10 @@
     checkUrlChanges() {
       try {
         const url = new URL(window.location.href);
+        const isSearchOrList = url.pathname.includes("/search") || url.pathname === "/" || url.pathname === "/zh-cn/" || url.pathname === "/en/" || url.pathname.includes("/sellers/");
+        if (!isSearchOrList) {
+          return;
+        }
         const currentSort = url.searchParams.get("sort_by");
         const currentQuery = url.searchParams.get("query") || url.searchParams.get("q");
         const currentCategory = url.searchParams.get("category");
@@ -4678,7 +4682,7 @@
       const previousCardTotal = getCurrentCardTotal();
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
       const tempRestoredCards = [];
-      if (typeof document !== "undefined") {
+      if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
         document.querySelectorAll('[data-fab-hidden="true"]').forEach((card) => {
           if (card.style && card.style.display === "none") {
             card.style.display = "";
@@ -4690,7 +4694,9 @@
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
         window.scrollTo(0, previousScrollHeight);
-        window.dispatchEvent(new Event("scroll"));
+        if (typeof window.dispatchEvent === "function") {
+          window.dispatchEvent(new Event("scroll"));
+        }
       }
       if (tempRestoredCards.length > 0) {
         setTimeout(() => {
@@ -6655,6 +6661,14 @@
     window.recordNetworkActivity = function() {
       lastNetworkActivityTime = Date.now();
     };
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          lastNetworkActivityTime = Date.now();
+          Utils.logger("debug", "[Visibility] \u9875\u9762\u91CD\u65B0\u53EF\u89C1\uFF0C\u91CD\u7F6E\u65E0\u7F51\u7EDC\u6D3B\u52A8\u8BA1\u65F6\u3002");
+        }
+      });
+    }
     setInterval(() => {
       if (State.appStatus === "NORMAL" && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
         const inactiveTime = Date.now() - lastNetworkActivityTime;
