@@ -1016,7 +1016,8 @@ test('attemptAutoScroll stops execution when it reaches bottom', async () => {
     };
 
     State.db.todo = [];
-    State.autoScrollAttempts = 0;
+    State.autoScrollAttempts = 2; // Set to 2 so next attempt is the 3rd and triggers stop
+    State.isExecuting = true;
 
     try {
         await TaskRunner.attemptAutoScroll();
@@ -1038,6 +1039,7 @@ test('attemptAutoScroll stops execution when it reaches bottom', async () => {
         TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
+        State.isExecuting = false;
     }
 });
 
@@ -1073,6 +1075,7 @@ test('attemptAutoScroll stops execution after max attempts', async () => {
 
     State.db.todo = [];
     State.autoScrollAttempts = 2; // Next attempt will be the 3rd (max)
+    State.isExecuting = true;
 
     try {
         await TaskRunner.attemptAutoScroll();
@@ -1090,6 +1093,7 @@ test('attemptAutoScroll stops execution after max attempts', async () => {
         TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
+        State.isExecuting = false;
     }
 });
 
@@ -1139,6 +1143,7 @@ test('attemptAutoScroll keeps going when scrolling loads cards but no eligible t
 
     State.db.todo = [];
     State.autoScrollAttempts = 2;
+    State.isExecuting = true;
 
     try {
         await originalAttemptAutoScroll();
@@ -1167,6 +1172,7 @@ test('attemptAutoScroll keeps going when scrolling loads cards but no eligible t
         TaskRunner.runHideOrShow = originalRunHideOrShow;
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
+        State.isExecuting = false;
     }
 });
 
@@ -1202,13 +1208,14 @@ test('attemptAutoScroll resumes execution when new tasks are loaded', async () =
 
     State.db.todo = [];
     State.autoScrollAttempts = 1;
-    State.isExecuting = false;
+    State.isExecuting = true;
 
     try {
         await TaskRunner.attemptAutoScroll();
 
         // Simulate DOM observer adding a task and calling scanAndAddTasks
         State.db.todo = [{ uid: 'task-new', url: 'https://www.fab.com/listings/task-new', name: 'New Task' }];
+        State.isExecuting = false;
 
         await timeoutCallback();
 
@@ -1224,5 +1231,6 @@ test('attemptAutoScroll resumes execution when new tasks are loaded', async () =
         TaskRunner.startExecution = originalStartExecution;
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
+        State.isExecuting = false;
     }
 });

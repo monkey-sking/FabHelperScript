@@ -2202,24 +2202,24 @@ export const TaskRunner = {
             const reachedBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
                                   (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0);
 
-            if (reachedBottom) {
-                Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
-                if (UI && typeof UI.showToast === 'function') {
-                    UI.showToast(Utils.getText('toast_reached_bottom'), true);
-                }
-                await TaskRunner.stopExecutionAndSettle();
-                return;
-            }
-
             // 3. Increment attempts
             State.autoScrollAttempts++;
 
             if (State.autoScrollAttempts >= maxScrollAttempts) {
-                Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
+                if (reachedBottom) {
+                    Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
+                } else {
+                    Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
+                }
                 if (UI && typeof UI.showToast === 'function') {
                     UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
-                await TaskRunner.stopExecutionAndSettle();
+                if (State.isExecuting) {
+                    await TaskRunner.stopExecutionAndSettle();
+                } else {
+                    State.autoScrollAttempts = 0;
+                    State.isAutoScrolling = false;
+                }
                 return;
             }
 

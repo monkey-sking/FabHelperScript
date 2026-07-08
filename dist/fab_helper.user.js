@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260708-1327
+// @version      3.5.7-20260708-1338
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4728,21 +4728,22 @@
           return;
         }
         const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0;
-        if (reachedBottom) {
-          Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
-          if (UI4 && typeof UI4.showToast === "function") {
-            UI4.showToast(Utils.getText("toast_reached_bottom"), true);
-          }
-          await TaskRunner2.stopExecutionAndSettle();
-          return;
-        }
         State.autoScrollAttempts++;
         if (State.autoScrollAttempts >= maxScrollAttempts) {
-          Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
+          if (reachedBottom) {
+            Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
+          } else {
+            Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
+          }
           if (UI4 && typeof UI4.showToast === "function") {
             UI4.showToast(Utils.getText("toast_reached_bottom"), true);
           }
-          await TaskRunner2.stopExecutionAndSettle();
+          if (State.isExecuting) {
+            await TaskRunner2.stopExecutionAndSettle();
+          } else {
+            State.autoScrollAttempts = 0;
+            State.isAutoScrolling = false;
+          }
           return;
         }
         Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
