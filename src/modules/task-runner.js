@@ -1417,7 +1417,7 @@ export const TaskRunner = {
     },
 
     isCardHidden: (card) => {
-        return card?.getAttribute?.('data-fab-hidden') === 'true' || card?.style?.display === 'none';
+        return card?.getAttribute?.('data-fab-hidden') === 'true';
     },
 
     invalidateCardCountCache: () => {
@@ -1483,10 +1483,21 @@ export const TaskRunner = {
         const wasHidden = TaskRunner.isCardHidden(card);
 
         if (hidden) {
-            if (card.style) card.style.display = 'none';
+            // 使用 visibility:hidden 代替 display:none，保留卡片在文档流中占据的空间。
+            // 这样页面高度不变，无限滚动 sentinel 持续在视口外，IntersectionObserver
+            // 不会因页面缩短而停止触发，确保翻页可以持续进行。
+            if (card.style) {
+                card.style.visibility = 'hidden';
+                card.style.pointerEvents = 'none';
+                card.style.userSelect = 'none';
+            }
             card.setAttribute?.('data-fab-hidden', 'true');
         } else {
-            if (card.style) card.style.display = '';
+            if (card.style) {
+                card.style.visibility = '';
+                card.style.pointerEvents = '';
+                card.style.userSelect = '';
+            }
             card.removeAttribute?.('data-fab-hidden');
         }
 
@@ -2135,19 +2146,8 @@ export const TaskRunner = {
         const previousCardTotal = getCurrentCardTotal();
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
-        // --- 关键修复：从页首开始时，隐藏卡片会使页面变矮，导致无法滚动触发无限加载 ---
-        // 临时将隐藏的卡片设为 visibility:hidden（占位但不可见），恢复页面真实高度后再滚动
-        const tempRestoredCards = [];
-        if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
-            document.querySelectorAll('[data-fab-hidden="true"]').forEach(card => {
-                if (card.style && card.style.display === 'none') {
-                    card.style.display = '';
-                    card.style.visibility = 'hidden';
-                    tempRestoredCards.push(card);
-                }
-            });
-        }
-
+        // 卡片现在使用 visibility:hidden 而非 display:none，页面高度始终保持不变，
+        // 无限滚动 sentinel 持续在视口外，无需临时恢复卡片高度。
         const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
 
         if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
@@ -2158,16 +2158,6 @@ export const TaskRunner = {
             }
         }
 
-        // 滚动指令发出后，延迟 200ms 恢复 display:none，确保浏览器有足够时间完成 Layout
-        // 并让 IntersectionObserver 触发“离开视口 -> 进入视口”的位置变化判定
-        if (tempRestoredCards.length > 0) {
-            setTimeout(() => {
-                tempRestoredCards.forEach(card => {
-                    card.style.visibility = '';
-                    card.style.display = 'none';
-                });
-            }, 200);
-        }
 
         // Wait for potential content loading and scanning
         setTimeout(async () => {
