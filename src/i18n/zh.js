@@ -379,6 +379,7 @@ export const zh = {
     // 自动滚动挂起恢复
     log_auto_scroll_stuck_refresh: '⚠️ 自动滚动连续未发现新商品，且正在执行任务中，触发自动页面刷新以尝试恢复...',
     log_auto_scroll_stuck_96_refresh: '⚠️ 监测到特殊情景（已隐藏 {0} 个商品且无可见商品，翻页挂起），保存临时游标，正在刷新页面以尝试恢复...',
+    log_auto_scroll_stuck_recovery_failed: '已尝试过使用当前游标恢复但依然无新商品，判定为已到达列表末尾，停止刷新。',
 
     // 账号验证
     auth_error: '账号失效：未找到 CSRF token，请重新登录',

@@ -2215,25 +2215,29 @@ export const TaskRunner = {
                     UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
 
-                // 针对隐藏商品达到96个且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
+                // 针对隐藏商品达到96个以上且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
                 const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
                 const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-                if (State.isExecuting && counts.visible === 0 && counts.hidden === 96) {
+                if (counts.visible === 0 && counts.hidden >= 96) {
                     const recoveryCursor = State.savedCursor;
                     if (recoveryCursor) {
                         try {
-                            sessionStorage.setItem('fab_helper_recovery_cursor', recoveryCursor);
-                            Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_96_refresh', counts.hidden));
+                            const lastRecoveryCursor = sessionStorage.getItem('fab_helper_last_recovery_cursor');
+                            if (recoveryCursor !== lastRecoveryCursor) {
+                                sessionStorage.setItem('fab_helper_recovery_cursor', recoveryCursor);
+                                sessionStorage.setItem('fab_helper_last_recovery_cursor', recoveryCursor);
+                                Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_96_refresh', counts.hidden));
+                                setTimeout(() => {
+                                    if (typeof window !== 'undefined' && window.location) {
+                                        window.location.reload();
+                                    }
+                                }, 1500);
+                                return;
+                            } else {
+                                Utils.logger('info', Utils.getText('log_auto_scroll_stuck_recovery_failed'));
+                            }
                         } catch (e) { }
-                    } else {
-                        Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_refresh'));
                     }
-                    setTimeout(() => {
-                        if (typeof window !== 'undefined' && window.location) {
-                            window.location.reload();
-                        }
-                    }, 1500);
-                    return;
                 }
 
                 // 遇到普通滚动挂起场景时的自动刷新页面恢复（前提是启用了记住位置，且已有保存的位置以避免无限刷新循环）

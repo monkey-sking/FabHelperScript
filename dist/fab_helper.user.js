@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260708-1824
+// @version      3.5.7-20260709-1129
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -372,6 +372,7 @@
     // 自动滚动挂起恢复
     log_auto_scroll_stuck_refresh: "\u26A0\uFE0F Auto-scroll failed to find new items consecutively while executing tasks, triggering auto page refresh to recover...",
     log_auto_scroll_stuck_96_refresh: "\u26A0\uFE0F Detected special scenario ({0} items hidden and no visible items, pagination stuck), saving temporary cursor, refreshing page to recover...",
+    log_auto_scroll_stuck_recovery_failed: "Already tried to recover using the current cursor but still no new items. Assuming end of list has been reached, stopping refresh.",
     // 账号验证
     auth_error: "Session expired: CSRF token not found, please log in again",
     auth_error_alert: "Session expired: Please log in again before using the script",
@@ -728,6 +729,7 @@
     // 自动滚动挂起恢复
     log_auto_scroll_stuck_refresh: "\u26A0\uFE0F \u81EA\u52A8\u6EDA\u52A8\u8FDE\u7EED\u672A\u53D1\u73B0\u65B0\u5546\u54C1\uFF0C\u4E14\u6B63\u5728\u6267\u884C\u4EFB\u52A1\u4E2D\uFF0C\u89E6\u53D1\u81EA\u52A8\u9875\u9762\u5237\u65B0\u4EE5\u5C1D\u8BD5\u6062\u590D...",
     log_auto_scroll_stuck_96_refresh: "\u26A0\uFE0F \u76D1\u6D4B\u5230\u7279\u6B8A\u60C5\u666F\uFF08\u5DF2\u9690\u85CF {0} \u4E2A\u5546\u54C1\u4E14\u65E0\u53EF\u89C1\u5546\u54C1\uFF0C\u7FFB\u9875\u6302\u8D77\uFF09\uFF0C\u4FDD\u5B58\u4E34\u65F6\u6E38\u6807\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762\u4EE5\u5C1D\u8BD5\u6062\u590D...",
+    log_auto_scroll_stuck_recovery_failed: "\u5DF2\u5C1D\u8BD5\u8FC7\u4F7F\u7528\u5F53\u524D\u6E38\u6807\u6062\u590D\u4F46\u4F9D\u7136\u65E0\u65B0\u5546\u54C1\uFF0C\u5224\u5B9A\u4E3A\u5DF2\u5230\u8FBE\u5217\u8868\u672B\u5C3E\uFF0C\u505C\u6B62\u5237\u65B0\u3002",
     // 账号验证
     auth_error: "\u8D26\u53F7\u5931\u6548\uFF1A\u672A\u627E\u5230 CSRF token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55",
     auth_error_alert: "\u8D26\u53F7\u5931\u6548\uFF1A\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u4F7F\u7528\u811A\u672C",
@@ -4770,23 +4772,27 @@
           }
           const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
           const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-          if (State.isExecuting && counts.visible === 0 && counts.hidden === 96) {
+          if (counts.visible === 0 && counts.hidden >= 96) {
             const recoveryCursor = State.savedCursor;
             if (recoveryCursor) {
               try {
-                sessionStorage.setItem("fab_helper_recovery_cursor", recoveryCursor);
-                Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_96_refresh", counts.hidden));
+                const lastRecoveryCursor = sessionStorage.getItem("fab_helper_last_recovery_cursor");
+                if (recoveryCursor !== lastRecoveryCursor) {
+                  sessionStorage.setItem("fab_helper_recovery_cursor", recoveryCursor);
+                  sessionStorage.setItem("fab_helper_last_recovery_cursor", recoveryCursor);
+                  Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_96_refresh", counts.hidden));
+                  setTimeout(() => {
+                    if (typeof window !== "undefined" && window.location) {
+                      window.location.reload();
+                    }
+                  }, 1500);
+                  return;
+                } else {
+                  Utils.logger("info", Utils.getText("log_auto_scroll_stuck_recovery_failed"));
+                }
               } catch (e) {
               }
-            } else {
-              Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_refresh"));
             }
-            setTimeout(() => {
-              if (typeof window !== "undefined" && window.location) {
-                window.location.reload();
-              }
-            }, 1500);
-            return;
           }
           if (State.isExecuting && State.rememberScrollPosition && State.savedCursor) {
             Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_refresh"));

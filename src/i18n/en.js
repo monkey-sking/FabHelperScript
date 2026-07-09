@@ -377,6 +377,7 @@ export const en = {
     // 自动滚动挂起恢复
     log_auto_scroll_stuck_refresh: '⚠️ Auto-scroll failed to find new items consecutively while executing tasks, triggering auto page refresh to recover...',
     log_auto_scroll_stuck_96_refresh: '⚠️ Detected special scenario ({0} items hidden and no visible items, pagination stuck), saving temporary cursor, refreshing page to recover...',
+    log_auto_scroll_stuck_recovery_failed: 'Already tried to recover using the current cursor but still no new items. Assuming end of list has been reached, stopping refresh.',
 
     // 账号验证
     auth_error: 'Session expired: CSRF token not found, please log in again',
