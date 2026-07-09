@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260708-1338
+// @version      3.5.7-20260708-1824
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -369,6 +369,9 @@
     countdown_refresh_source: "Recovery probe failed",
     failed_list_empty: "Failed list is empty, no action needed.",
     opening_failed_items: "Opening {0} failed items...",
+    // 自动滚动挂起恢复
+    log_auto_scroll_stuck_refresh: "\u26A0\uFE0F Auto-scroll failed to find new items consecutively while executing tasks, triggering auto page refresh to recover...",
+    log_auto_scroll_stuck_96_refresh: "\u26A0\uFE0F Detected special scenario ({0} items hidden and no visible items, pagination stuck), saving temporary cursor, refreshing page to recover...",
     // 账号验证
     auth_error: "Session expired: CSRF token not found, please log in again",
     auth_error_alert: "Session expired: Please log in again before using the script",
@@ -722,6 +725,9 @@
     countdown_refresh_source: "\u6062\u590D\u63A2\u6D4B\u5931\u8D25",
     failed_list_empty: "\u5931\u8D25\u5217\u8868\u4E3A\u7A7A\uFF0C\u65E0\u9700\u64CD\u4F5C\u3002",
     opening_failed_items: "\u6B63\u5728\u6253\u5F00 {0} \u4E2A\u5931\u8D25\u9879\u76EE...",
+    // 自动滚动挂起恢复
+    log_auto_scroll_stuck_refresh: "\u26A0\uFE0F \u81EA\u52A8\u6EDA\u52A8\u8FDE\u7EED\u672A\u53D1\u73B0\u65B0\u5546\u54C1\uFF0C\u4E14\u6B63\u5728\u6267\u884C\u4EFB\u52A1\u4E2D\uFF0C\u89E6\u53D1\u81EA\u52A8\u9875\u9762\u5237\u65B0\u4EE5\u5C1D\u8BD5\u6062\u590D...",
+    log_auto_scroll_stuck_96_refresh: "\u26A0\uFE0F \u76D1\u6D4B\u5230\u7279\u6B8A\u60C5\u666F\uFF08\u5DF2\u9690\u85CF {0} \u4E2A\u5546\u54C1\u4E14\u65E0\u53EF\u89C1\u5546\u54C1\uFF0C\u7FFB\u9875\u6302\u8D77\uFF09\uFF0C\u4FDD\u5B58\u4E34\u65F6\u6E38\u6807\uFF0C\u6B63\u5728\u5237\u65B0\u9875\u9762\u4EE5\u5C1D\u8BD5\u6062\u590D...",
     // 账号验证
     auth_error: "\u8D26\u53F7\u5931\u6548\uFF1A\u672A\u627E\u5230 CSRF token\uFF0C\u8BF7\u91CD\u65B0\u767B\u5F55",
     auth_error_alert: "\u8D26\u53F7\u5931\u6548\uFF1A\u8BF7\u91CD\u65B0\u767B\u5F55\u540E\u518D\u4F7F\u7528\u811A\u672C",
@@ -904,6 +910,9 @@
     // --- 登录态 ---
     isAuthenticated: false,
     // 当前是否检测到有效的登录态（fab_csrftoken cookie）
+    // --- 恢复模式 ---
+    isRecoveryMode: false,
+    // 是否处于刷新恢复模式
     // --- End New State ---
     showAdvanced: false,
     activeWorkers: 0,
@@ -2405,6 +2414,15 @@
         } else {
           Utils.logger("debug", `[Cursor] Initialized. No saved cursor found.`);
         }
+        if (typeof sessionStorage !== "undefined") {
+          const recoveryCursor = sessionStorage.getItem("fab_helper_recovery_cursor");
+          if (recoveryCursor) {
+            State.savedCursor = recoveryCursor;
+            this._lastSeenCursor = recoveryCursor;
+            State.isRecoveryMode = true;
+            Utils.logger("info", `[Recovery] \u68C0\u6D4B\u5230\u4E34\u65F6\u6062\u590D\u6E38\u6807\uFF0C\u5C06\u5728\u521D\u6B21\u52A0\u8F7D\u65F6\u5F3A\u5236\u6062\u590D\u4F4D\u7F6E`);
+          }
+        }
       } catch (e) {
         Utils.logger("warn", "[Cursor] Failed to restore cursor state:", e);
       }
@@ -2529,9 +2547,12 @@
     shouldPatchUrl(url) {
       if (typeof url !== "string") return false;
       if (this._patchHasBeenApplied) return false;
-      if (!State.rememberScrollPosition || !State.savedCursor) return false;
       if (!url.includes("/i/listings/search")) return false;
       if (url.includes("aggregate_on=") || url.includes("count=0") || url.includes("in=wishlist")) return false;
+      if (State.isRecoveryMode && State.savedCursor) {
+        return true;
+      }
+      if (!State.rememberScrollPosition || !State.savedCursor) return false;
       Utils.logger("debug", Utils.getText("page_patcher_match") + ` URL: ${url}`);
       return true;
     },
@@ -2543,6 +2564,14 @@
         Utils.logger("debug", `[Cursor] ${Utils.getText("cursor_injecting")}: ${originalUrl}`);
         Utils.logger("debug", `[Cursor] ${Utils.getText("cursor_patched_url")}: ${modifiedUrl}`);
         this._patchHasBeenApplied = true;
+        if (State.isRecoveryMode) {
+          State.isRecoveryMode = false;
+          try {
+            sessionStorage.removeItem("fab_helper_recovery_cursor");
+            Utils.logger("debug", `[Recovery] \u4E34\u65F6\u6062\u590D\u6E38\u6807\u5DF2\u6D88\u8D39\u5E76\u6E05\u9664`);
+          } catch (e) {
+          }
+        }
         if (State.UI && State.UI.savedPositionDisplay) {
           const container = State.UI.savedPositionDisplay.parentElement;
           if (container) {
@@ -2676,6 +2705,7 @@
           this._isDebouncedSearch = true;
         } else {
           self.saveLatestCursorFromUrl(url);
+          this._isDebouncedSearch = false;
         }
         this._url = modifiedUrl;
         return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);
@@ -4737,6 +4767,35 @@
           }
           if (UI4 && typeof UI4.showToast === "function") {
             UI4.showToast(Utils.getText("toast_reached_bottom"), true);
+          }
+          const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
+          const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
+          if (State.isExecuting && counts.visible === 0 && counts.hidden === 96) {
+            const recoveryCursor = State.savedCursor;
+            if (recoveryCursor) {
+              try {
+                sessionStorage.setItem("fab_helper_recovery_cursor", recoveryCursor);
+                Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_96_refresh", counts.hidden));
+              } catch (e) {
+              }
+            } else {
+              Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_refresh"));
+            }
+            setTimeout(() => {
+              if (typeof window !== "undefined" && window.location) {
+                window.location.reload();
+              }
+            }, 1500);
+            return;
+          }
+          if (State.isExecuting && State.rememberScrollPosition && State.savedCursor) {
+            Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_refresh"));
+            setTimeout(() => {
+              if (typeof window !== "undefined" && window.location) {
+                window.location.reload();
+              }
+            }, 1500);
+            return;
           }
           if (State.isExecuting) {
             await TaskRunner2.stopExecutionAndSettle();

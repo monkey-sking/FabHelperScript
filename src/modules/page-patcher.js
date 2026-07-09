@@ -34,6 +34,17 @@ export const PagePatcher = {
             } else {
                 Utils.logger('debug', `[Cursor] Initialized. No saved cursor found.`);
             }
+
+            // 检测是否有临时恢复游标
+            if (typeof sessionStorage !== 'undefined') {
+                const recoveryCursor = sessionStorage.getItem('fab_helper_recovery_cursor');
+                if (recoveryCursor) {
+                    State.savedCursor = recoveryCursor;
+                    this._lastSeenCursor = recoveryCursor;
+                    State.isRecoveryMode = true;
+                    Utils.logger('info', `[Recovery] 检测到临时恢复游标，将在初次加载时强制恢复位置`);
+                }
+            }
         } catch (e) {
             Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
         }
@@ -205,9 +216,15 @@ export const PagePatcher = {
     shouldPatchUrl(url) {
         if (typeof url !== 'string') return false;
         if (this._patchHasBeenApplied) return false;
-        if (!State.rememberScrollPosition || !State.savedCursor) return false;
         if (!url.includes('/i/listings/search')) return false;
         if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
+
+        // 如果处于临时恢复模式，且有有效游标，强制放行进行 Patch
+        if (State.isRecoveryMode && State.savedCursor) {
+            return true;
+        }
+
+        if (!State.rememberScrollPosition || !State.savedCursor) return false;
         Utils.logger('debug', Utils.getText('page_patcher_match') + ` URL: ${url}`);
         return true;
     },
@@ -220,6 +237,15 @@ export const PagePatcher = {
             Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_injecting')}: ${originalUrl}`);
             Utils.logger('debug', `[Cursor] ${Utils.getText('cursor_patched_url')}: ${modifiedUrl}`);
             this._patchHasBeenApplied = true;
+
+            // 清理临时恢复模式状态，防止污染后续操作
+            if (State.isRecoveryMode) {
+                State.isRecoveryMode = false;
+                try {
+                    sessionStorage.removeItem('fab_helper_recovery_cursor');
+                    Utils.logger('debug', `[Recovery] 临时恢复游标已消费并清除`);
+                } catch (e) { }
+            }
 
             // UI 视觉反馈：高亮显示已恢复的位置
             if (State.UI && State.UI.savedPositionDisplay) {
@@ -383,6 +409,7 @@ export const PagePatcher = {
                 this._isDebouncedSearch = true;
             } else {
                 self.saveLatestCursorFromUrl(url);
+                this._isDebouncedSearch = false;
             }
             this._url = modifiedUrl;
             return originalXhrOpen.apply(this, [method, modifiedUrl, ...args]);

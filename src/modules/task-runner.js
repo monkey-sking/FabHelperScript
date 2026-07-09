@@ -2214,6 +2214,39 @@ export const TaskRunner = {
                 if (UI && typeof UI.showToast === 'function') {
                     UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
+
+                // 针对隐藏商品达到96个且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
+                const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
+                const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
+                if (State.isExecuting && counts.visible === 0 && counts.hidden === 96) {
+                    const recoveryCursor = State.savedCursor;
+                    if (recoveryCursor) {
+                        try {
+                            sessionStorage.setItem('fab_helper_recovery_cursor', recoveryCursor);
+                            Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_96_refresh', counts.hidden));
+                        } catch (e) { }
+                    } else {
+                        Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_refresh'));
+                    }
+                    setTimeout(() => {
+                        if (typeof window !== 'undefined' && window.location) {
+                            window.location.reload();
+                        }
+                    }, 1500);
+                    return;
+                }
+
+                // 遇到普通滚动挂起场景时的自动刷新页面恢复（前提是启用了记住位置，且已有保存的位置以避免无限刷新循环）
+                if (State.isExecuting && State.rememberScrollPosition && State.savedCursor) {
+                    Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_refresh'));
+                    setTimeout(() => {
+                        if (typeof window !== 'undefined' && window.location) {
+                            window.location.reload();
+                        }
+                    }, 1500);
+                    return;
+                }
+
                 if (State.isExecuting) {
                     await TaskRunner.stopExecutionAndSettle();
                 } else {

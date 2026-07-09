@@ -42,6 +42,8 @@ export const State = {
     isCheckingRateLimit: false, // 是否正在检查限速状态
     // --- 登录态 ---
     isAuthenticated: false, // 当前是否检测到有效的登录态（fab_csrftoken cookie）
+    // --- 恢复模式 ---
+    isRecoveryMode: false, // 是否处于刷新恢复模式
     // --- End New State ---
     showAdvanced: false,
     activeWorkers: 0,

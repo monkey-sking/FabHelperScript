@@ -374,6 +374,10 @@ export const en = {
     failed_list_empty: 'Failed list is empty, no action needed.',
     opening_failed_items: 'Opening {0} failed items...',
 
+    // 自动滚动挂起恢复
+    log_auto_scroll_stuck_refresh: '⚠️ Auto-scroll failed to find new items consecutively while executing tasks, triggering auto page refresh to recover...',
+    log_auto_scroll_stuck_96_refresh: '⚠️ Detected special scenario ({0} items hidden and no visible items, pagination stuck), saving temporary cursor, refreshing page to recover...',
+
     // 账号验证
     auth_error: 'Session expired: CSRF token not found, please log in again',
     auth_error_alert: 'Session expired: Please log in again before using the script',
