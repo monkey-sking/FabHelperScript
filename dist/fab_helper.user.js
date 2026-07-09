@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260709-1146
+// @version      3.5.7-20260709-1133
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4160,7 +4160,7 @@
       ].join("|");
     }, "getHideModeKey"),
     isCardHidden: /* @__PURE__ */ __name((card) => {
-      return card?.getAttribute?.("data-fab-hidden") === "true";
+      return card?.getAttribute?.("data-fab-hidden") === "true" || card?.style?.display === "none";
     }, "isCardHidden"),
     invalidateCardCountCache: /* @__PURE__ */ __name(() => {
       State.cardCountCache.dirty = true;
@@ -4214,18 +4214,10 @@
       if (!card) return;
       const wasHidden = TaskRunner2.isCardHidden(card);
       if (hidden) {
-        if (card.style) {
-          card.style.visibility = "hidden";
-          card.style.pointerEvents = "none";
-          card.style.userSelect = "none";
-        }
+        if (card.style) card.style.display = "none";
         card.setAttribute?.("data-fab-hidden", "true");
       } else {
-        if (card.style) {
-          card.style.visibility = "";
-          card.style.pointerEvents = "";
-          card.style.userSelect = "";
-        }
+        if (card.style) card.style.display = "";
         card.removeAttribute?.("data-fab-hidden");
       }
       const isHidden = TaskRunner2.isCardHidden(card);
@@ -4721,12 +4713,30 @@
       }, "getCurrentCardTotal");
       const previousCardTotal = getCurrentCardTotal();
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
+      const tempRestoredCards = [];
+      if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
+        document.querySelectorAll('[data-fab-hidden="true"]').forEach((card) => {
+          if (card.style && card.style.display === "none") {
+            card.style.display = "";
+            card.style.visibility = "hidden";
+            tempRestoredCards.push(card);
+          }
+        });
+      }
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
         window.scrollTo(0, previousScrollHeight);
         if (typeof window.dispatchEvent === "function") {
           window.dispatchEvent(new Event("scroll"));
         }
+      }
+      if (tempRestoredCards.length > 0) {
+        setTimeout(() => {
+          tempRestoredCards.forEach((card) => {
+            card.style.visibility = "";
+            card.style.display = "none";
+          });
+        }, 200);
       }
       setTimeout(async () => {
         State.isAutoScrolling = false;

@@ -330,7 +330,7 @@ test('hides paid cards that expose only starting price text', () => {
 
         assert.equal(card.attributes['data-fab-processed'], 'true');
         assert.equal(card.attributes['data-fab-hidden'], 'true');
-        assert.equal(card.style.visibility, 'hidden');
+        assert.equal(card.style.display, 'none');
     } finally {
         globalThis.document = originalDocument;
         if (originalWindow === undefined) {
@@ -675,7 +675,7 @@ test('hides auto-completed free cards even before the page text changes to saved
         TaskRunner.runHideOrShow();
 
         assert.equal(card.attributes['data-fab-processed'], 'true');
-        assert.equal(card.style.visibility, 'hidden');
+        assert.equal(card.style.display, 'none');
     } finally {
         globalThis.document = originalDocument;
         if (originalWindow === undefined) {
@@ -758,7 +758,7 @@ test('hidden cards are marked and reflected in the card count cache', () => {
 
         assert.equal(ownedCard.attributes['data-fab-processed'], 'true');
         assert.equal(ownedCard.attributes['data-fab-hidden'], 'true');
-        assert.equal(ownedCard.style.visibility, 'hidden');
+        assert.equal(ownedCard.style.display, 'none');
         assert.equal(visibleCard.attributes['data-fab-hidden'], undefined);
         assert.deepEqual(TaskRunner.getCardCounts(), {
             total: 2,
@@ -829,7 +829,7 @@ test('done records hide cards even when list card status text is missing', () =>
         TaskRunner.runHideOrShow();
 
         assert.equal(card.attributes['data-fab-processed'], 'true');
-        assert.equal(card.style.visibility, 'hidden');
+        assert.equal(card.style.display, 'none');
     } finally {
         globalThis.document = originalDocument;
         if (originalWindow === undefined) {
