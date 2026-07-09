@@ -2215,10 +2215,10 @@ export const TaskRunner = {
                     UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
 
-                // 针对隐藏商品达到96个以上且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
+                // 针对隐藏商品达到20个以上且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
                 const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
                 const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-                if (counts.visible === 0 && counts.hidden >= 96) {
+                if (counts.visible === 0 && counts.hidden >= 20) {
                     const recoveryCursor = State.savedCursor;
                     if (recoveryCursor) {
                         try {

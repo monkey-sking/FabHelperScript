@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260709-1129
+// @version      3.5.7-20260709-1133
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4772,7 +4772,7 @@
           }
           const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
           const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-          if (counts.visible === 0 && counts.hidden >= 96) {
+          if (counts.visible === 0 && counts.hidden >= 20) {
             const recoveryCursor = State.savedCursor;
             if (recoveryCursor) {
               try {
