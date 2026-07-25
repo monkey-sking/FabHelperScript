@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260725-1716
+// @version      3.5.7-20260709-1133
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1934,18 +1934,14 @@
         await GM_deleteValue(Config.DB_KEYS.TODO);
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
+        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
         await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
         await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
-        if (typeof PagePatcher !== "undefined" && PagePatcher.clearSavedPosition) {
-          await PagePatcher.clearSavedPosition("Reset all data");
-        } else {
-          await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-          State.savedCursor = null;
-        }
         State.db.todo = [];
         State.db.done = [];
         State.db.failed = [];
+        State.savedCursor = null;
         State.blockLargeResources = true;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI2) {
@@ -2401,24 +2397,16 @@
   };
 
   // src/modules/page-patcher.js
-  var PagePatcher2 = {
+  var PagePatcher = {
     _patchHasBeenApplied: false,
     _lastSeenCursor: null,
     _lastCheckedUrl: null,
     _bodyObserver: null,
-    _isCursorSaveLocked: false,
     // State for request debouncing
     _debounceXhrTimer: null,
     _pendingXhr: null,
     _lastDebounceXhrFire: 0,
-    lockCursorSaving() {
-      this._isCursorSaveLocked = true;
-    },
-    unlockCursorSaving() {
-      this._isCursorSaveLocked = false;
-    },
     async init() {
-      this._isCursorSaveLocked = false;
       try {
         const savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR);
         if (savedCursor) {
@@ -2520,19 +2508,16 @@
     },
     // 辅助方法：清除位置
     async clearSavedPosition(reason) {
-      this.lockCursorSaving();
-      State.savedCursor = null;
-      this._lastSeenCursor = null;
-      this._patchHasBeenApplied = false;
-      try {
+      if (State.savedCursor) {
+        State.savedCursor = null;
         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-      } catch (e) {
-        Utils.logger("warn", "[Cursor] Failed to delete stored cursor:", e);
+        if (State.UI && State.UI.savedPositionDisplay) {
+          State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
+        }
+        Utils.logger("info", `${Utils.getText("log_sort_changed_position_cleared")} (${reason})`);
       }
-      if (State.UI && State.UI.savedPositionDisplay) {
-        State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
-      }
-      Utils.logger("info", `${Utils.getText("log_sort_changed_position_cleared")} (${reason})`);
+      this._patchHasBeenApplied = false;
+      this._lastSeenCursor = null;
     },
     async handleSearchResponse(request) {
       if (request.status === 429) {
@@ -2563,8 +2548,7 @@
     },
     shouldPatchUrl(url) {
       if (typeof url !== "string") return false;
-      if (this._patchHasBeenApplied || this._isCursorSaveLocked) return false;
-      if (!State.rememberScrollPosition || !State.savedCursor) return false;
+      if (this._patchHasBeenApplied) return false;
       if (!url.includes("/i/listings/search")) return false;
       if (url.includes("aggregate_on=") || url.includes("count=0") || url.includes("in=wishlist")) return false;
       if (State.isRecoveryMode && State.savedCursor) {
@@ -2610,7 +2594,6 @@
     },
     saveLatestCursorFromUrl(url) {
       try {
-        if (!State.rememberScrollPosition || this._isCursorSaveLocked) return;
         if (typeof url !== "string" || !url.includes("/i/listings/search") || !url.includes("cursor=")) return;
         const urlObj = new URL(url, window.location.origin);
         const newCursor = urlObj.searchParams.get("cursor");
@@ -2720,15 +2703,9 @@
           modifiedUrl = self.getPatchedUrl(url);
           this._isDebouncedSearch = false;
         } else if (self.isDebounceableSearch(url)) {
-          if (typeof url === "string" && !url.includes("cursor=") && !State.savedCursor) {
-            self.unlockCursorSaving();
-          }
           self.saveLatestCursorFromUrl(url);
           this._isDebouncedSearch = true;
         } else {
-          if (typeof url === "string" && url.includes("/i/listings/search") && !url.includes("cursor=") && !State.savedCursor) {
-            self.unlockCursorSaving();
-          }
           self.saveLatestCursorFromUrl(url);
           this._isDebouncedSearch = false;
         }
@@ -2777,9 +2754,6 @@
             modifiedInput = new Request(modifiedUrl, input);
           }
         } else {
-          if (typeof url === "string" && url.includes("/i/listings/search") && !url.includes("cursor=") && !State.savedCursor) {
-            self.unlockCursorSaving();
-          }
           self.saveLatestCursorFromUrl(url);
         }
         return originalFetch.apply(this, [modifiedInput, init]).then((response) => {
@@ -3373,19 +3347,16 @@
       await Database.saveRememberPosPref();
       Utils.logger("info", Utils.getText("log_remember_pos_toggle", State.rememberScrollPosition ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
       if (!State.rememberScrollPosition) {
-        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.clearSavedPosition) {
-          await PagePatcher2.clearSavedPosition("Remember position disabled");
-        } else {
-          await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-          State.savedCursor = null;
-        }
-      } else {
-        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.unlockCursorSaving) {
-          PagePatcher2.unlockCursorSaving();
-        }
+        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        PagePatcher._patchHasBeenApplied = false;
+        PagePatcher._lastSeenCursor = null;
+        State.savedCursor = null;
+        Utils.logger("info", Utils.getText("log_position_cleared"));
         if (State.UI && State.UI.savedPositionDisplay) {
-          State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+          State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
         }
+      } else if (State.UI && State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
       }
       setTimeout(() => {
         State.isTogglingSetting = false;
@@ -3465,7 +3436,7 @@
           if (probeResponse.status === 429) {
             throw new Error("Probe failed with 429. Still rate-limited.");
           } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
-            await PagePatcher2.handleSearchResponse({ status: 200 });
+            await PagePatcher.handleSearchResponse({ status: 200 });
             Utils.logger("info", Utils.getText("log_connection_restored"));
             TaskRunner2.toggleExecution();
           } else {
@@ -5331,34 +5302,12 @@
         clearPositionBtn.style.opacity = "0.7";
       };
       clearPositionBtn.onclick = async () => {
-        if (State.savedCursor || typeof PagePatcher !== "undefined" && PagePatcher._lastSeenCursor) {
-          if (typeof PagePatcher !== "undefined" && PagePatcher.lockCursorSaving) {
-            PagePatcher.lockCursorSaving();
-          }
+        if (State.savedCursor) {
           if (confirm(Utils.getText("confirm_reset_position"))) {
-            if (typeof PagePatcher !== "undefined" && PagePatcher.clearSavedPosition) {
-              await PagePatcher.clearSavedPosition("User UI Reset");
-            } else {
-              State.savedCursor = null;
-              await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-              if (State.UI && State.UI.savedPositionDisplay) {
-                State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
-              }
-            }
-            try {
-              const url = new URL(window.location.href);
-              if (url.searchParams.has("cursor")) {
-                url.searchParams.delete("cursor");
-                window.location.href = url.toString();
-                return;
-              }
-            } catch (e) {
-            }
+            State.savedCursor = null;
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+            State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
             window.location.reload();
-          } else {
-            if (typeof PagePatcher !== "undefined" && PagePatcher.unlockCursorSaving) {
-              PagePatcher.unlockCursorSaving();
-            }
           }
         } else {
           Utils.logger("info", Utils.getText("no_position_to_reset"));
@@ -6673,7 +6622,7 @@
     }
     await RateLimitManager.initStatus();
     setupRequestInterceptors();
-    await PagePatcher2.init();
+    await PagePatcher.init();
     const tempTasks = await GM_getValue("temp_todo_tasks", null);
     if (tempTasks && tempTasks.length > 0) {
       Utils.logger("info", `\u4ECE429\u6062\u590D\uFF1A\u627E\u5230 ${tempTasks.length} \u4E2A\u4E34\u65F6\u4FDD\u5B58\u7684\u5F85\u529E\u4EFB\u52A1\uFF0C\u6B63\u5728\u6062\u590D...`);

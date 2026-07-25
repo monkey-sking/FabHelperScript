@@ -114,18 +114,14 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.TODO);
             await GM_deleteValue(Config.DB_KEYS.DONE);
             await GM_deleteValue(Config.DB_KEYS.FAILED);
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR); // 清除滚动记忆
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
-            if (typeof PagePatcher !== 'undefined' && PagePatcher.clearSavedPosition) {
-                await PagePatcher.clearSavedPosition('Reset all data');
-            } else {
-                await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                State.savedCursor = null;
-            }
             State.db.todo = [];
             State.db.done = [];
             State.db.failed = [];
+            State.savedCursor = null;
             State.blockLargeResources = true;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {
