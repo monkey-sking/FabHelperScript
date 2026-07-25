@@ -1234,3 +1234,38 @@ test('attemptAutoScroll resumes execution when new tasks are loaded', async () =
         State.isExecuting = false;
     }
 });
+
+test('PagePatcher cursor lock prevents cursor update while clearing/resetting position', async () => {
+    const deletedKeys = [];
+    const savedValues = [];
+    globalThis.GM_deleteValue = async (key) => { deletedKeys.push(key); };
+    globalThis.GM_setValue = async (key, val) => { savedValues.push({ key, val }); };
+
+    State.rememberScrollPosition = true;
+    State.savedCursor = 'old-cursor-123';
+    PagePatcher._lastSeenCursor = 'old-cursor-123';
+    PagePatcher.unlockCursorSaving();
+
+    // Lock cursor saving
+    PagePatcher.lockCursorSaving();
+    assert.equal(PagePatcher._isCursorSaveLocked, true);
+
+    // Save attempt while locked should do nothing
+    PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=new-cursor-456');
+    assert.equal(State.savedCursor, 'old-cursor-123');
+    assert.equal(savedValues.length, 0);
+
+    // clearSavedPosition should lock, clear State, and delete DB key
+    await PagePatcher.clearSavedPosition('test');
+    assert.equal(State.savedCursor, null);
+    assert.equal(PagePatcher._lastSeenCursor, null);
+    assert.ok(deletedKeys.includes(Config.DB_KEYS.LAST_CURSOR));
+
+    // Subsequent save attempt while locked should still do nothing
+    PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=new-cursor-789');
+    assert.equal(State.savedCursor, null);
+
+    // Reset lock for clean state
+    PagePatcher.unlockCursorSaving();
+});
+

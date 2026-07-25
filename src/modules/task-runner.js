@@ -409,16 +409,19 @@ export const TaskRunner = {
         Utils.logger('info', Utils.getText('log_remember_pos_toggle', State.rememberScrollPosition ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
 
         if (!State.rememberScrollPosition) {
-            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-            PagePatcher._patchHasBeenApplied = false;
-            PagePatcher._lastSeenCursor = null;
-            State.savedCursor = null;
-            Utils.logger('info', Utils.getText('log_position_cleared'));
-            if (State.UI && State.UI.savedPositionDisplay) {
-                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(null);
+            if (typeof PagePatcher !== 'undefined' && PagePatcher.clearSavedPosition) {
+                await PagePatcher.clearSavedPosition('Remember position disabled');
+            } else {
+                await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                State.savedCursor = null;
             }
-        } else if (State.UI && State.UI.savedPositionDisplay) {
-            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+        } else {
+            if (typeof PagePatcher !== 'undefined' && PagePatcher.unlockCursorSaving) {
+                PagePatcher.unlockCursorSaving();
+            }
+            if (State.UI && State.UI.savedPositionDisplay) {
+                State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+            }
         }
 
         setTimeout(() => { State.isTogglingSetting = false; }, 200);

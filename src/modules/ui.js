@@ -536,12 +536,35 @@ export const UI = {
         clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
         clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
         clearPositionBtn.onclick = async () => {
-            if (State.savedCursor) {
+            if (State.savedCursor || (typeof PagePatcher !== 'undefined' && PagePatcher._lastSeenCursor)) {
+                if (typeof PagePatcher !== 'undefined' && PagePatcher.lockCursorSaving) {
+                    PagePatcher.lockCursorSaving();
+                }
                 if (confirm(Utils.getText('confirm_reset_position'))) {
-                    State.savedCursor = null;
-                    await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                    State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+                    if (typeof PagePatcher !== 'undefined' && PagePatcher.clearSavedPosition) {
+                        await PagePatcher.clearSavedPosition('User UI Reset');
+                    } else {
+                        State.savedCursor = null;
+                        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                        if (State.UI && State.UI.savedPositionDisplay) {
+                            State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+                        }
+                    }
+
+                    try {
+                        const url = new URL(window.location.href);
+                        if (url.searchParams.has('cursor')) {
+                            url.searchParams.delete('cursor');
+                            window.location.href = url.toString();
+                            return;
+                        }
+                    } catch (e) { }
+
                     window.location.reload();
+                } else {
+                    if (typeof PagePatcher !== 'undefined' && PagePatcher.unlockCursorSaving) {
+                        PagePatcher.unlockCursorSaving();
+                    }
                 }
             } else {
                 Utils.logger('info', Utils.getText('no_position_to_reset'));
