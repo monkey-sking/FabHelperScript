@@ -3,11 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-<<<<<<< HEAD
-// @version      3.5.7-20260709-1133
-=======
-// @version      3.5.6-20260725-1713
->>>>>>> 574a44f (fix(cursor): fix position reset requiring multiple clicks due to in-flight requests and URL params)
+// @version      3.5.7-20260725-1716
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -2533,15 +2529,10 @@
       } catch (e) {
         Utils.logger("warn", "[Cursor] Failed to delete stored cursor:", e);
       }
-<<<<<<< HEAD
-      this._patchHasBeenApplied = false;
-      this._lastSeenCursor = null;
-=======
       if (State.UI && State.UI.savedPositionDisplay) {
         State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
       }
       Utils.logger("info", `${Utils.getText("log_sort_changed_position_cleared")} (${reason})`);
->>>>>>> 574a44f (fix(cursor): fix position reset requiring multiple clicks due to in-flight requests and URL params)
     },
     async handleSearchResponse(request) {
       if (request.status === 429) {
@@ -2572,12 +2563,8 @@
     },
     shouldPatchUrl(url) {
       if (typeof url !== "string") return false;
-<<<<<<< HEAD
-      if (this._patchHasBeenApplied) return false;
-=======
       if (this._patchHasBeenApplied || this._isCursorSaveLocked) return false;
       if (!State.rememberScrollPosition || !State.savedCursor) return false;
->>>>>>> 574a44f (fix(cursor): fix position reset requiring multiple clicks due to in-flight requests and URL params)
       if (!url.includes("/i/listings/search")) return false;
       if (url.includes("aggregate_on=") || url.includes("count=0") || url.includes("in=wishlist")) return false;
       if (State.isRecoveryMode && State.savedCursor) {
