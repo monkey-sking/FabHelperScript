@@ -1234,3 +1234,48 @@ test('attemptAutoScroll resumes execution when new tasks are loaded', async () =
         State.isExecuting = false;
     }
 });
+
+test('PagePatcher clearSavedPosition locks saving, clears sessionStorage, and deletes stored GM cursor', async () => {
+    const deletedKeys = [];
+    const savedValues = [];
+    globalThis.GM_deleteValue = async (key) => { deletedKeys.push(key); };
+    globalThis.GM_setValue = async (key, val) => { savedValues.push({ key, val }); };
+
+    const sessionStorageData = new Map();
+    sessionStorageData.set('fab_helper_recovery_cursor', 'recovery-123');
+    sessionStorageData.set('fab_helper_last_recovery_cursor', 'recovery-123');
+    globalThis.sessionStorage = {
+        getItem: (k) => sessionStorageData.get(k) || null,
+        setItem: (k, v) => sessionStorageData.set(k, v),
+        removeItem: (k) => sessionStorageData.delete(k)
+    };
+
+    State.rememberScrollPosition = true;
+    State.savedCursor = 'old-cursor-123';
+    PagePatcher._lastSeenCursor = 'old-cursor-123';
+    PagePatcher.unlockCursorSaving();
+
+    // Lock cursor saving
+    PagePatcher.lockCursorSaving();
+    assert.equal(PagePatcher._isCursorSaveLocked, true);
+
+    // Save attempt while locked should do nothing
+    PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=new-cursor-456');
+    assert.equal(State.savedCursor, 'old-cursor-123');
+    assert.equal(savedValues.length, 0);
+
+    // clearSavedPosition should lock, clear State, delete DB key, and clear sessionStorage
+    await PagePatcher.clearSavedPosition('test');
+    assert.equal(State.savedCursor, null);
+    assert.equal(PagePatcher._lastSeenCursor, null);
+    assert.ok(deletedKeys.includes(Config.DB_KEYS.LAST_CURSOR));
+    assert.equal(sessionStorageData.has('fab_helper_recovery_cursor'), false);
+    assert.equal(sessionStorageData.has('fab_helper_last_recovery_cursor'), false);
+
+    // Subsequent save attempt while locked should still do nothing
+    PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=new-cursor-789');
+    assert.equal(State.savedCursor, null);
+
+    // Reset lock for clean state
+    PagePatcher.unlockCursorSaving();
+});

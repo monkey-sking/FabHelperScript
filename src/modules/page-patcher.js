@@ -17,13 +17,23 @@ export const PagePatcher = {
     _lastSeenCursor: null,
     _lastCheckedUrl: null,
     _bodyObserver: null,
+    _isCursorSaveLocked: false,
 
     // State for request debouncing
     _debounceXhrTimer: null,
     _pendingXhr: null,
     _lastDebounceXhrFire: 0,
 
+    lockCursorSaving() {
+        this._isCursorSaveLocked = true;
+    },
+
+    unlockCursorSaving() {
+        this._isCursorSaveLocked = false;
+    },
+
     async init() {
+        this._isCursorSaveLocked = false;
         // 初始化时，从存储中加载上次保存的cursor
         try {
             const savedCursor = await GM_getValue(Config.DB_KEYS.LAST_CURSOR);
@@ -167,17 +177,26 @@ export const PagePatcher = {
 
     // 辅助方法：清除位置
     async clearSavedPosition(reason) {
-        if (State.savedCursor) {
-            State.savedCursor = null;
-            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-            if (State.UI && State.UI.savedPositionDisplay) {
-                State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
-            }
-            Utils.logger('info', `${Utils.getText('log_sort_changed_position_cleared')} (${reason})`);
-        }
-        // 同时复位 patch 标志，否则清除位置后新保存的 cursor 将永远无法再次注入
-        this._patchHasBeenApplied = false;
+        this.lockCursorSaving();
+        State.savedCursor = null;
         this._lastSeenCursor = null;
+        this._patchHasBeenApplied = false;
+        State.isRecoveryMode = false;
+        try {
+            await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        } catch (e) {
+            Utils.logger('warn', '[Cursor] Failed to delete stored cursor:', e);
+        }
+        if (typeof sessionStorage !== 'undefined') {
+            try {
+                sessionStorage.removeItem('fab_helper_recovery_cursor');
+                sessionStorage.removeItem('fab_helper_last_recovery_cursor');
+            } catch (e) { }
+        }
+        if (State.UI && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
+        }
+        Utils.logger('info', `${Utils.getText('log_sort_changed_position_cleared')} (${reason})`);
     },
 
     async handleSearchResponse(request) {
@@ -215,7 +234,7 @@ export const PagePatcher = {
 
     shouldPatchUrl(url) {
         if (typeof url !== 'string') return false;
-        if (this._patchHasBeenApplied) return false;
+        if (this._patchHasBeenApplied || this._isCursorSaveLocked) return false;
         if (!url.includes('/i/listings/search')) return false;
         if (url.includes('aggregate_on=') || url.includes('count=0') || url.includes('in=wishlist')) return false;
 
@@ -270,6 +289,7 @@ export const PagePatcher = {
 
     saveLatestCursorFromUrl(url) {
         try {
+            if (!State.rememberScrollPosition || this._isCursorSaveLocked) return;
             if (typeof url !== 'string' || !url.includes('/i/listings/search') || !url.includes('cursor=')) return;
             const urlObj = new URL(url, window.location.origin);
             const newCursor = urlObj.searchParams.get('cursor');
@@ -405,9 +425,15 @@ export const PagePatcher = {
                 modifiedUrl = self.getPatchedUrl(url);
                 this._isDebouncedSearch = false;
             } else if (self.isDebounceableSearch(url)) {
+                if (typeof url === 'string' && !url.includes('cursor=') && !State.savedCursor) {
+                    self.unlockCursorSaving();
+                }
                 self.saveLatestCursorFromUrl(url);
                 this._isDebouncedSearch = true;
             } else {
+                if (typeof url === 'string' && url.includes('/i/listings/search') && !url.includes('cursor=') && !State.savedCursor) {
+                    self.unlockCursorSaving();
+                }
                 self.saveLatestCursorFromUrl(url);
                 this._isDebouncedSearch = false;
             }
@@ -466,6 +492,9 @@ export const PagePatcher = {
                     modifiedInput = new Request(modifiedUrl, input);
                 }
             } else {
+                if (typeof url === 'string' && url.includes('/i/listings/search') && !url.includes('cursor=') && !State.savedCursor) {
+                    self.unlockCursorSaving();
+                }
                 self.saveLatestCursorFromUrl(url);
             }
 
