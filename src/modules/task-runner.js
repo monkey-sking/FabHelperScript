@@ -2173,20 +2173,54 @@ export const TaskRunner = {
             }
         }
 
-        // 滚动指令发出后，延迟 200ms 恢复 display:none，确保浏览器有足够时间完成 Layout
-        // 并让 IntersectionObserver 触发“离开视口 -> 进入视口”的位置变化判定
-        if (tempRestoredCards.length > 0) {
-            setTimeout(() => {
+        // Listen for listings search requests
+        const handleSearchRequest = () => {
+            // Once the network request to fetch the next batch has started,
+            // we can immediately hide the cards back to display:none!
+            // This restores the shrunken layout and keeps the scrollbar short.
+            if (tempRestoredCards.length > 0) {
                 tempRestoredCards.forEach(card => {
                     card.style.visibility = '';
                     card.style.display = 'none';
                 });
-            }, 200);
+                tempRestoredCards.length = 0; // Clear to prevent double execution
+            }
+        };
+
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            window.addEventListener('fab-helper-listings-request', handleSearchRequest);
+        }
+
+        // 滚动指令发出后，作为第一重兜底，如果在 800ms 内由于某种原因没有触发新的网络请求，
+        // 也会自动将卡片设为 display:none 恢复紧凑布局，防止网页出现长空底。
+        // 如果在 800ms 内触发了网络请求，它会立即通过事件触发上面的 listener 瞬间恢复。
+        if (tempRestoredCards.length > 0) {
+            setTimeout(() => {
+                if (tempRestoredCards.length > 0) {
+                    tempRestoredCards.forEach(card => {
+                        card.style.visibility = '';
+                        card.style.display = 'none';
+                    });
+                    tempRestoredCards.length = 0;
+                }
+            }, 800);
         }
 
         // Wait for potential content loading and scanning
         setTimeout(async () => {
             State.isAutoScrolling = false;
+
+            if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+                window.removeEventListener('fab-helper-listings-request', handleSearchRequest);
+            }
+
+            // 第二重兜底恢复
+            if (tempRestoredCards.length > 0) {
+                tempRestoredCards.forEach(card => {
+                    card.style.visibility = '';
+                    card.style.display = 'none';
+                });
+            }
 
             const currentScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
             const currentScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;

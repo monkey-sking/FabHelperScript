@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260807-2234
+// @version      3.5.7-20260807-2250
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4782,16 +4782,40 @@
           window.dispatchEvent(new Event("scroll"));
         }
       }
-      if (tempRestoredCards.length > 0) {
-        setTimeout(() => {
+      const handleSearchRequest = /* @__PURE__ */ __name(() => {
+        if (tempRestoredCards.length > 0) {
           tempRestoredCards.forEach((card) => {
             card.style.visibility = "";
             card.style.display = "none";
           });
-        }, 200);
+          tempRestoredCards.length = 0;
+        }
+      }, "handleSearchRequest");
+      if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+        window.addEventListener("fab-helper-listings-request", handleSearchRequest);
+      }
+      if (tempRestoredCards.length > 0) {
+        setTimeout(() => {
+          if (tempRestoredCards.length > 0) {
+            tempRestoredCards.forEach((card) => {
+              card.style.visibility = "";
+              card.style.display = "none";
+            });
+            tempRestoredCards.length = 0;
+          }
+        }, 800);
       }
       setTimeout(async () => {
         State.isAutoScrolling = false;
+        if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
+          window.removeEventListener("fab-helper-listings-request", handleSearchRequest);
+        }
+        if (tempRestoredCards.length > 0) {
+          tempRestoredCards.forEach((card) => {
+            card.style.visibility = "";
+            card.style.display = "none";
+          });
+        }
         const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
         const currentScrollY = typeof window !== "undefined" ? window.scrollY : 0;
         const newTodoCount = State.db.todo.length;
@@ -6208,6 +6232,12 @@
         return;
       }
       if (xhr._url && typeof xhr._url === "string") {
+        if (xhr._url.includes("/i/listings/search") && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+          try {
+            window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
+          } catch (e) {
+          }
+        }
         xhr.addEventListener("readystatechange", function() {
           if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
             try {
@@ -6353,6 +6383,12 @@
         }
       }
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
+        if (url.includes("/i/listings/search") && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
+          try {
+            window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
+          } catch (e) {
+          }
+        }
         if (window._apiWaitStatus) {
           window._apiWaitStatus.lastApiActivity = Date.now();
         }

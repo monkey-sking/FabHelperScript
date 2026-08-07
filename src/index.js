@@ -502,6 +502,12 @@ function setupXHRInterceptor() {
         }
 
         if (xhr._url && typeof xhr._url === 'string') {
+            if (xhr._url.includes('/i/listings/search') && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+                try {
+                    window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
+                } catch (e) {}
+            }
+
             xhr.addEventListener('readystatechange', function () {
                 if (xhr.readyState === 4 && xhr.status === 200 && xhr._doneUids && xhr._doneUids.length > 0) {
                     try {
@@ -673,6 +679,12 @@ function setupFetchInterceptor() {
         if (url.includes('/i/listings/search') ||
             url.includes('/i/users/me/listings-states') ||
             url.includes('/i/listings/prices-infos')) {
+
+            if (url.includes('/i/listings/search') && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
+                try {
+                    window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
+                } catch (e) {}
+            }
 
             if (window._apiWaitStatus) {
                 window._apiWaitStatus.lastApiActivity = Date.now();
