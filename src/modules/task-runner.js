@@ -1607,6 +1607,12 @@ export const TaskRunner = {
             }
 
             card.setAttribute('data-fab-processed', 'true');
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            const href = link ? (link.getAttribute?.('href') || link.href) : null;
+            if (href) {
+                const uid = href.split('/').pop().split('?')[0];
+                State.processedCardUids.add(uid);
+            }
 
             if (TaskRunner.shouldHideCard(card)) {
                 cardsToHide.push(card);
@@ -2148,6 +2154,8 @@ export const TaskRunner = {
             }
         };
         const previousCardTotal = getCurrentCardTotal();
+        const previousProcessedTotal = State.processedCardUids.size;
+        const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
         // --- 关键修复：从页首开始时，隐藏卡片会使页面变矮，导致无法滚动触发无限加载 ---
@@ -2163,14 +2171,21 @@ export const TaskRunner = {
             });
         }
 
-        const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
-
-        if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-            window.scrollTo(0, previousScrollHeight);
-            // 额外派发原生滚动事件，确保那些监听 window.scroll 的脚本或组件被激活
-            if (typeof window.dispatchEvent === 'function') {
-                window.dispatchEvent(new Event('scroll'));
+        const doScroll = () => {
+            const scrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
+            if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+                window.scrollTo(0, scrollHeight);
+                // 额外派发原生滚动事件，确保那些监听 window.scroll 的脚本或组件被激活
+                if (typeof window.dispatchEvent === 'function') {
+                    window.dispatchEvent(new Event('scroll'));
+                }
             }
+        };
+
+        if (tempRestoredCards.length > 0) {
+            setTimeout(doScroll, 50);
+        } else {
+            doScroll();
         }
 
         // Listen for listings search requests
@@ -2236,10 +2251,14 @@ export const TaskRunner = {
                 return;
             }
 
-            const newCardCount = currentCardTotal - previousCardTotal;
-            if (newCardCount > 0) {
+            const currentProcessedTotal = State.processedCardUids.size;
+            const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
+            const newDomCardCount = currentCardTotal - previousCardTotal;
+            
+            if (newProcessedCount > 0 || newDomCardCount > 0) {
                 State.autoScrollAttempts = 0;
-                Utils.logger('debug', Utils.getText('auto_scroll_cards_loaded', newCardCount));
+                const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount;
+                Utils.logger('debug', Utils.getText('auto_scroll_cards_loaded', loadedCount));
                 TaskRunner.runHideOrShow();
                 TaskRunner.attemptAutoScroll();
                 return;

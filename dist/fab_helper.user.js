@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260807-2250
+// @version      3.5.7-20260808-0721
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4355,6 +4355,12 @@
           return;
         }
         card.setAttribute("data-fab-processed", "true");
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const href = link ? link.getAttribute?.("href") || link.href : null;
+        if (href) {
+          const uid = href.split("/").pop().split("?")[0];
+          State.processedCardUids.add(uid);
+        }
         if (TaskRunner2.shouldHideCard(card)) {
           cardsToHide.push(card);
         }
@@ -4764,6 +4770,8 @@
         }
       }, "getCurrentCardTotal");
       const previousCardTotal = getCurrentCardTotal();
+      const previousProcessedTotal = State.processedCardUids.size;
+      const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
       const tempRestoredCards = [];
       if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
@@ -4775,12 +4783,19 @@
           }
         });
       }
-      const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
-      if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
-        window.scrollTo(0, previousScrollHeight);
-        if (typeof window.dispatchEvent === "function") {
-          window.dispatchEvent(new Event("scroll"));
+      const doScroll = /* @__PURE__ */ __name(() => {
+        const scrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
+        if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
+          window.scrollTo(0, scrollHeight);
+          if (typeof window.dispatchEvent === "function") {
+            window.dispatchEvent(new Event("scroll"));
+          }
         }
+      }, "doScroll");
+      if (tempRestoredCards.length > 0) {
+        setTimeout(doScroll, 50);
+      } else {
+        doScroll();
       }
       const handleSearchRequest = /* @__PURE__ */ __name(() => {
         if (tempRestoredCards.length > 0) {
@@ -4827,10 +4842,13 @@
           }
           return;
         }
-        const newCardCount = currentCardTotal - previousCardTotal;
-        if (newCardCount > 0) {
+        const currentProcessedTotal = State.processedCardUids.size;
+        const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
+        const newDomCardCount = currentCardTotal - previousCardTotal;
+        if (newProcessedCount > 0 || newDomCardCount > 0) {
           State.autoScrollAttempts = 0;
-          Utils.logger("debug", Utils.getText("auto_scroll_cards_loaded", newCardCount));
+          const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount;
+          Utils.logger("debug", Utils.getText("auto_scroll_cards_loaded", loadedCount));
           TaskRunner2.runHideOrShow();
           TaskRunner2.attemptAutoScroll();
           return;
