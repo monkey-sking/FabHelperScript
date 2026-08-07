@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260726-0553
+// @version      3.5.7-20260807-2234
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3168,11 +3168,13 @@
       return [...Config.SAVED_TEXT_SET].some((savedText) => cardText.includes(savedText));
     }, "hasSavedLibraryText"),
     hasPositivePriceText: /* @__PURE__ */ __name((text) => {
-      const priceMatches = Utils.normalizeWhitespace(text || "").match(/\$\s*(\d+(?:\.\d{2})?)/g);
+      const regex = /(?:[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD)\s*(\d+(?:[.,]\d{1,2})?)\b|\b(\d+(?:[.,]\d{1,2})?)\s*(?:[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD)/gi;
+      const priceMatches = Utils.normalizeWhitespace(text || "").match(regex);
       if (!priceMatches) return false;
       return priceMatches.some((priceStr) => {
-        const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ""));
-        return numValue > 0;
+        const cleanStr = priceStr.replace(/[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD/gi, "").trim().replace(",", ".");
+        const numValue = parseFloat(cleanStr);
+        return !isNaN(numValue) && numValue > 0;
       });
     }, "hasPositivePriceText"),
     isCardSettled: /* @__PURE__ */ __name((card) => {

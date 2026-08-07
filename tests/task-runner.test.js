@@ -344,6 +344,95 @@ test('hides paid cards that expose only starting price text', () => {
     }
 });
 
+test('hides paid cards with other currency price formats (e.g. ¥, €, GBP)', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    const cards = [
+        {
+            textContent: 'Orbitator 3D fbx gltf 起始价格 ¥14.00',
+            style: {},
+            attributes: {},
+            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/1' } : null,
+            querySelectorAll: () => [],
+            getAttribute(name) { return this.attributes[name] ?? null; },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; }
+        },
+        {
+            textContent: 'Model with price 19,99 €',
+            style: {},
+            attributes: {},
+            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/2' } : null,
+            querySelectorAll: () => [],
+            getAttribute(name) { return this.attributes[name] ?? null; },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; }
+        },
+        {
+            textContent: 'Item costing 50 GBP',
+            style: {},
+            attributes: {},
+            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/3' } : null,
+            querySelectorAll: () => [],
+            getAttribute(name) { return this.attributes[name] ?? null; },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; }
+        }
+    ];
+
+    globalThis.document = {
+        querySelectorAll: () => cards,
+        getElementById: () => null
+    };
+    globalThis.window = {
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        if (delay !== 2000) callback();
+        return 1;
+    };
+    Utils.logger = () => {};
+    State.hideSaved = false;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = true;
+    State.hideRetryTimer = null;
+    State.cardCountCache = {
+        total: 0,
+        hidden: 0,
+        visible: 0,
+        dirty: true,
+        documentRef: null,
+        href: ''
+    };
+    State.lastHideModeKey = '';
+    State.db.done = [];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        TaskRunner.runHideOrShow();
+
+        cards.forEach(card => {
+            assert.equal(card.attributes['data-fab-processed'], 'true');
+            assert.equal(card.attributes['data-fab-hidden'], 'true');
+            assert.equal(card.style.display, 'none');
+        });
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+    }
+});
+
 test('does not block owned cards when another card is still loading', () => {
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;

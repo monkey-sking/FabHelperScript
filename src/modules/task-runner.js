@@ -117,12 +117,18 @@ export const TaskRunner = {
     },
 
     hasPositivePriceText: (text) => {
-        const priceMatches = Utils.normalizeWhitespace(text || '').match(/\$\s*(\d+(?:\.\d{2})?)/g);
+        // Match common currency symbols/codes + numbers (with option dot/comma decimals)
+        const regex = /(?:[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD)\s*(\d+(?:[.,]\d{1,2})?)\b|\b(\d+(?:[.,]\d{1,2})?)\s*(?:[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD)/gi;
+        const priceMatches = Utils.normalizeWhitespace(text || '').match(regex);
         if (!priceMatches) return false;
 
         return priceMatches.some(priceStr => {
-            const numValue = parseFloat(priceStr.replace(/[^0-9.]/g, ''));
-            return numValue > 0.00;
+            const cleanStr = priceStr
+                .replace(/[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD/gi, '')
+                .trim()
+                .replace(',', '.');
+            const numValue = parseFloat(cleanStr);
+            return !isNaN(numValue) && numValue > 0.00;
         });
     },
 
