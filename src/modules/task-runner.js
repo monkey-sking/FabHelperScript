@@ -1542,13 +1542,22 @@ export const TaskRunner = {
             TaskRunner._runHideOrShowTimer = null;
         }
 
+        const container = (typeof document !== 'undefined' && typeof document.querySelector === 'function')
+            ? document.querySelector('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container')
+            : null;
+
         if (!TaskRunner.isHideModeActive()) {
+            if (container && container.style) container.style.minHeight = '';
             const allCards = document.querySelectorAll(Config.SELECTORS.card);
             TaskRunner.refreshCardCountCache(allCards);
             TaskRunner.resetHiddenCardState(allCards);
             State.lastHideModeKey = TaskRunner.getHideModeKey();
             if (UI) UI.update();
             return;
+        }
+
+        if (container && container.style) {
+            container.style.minHeight = '120vh';
         }
 
         const hideModeKey = TaskRunner.getHideModeKey();
@@ -2265,15 +2274,27 @@ export const TaskRunner = {
             }
 
             // 2. Check if we reached bottom
-            // 注意：第二个条件加 previousScrollY > 0，防止页面因隐藏变矮时
-            // (previousScrollY 和 currentScrollY 均为 0) 被误判为已到达底部
-            const reachedBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
-                                  (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0);
+            const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
+            const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
+            const isAllHidden = (counts.visible === 0 && counts.total > 0);
+
+            const reachedBottom = !isAllHidden && (
+                (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
+                (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0)
+            );
 
             // 3. Increment attempts
             State.autoScrollAttempts++;
 
             if (State.autoScrollAttempts >= maxScrollAttempts) {
+                // 如果当前只是卡片全部被隐藏（已拥有商品），不中断执行、不刷新网页，重置尝试计数继续向下翻页
+                if (isAllHidden && State.autoAddOnScroll) {
+                    State.autoScrollAttempts = 0;
+                    Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
+                    TaskRunner.attemptAutoScroll();
+                    return;
+                }
+
                 if (reachedBottom) {
                     Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
                 } else {
@@ -2281,42 +2302,6 @@ export const TaskRunner = {
                 }
                 if (UI && typeof UI.showToast === 'function') {
                     UI.showToast(Utils.getText('toast_reached_bottom'), true);
-                }
-
-                // 针对隐藏商品达到20个以上且无可见商品的特殊情景（翻页假死），使用sessionStorage保存临时游标，强制进行页面刷新恢复
-                const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
-                const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-                if (counts.visible === 0 && counts.hidden >= 20) {
-                    const recoveryCursor = State.savedCursor;
-                    if (recoveryCursor) {
-                        try {
-                            const lastRecoveryCursor = sessionStorage.getItem('fab_helper_last_recovery_cursor');
-                            if (recoveryCursor !== lastRecoveryCursor) {
-                                sessionStorage.setItem('fab_helper_recovery_cursor', recoveryCursor);
-                                sessionStorage.setItem('fab_helper_last_recovery_cursor', recoveryCursor);
-                                Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_96_refresh', counts.hidden));
-                                setTimeout(() => {
-                                    if (typeof window !== 'undefined' && window.location) {
-                                        window.location.reload();
-                                    }
-                                }, 1500);
-                                return;
-                            } else {
-                                Utils.logger('info', Utils.getText('log_auto_scroll_stuck_recovery_failed'));
-                            }
-                        } catch (e) { }
-                    }
-                }
-
-                // 遇到普通滚动挂起场景时的自动刷新页面恢复（前提是启用了记住位置，且已有保存的位置以避免无限刷新循环）
-                if (State.isExecuting && State.rememberScrollPosition && State.savedCursor) {
-                    Utils.logger('warn', Utils.getText('log_auto_scroll_stuck_refresh'));
-                    setTimeout(() => {
-                        if (typeof window !== 'undefined' && window.location) {
-                            window.location.reload();
-                        }
-                    }, 1500);
-                    return;
                 }
 
                 if (State.isExecuting) {

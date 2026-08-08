@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260808-0721
+// @version      3.5.7-20260808-1000
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4302,13 +4302,18 @@
         clearTimeout(TaskRunner2._runHideOrShowTimer);
         TaskRunner2._runHideOrShowTimer = null;
       }
+      const container = typeof document !== "undefined" && typeof document.querySelector === "function" ? document.querySelector("main, #main, .AssetGrid-root, .fabkit-responsive-grid-container") : null;
       if (!TaskRunner2.isHideModeActive()) {
+        if (container && container.style) container.style.minHeight = "";
         const allCards = document.querySelectorAll(Config.SELECTORS.card);
         TaskRunner2.refreshCardCountCache(allCards);
         TaskRunner2.resetHiddenCardState(allCards);
         State.lastHideModeKey = TaskRunner2.getHideModeKey();
         if (UI4) UI4.update();
         return;
+      }
+      if (container && container.style) {
+        container.style.minHeight = "120vh";
       }
       const hideModeKey = TaskRunner2.getHideModeKey();
       if (State.lastHideModeKey !== hideModeKey) {
@@ -4853,9 +4858,18 @@
           TaskRunner2.attemptAutoScroll();
           return;
         }
-        const reachedBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0;
+        const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
+        const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
+        const isAllHidden = counts.visible === 0 && counts.total > 0;
+        const reachedBottom = !isAllHidden && (typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0);
         State.autoScrollAttempts++;
         if (State.autoScrollAttempts >= maxScrollAttempts) {
+          if (isAllHidden && State.autoAddOnScroll) {
+            State.autoScrollAttempts = 0;
+            Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
+            TaskRunner2.attemptAutoScroll();
+            return;
+          }
           if (reachedBottom) {
             Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
           } else {
@@ -4863,39 +4877,6 @@
           }
           if (UI4 && typeof UI4.showToast === "function") {
             UI4.showToast(Utils.getText("toast_reached_bottom"), true);
-          }
-          const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
-          const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-          if (counts.visible === 0 && counts.hidden >= 20) {
-            const recoveryCursor = State.savedCursor;
-            if (recoveryCursor) {
-              try {
-                const lastRecoveryCursor = sessionStorage.getItem("fab_helper_last_recovery_cursor");
-                if (recoveryCursor !== lastRecoveryCursor) {
-                  sessionStorage.setItem("fab_helper_recovery_cursor", recoveryCursor);
-                  sessionStorage.setItem("fab_helper_last_recovery_cursor", recoveryCursor);
-                  Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_96_refresh", counts.hidden));
-                  setTimeout(() => {
-                    if (typeof window !== "undefined" && window.location) {
-                      window.location.reload();
-                    }
-                  }, 1500);
-                  return;
-                } else {
-                  Utils.logger("info", Utils.getText("log_auto_scroll_stuck_recovery_failed"));
-                }
-              } catch (e) {
-              }
-            }
-          }
-          if (State.isExecuting && State.rememberScrollPosition && State.savedCursor) {
-            Utils.logger("warn", Utils.getText("log_auto_scroll_stuck_refresh"));
-            setTimeout(() => {
-              if (typeof window !== "undefined" && window.location) {
-                window.location.reload();
-              }
-            }, 1500);
-            return;
           }
           if (State.isExecuting) {
             await TaskRunner2.stopExecutionAndSettle();
