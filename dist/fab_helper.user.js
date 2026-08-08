@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260808-1000
+// @version      3.5.7-20260808-1120
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -892,6 +892,10 @@
     // 新增：已处理过的卡片UID，防止重复添加
     savedCursor: null,
     // Holds the loaded cursor for hijacking
+    isEndOfSearchList: false,
+    // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
+    hasReachedBottomToastShown: false,
+    // 标记是否已展示到底Toast，防止重复弹出
     // --- NEW: State for 429 monitoring ---
     appStatus: "NORMAL",
     // 'NORMAL' or 'RATE_LIMITED'
@@ -4861,22 +4865,26 @@
         const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
         const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
         const isAllHidden = counts.visible === 0 && counts.total > 0;
-        const reachedBottom = !isAllHidden && (typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50 || currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0);
+        const isAtPhysicalBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50;
+        const reachedBottom = State.isEndOfSearchList || !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 5;
         State.autoScrollAttempts++;
-        if (State.autoScrollAttempts >= maxScrollAttempts) {
-          if (isAllHidden && State.autoAddOnScroll) {
+        if (State.autoAddOnScroll && !State.isEndOfSearchList) {
+          if (State.autoScrollAttempts >= 10) {
             State.autoScrollAttempts = 0;
-            Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
-            TaskRunner2.attemptAutoScroll();
-            return;
           }
-          if (reachedBottom) {
+          Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
+          TaskRunner2.attemptAutoScroll();
+          return;
+        }
+        if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
+          if (reachedBottom || State.isEndOfSearchList) {
             Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
+            if (UI4 && typeof UI4.showToast === "function" && !State.hasReachedBottomToastShown) {
+              State.hasReachedBottomToastShown = true;
+              UI4.showToast(Utils.getText("toast_reached_bottom"), true);
+            }
           } else {
             Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
-          }
-          if (UI4 && typeof UI4.showToast === "function") {
-            UI4.showToast(Utils.getText("toast_reached_bottom"), true);
           }
           if (State.isExecuting) {
             await TaskRunner2.stopExecutionAndSettle();
@@ -6269,6 +6277,11 @@
               const responseData = JSON.parse(xhr.responseText);
               if (xhr._url.includes("/i/listings/search") && responseData.results && Array.isArray(responseData.results)) {
                 DataCache.saveListings(responseData.results);
+                if (responseData.cursors) {
+                  State.isEndOfSearchList = responseData.cursors.next === null;
+                } else if (typeof responseData.next !== "undefined") {
+                  State.isEndOfSearchList = responseData.next === null;
+                }
               } else if (xhr._url.includes("/i/users/me/listings-states")) {
                 if (Array.isArray(responseData)) {
                   DataCache.saveOwnedStatus(responseData);
@@ -6398,6 +6411,11 @@
             clonedResponse.json().then((data) => {
               if (url.includes("/i/listings/search") && data.results && Array.isArray(data.results)) {
                 DataCache.saveListings(data.results);
+                if (data.cursors) {
+                  State.isEndOfSearchList = data.cursors.next === null;
+                } else if (typeof data.next !== "undefined") {
+                  State.isEndOfSearchList = data.next === null;
+                }
               } else if (url.includes("/i/users/me/listings-states")) {
                 if (Array.isArray(data)) {
                   DataCache.saveOwnedStatus(data);
@@ -6673,12 +6691,16 @@
   async function main() {
     window.pageLoadTime = Date.now();
     TaskRunner2.onQueueCompleted = async () => {
-      Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
       State.isExecuting = false;
       Database.saveExecutingState();
       await Database.saveTodo();
-      if (UI5 && typeof UI5.showToast === "function") {
-        UI5.showToast(Utils.getText("toast_all_tasks_completed"), true);
+      if (!State.autoAddOnScroll || State.isEndOfSearchList) {
+        Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
+        if (UI5 && typeof UI5.showToast === "function") {
+          UI5.showToast(Utils.getText("toast_all_tasks_completed"), true);
+        }
+      } else {
+        Utils.logger("debug", "\u5F53\u524D\u6279\u6B21\u4EFB\u52A1\u5DF2\u5904\u7406\u5B8C\u6BD5\uFF0C\u7EE7\u7EED\u6EDA\u52A8\u52A0\u8F7D\u4E0B\u4E00\u6279\u5546\u54C1...");
       }
       if (State.appStatus === "RATE_LIMITED") {
         Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\uFF0C\u4E14\u5904\u4E8E\u9650\u901F\u72B6\u6001\uFF0C\u5C06\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...");

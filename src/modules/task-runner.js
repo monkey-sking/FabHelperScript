@@ -2278,30 +2278,31 @@ export const TaskRunner = {
             const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
             const isAllHidden = (counts.visible === 0 && counts.total > 0);
 
-            const reachedBottom = !isAllHidden && (
-                (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50) ||
-                (currentScrollHeight === previousScrollHeight && currentScrollY === previousScrollY && previousScrollY > 0)
-            );
+            const isAtPhysicalBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50);
+            const reachedBottom = State.isEndOfSearchList || (!isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 5);
 
             // 3. Increment attempts
             State.autoScrollAttempts++;
 
-            if (State.autoScrollAttempts >= maxScrollAttempts) {
-                // 如果当前只是卡片全部被隐藏（已拥有商品），不中断执行、不刷新网页，重置尝试计数继续向下翻页
-                if (isAllHidden && State.autoAddOnScroll) {
+            // 如果开启了自动滚动加任务，且后端接口未确认到达末尾，继续保持自动滚动，绝不提前中断
+            if (State.autoAddOnScroll && !State.isEndOfSearchList) {
+                if (State.autoScrollAttempts >= 10) {
                     State.autoScrollAttempts = 0;
-                    Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
-                    TaskRunner.attemptAutoScroll();
-                    return;
                 }
+                Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
+                TaskRunner.attemptAutoScroll();
+                return;
+            }
 
-                if (reachedBottom) {
+            if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
+                if (reachedBottom || State.isEndOfSearchList) {
                     Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
+                    if (UI && typeof UI.showToast === 'function' && !State.hasReachedBottomToastShown) {
+                        State.hasReachedBottomToastShown = true;
+                        UI.showToast(Utils.getText('toast_reached_bottom'), true);
+                    }
                 } else {
                     Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
-                }
-                if (UI && typeof UI.showToast === 'function') {
-                    UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
 
                 if (State.isExecuting) {

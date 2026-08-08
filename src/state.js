@@ -29,6 +29,8 @@ export const State = {
     isScanningTasks: false, // 新增：标记是否正在扫描任务，防止重复扫描
     processedCardUids: new Set(), // 新增：已处理过的卡片UID，防止重复添加
     savedCursor: null, // Holds the loaded cursor for hijacking
+    isEndOfSearchList: false, // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
+    hasReachedBottomToastShown: false, // 标记是否已展示到底Toast，防止重复弹出
     // --- NEW: State for 429 monitoring ---
     appStatus: 'NORMAL', // 'NORMAL' or 'RATE_LIMITED'
     rateLimitStartTime: null,

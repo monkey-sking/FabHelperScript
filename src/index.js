@@ -545,6 +545,11 @@ function setupXHRInterceptor() {
 
                         if (xhr._url.includes('/i/listings/search') && responseData.results && Array.isArray(responseData.results)) {
                             DataCache.saveListings(responseData.results);
+                            if (responseData.cursors) {
+                                State.isEndOfSearchList = (responseData.cursors.next === null);
+                            } else if (typeof responseData.next !== 'undefined') {
+                                State.isEndOfSearchList = (responseData.next === null);
+                            }
                         } else if (xhr._url.includes('/i/users/me/listings-states')) {
                             if (Array.isArray(responseData)) {
                                 DataCache.saveOwnedStatus(responseData);
@@ -698,6 +703,11 @@ function setupFetchInterceptor() {
                     clonedResponse.json().then(data => {
                         if (url.includes('/i/listings/search') && data.results && Array.isArray(data.results)) {
                             DataCache.saveListings(data.results);
+                            if (data.cursors) {
+                                State.isEndOfSearchList = (data.cursors.next === null);
+                            } else if (typeof data.next !== 'undefined') {
+                                State.isEndOfSearchList = (data.next === null);
+                            }
                         } else if (url.includes('/i/users/me/listings-states')) {
                             if (Array.isArray(data)) {
                                 DataCache.saveOwnedStatus(data);
@@ -1049,13 +1059,18 @@ async function main() {
 
     // Register queue completion callback
     TaskRunner.onQueueCompleted = async () => {
-        Utils.logger('info', '所有任务已完成。');
         State.isExecuting = false;
         Database.saveExecutingState();
         await Database.saveTodo();
 
-        if (UI && typeof UI.showToast === 'function') {
-            UI.showToast(Utils.getText('toast_all_tasks_completed'), true);
+        // 仅在非自动滚动加任务模式，或者已经到达全站末尾时，才弹出“所有任务已处理完成”
+        if (!State.autoAddOnScroll || State.isEndOfSearchList) {
+            Utils.logger('info', '所有任务已完成。');
+            if (UI && typeof UI.showToast === 'function') {
+                UI.showToast(Utils.getText('toast_all_tasks_completed'), true);
+            }
+        } else {
+            Utils.logger('debug', '当前批次任务已处理完毕，继续滚动加载下一批商品...');
         }
 
         if (State.appStatus === 'RATE_LIMITED') {
