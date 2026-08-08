@@ -1132,8 +1132,97 @@ test('attemptAutoScroll stops execution when it reaches bottom', async () => {
     }
 });
 
-test('attemptAutoScroll stops execution after max attempts', async () => {
+test('attemptAutoScroll stops execution when autoAdd mode is physically stuck at bottom', async () => {
     const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
+    const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
+    const originalGetCardCounts = TaskRunner.getCardCounts;
+    const originalAddEventListener = globalThis.addEventListener;
+    const originalRemoveEventListener = globalThis.removeEventListener;
+
+    let stopCalled = false;
+    let recursiveCalled = false;
+    let timeoutCallback = null;
+    let listenerAdded = null;
+
+    globalThis.window = {
+        scrollY: 100,
+        innerHeight: 800,
+        scrollTo: () => {},
+        dispatchEvent: () => {},
+        addEventListener: (name, cb) => { listenerAdded = cb; },
+        removeEventListener: () => {}
+    };
+
+    globalThis.document = {
+        documentElement: {
+            scrollHeight: 900 // physically at bottom: 800 + 100 = 900 >= 900 - 50
+        },
+        querySelectorAll: () => []
+    };
+
+    globalThis.setTimeout = (callback) => {
+        timeoutCallback = callback;
+        return 1;
+    };
+
+    TaskRunner.stopExecutionAndSettle = async () => {
+        stopCalled = true;
+    };
+    TaskRunner.getCardCounts = () => ({
+        total: 10,
+        hidden: 0,
+        visible: 10 // not all hidden
+    });
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 2; // next attempt makes attempts >= 3 (physicallyStuck threshold)
+    State.isExecuting = true;
+    State.autoAddOnScroll = true;
+    State.isEndOfSearchList = false; // backend signal never fired -> must fall back to physical bottom
+
+    try {
+        await TaskRunner.attemptAutoScroll();
+        TaskRunner.attemptAutoScroll = async () => {
+            recursiveCalled = true;
+        };
+        await timeoutCallback();
+
+        assert.equal(stopCalled, true);
+        assert.equal(recursiveCalled, false);
+        assert.equal(State.hasReachedBottomToastShown, false);
+    } finally {
+        if (originalWindow === undefined) {
+            delete globalThis.window;
+        } else {
+            globalThis.window = originalWindow;
+        }
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
+        TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
+        TaskRunner.getCardCounts = originalGetCardCounts;
+        globalThis.addEventListener = originalAddEventListener;
+        globalThis.removeEventListener = originalRemoveEventListener;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
+        State.isExecuting = false;
+        State.autoAddOnScroll = false;
+        State.isEndOfSearchList = false;
+        State.hasReachedBottomToastShown = false;
+    }
+});
+
+test('hasPositivePriceText parses thousands separators and comma decimals correctly', () => {
+    assert.equal(TaskRunner.hasPositivePriceText('Discounted to $1,234.56'), true);
+    assert.equal(TaskRunner.hasPositivePriceText('Model with price 19,99 €'), true);
+    assert.equal(TaskRunner.hasPositivePriceText('Free (no price shown)'), false);
+    assert.equal(TaskRunner.hasPositivePriceText('Royalty Free asset'), false);
+});
+
+test('attemptAutoScroll stops execution after max attempts', async () => {    const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const originalSetTimeout = globalThis.setTimeout;
     const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;

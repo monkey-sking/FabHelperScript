@@ -504,6 +504,12 @@ function setupXHRInterceptor() {
         if (xhr._url && typeof xhr._url === 'string') {
             if (xhr._url.includes('/i/listings/search') && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
                 try {
+                    // 新搜索请求（不带 cursor=）时重置列表末尾与到底 toast 标记，
+                    // 避免上一列表残留 true 导致过早判底或 toast 失效
+                    if (!xhr._url.includes('cursor=')) {
+                        State.isEndOfSearchList = false;
+                        State.hasReachedBottomToastShown = false;
+                    }
                     window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
                 } catch (e) {}
             }
@@ -687,6 +693,12 @@ function setupFetchInterceptor() {
 
             if (url.includes('/i/listings/search') && typeof window !== 'undefined' && typeof CustomEvent !== 'undefined') {
                 try {
+                    // 新搜索请求（不带 cursor=）时重置列表末尾与到底 toast 标记，
+                    // 避免上一列表残留 true 导致过早判底或 toast 失效
+                    if (!url.includes('cursor=')) {
+                        State.isEndOfSearchList = false;
+                        State.hasReachedBottomToastShown = false;
+                    }
                     window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
                 } catch (e) {}
             }

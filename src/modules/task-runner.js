@@ -123,10 +123,17 @@ export const TaskRunner = {
         if (!priceMatches) return false;
 
         return priceMatches.some(priceStr => {
-            const cleanStr = priceStr
+            let cleanStr = priceStr
                 .replace(/[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD/gi, '')
-                .trim()
-                .replace(',', '.');
+                .trim();
+            // 处理千分位与小数逗号：1,234.56 -> 1234.56（千分位），19,99 -> 19.99（小数逗号）
+            if (cleanStr.includes(',')) {
+                if (/,\d{3}(?:\.|$)/.test(cleanStr)) {
+                    cleanStr = cleanStr.replace(/,/g, '');
+                } else {
+                    cleanStr = cleanStr.replace(',', '.');
+                }
+            }
             const numValue = parseFloat(cleanStr);
             return !isNaN(numValue) && numValue > 0.00;
         });
@@ -2279,23 +2286,27 @@ export const TaskRunner = {
             const isAllHidden = (counts.visible === 0 && counts.total > 0);
 
             const isAtPhysicalBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50);
-            const reachedBottom = State.isEndOfSearchList || (!isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 5);
 
             // 3. Increment attempts
             State.autoScrollAttempts++;
 
-            // 如果开启了自动滚动加任务，且后端接口未确认到达末尾，继续保持自动滚动，绝不提前中断
-            if (State.autoAddOnScroll && !State.isEndOfSearchList) {
-                if (State.autoScrollAttempts >= 10) {
-                    State.autoScrollAttempts = 0;
-                }
+            // 后端接口确认无下一页 → 真正到达全站末尾
+            const backendEnded = State.isEndOfSearchList;
+            // 物理触底且连续 3 轮无新内容 → 兜底判底
+            // (防止 isEndOfSearchList 因响应结构不符永远为 false 导致 autoAdd 模式无限滚动)
+            const physicallyStuck = !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 3;
+            const reachedBottom = backendEnded || physicallyStuck;
+
+            // 如果开启了自动滚动加任务，且后端接口未确认到达末尾、也未物理触底，
+            // 继续保持自动滚动，绝不提前中断；一旦确认到底则退出，防止死循环
+            if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
                 Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
                 TaskRunner.attemptAutoScroll();
                 return;
             }
 
             if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
-                if (reachedBottom || State.isEndOfSearchList) {
+                if (reachedBottom) {
                     Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
                     if (UI && typeof UI.showToast === 'function' && !State.hasReachedBottomToastShown) {
                         State.hasReachedBottomToastShown = true;

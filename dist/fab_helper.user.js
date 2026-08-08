@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260808-1120
+// @version      3.5.7-20260808-1303
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3176,7 +3176,14 @@
       const priceMatches = Utils.normalizeWhitespace(text || "").match(regex);
       if (!priceMatches) return false;
       return priceMatches.some((priceStr) => {
-        const cleanStr = priceStr.replace(/[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD/gi, "").trim().replace(",", ".");
+        let cleanStr = priceStr.replace(/[$¥€£₩₹₪₫₱฿]|USD|EUR|CNY|GBP|JPY|CAD|AUD/gi, "").trim();
+        if (cleanStr.includes(",")) {
+          if (/,\d{3}(?:\.|$)/.test(cleanStr)) {
+            cleanStr = cleanStr.replace(/,/g, "");
+          } else {
+            cleanStr = cleanStr.replace(",", ".");
+          }
+        }
         const numValue = parseFloat(cleanStr);
         return !isNaN(numValue) && numValue > 0;
       });
@@ -4866,18 +4873,17 @@
         const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
         const isAllHidden = counts.visible === 0 && counts.total > 0;
         const isAtPhysicalBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50;
-        const reachedBottom = State.isEndOfSearchList || !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 5;
         State.autoScrollAttempts++;
-        if (State.autoAddOnScroll && !State.isEndOfSearchList) {
-          if (State.autoScrollAttempts >= 10) {
-            State.autoScrollAttempts = 0;
-          }
+        const backendEnded = State.isEndOfSearchList;
+        const physicallyStuck = !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 3;
+        const reachedBottom = backendEnded || physicallyStuck;
+        if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
           Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
           TaskRunner2.attemptAutoScroll();
           return;
         }
         if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
-          if (reachedBottom || State.isEndOfSearchList) {
+          if (reachedBottom) {
             Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
             if (UI4 && typeof UI4.showToast === "function" && !State.hasReachedBottomToastShown) {
               State.hasReachedBottomToastShown = true;
@@ -6241,6 +6247,10 @@
       if (xhr._url && typeof xhr._url === "string") {
         if (xhr._url.includes("/i/listings/search") && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
           try {
+            if (!xhr._url.includes("cursor=")) {
+              State.isEndOfSearchList = false;
+              State.hasReachedBottomToastShown = false;
+            }
             window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
           } catch (e) {
           }
@@ -6397,6 +6407,10 @@
       if (url.includes("/i/listings/search") || url.includes("/i/users/me/listings-states") || url.includes("/i/listings/prices-infos")) {
         if (url.includes("/i/listings/search") && typeof window !== "undefined" && typeof CustomEvent !== "undefined") {
           try {
+            if (!url.includes("cursor=")) {
+              State.isEndOfSearchList = false;
+              State.hasReachedBottomToastShown = false;
+            }
             window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
           } catch (e) {
           }
