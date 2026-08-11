@@ -1,5 +1,17 @@
 # 更新日志
 
+## 3.5.12 (2026-08-11)
+
+### 功能修复（核心：自动滚动误判“已到页面底部”提前停）
+
+- 修复 **autoAdd 自动滚动「已到达页面底部，停止滚动」提前收尾**（对应用户报告的“自动滚动的问题 / 入库停在 N 或 120 不动”）：
+  - 根因：`attemptAutoScroll` 的 `doScroll()` 用 `window.scrollTo(0, scrollHeight)` **一把跳到页面底部**。Fab 的无限滚动加载器基于 IntersectionObserver 哨兵（或 scroll 位置监听），哨兵被一次性跳过、从未进入可视区，既不触发「进入可视区」回调，也不发起下一页请求，于是 `scrollHeight` 不增长、`newDomCardCount` 恒为 0；滚动连续 3 轮无新内容后 `physicallyStuck`（物理触底 + 3 轮无新内容）成立，脚本直接 `stopExecutionAndSettle` 并打印「已到达页面底部，停止滚动」。这正是用户日志里 `尝试 1/3 → 2/3 → 3/3 → 已到达页面底部` 的来源。
+  - 修复（三处）：
+    1. `doScroll()` 改为**分步下滚**（6 步 × 350ms，末段再贴底），让无限滚动哨兵从下方逐帧进入可视区，稳定触发下一页加载——回归测试已锁死「必须发出多次 `scrollBy`、而非一次跳到底」。
+    2. 「还有内容」的强信号改用 **`scrollHeight` 是否增长**：只要页面被无限滚动撑高 (`currentScrollHeight > previousScrollHeight + 2`)，即便卡片/已处理计数因其它因素暂时未变，也继续滚动，不再据此误判到底。
+    3. `reachedBottom` 收紧为 `(backendEnded && isAtPhysicalBottom) || physicallyStuck`——防止后端 `cursors.next` 误报 `null`（或响应结构不符被错误解析）时，在页面仍可滚动、商品未扫完的情况下提前收尾。
+  - 验证：新增回归测试 `attemptAutoScroll scrolls stepwise ...`；`node --test` **30/30** 通过；`dist` 重建 v3.5.12。
+
 ## 3.5.11 (2026-08-11)
 
 ### 功能修复（核心：自动入库跑到一半停转）

@@ -1542,3 +1542,55 @@ test('refreshes card count cache from real DOM after infinite-scroll loads new c
         State.hideSaved = false;
     }
 });
+
+test('attemptAutoScroll scrolls stepwise (not a single jump) to trigger the infinite-scroll loader', async () => {
+    // 回归测试：修复前 doScroll 用 scrollTo(0, scrollHeight) 一把跳到底，
+    // IntersectionObserver 哨兵被跳过、下一页请求不发出，scrollHeight 不增长，
+    // 脚本误判「已到列表末尾」提前停转（表现：入库卡在 N）。
+    // 修复后改为分步下滚，应发出多次 scrollBy（而非一次跳到底）。
+    const originalWindow = globalThis.window;
+    const originalDocument = globalThis.document;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
+
+    const scrollMoves = [];
+    let timeoutCallback = null;
+
+    globalThis.window = {
+        scrollY: 0,
+        innerHeight: 800,
+        scrollBy: (x, y) => { scrollMoves.push({ type: 'by', y }); },
+        scrollTo: (x, y) => { scrollMoves.push({ type: 'to', y }); },
+        dispatchEvent: () => {}
+    };
+    globalThis.document = {
+        documentElement: { scrollHeight: 5000 },
+        querySelectorAll: () => []
+    };
+    globalThis.setTimeout = (callback) => { timeoutCallback = callback; return 1; };
+    TaskRunner.stopExecutionAndSettle = async () => {};
+
+    State.db.todo = [];
+    State.autoScrollAttempts = 2; // 下一轮即第 3 次 → flush 后走终止分支，避免递归悬挂
+    State.isExecuting = true;
+    State.autoAddOnScroll = false;
+
+    try {
+        await TaskRunner.attemptAutoScroll();
+        assert.ok(timeoutCallback !== null, '3000ms 兜底定时器应已被调度');
+        const scrollByCount = scrollMoves.filter(m => m.type === 'by').length;
+        assert.ok(scrollByCount >= 2, `自动滚动应分步下滚（多次 scrollBy），实际 ${scrollByCount} 次`);
+        await timeoutCallback();
+    } finally {
+        if (originalWindow === undefined) delete globalThis.window;
+        else globalThis.window = originalWindow;
+        globalThis.document = originalDocument;
+        globalThis.setTimeout = originalSetTimeout;
+        TaskRunner.stopExecutionAndSettle = originalStopExecutionAndSettle;
+        State.autoScrollAttempts = 0;
+        State.isAutoScrolling = false;
+        State.isExecuting = false;
+        State.autoAddOnScroll = false;
+    }
+});
+

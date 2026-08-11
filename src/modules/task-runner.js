@@ -20,6 +20,13 @@ import { PagePatcher } from './page-patcher.js';
 import { InstanceManager } from './instance-manager.js';
 import { KeepAlive } from './keepalive.js';
 
+// 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
+// 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
+// 测试环境会 mock globalThis.setTimeout（只入队不执行），若分步延时引用它会导致
+// promise 永远挂起、attemptAutoScroll 无法推进。3000ms 的兜底等待仍用被 mock 的
+// globalThis.setTimeout（由测试手动 flush），不受影响。
+const _realSetTimeout = (typeof setTimeout === 'function') ? setTimeout : (cb) => { try { cb(); } catch (_e) {} };
+
 // Forward declaration for UI (will be set via dependency injection)
 let UI = null;
 let countdownRefresh = null;
@@ -2192,17 +2199,40 @@ export const TaskRunner = {
         // 那种反复切换 display 的做法会在滚动过程中造成布局抖动，并引发
         // “滚动条在中间就持续刷新入库/隐藏”的错觉。直接滚动到底部即可触发 Fab
         // 的无限滚动加载下一页。
-        const doScroll = () => {
-            const scrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
-            if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-                window.scrollTo(0, scrollHeight);
-                // 额外派发原生滚动事件，确保那些监听 window.scroll 的脚本或组件被激活
+        // 分步下滚触发加载：很多站点的无限滚动加载器基于 IntersectionObserver 哨兵，
+        // 若用 scrollTo 一把跳到页面底部，哨兵会被「跳过」（已落到可视区之上），
+        // 既不触发「进入可视区」回调，也不发起下一页请求，于是 scrollHeight 不增长、
+        // newDomCardCount 恒为 0，脚本误判「已到列表末尾」而提前停转（表现：入库卡在 N）。
+        // 分步向下滚动可让哨兵从下方逐帧进入可视区，稳定触发加载。
+        const doScroll = async () => {
+            if (typeof window === 'undefined') return;
+            const doc = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null;
+            const startHeight = doc ? doc.scrollHeight : 0;
+            const innerH = window.innerHeight || 800;
+            const steps = 6;
+            const remaining = startHeight - (window.scrollY || 0);
+            const stepSize = Math.max(300, Math.floor(remaining / steps));
+            for (let i = 1; i <= steps; i++) {
+                if (typeof window.scrollBy === 'function') {
+                    window.scrollBy(0, stepSize);
+                } else if (typeof window.scrollTo === 'function') {
+                    window.scrollTo(0, (window.scrollY || 0) + stepSize);
+                }
+                if (typeof window.dispatchEvent === 'function') {
+                    window.dispatchEvent(new Event('scroll'));
+                }
+                await new Promise(r => _realSetTimeout(r, 350));
+            }
+            // 末段再贴一次底，兜底触发基于 scroll 位置（scrollY+innerHeight>=scrollHeight-N）的加载器
+            if (typeof window.scrollTo === 'function' && doc) {
+                window.scrollTo(0, doc.scrollHeight);
                 if (typeof window.dispatchEvent === 'function') {
                     window.dispatchEvent(new Event('scroll'));
                 }
             }
+            return startHeight;
         };
-        doScroll();
+        await doScroll();
 
         // Wait for potential content loading and scanning
         setTimeout(async () => {
@@ -2225,10 +2255,14 @@ export const TaskRunner = {
             const currentProcessedTotal = State.processedCardUids.size;
             const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
             const newDomCardCount = currentCardTotal - previousCardTotal;
-            
-            if (newProcessedCount > 0 || newDomCardCount > 0) {
+            // scrollHeight 增长是「确有新内容」的最强信号：只要页面被无限滚动撑高，
+            // 就说明下一页已加载，应继续滚动。即便卡片计数/已处理计数因其它因素暂时未变，
+            // 也不应据此误判到底。
+            const scrollHeightGrew = currentScrollHeight > previousScrollHeight + 2;
+
+            if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew) {
                 State.autoScrollAttempts = 0;
-                const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount;
+                const loadedCount = newProcessedCount > 0 ? newProcessedCount : (newDomCardCount > 0 ? newDomCardCount : (currentScrollHeight - previousScrollHeight));
                 Utils.logger('debug', Utils.getText('auto_scroll_cards_loaded', loadedCount));
                 TaskRunner.runHideOrShow();
                 TaskRunner.attemptAutoScroll();
@@ -2252,7 +2286,10 @@ export const TaskRunner = {
             // 若仍要求“有可见卡片”才判底，physicallyStuck 会永远为 false，autoAdd 在 2246 行
             // 的 return 会跳过 maxScrollAttempts 兜底而无限滚动。判底只认“物理触底 + 无新内容”。
             const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
-            const reachedBottom = backendEnded || physicallyStuck;
+            // 后端确认无下一页时，必须同时满足「物理触底」才判底——
+            // 防止后端 cursors.next 误报 null（或响应结构不符被错误解析）时，
+            // 在页面仍可滚动、仍有商品未扫完的情况下提前收尾。
+            const reachedBottom = (backendEnded && isAtPhysicalBottom) || physicallyStuck;
 
             // 如果开启了自动滚动加任务，且后端接口未确认到达末尾、也未物理触底，
             // 继续保持自动滚动，绝不提前中断；一旦确认到底则退出，防止死循环

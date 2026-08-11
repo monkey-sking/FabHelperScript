@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.11-20260811-1745
+// @version      3.5.12-20260811-1858
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4799,16 +4799,34 @@
       const previousProcessedTotal = State.processedCardUids.size;
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
-      const doScroll = /* @__PURE__ */ __name(() => {
-        const scrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
-        if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
-          window.scrollTo(0, scrollHeight);
+      const doScroll = /* @__PURE__ */ __name(async () => {
+        if (typeof window === "undefined") return;
+        const doc = typeof document !== "undefined" && document.documentElement ? document.documentElement : null;
+        const startHeight = doc ? doc.scrollHeight : 0;
+        const innerH = window.innerHeight || 800;
+        const steps = 6;
+        const remaining = startHeight - (window.scrollY || 0);
+        const stepSize = Math.max(300, Math.floor(remaining / steps));
+        for (let i = 1; i <= steps; i++) {
+          if (typeof window.scrollBy === "function") {
+            window.scrollBy(0, stepSize);
+          } else if (typeof window.scrollTo === "function") {
+            window.scrollTo(0, (window.scrollY || 0) + stepSize);
+          }
+          if (typeof window.dispatchEvent === "function") {
+            window.dispatchEvent(new Event("scroll"));
+          }
+          await new Promise((r) => setTimeout(r, 350));
+        }
+        if (typeof window.scrollTo === "function" && doc) {
+          window.scrollTo(0, doc.scrollHeight);
           if (typeof window.dispatchEvent === "function") {
             window.dispatchEvent(new Event("scroll"));
           }
         }
+        return startHeight;
       }, "doScroll");
-      doScroll();
+      await doScroll();
       setTimeout(async () => {
         State.isAutoScrolling = false;
         const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
@@ -4825,9 +4843,10 @@
         const currentProcessedTotal = State.processedCardUids.size;
         const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
         const newDomCardCount = currentCardTotal - previousCardTotal;
-        if (newProcessedCount > 0 || newDomCardCount > 0) {
+        const scrollHeightGrew = currentScrollHeight > previousScrollHeight + 2;
+        if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew) {
           State.autoScrollAttempts = 0;
-          const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount;
+          const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount > 0 ? newDomCardCount : currentScrollHeight - previousScrollHeight;
           Utils.logger("debug", Utils.getText("auto_scroll_cards_loaded", loadedCount));
           TaskRunner2.runHideOrShow();
           TaskRunner2.attemptAutoScroll();
@@ -4839,7 +4858,7 @@
         State.autoScrollAttempts++;
         const backendEnded = State.isEndOfSearchList;
         const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
-        const reachedBottom = backendEnded || physicallyStuck;
+        const reachedBottom = backendEnded && isAtPhysicalBottom || physicallyStuck;
         if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
           Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
           TaskRunner2.attemptAutoScroll();
