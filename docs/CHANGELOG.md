@@ -1,5 +1,14 @@
 # 更新日志
 
+## 3.5.13 (2026-08-12)
+
+### 功能修复（核心：后端误报“无下一页”导致一滚到底就停）
+
+- 修复 **autoAdd 自动滚动「滚到页面最底部就停、中间/顶部正常」**（对应用户实测：滚动条在底部就不行了，在中间或最上面就没问题）：
+  - 根因：`attemptAutoScroll` 的 `doScroll()` 滚完会落在页面**最底部**，使 `isAtPhysicalBottom` 恒为 true；旧 `reachedBottom = (backendEnded && isAtPhysicalBottom) || physicallyStuck` 中 `backendEnded = State.isEndOfSearchList`（后端 `cursors.next === null` 快照）一旦被置 true（在「刚滚到底、下一页尚在加载中」时极易误判），一滚到底即 `reachedBottom === true` → 立刻停转。中间/顶部时 `isAtPhysicalBottom` 为 false，碰不到该条件，故正常。
+  - 修复：将 `backendEnded` **彻底移出停转判定**。`reachedBottom` 现在只等于 `physicallyStuck = isAtPhysicalBottom && autoScrollAttempts >= maxScrollAttempts`——即**唯一可靠的“到底”信号是「连续多次滚动后 DOM 不再增长」**。只要 `scrollHeight` 或卡片数还在长（见 `newProcessedCount / newDomCardCount / scrollHeightGrew`），就会重置 `autoScrollAttempts` 并继续；只有连续 `maxScrollAttempts` 轮无增长、且物理触底，才视为真到底。`isEndOfSearchList` 作为单次快照信号不再参与启停决策。
+  - 验证：`node --test` 30/30 通过；ego 真实 `is_free` 页注入 v3.5.13 并**强制 `isEndOfSearchList = true`（模拟后端误报）**，脚本 `attempts` 全程为 0、`已到达页面底部` 未提前出现，`total` 持续 `96→264` 穿越旧冻结点，证明后端假信号不再导致提前停转。
+
 ## 3.5.12 (2026-08-11)
 
 ### 功能修复（核心：自动滚动误判“已到页面底部”提前停）

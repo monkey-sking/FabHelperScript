@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.12-20260811-1858
+// @version      3.5.13-20260812-0453
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3098,6 +3098,12 @@
   };
 
   // src/modules/task-runner.js
+  var _realSetTimeout = typeof setTimeout === "function" ? setTimeout : (cb) => {
+    try {
+      cb();
+    } catch (_e) {
+    }
+  };
   var UI4 = null;
   var countdownRefresh2 = null;
   function setUIReference3(uiModule) {
@@ -4816,7 +4822,7 @@
           if (typeof window.dispatchEvent === "function") {
             window.dispatchEvent(new Event("scroll"));
           }
-          await new Promise((r) => setTimeout(r, 350));
+          await new Promise((r) => _realSetTimeout(r, 350));
         }
         if (typeof window.scrollTo === "function" && doc) {
           window.scrollTo(0, doc.scrollHeight);
@@ -4856,10 +4862,9 @@
         const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
         const isAtPhysicalBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50;
         State.autoScrollAttempts++;
-        const backendEnded = State.isEndOfSearchList;
-        const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
-        const reachedBottom = backendEnded && isAtPhysicalBottom || physicallyStuck;
-        if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
+        const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= maxScrollAttempts;
+        const reachedBottom = physicallyStuck;
+        if (State.autoAddOnScroll && !reachedBottom) {
           Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
           TaskRunner2.attemptAutoScroll();
           return;

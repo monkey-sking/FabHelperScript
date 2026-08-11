@@ -2278,22 +2278,17 @@ export const TaskRunner = {
             // 3. Increment attempts
             State.autoScrollAttempts++;
 
-            // 后端接口确认无下一页 → 真正到达全站末尾
-            const backendEnded = State.isEndOfSearchList;
-            // 物理触底且连续 3 轮无新内容 → 兜底判底
-            // (防止 isEndOfSearchList 因响应结构不符永远为 false 导致 autoAdd 模式无限滚动)
-            // 注意：不依赖 !isAllHidden —— 当用户隐藏全部可见卡片（如 hideSaved）时，
-            // 若仍要求“有可见卡片”才判底，physicallyStuck 会永远为 false，autoAdd 在 2246 行
-            // 的 return 会跳过 maxScrollAttempts 兜底而无限滚动。判底只认“物理触底 + 无新内容”。
-            const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
-            // 后端确认无下一页时，必须同时满足「物理触底」才判底——
-            // 防止后端 cursors.next 误报 null（或响应结构不符被错误解析）时，
-            // 在页面仍可滚动、仍有商品未扫完的情况下提前收尾。
-            const reachedBottom = (backendEnded && isAtPhysicalBottom) || physicallyStuck;
+            // 判底只认「连续多次滚动后 DOM 不再增长」——
+            // 不再把「后端 cursors.next (isEndOfSearchList)」当作独立停转信号。
+            // 该后端信号会在「刚滚到底、下一页尚在加载中」时被误判为 true，
+            // 导致一滚到页面底部就提前停转（用户实测：滚动条在底部就停，中间/顶部正常）。
+            // 只要 scrollHeight 或卡片数还在增长（见上方 newProcessedCount/newDomCardCount/scrollHeightGrew），
+            // 就会在 2263 行重置 attempts 并继续；只有连续 maxScrollAttempts 轮无增长、且物理触底，才视为真到底。
+            const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= maxScrollAttempts;
+            const reachedBottom = physicallyStuck;
 
-            // 如果开启了自动滚动加任务，且后端接口未确认到达末尾、也未物理触底，
-            // 继续保持自动滚动，绝不提前中断；一旦确认到底则退出，防止死循环
-            if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
+            // 只要尚未判底，就继续自动滚动，绝不提前中断；一旦确认到底则退出，防止死循环
+            if (State.autoAddOnScroll && !reachedBottom) {
                 Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
                 TaskRunner.attemptAutoScroll();
                 return;
