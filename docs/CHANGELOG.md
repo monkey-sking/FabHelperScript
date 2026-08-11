@@ -1,5 +1,14 @@
 # 更新日志
 
+## 3.5.11 (2026-08-11)
+
+### 功能修复（核心：自动入库跑到一半停转）
+
+- 修复 **autoAdd 自动翻页误判“已到列表末尾”而提前停转**（对应用户报告的“入库数量停在 N 不动 / 隐藏了就停在那里”）：
+  - 根因：`attemptAutoScroll` 用 `getCurrentCardTotal()` 检测“滚动后是否加载到新卡片”，但它调用 `getCardCounts()` **未传 `forceRefresh`**，命中缓存。在「纯自动入库模式」下唯一的缓存刷新入口 `runHideOrShow` 不会执行，于是滚动加载出新卡后缓存 `total` 仍停在首屏值，`newDomCardCount` 恒为 0；一旦某页没有新的免费商品可加入待办（`newTodoCount`、`newProcessedCount` 也都为 0），脚本即误判到底，连点 3 次 `autoScrollAttempts` 后提前 `stopExecutionAndSettle`，表现为「已入库数量停在 24 不动」。此前 v3.5.8/v3.5.9 针对“隐藏塌陷”的修复方向有偏差——用户的真实主链路是“入库自动跑”，卡点在自动翻页的新内容检测，而非隐藏方式。
+  - 修复：`getCurrentCardTotal()` 改为 `getCardCounts(true)` 强制按真实 DOM 重新计数，使 `newDomCardTotal` 能正确感知“确实加载了新卡片”，继续滚动，直到后端确认无下一页（`isEndOfSearchList`）或物理触底连续 3 轮无新内容才收尾。
+  - 验证：`node --test` 29/29 通过；`dist` 重建 v3.5.11。
+
 ## 3.5.10 (2026-08-11)
 
 ### 功能修复

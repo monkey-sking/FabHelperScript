@@ -2170,7 +2170,14 @@ export const TaskRunner = {
 
         const getCurrentCardTotal = () => {
             try {
-                return TaskRunner.getCardCounts().total;
+                // 关键修复：强制基于真实 DOM 重新计数。
+                // 旧逻辑不传 forceRefresh，命中了「纯自动入库模式」下缓存未被刷新的旧
+                // total —— runHideOrShow（唯一刷新 cardCountCache 的入口）在该模式下不执行，
+                // 于是滚动加载出新卡后缓存 total 仍停在首屏值，newDomCardCount 恒为 0。
+                // 一旦某页没有新的免费商品可加入待办，脚本便误判“已到列表末尾”而提前停转，
+                // 表现为「已入库数量停在 N 不动」。强制重算后可正确感知「确实加载了新卡片」，
+                // 继续滚动，直到后端确认无下一页（isEndOfSearchList）或物理触底 3 轮无新内容才收尾。
+                return TaskRunner.getCardCounts(true).total;
             } catch (_error) {
                 return 0;
             }
