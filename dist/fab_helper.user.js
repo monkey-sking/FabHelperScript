@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.7-20260808-1303
+// @version      3.5.8-20260811-1450
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4223,7 +4223,7 @@
       ].join("|");
     }, "getHideModeKey"),
     isCardHidden: /* @__PURE__ */ __name((card) => {
-      return card?.getAttribute?.("data-fab-hidden") === "true" || card?.style?.display === "none";
+      return card?.getAttribute?.("data-fab-hidden") === "true";
     }, "isCardHidden"),
     invalidateCardCountCache: /* @__PURE__ */ __name(() => {
       State.cardCountCache.dirty = true;
@@ -4277,10 +4277,18 @@
       if (!card) return;
       const wasHidden = TaskRunner2.isCardHidden(card);
       if (hidden) {
-        if (card.style) card.style.display = "none";
+        if (card.style) {
+          card.style.visibility = "hidden";
+          card.style.pointerEvents = "none";
+          card.style.userSelect = "none";
+        }
         card.setAttribute?.("data-fab-hidden", "true");
       } else {
-        if (card.style) card.style.display = "";
+        if (card.style) {
+          card.style.visibility = "";
+          card.style.pointerEvents = "";
+          card.style.userSelect = "";
+        }
         card.removeAttribute?.("data-fab-hidden");
       }
       const isHidden = TaskRunner2.isCardHidden(card);
@@ -4313,9 +4321,16 @@
         clearTimeout(TaskRunner2._runHideOrShowTimer);
         TaskRunner2._runHideOrShowTimer = null;
       }
-      const container = typeof document !== "undefined" && typeof document.querySelector === "function" ? document.querySelector("main, #main, .AssetGrid-root, .fabkit-responsive-grid-container") : null;
+      const containers = typeof document !== "undefined" && typeof document.querySelectorAll === "function" ? document.querySelectorAll("main, #main, .AssetGrid-root, .fabkit-responsive-grid-container") : [];
+      const setContainersMinHeight = /* @__PURE__ */ __name((value) => {
+        if (containers && containers.forEach) {
+          containers.forEach((el) => {
+            if (el && el.style) el.style.minHeight = value;
+          });
+        }
+      }, "setContainersMinHeight");
       if (!TaskRunner2.isHideModeActive()) {
-        if (container && container.style) container.style.minHeight = "";
+        setContainersMinHeight("");
         const allCards = document.querySelectorAll(Config.SELECTORS.card);
         TaskRunner2.refreshCardCountCache(allCards);
         TaskRunner2.resetHiddenCardState(allCards);
@@ -4323,9 +4338,7 @@
         if (UI4) UI4.update();
         return;
       }
-      if (container && container.style) {
-        container.style.minHeight = "120vh";
-      }
+      setContainersMinHeight("120vh");
       const hideModeKey = TaskRunner2.getHideModeKey();
       if (State.lastHideModeKey !== hideModeKey) {
         State.lastHideModeKey = hideModeKey;
@@ -4789,16 +4802,6 @@
       const previousProcessedTotal = State.processedCardUids.size;
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
-      const tempRestoredCards = [];
-      if (typeof document !== "undefined" && typeof document.querySelectorAll === "function") {
-        document.querySelectorAll('[data-fab-hidden="true"]').forEach((card) => {
-          if (card.style && card.style.display === "none") {
-            card.style.display = "";
-            card.style.visibility = "hidden";
-            tempRestoredCards.push(card);
-          }
-        });
-      }
       const doScroll = /* @__PURE__ */ __name(() => {
         const scrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
         if (typeof window !== "undefined" && typeof window.scrollTo === "function") {
@@ -4808,45 +4811,9 @@
           }
         }
       }, "doScroll");
-      if (tempRestoredCards.length > 0) {
-        setTimeout(doScroll, 50);
-      } else {
-        doScroll();
-      }
-      const handleSearchRequest = /* @__PURE__ */ __name(() => {
-        if (tempRestoredCards.length > 0) {
-          tempRestoredCards.forEach((card) => {
-            card.style.visibility = "";
-            card.style.display = "none";
-          });
-          tempRestoredCards.length = 0;
-        }
-      }, "handleSearchRequest");
-      if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
-        window.addEventListener("fab-helper-listings-request", handleSearchRequest);
-      }
-      if (tempRestoredCards.length > 0) {
-        setTimeout(() => {
-          if (tempRestoredCards.length > 0) {
-            tempRestoredCards.forEach((card) => {
-              card.style.visibility = "";
-              card.style.display = "none";
-            });
-            tempRestoredCards.length = 0;
-          }
-        }, 800);
-      }
+      doScroll();
       setTimeout(async () => {
         State.isAutoScrolling = false;
-        if (typeof window !== "undefined" && typeof window.removeEventListener === "function") {
-          window.removeEventListener("fab-helper-listings-request", handleSearchRequest);
-        }
-        if (tempRestoredCards.length > 0) {
-          tempRestoredCards.forEach((card) => {
-            card.style.visibility = "";
-            card.style.display = "none";
-          });
-        }
         const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
         const currentScrollY = typeof window !== "undefined" ? window.scrollY : 0;
         const newTodoCount = State.db.todo.length;

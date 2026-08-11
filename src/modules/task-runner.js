@@ -1439,7 +1439,9 @@ export const TaskRunner = {
     },
 
     isCardHidden: (card) => {
-        return card?.getAttribute?.('data-fab-hidden') === 'true' || card?.style?.display === 'none';
+        // 仅以属性判定：隐藏现已统一用 visibility:hidden（保留文档流占位），
+        // 不再依赖 display === 'none'，否则会与“已处理且已隐藏”的稳定态判断冲突。
+        return card?.getAttribute?.('data-fab-hidden') === 'true';
     },
 
     invalidateCardCountCache: () => {
@@ -1505,10 +1507,24 @@ export const TaskRunner = {
         const wasHidden = TaskRunner.isCardHidden(card);
 
         if (hidden) {
-            if (card.style) card.style.display = 'none';
+            // 关键修复：用 visibility:hidden 代替 display:none。
+            // display:none 会把卡片移出文档流，使页面高度塌陷，Fab 的无限滚动
+            // IntersectionObserver sentinel 被永远留在视口内，无法触发下一页请求，
+            // 表现为“隐藏若干商品后不再加载新商品 / 滚动条停在某处”。
+            // visibility:hidden 保留卡片占据的空间，页面高度不变，sentinel 持续
+            // 位于视口外，翻页照常进行；同时禁掉指针与选中，避免误触隐藏项。
+            if (card.style) {
+                card.style.visibility = 'hidden';
+                card.style.pointerEvents = 'none';
+                card.style.userSelect = 'none';
+            }
             card.setAttribute?.('data-fab-hidden', 'true');
         } else {
-            if (card.style) card.style.display = '';
+            if (card.style) {
+                card.style.visibility = '';
+                card.style.pointerEvents = '';
+                card.style.userSelect = '';
+            }
             card.removeAttribute?.('data-fab-hidden');
         }
 
@@ -1549,12 +1565,21 @@ export const TaskRunner = {
             TaskRunner._runHideOrShowTimer = null;
         }
 
-        const container = (typeof document !== 'undefined' && typeof document.querySelector === 'function')
-            ? document.querySelector('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container')
-            : null;
+        // 容器安全网：隐藏现已统一用 visibility:hidden（保留文档流占位），
+        // 页面高度天然不塌陷，无限滚动 sentinel 始终在视口外，翻页照常；
+        // 这里的 minHeight 仅是兜底（仅作用于最外层可滚动容器 main/#main 及常见网格根），
+        // 不再下探 Fab 嵌套的 flex/transform 包裹层，避免把不该撑高的内层顶高。
+        const containers = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
+            ? document.querySelectorAll('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container')
+            : [];
+        const setContainersMinHeight = (value) => {
+            if (containers && containers.forEach) {
+                containers.forEach(el => { if (el && el.style) el.style.minHeight = value; });
+            }
+        };
 
         if (!TaskRunner.isHideModeActive()) {
-            if (container && container.style) container.style.minHeight = '';
+            setContainersMinHeight('');
             const allCards = document.querySelectorAll(Config.SELECTORS.card);
             TaskRunner.refreshCardCountCache(allCards);
             TaskRunner.resetHiddenCardState(allCards);
@@ -1563,9 +1588,7 @@ export const TaskRunner = {
             return;
         }
 
-        if (container && container.style) {
-            container.style.minHeight = '120vh';
-        }
+        setContainersMinHeight('120vh');
 
         const hideModeKey = TaskRunner.getHideModeKey();
         if (State.lastHideModeKey !== hideModeKey) {
@@ -1711,27 +1734,6 @@ export const TaskRunner = {
             TaskRunner.checkVisibilityAndRefresh();
         }
         return;
-/*
-        if (false) {
-            const visibleCards = Array.from(cards).filter(card => {
-                // 已处理且已隐藏→状态稳定，跳过重分类（这是最大的性能痑点）
-                if (card.getAttribute('data-fab-processed') === 'true' && card.style.display === 'none') return false;
-                if (State.hideSaved && TaskRunner.isCardFinished(card)) return false;
-                if (State.hideDiscountedPaid && TaskRunner.isDiscountedPaidCard(card)) return false;
-                if (State.hidePaid && !TaskRunner.isFreeCard(card)) return false;
-                return true;
-            });
-            visibleCards.forEach(card => { card.style.display = ''; });
-
-            if (cardsToHide.length === 0) {
-                if (UI) UI.update();
-                TaskRunner.checkVisibilityAndRefresh();
-            }
-        } else {
-            cards.forEach(card => { card.style.display = ''; });
-            if (UI) UI.update();
-        }
-*/
     },
 
     checkVisibilityAndRefresh: () => {
@@ -1751,7 +1753,7 @@ export const TaskRunner = {
             return;
         }
 
-        // 只用 style.display 判断，避免 getComputedStyle 对每张卡片触发强制 reflow
+        // 仅以 data-fab-hidden 属性判定可见性，避免 getComputedStyle 对每张卡片触发强制 reflow
         const { visible: visibleCards } = TaskRunner.getCardCounts();
 
         if (State.debugMode) {
@@ -2174,19 +2176,11 @@ export const TaskRunner = {
         const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
-        // --- 关键修复：从页首开始时，隐藏卡片会使页面变矮，导致无法滚动触发无限加载 ---
-        // 临时将隐藏的卡片设为 visibility:hidden（占位但不可见），恢复页面真实高度后再滚动
-        const tempRestoredCards = [];
-        if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
-            document.querySelectorAll('[data-fab-hidden="true"]').forEach(card => {
-                if (card.style && card.style.display === 'none') {
-                    card.style.display = '';
-                    card.style.visibility = 'hidden';
-                    tempRestoredCards.push(card);
-                }
-            });
-        }
-
+        // 卡片现统一用 visibility:hidden 隐藏（保留文档流占位，页面高度始终不变），
+        // 因此不再需要把隐藏卡片临时恢复成 display:none 来“撑高”页面后再滚动——
+        // 那种反复切换 display 的做法会在滚动过程中造成布局抖动，并引发
+        // “滚动条在中间就持续刷新入库/隐藏”的错觉。直接滚动到底部即可触发 Fab
+        // 的无限滚动加载下一页。
         const doScroll = () => {
             const scrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
             if (typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
@@ -2197,61 +2191,11 @@ export const TaskRunner = {
                 }
             }
         };
-
-        if (tempRestoredCards.length > 0) {
-            setTimeout(doScroll, 50);
-        } else {
-            doScroll();
-        }
-
-        // Listen for listings search requests
-        const handleSearchRequest = () => {
-            // Once the network request to fetch the next batch has started,
-            // we can immediately hide the cards back to display:none!
-            // This restores the shrunken layout and keeps the scrollbar short.
-            if (tempRestoredCards.length > 0) {
-                tempRestoredCards.forEach(card => {
-                    card.style.visibility = '';
-                    card.style.display = 'none';
-                });
-                tempRestoredCards.length = 0; // Clear to prevent double execution
-            }
-        };
-
-        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-            window.addEventListener('fab-helper-listings-request', handleSearchRequest);
-        }
-
-        // 滚动指令发出后，作为第一重兜底，如果在 800ms 内由于某种原因没有触发新的网络请求，
-        // 也会自动将卡片设为 display:none 恢复紧凑布局，防止网页出现长空底。
-        // 如果在 800ms 内触发了网络请求，它会立即通过事件触发上面的 listener 瞬间恢复。
-        if (tempRestoredCards.length > 0) {
-            setTimeout(() => {
-                if (tempRestoredCards.length > 0) {
-                    tempRestoredCards.forEach(card => {
-                        card.style.visibility = '';
-                        card.style.display = 'none';
-                    });
-                    tempRestoredCards.length = 0;
-                }
-            }, 800);
-        }
+        doScroll();
 
         // Wait for potential content loading and scanning
         setTimeout(async () => {
             State.isAutoScrolling = false;
-
-            if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-                window.removeEventListener('fab-helper-listings-request', handleSearchRequest);
-            }
-
-            // 第二重兜底恢复
-            if (tempRestoredCards.length > 0) {
-                tempRestoredCards.forEach(card => {
-                    card.style.visibility = '';
-                    card.style.display = 'none';
-                });
-            }
 
             const currentScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
             const currentScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;

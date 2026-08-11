@@ -1,5 +1,32 @@
 # 更新日志
 
+## 3.5.8 (2026-08-11)
+
+### 功能修复
+
+- 修复 **隐藏商品后无限滚动卡死 / 新商品不再自动加载** 问题（P0）：
+  - 根因：隐藏卡片使用 `display:none` 会把卡片移出文档流，页面高度塌陷，
+    Fab 的无限滚动 IntersectionObserver sentinel 被永远留在视口内，无法触发下一页请求，
+    表现为“隐藏 24 个左右就停住、不再显示新商品”。
+  - 修复：隐藏改为 `visibility:hidden`（保留文档流占位，`pointer-events`/`user-select` 禁用以防误触），
+    页面高度不变，sentinel 始终位于视口外，翻页照常进行。
+  - `isCardHidden` 改为仅以 `data-fab-hidden` 属性判定，避免与“已处理且已隐藏”的稳定态判断冲突。
+  - `runHideOrShow` 的 `minHeight:120vh` 仅作为兜底安全网作用于最外层可滚动容器
+    （`main` / `#main` / `.AssetGrid-root` / `.fabkit-responsive-grid-container`），
+    不再下探 Fab 嵌套的 flex/transform 包裹层，避免把不该撑高的内层顶高。
+  - 删除 `attemptAutoScroll` 中“临时把隐藏卡片恢复成 `display:none` 再滚动”的 hack：
+    该做法会在滚动过程中反复切换 `display`，造成布局抖动，并引发“滚动条在中间就持续刷新入库/隐藏”的错觉；
+    `visibility:hidden` 下页面高度天然稳定，直接滚动到底即可触发加载。
+
+### 验证
+
+- 更新 5 处隐藏断言（`display==='none'` → `visibility==='hidden'`），`node --test tests/task-runner.test.js` 全部 26 项通过。
+
+### 已知权衡
+
+- 采用 `visibility:hidden` 后，已隐藏商品会在原位置**保留空白占位**（不再完全折叠）。这是修复无限滚动冻结必须付出的代价；
+  若追求完全紧凑可改回 `display:none` + 仅靠 `minHeight` 撑高，但该方案在 Fab 嵌套 loader 布局上历史验证不够稳，本次未采用。
+
 ## 3.5.2 (2026-05-12)
 
 ### 功能修复
