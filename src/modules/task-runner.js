@@ -2227,7 +2227,6 @@ export const TaskRunner = {
             // 2. Check if we reached bottom
             const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
             const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-            const isAllHidden = (counts.visible === 0 && counts.total > 0);
 
             const isAtPhysicalBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50);
 
@@ -2238,7 +2237,10 @@ export const TaskRunner = {
             const backendEnded = State.isEndOfSearchList;
             // 物理触底且连续 3 轮无新内容 → 兜底判底
             // (防止 isEndOfSearchList 因响应结构不符永远为 false 导致 autoAdd 模式无限滚动)
-            const physicallyStuck = !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 3;
+            // 注意：不依赖 !isAllHidden —— 当用户隐藏全部可见卡片（如 hideSaved）时，
+            // 若仍要求“有可见卡片”才判底，physicallyStuck 会永远为 false，autoAdd 在 2246 行
+            // 的 return 会跳过 maxScrollAttempts 兜底而无限滚动。判底只认“物理触底 + 无新内容”。
+            const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
             const reachedBottom = backendEnded || physicallyStuck;
 
             // 如果开启了自动滚动加任务，且后端接口未确认到达末尾、也未物理触底，

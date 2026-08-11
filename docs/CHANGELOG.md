@@ -1,5 +1,14 @@
 # 更新日志
 
+## 3.5.9 (2026-08-11)
+
+### 功能修复
+
+- 修复 **autoAdd 自动滚动在「隐藏全部可见卡片」场景下无限循环**（对应用户报告的“隐藏后滚动条在中间持续刷新出入库/隐藏”）：
+  - 根因：`attemptAutoScroll` 的兜底判底条件 `physicallyStuck` 带 `!isAllHidden` 前置条件。当用户开启隐藏（如 hideSaved）且当前可见卡片全部被隐藏时 `isAllHidden=true`，`physicallyStuck` 永远为 false；而 autoAdd 分支在 `physicallyStuck` 为 false 时直接 `return` 继续滚动，**跳过了 `maxScrollAttempts` 兜底**，若后端 `isEndOfSearchList` 因响应结构不可靠则永不退出，形成无限滚动。
+  - 修复：移除 `!isAllHidden` 前置条件——判底只认「物理触底 + 连续 3 轮无新内容」，与卡片是否全隐藏无关；同时清理已无引用的 `isAllHidden` 局部变量。
+  - 验证：`node --test` 28/28 通过；`dist` 重建 v3.5.9。
+
 ## 3.5.8 (2026-08-11)
 
 ### 功能修复
@@ -26,6 +35,8 @@
 
 - 采用 `visibility:hidden` 后，已隐藏商品会在原位置**保留空白占位**（不再完全折叠）。这是修复无限滚动冻结必须付出的代价；
   若追求完全紧凑可改回 `display:none` + 仅靠 `minHeight` 撑高，但该方案在 Fab 嵌套 loader 布局上历史验证不够稳，本次未采用。
+
+> **ego 实测更正**：经 ego 浏览器在真实 Fab 页面验证，Fab 当前为固定容器高度的虚拟化/窗口化渲染，单卡隐藏 `visibility` 与 `display` 两种方式均不改变页面总高度（塌陷量均为 0），且搜索页未暴露无限滚动 sentinel 元素。因此「`display:none` 塌陷卡住 sentinel 导致翻页停滞」的假设在 Fab 现架构下**不成立**。本改动定位为**防御性加固**（保留占位、绝不劣于 `display:none`、在非虚拟化视图下仍防塌陷），真正修复 autoAdd 卡死的是 **3.5.9** 的终止逻辑修正。
 
 ## 3.5.2 (2026-05-12)
 

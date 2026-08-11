@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.8-20260811-1450
+// @version      3.5.9-20260811-1520
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4838,11 +4838,10 @@
         }
         const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
         const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-        const isAllHidden = counts.visible === 0 && counts.total > 0;
         const isAtPhysicalBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50;
         State.autoScrollAttempts++;
         const backendEnded = State.isEndOfSearchList;
-        const physicallyStuck = !isAllHidden && isAtPhysicalBottom && State.autoScrollAttempts >= 3;
+        const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= 3;
         const reachedBottom = backendEnded || physicallyStuck;
         if (State.autoAddOnScroll && !backendEnded && !physicallyStuck) {
           Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
