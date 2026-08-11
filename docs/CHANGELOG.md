@@ -1,5 +1,14 @@
 # 更新日志
 
+## 3.5.10 (2026-08-11)
+
+### 功能修复
+
+- 修复 **可见/隐藏计数在无限滚动加载新卡后偏差**（P2）：
+  - 根因：`runHideOrShow` 仅在「隐藏模式切换（hideModeKey 变化）」时才基于真实 DOM 重算卡片计数缓存，否则沿用旧缓存；而 Fab 无限滚动加载新卡后 `document` 引用与 `href` 均不变，缓存的 `total` 停留在旧值。叠加 `adjustCardCountCacheHidden` 的 `Math.min(cache.total, …)` 钳制，让 `hidden` 不敢超过偏小的 `total`，导致「可见/隐藏」计数在长列表下持续偏低（仅 UI 数字不准，不影响翻页与终止逻辑）。
+  - 修复：`runHideOrShow` 每次都按当前真实 DOM 重算 `total/hidden/visible`（`runHideOrShow` 本身已节流，性能可接受）；删除 `Math.min(cache.total, …)` 钳制，改回 `Math.max(0, hidden + delta)`，因 `total` 现已始终准确。
+  - 验证：新增回归测试——模拟无限滚动加载第 3 张已隐藏卡后 `getCardCounts().total` 由 2 刷新到 3；`node --test` 29/29 通过；`dist` 重建 v3.5.10。
+
 ## 3.5.9 (2026-08-11)
 
 ### 功能修复

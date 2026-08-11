@@ -1497,7 +1497,9 @@ export const TaskRunner = {
         const cache = State.cardCountCache;
         if (cache.dirty) return;
 
-        cache.hidden = Math.max(0, Math.min(cache.total, cache.hidden + delta));
+        // 不再用 Math.min(cache.total, ...) 钳制：total 现已由 runHideOrShow 每次
+        // 基于真实 DOM 校准，hidden 不会超过真实 total，钳制反而会掩盖计数偏差。
+        cache.hidden = Math.max(0, cache.hidden + delta);
         cache.visible = Math.max(0, cache.total - cache.hidden);
         State.hiddenThisPageCount = cache.hidden;
     },
@@ -1590,15 +1592,17 @@ export const TaskRunner = {
 
         setContainersMinHeight('120vh');
 
+        // 始终基于真实 DOM 校准计数缓存：Fab 无限滚动加载新卡后 document 引用与
+        // href 均不变，仅靠 cardCountCache 的 dirty/href 失效条件会让 total 停留在
+        // 旧值，导致「可见/隐藏」计数在长列表下持续偏差。这里每次都按当前真实卡片
+        // 数重算 total/hidden/visible，避免缓存失准（runHideOrShow 本身已被节流）。
+        const allCards = document.querySelectorAll(Config.SELECTORS.card);
+        TaskRunner.refreshCardCountCache(allCards);
+
         const hideModeKey = TaskRunner.getHideModeKey();
         if (State.lastHideModeKey !== hideModeKey) {
             State.lastHideModeKey = hideModeKey;
-            TaskRunner.invalidateCardCountCache();
-            const allCards = document.querySelectorAll(Config.SELECTORS.card);
-            TaskRunner.refreshCardCountCache(allCards);
             TaskRunner.resetHiddenCardState(allCards);
-        } else {
-            TaskRunner.getCardCounts();
         }
 
         const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());

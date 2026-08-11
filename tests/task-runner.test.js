@@ -1461,3 +1461,84 @@ test('PagePatcher clearSavedPosition locks saving, clears sessionStorage, and de
     // Reset lock for clean state
     PagePatcher.unlockCursorSaving();
 });
+
+test('refreshes card count cache from real DOM after infinite-scroll loads new cards', () => {
+    const originalDocument = globalThis.document;
+    const originalWindow = globalThis.window;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalLogger = Utils.logger;
+
+    function createCard(uid) {
+        return {
+            textContent: `Free listing ${uid} Free`,
+            style: {},
+            attributes: {},
+            querySelector: (selector) => {
+                if (selector === 'a[href*="/listings/"]') {
+                    return { href: `https://www.fab.com/listings/${uid}` };
+                }
+                return null;
+            },
+            querySelectorAll: () => [],
+            getAttribute(name) { return this.attributes[name] ?? null; },
+            setAttribute(name, value) { this.attributes[name] = value; },
+            removeAttribute(name) { delete this.attributes[name]; }
+        };
+    }
+
+    const cardA = createCard('aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa');
+    const cardB = createCard('bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb');
+    const cardC = createCard('cccccccc-cccc-4ccc-cccc-cccccccccccc');
+    cardC.attributes['data-fab-hidden'] = 'true'; // 模拟此前已被隐藏
+    const cards = [cardA, cardB, cardC];
+
+    globalThis.document = {
+        querySelectorAll: (selector) => {
+            // 模拟真实 CSS 选择器语义：可见选择器会排除已隐藏卡片
+            if (selector.includes(':not([data-fab-hidden')) {
+                return cards.filter(card => card.attributes['data-fab-hidden'] !== 'true');
+            }
+            return cards;
+        },
+        getElementById: () => null
+    };
+    globalThis.window = {
+        location: { href: 'https://www.fab.com/search?is_free=1' },
+        getComputedStyle: () => ({ display: 'block', visibility: 'visible' })
+    };
+    globalThis.setTimeout = (callback, delay) => {
+        if (delay !== 2000) callback();
+        return 1;
+    };
+    Utils.logger = () => {};
+
+    State.hideSaved = true;
+    State.hideDiscountedPaid = false;
+    State.hidePaid = false;
+    State.hideRetryTimer = null;
+    State.lastHideModeKey = 'init-diff';
+    State.cardCountCache = { total: 0, hidden: 0, visible: 0, dirty: true, documentRef: null, href: '' };
+    State.db.done = [];
+    State.db.failed = [];
+    State.sessionCompleted = new Set();
+
+    try {
+        // 第一轮：仅 2 张可见卡
+        cards.length = 2;
+        TaskRunner.runHideOrShow();
+        assert.deepEqual(TaskRunner.getCardCounts(), { total: 2, hidden: 0, visible: 2 });
+
+        // 模拟无限滚动加载第 3 张（已隐藏）卡——修复前 total 会停留在旧值 2
+        cards.push(cardC);
+        TaskRunner.runHideOrShow();
+        assert.deepEqual(TaskRunner.getCardCounts(), { total: 3, hidden: 1, visible: 2 });
+    } finally {
+        globalThis.document = originalDocument;
+        if (originalWindow === undefined) delete globalThis.window;
+        else globalThis.window = originalWindow;
+        globalThis.setTimeout = originalSetTimeout;
+        Utils.logger = originalLogger;
+        State.hideRetryTimer = null;
+        State.hideSaved = false;
+    }
+});

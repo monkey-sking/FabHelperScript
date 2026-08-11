@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.9-20260811-1520
+// @version      3.5.10-20260811-1734
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4269,7 +4269,7 @@
     adjustCardCountCacheHidden: /* @__PURE__ */ __name((delta) => {
       const cache = State.cardCountCache;
       if (cache.dirty) return;
-      cache.hidden = Math.max(0, Math.min(cache.total, cache.hidden + delta));
+      cache.hidden = Math.max(0, cache.hidden + delta);
       cache.visible = Math.max(0, cache.total - cache.hidden);
       State.hiddenThisPageCount = cache.hidden;
     }, "adjustCardCountCacheHidden"),
@@ -4331,23 +4331,20 @@
       }, "setContainersMinHeight");
       if (!TaskRunner2.isHideModeActive()) {
         setContainersMinHeight("");
-        const allCards = document.querySelectorAll(Config.SELECTORS.card);
-        TaskRunner2.refreshCardCountCache(allCards);
-        TaskRunner2.resetHiddenCardState(allCards);
+        const allCards2 = document.querySelectorAll(Config.SELECTORS.card);
+        TaskRunner2.refreshCardCountCache(allCards2);
+        TaskRunner2.resetHiddenCardState(allCards2);
         State.lastHideModeKey = TaskRunner2.getHideModeKey();
         if (UI4) UI4.update();
         return;
       }
       setContainersMinHeight("120vh");
+      const allCards = document.querySelectorAll(Config.SELECTORS.card);
+      TaskRunner2.refreshCardCountCache(allCards);
       const hideModeKey = TaskRunner2.getHideModeKey();
       if (State.lastHideModeKey !== hideModeKey) {
         State.lastHideModeKey = hideModeKey;
-        TaskRunner2.invalidateCardCountCache();
-        const allCards = document.querySelectorAll(Config.SELECTORS.card);
-        TaskRunner2.refreshCardCountCache(allCards);
         TaskRunner2.resetHiddenCardState(allCards);
-      } else {
-        TaskRunner2.getCardCounts();
       }
       const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       let actuallyHidden = 0;
