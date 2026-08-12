@@ -59,6 +59,7 @@ export const zh = {
     log_copy_failed: '复制日志失败:',
     log_auto_add_enabled: '"自动添加"已开启。将直接处理当前"待办"队列中的所有任务。',
     log_auto_add_toggle: '无限滚动自动添加任务已{0}。',
+    log_auto_scroll_toggle: '自动滚动页面（自动扫描全部）已{0}。',
     log_remember_pos_toggle: '记住瀑布流浏览位置功能已{0}。',
     log_auto_resume_toggle: '429后自动恢复功能已{0}。',
     log_auto_resume_start: '🔄 429自动恢复启动！将在{0}秒后刷新页面尝试恢复...',
@@ -130,9 +131,10 @@ export const zh = {
     auto_scroll_attempt: '[自动滚动] 队列已空，尝试向下滚动加载更多商品... (尝试 {0}/{1})',
     auto_scroll_success: '[自动滚动] 成功加载并识别到 {0} 个新任务，继续执行...',
     auto_scroll_cards_loaded: '[自动滚动] 检测到 {0} 张新卡片，继续隐藏/扫描并滚动...',
-    auto_scroll_reached_bottom: '[自动滚动] 已到达页面底部，停止滚动。',
+    auto_scroll_reached_bottom: '[自动滚动] 服务器确认已无更多商品，自动入库成功，停止滚动。',
     auto_scroll_no_new_items: '[自动滚动] 连续 {0} 次滚动均未发现符合条件的新商品，停止自动滚动。',
     auto_scroll_waiting: '[自动滚动] 未发现符合条件的新商品，等待下一次滚动尝试...',
+    auto_scroll_safety_stop: '[自动滚动] 连续 {0} 轮未发现新内容且未收到服务器到底信号，安全停止（未确认自动入库成功，请检查网络/接口）。',
 
     // HTTP状态检测
     http_status_check_performance_api: '使用Performance API检查，不再发送HEAD请求',
@@ -198,6 +200,7 @@ export const zh = {
     // 设置项
     setting_auto_refresh: '无商品可见时自动刷新',
     setting_auto_add_scroll: '无限滚动时自动添加任务',
+    setting_auto_scroll: '自动滚动页面（自动扫描全部，默认关）',
     setting_remember_position: '记住瀑布流浏览位置',
     setting_auto_resume_429: '429后自动恢复并继续',
     setting_hide_discounted: '隐藏打折的付费商品',

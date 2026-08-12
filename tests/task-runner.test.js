@@ -936,7 +936,7 @@ test('done records hide cards even when list card status text is missing', () =>
     }
 });
 
-test('executeBatch triggers attemptAutoScroll when queue is empty and autoAddOnScroll is true', async () => {
+test('executeBatch triggers attemptAutoScroll when queue is empty and autoScroll is true', async () => {
     const originalDocument = globalThis.document;
     globalThis.document = {
         cookie: 'fab_csrftoken=mock_token'
@@ -952,7 +952,7 @@ test('executeBatch triggers attemptAutoScroll when queue is empty and autoAddOnS
     State.isExecuting = true;
     State.db.todo = [];
     State.activeWorkers = 0;
-    State.autoAddOnScroll = true;
+    State.autoScroll = true;
     InstanceManager.isActive = true;
 
     try {
@@ -963,11 +963,11 @@ test('executeBatch triggers attemptAutoScroll when queue is empty and autoAddOnS
         InstanceManager.isActive = originalIsActiveInstance;
         globalThis.document = originalDocument;
         State.isExecuting = false;
-        State.autoAddOnScroll = false;
+        State.autoScroll = false;
     }
 });
 
-test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto add is enabled', () => {
+test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto scroll is enabled', () => {
     const originalDocument = globalThis.document;
     const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
     const originalLogger = Utils.logger;
@@ -994,7 +994,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto
     };
     State.hiddenThisPageCount = 3;
     State.appStatus = 'NORMAL';
-    State.autoAddOnScroll = true;
+    State.autoScroll = true;
     State.isExecuting = true;
     State.isAutoScrolling = false;
 
@@ -1006,7 +1006,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto
         globalThis.document = originalDocument;
         TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
         Utils.logger = originalLogger;
-        State.autoAddOnScroll = false;
+        State.autoScroll = false;
         State.isExecuting = false;
         State.isAutoScrolling = false;
         State.hiddenThisPageCount = 0;
@@ -1021,7 +1021,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards when auto
     }
 });
 
-test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when execution is idle', () => {
+test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when execution is idle (autoScroll on)', () => {
     const originalDocument = globalThis.document;
     const originalAttemptAutoScroll = TaskRunner.attemptAutoScroll;
     const originalLogger = Utils.logger;
@@ -1048,7 +1048,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when
     };
     State.hiddenThisPageCount = 3;
     State.appStatus = 'NORMAL';
-    State.autoAddOnScroll = true;
+    State.autoScroll = true;
     State.isExecuting = false;
     State.isAutoScrolling = false;
 
@@ -1060,7 +1060,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when
         globalThis.document = originalDocument;
         TaskRunner.attemptAutoScroll = originalAttemptAutoScroll;
         Utils.logger = originalLogger;
-        State.autoAddOnScroll = false;
+        State.autoScroll = false;
         State.isExecuting = false;
         State.isAutoScrolling = false;
         State.hiddenThisPageCount = 0;
@@ -1075,7 +1075,7 @@ test('checkVisibilityAndRefresh scrolls after hiding all visible cards even when
     }
 });
 
-test('attemptAutoScroll stops execution when it reaches bottom', async () => {
+test('attemptAutoScroll stops execution when server confirms no more (isEndOfSearchList=true)', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const originalSetTimeout = globalThis.setTimeout;
@@ -1109,7 +1109,9 @@ test('attemptAutoScroll stops execution when it reaches bottom', async () => {
     };
 
     State.db.todo = [];
-    State.autoScrollAttempts = 2; // Set to 2 so next attempt is the 3rd and triggers stop
+    State.isEndOfSearchList = true; // 服务器确认无更多（cursors.next === null）→ 自动入库成功并收尾
+    State.activeWorkers = 0;
+    State.autoScrollAttempts = 2;
     State.isExecuting = true;
 
     try {
@@ -1133,10 +1135,12 @@ test('attemptAutoScroll stops execution when it reaches bottom', async () => {
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
         State.isExecuting = false;
+        State.isEndOfSearchList = false;
+        State.activeWorkers = 0;
     }
 });
 
-test('attemptAutoScroll stops execution when autoAdd mode is physically stuck at bottom', async () => {
+test('attemptAutoScroll keeps scrolling when physically at bottom but server has not confirmed end', async () => {
     const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const originalSetTimeout = globalThis.setTimeout;
@@ -1182,10 +1186,11 @@ test('attemptAutoScroll stops execution when autoAdd mode is physically stuck at
     });
 
     State.db.todo = [];
-    State.autoScrollAttempts = 2; // next attempt makes attempts >= 3 (physicallyStuck threshold)
+    State.autoScrollAttempts = 2;
     State.isExecuting = true;
     State.autoAddOnScroll = true;
-    State.isEndOfSearchList = false; // backend signal never fired -> must fall back to physical bottom
+    State.autoScroll = true; // 开启自动滚动开关
+    State.isEndOfSearchList = false; // 服务器尚未确认结束 → 物理触底不再作为停转依据，应继续滚动
 
     try {
         await TaskRunner.attemptAutoScroll();
@@ -1194,8 +1199,8 @@ test('attemptAutoScroll stops execution when autoAdd mode is physically stuck at
         };
         await timeoutCallback();
 
-        assert.equal(stopCalled, true);
-        assert.equal(recursiveCalled, false);
+        assert.equal(stopCalled, false); // 物理触底但服务器未确认结束 → 不误判成功、不 settle
+        assert.equal(recursiveCalled, true); // 继续滚动等待服务器/loader 发出结束信号
         assert.equal(State.hasReachedBottomToastShown, false);
     } finally {
         if (originalWindow === undefined) {
@@ -1214,6 +1219,7 @@ test('attemptAutoScroll stops execution when autoAdd mode is physically stuck at
         State.isAutoScrolling = false;
         State.isExecuting = false;
         State.autoAddOnScroll = false;
+        State.autoScroll = false;
         State.isEndOfSearchList = false;
         State.hasReachedBottomToastShown = false;
     }
@@ -1226,7 +1232,7 @@ test('hasPositivePriceText parses thousands separators and comma decimals correc
     assert.equal(TaskRunner.hasPositivePriceText('Royalty Free asset'), false);
 });
 
-test('attemptAutoScroll stops execution after max attempts', async () => {    const originalWindow = globalThis.window;
+test('attemptAutoScroll safety cap stops loop without settling when server signal absent', async () => {    const originalWindow = globalThis.window;
     const originalDocument = globalThis.document;
     const originalSetTimeout = globalThis.setTimeout;
     const originalStopExecutionAndSettle = TaskRunner.stopExecutionAndSettle;
@@ -1256,14 +1262,18 @@ test('attemptAutoScroll stops execution after max attempts', async () => {    co
     };
 
     State.db.todo = [];
-    State.autoScrollAttempts = 2; // Next attempt will be the 3rd (max)
+    State.autoScrollAttempts = 5; // 下一次累加即为 6 = maxScrollAttempts（安全护栏上限）
     State.isExecuting = true;
+    State.isEndOfSearchList = false; // 服务器始终未确认结束
 
     try {
         await TaskRunner.attemptAutoScroll();
         await timeoutCallback();
 
-        assert.equal(stopCalled, true);
+        // 安全护栏触发：未收到服务器到底信号，仅停止滚动循环，
+        // 不调用 stopExecutionAndSettle（不宣称「自动入库成功」，避免误杀/误判）。
+        assert.equal(stopCalled, false);
+        assert.equal(State.autoScrollAttempts, 0); // 护栏触发后重置计数
     } finally {
         if (originalWindow === undefined) {
             delete globalThis.window;
@@ -1276,6 +1286,7 @@ test('attemptAutoScroll stops execution after max attempts', async () => {    co
         State.autoScrollAttempts = 0;
         State.isAutoScrolling = false;
         State.isExecuting = false;
+        State.isEndOfSearchList = false;
     }
 });
 

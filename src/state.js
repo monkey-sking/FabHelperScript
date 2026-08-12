@@ -9,7 +9,8 @@ export const State = {
         failed: [], // 失败任务列表
     },
     hideSaved: false, // 是否隐藏已保存项目
-    autoAddOnScroll: false, // 是否在滚动时自动添加任务
+    autoAddOnScroll: false, // 是否在手动滚动时自动添加可见任务（不自动滚页）
+    autoScroll: false, // 新增：脚本是否自动滚动页面以扫描全部商品（默认关，独立于 autoAddOnScroll）
     isAutoScrolling: false, // 是否正在自动滚动中
     autoScrollAttempts: 0, // 连续自动滚动未发现新任务的次数
     rememberScrollPosition: false, // 是否记住滚动位置

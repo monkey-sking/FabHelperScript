@@ -100,6 +100,7 @@ export const Database = {
     saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
     saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
     saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
+    saveAutoScrollPref: () => GM_setValue(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), // 保存自动滚动页面开关
     saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
     saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
     saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置

@@ -57,6 +57,7 @@ export const en = {
     log_copy_failed: 'Failed to copy log:',
     log_auto_add_enabled: '"Auto add" is enabled. Will process all tasks in the current "To-Do" queue.',
     log_auto_add_toggle: 'Infinite scroll auto add tasks {0}.',
+    log_auto_scroll_toggle: 'Auto-scroll page (auto scan all) {0}.',
     log_remember_pos_toggle: 'Remember waterfall browsing position {0}.',
     log_auto_resume_toggle: '429 auto resume function {0}.',
     log_auto_resume_start: '🔄 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...',
@@ -128,9 +129,10 @@ export const en = {
     auto_scroll_attempt: '[Auto Scroll] Queue empty, attempting to scroll down to load more... (Attempt {0}/{1})',
     auto_scroll_success: '[Auto Scroll] Successfully loaded and identified {0} new tasks, continuing...',
     auto_scroll_cards_loaded: '[Auto Scroll] Detected {0} new cards, continuing hide/scan and scroll...',
-    auto_scroll_reached_bottom: '[Auto Scroll] Reached page bottom, stopping scroll.',
+    auto_scroll_reached_bottom: '[Auto Scroll] Server confirmed no more items; auto-add succeeded, stopping scroll.',
     auto_scroll_no_new_items: '[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.',
     auto_scroll_waiting: '[Auto Scroll] No new eligible items found, waiting for next scroll attempt...',
+    auto_scroll_safety_stop: '[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).',
 
     // HTTP状态检测
     http_status_check_performance_api: 'Using Performance API check, no longer sending HEAD requests',
@@ -196,6 +198,7 @@ export const en = {
     // 设置项
     setting_auto_refresh: 'Auto refresh when no items visible',
     setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
+    setting_auto_scroll: 'Auto-scroll page (auto scan all, off by default)',
     setting_remember_position: 'Remember waterfall browsing position',
     setting_auto_resume_429: 'Auto resume after 429 errors',
     setting_hide_discounted: 'Hide discounted paid items',

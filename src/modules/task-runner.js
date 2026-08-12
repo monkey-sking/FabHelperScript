@@ -274,7 +274,7 @@ export const TaskRunner = {
             return;
         }
 
-        if (State.autoAddOnScroll) {
+        if (State.autoAddOnScroll || State.autoScroll) {
             Utils.logger('info', Utils.getText('log_auto_add_enabled'));
             // 启动前先强制扫描一次当前可见卡片
             Utils.logger('debug', '启动任务前正在确认当前页面商品识别状态...');
@@ -409,6 +409,23 @@ export const TaskRunner = {
         State.autoAddOnScroll = !State.autoAddOnScroll;
         await Database.saveAutoAddPref();
         Utils.logger('info', Utils.getText('log_auto_add_toggle', State.autoAddOnScroll ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
+        setTimeout(() => { State.isTogglingSetting = false; }, 200);
+    },
+
+    // 切换「脚本自动滚动页面以扫描全部」开关（默认关，独立于 autoAddOnScroll）
+    toggleAutoScroll: async () => {
+        if (State.isTogglingSetting) return;
+        State.isTogglingSetting = true;
+        State.autoScroll = !State.autoScroll;
+        // 开启时重置「服务器到底」标记与尝试计数，避免上一轮残留的 isEndOfSearchList=true
+        // 让本次一开就立即误判「自动入库成功」；由后续 /i/listings/search 响应如实重新确认。
+        if (State.autoScroll) {
+            State.isEndOfSearchList = false;
+            State.autoScrollAttempts = 0;
+            State.hasReachedBottomToastShown = false;
+        }
+        await Database.saveAutoScrollPref();
+        Utils.logger('info', Utils.getText('log_auto_scroll_toggle', State.autoScroll ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
         setTimeout(() => { State.isTogglingSetting = false; }, 200);
     },
 
@@ -763,7 +780,7 @@ export const TaskRunner = {
 
         try {
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-                if (State.autoAddOnScroll) {
+                if (State.autoScroll) {
                     State.isDispatchingTasks = false;
                     TaskRunner.attemptAutoScroll();
                     return;
@@ -1800,7 +1817,7 @@ export const TaskRunner = {
                 }
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
-                if (State.autoAddOnScroll) {
+                if (State.autoScroll) {
                     TaskRunner.attemptAutoScroll();
                 }
             }
@@ -1926,7 +1943,7 @@ export const TaskRunner = {
     },
 
     scanAndAddTasks: async (cards) => {
-        if (!State.autoAddOnScroll) return;
+        if (!State.autoAddOnScroll && !State.autoScroll) return;
 
         // 未登录或 session 已过期时，卡片上拿不到价格信息，isFreeCard 会把所有商品
         // 误判为免费。直接跳过扫描，避免队列被付费商品塞满后 worker 空跑。
@@ -2071,9 +2088,9 @@ export const TaskRunner = {
             });
 
             if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
-                State.autoAddRetryTimer = setTimeout(() => {
+                    State.autoAddRetryTimer = setTimeout(() => {
                     State.autoAddRetryTimer = null;
-                    if (State.autoAddOnScroll) {
+                    if (State.autoAddOnScroll || State.autoScroll) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加重试失败: ${error.message}`));
                     }
@@ -2118,7 +2135,7 @@ export const TaskRunner = {
                 if (State.isExecuting) {
                     State.executionTotalTasks = State.db.todo.length;
                     TaskRunner.executeBatch();
-                } else if (State.autoAddOnScroll) {
+                } else if (State.autoAddOnScroll || State.autoScroll) {
                     TaskRunner.startExecution();
                 }
 
@@ -2179,7 +2196,7 @@ export const TaskRunner = {
             State.autoScrollAttempts = 0;
         }
 
-        const maxScrollAttempts = 3;
+        const maxScrollAttempts = 6; // 安全护栏上限（仅防接口漏响应导致死循环，非判底依据）
         Utils.logger('info', Utils.getText('auto_scroll_attempt', State.autoScrollAttempts + 1, maxScrollAttempts));
 
         const getCurrentCardTotal = () => {
@@ -2301,48 +2318,20 @@ export const TaskRunner = {
                 return;
             }
 
-            // 2. Check if we reached bottom
-            const canQuery = typeof document !== 'undefined' && typeof document.querySelectorAll === 'function';
-            const counts = canQuery ? TaskRunner.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-
-            const isAtPhysicalBottom = (typeof window !== 'undefined' && window.innerHeight + currentScrollY >= currentScrollHeight - 50);
-
-            // 3. Increment attempts
-            State.autoScrollAttempts++;
-
-            // 判底只认「连续多次滚动后 DOM 不再增长」——
-            // 不再把「后端 cursors.next (isEndOfSearchList)」当作独立停转信号。
-            // 该后端信号会在「刚滚到底、下一页尚在加载中」时被误判为 true，
-            // 导致一滚到页面底部就提前停转（用户实测：滚动条在底部就停，中间/顶部正常）。
-            // 只要 scrollHeight 或卡片数还在增长（见上方 newProcessedCount/newDomCardCount/scrollHeightGrew），
-            // 就会在 2263 行重置 attempts 并继续；只有连续 maxScrollAttempts 轮无增长、且物理触底，才视为真到底。
-            const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= maxScrollAttempts;
-            const reachedBottom = physicallyStuck;
-
-            // 只要尚未判底，就继续自动滚动，绝不提前中断；一旦确认到底则退出，防止死循环
-            if (State.autoAddOnScroll && !reachedBottom) {
-                Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
-                TaskRunner.attemptAutoScroll();
-                return;
-            }
-
-            if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
-                if (reachedBottom) {
-                    Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
-                    if (UI && typeof UI.showToast === 'function' && !State.hasReachedBottomToastShown) {
-                        State.hasReachedBottomToastShown = true;
-                        UI.showToast(Utils.getText('toast_reached_bottom'), true);
-                    }
-                } else {
-                    Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
+            // 2. 权威判底：由 index.js 拦截 /i/listings/search 响应写入
+            //    State.isEndOfSearchList = (responseData.cursors.next === null)。
+            //    即「服务器已无下一页」= 用户口径的「服务器没有新的了」。
+            //    滚动条位置、scrollHeight、卡片 DOM 计数一律不作为到底依据
+            //    （Fab 为虚拟化渲染，本地信号不可靠，曾导致「滚动条在底部就提前停」）。
+            //    只有服务器确认无更多，才视作自动入库成功并收尾。
+            if (State.isEndOfSearchList) {
+                Utils.logger('info', Utils.getText('auto_scroll_reached_bottom'));
+                if (UI && typeof UI.showToast === 'function' && !State.hasReachedBottomToastShown) {
+                    State.hasReachedBottomToastShown = true;
+                    UI.showToast(Utils.getText('toast_reached_bottom'), true);
                 }
-
-                // 关键修复：到达底部/无新内容时，若仍有 worker 在途或待办未空，
-                // 绝不能 stopExecutionAndSettle —— 它会 closeAllWorkerTabs 误杀在途 worker，
-                // 表现为「工作标签页在完成前关闭」、左下角「已到达底部」提示一出现就中断入库。
-                // 此时仅停止滚动，保留执行与 worker；worker 完成后由正常完成流程
-                // (index.js 1250) 收尾并再次触发 attemptAutoScroll，届时 todo 空且无活跃
-                // worker 才真正 settle，避免误杀与漏处理。
+                // v3.5.14 修复保留：仍有 worker 在途或待办未空时，仅停滚动、不杀 worker，
+                // 避免「工作标签页在完成前关闭」/ 左下角提示一出现就中断入库。
                 State.isAutoScrolling = false;
                 const workersStillBusy = State.activeWorkers > 0 || State.db.todo.length > 0;
                 if (State.isExecuting && !workersStillBusy) {
@@ -2357,9 +2346,24 @@ export const TaskRunner = {
                 return;
             }
 
-            // 4. Try again
-            Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
-            TaskRunner.attemptAutoScroll();
+            // 3. 未确认到底、也未观察到新内容：继续滚动，给 loader / 服务器更多时间。
+            //    仅作安全护栏：连续过多轮既无新内容又未收到服务器到底信号才放弃，
+            //    【且绝不宣称「自动入库成功」】——成功只能由服务器确认。
+            State.autoScrollAttempts++;
+            if (State.autoScrollAttempts >= maxScrollAttempts) {
+                Utils.logger('warn', Utils.getText('auto_scroll_safety_stop', maxScrollAttempts));
+                State.autoScrollAttempts = 0;
+                State.isAutoScrolling = false;
+                return;
+            }
+
+            if (State.autoScroll) {
+                Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
+                TaskRunner.attemptAutoScroll();
+                return;
+            }
+
+            State.isAutoScrolling = false;
         }, 3000);
     }
 };

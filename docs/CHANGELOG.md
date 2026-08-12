@@ -1,5 +1,26 @@
 # 更新日志
 
+## 3.5.18 (2026-08-12)
+
+### 修复（判底信号改由服务器权威：cursors.next === null 才算自动入库成功）
+
+- **设计纠正**：「到没到底」的唯一权威信号改为服务器接口响应 `State.isEndOfSearchList`（由 `index.js` 拦截 `/i/listings/search` 写入 `cursors.next === null`），即用户口径「服务器没有新的了才算自动入库成功」。
+- **移除错误的本地判据**：此前 v3.5.13 把 `physicallyStuck = 物理触底 && 连续 N 轮无增长` 当作停转依据，正是导致「滚动条在底部就提前停」的根源（Fab 为虚拟化渲染，scrollHeight / 卡片 DOM 计数等本地信号不可靠）。现一律不作为到底依据，仅保留为「继续滚动」的心跳信号。
+- **成功定义收紧**：只有 `isEndOfSearchList === true`（服务器确认无更多）才视作自动入库成功并收尾；本地「连续多轮无新内容」仅作安全护栏（阈值提到 6 轮），护栏触发**不**调用 `stopExecutionAndSettle`、不宣称成功，仅停止滚动循环等待服务器信号。
+- `toggleAutoScroll` 开启时重置 `isEndOfSearchList` 与 `autoScrollAttempts`，防止上一轮残留的 `true` 让本次一开就「假成功」。
+- 保留 v3.5.14 修复：服务器确认到底但仍有 worker 在途 / 待办未空时，仅停滚动、不杀 worker，避免「工作标签页在完成前关闭」。
+- 测试同步：`e2e-auto-scroll.mjs` 改为「末页由 mock 置 `isEndOfSearchList=true` 模拟服务器 `next=null`」驱动停止；`task-runner.test.js` 3 个用例改写为服务器驱动语义（停=isEndOfSearchList、物理触底不停、安全护栏不 settle）。单测 30/30、e2e 50/50（含 Bug B）全绿。
+
+## 3.5.17 (2026-08-12)
+
+### 新增功能（自动滚动独立开关，默认关）
+
+- 此前「自动滚动页面扫描全部」与「滚动时自动添加可见任务」被 `autoAddOnScroll` 一个开关绑死，用户无法单独关掉脚本接管滚动。
+- 新增独立开关 **`autoScroll`（默认关）**，专门门控「脚本自动滚动页面以扫描全部商品」（`attemptAutoScroll` 的所有触发点：executeBatch 空队列、checkVisibilityAndRefresh 隐藏完当前页、attemptAutoScroll 自循环、worker 完成空队列收尾）。
+- `autoAddOnScroll` 语义收敛为「手动滚动出现新卡时自动加任务（不自动滚页）」；`autoScroll` 开启时也会一并触发扫描与启动执行，保证自动滚动能正常加任务（放开 `scanAndAddTasks` 的早退）。
+- UI 设置面板新增「自动滚动页面（自动扫描全部，默认关）」开关，调用 `toggleAutoScroll`；持久化键 `fab_autoScroll_v1`，加载默认 `false`。
+- 测试同步：`tests/task-runner.test.js` 中 3 个「autoAddOnScroll 触发自动滚动」用例改为用 `autoScroll`；`tests/e2e-auto-scroll.mjs` 显式 `State.autoScroll = true` 驱动自动滚动。单测 30/30、e2e 100/100（含 Bug B 到底不误杀）全绿。
+
 ## 3.5.16 (2026-08-12)
 
 ### 功能修复（调优 v3.5.15 的“底部 nudge”：上滚幅度不足，长列表仍中途卡住）

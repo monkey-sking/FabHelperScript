@@ -20,6 +20,7 @@ export const Config = {
         TODO: 'fab_todo_v1', // 用于永久存储待办列表
         HIDE: 'fab_hide_v8',
         AUTO_ADD: 'fab_autoAdd_v8', // 自动添加设置键
+        AUTO_SCROLL: 'fab_autoScroll_v1', // 自动滚动页面（自动扫描全部）开关键
         REMEMBER_POS: 'fab_rememberPos_v8',
         LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
         WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.

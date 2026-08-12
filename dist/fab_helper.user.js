@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.16-20260812-1025
+// @version      3.5.18-20260812-1319
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -94,6 +94,7 @@
     log_copy_failed: "Failed to copy log:",
     log_auto_add_enabled: '"Auto add" is enabled. Will process all tasks in the current "To-Do" queue.',
     log_auto_add_toggle: "Infinite scroll auto add tasks {0}.",
+    log_auto_scroll_toggle: "Auto-scroll page (auto scan all) {0}.",
     log_remember_pos_toggle: "Remember waterfall browsing position {0}.",
     log_auto_resume_toggle: "429 auto resume function {0}.",
     log_auto_resume_start: "\u{1F504} 429 auto resume activated! Will refresh page in {0} seconds to attempt recovery...",
@@ -156,9 +157,10 @@
     auto_scroll_attempt: "[Auto Scroll] Queue empty, attempting to scroll down to load more... (Attempt {0}/{1})",
     auto_scroll_success: "[Auto Scroll] Successfully loaded and identified {0} new tasks, continuing...",
     auto_scroll_cards_loaded: "[Auto Scroll] Detected {0} new cards, continuing hide/scan and scroll...",
-    auto_scroll_reached_bottom: "[Auto Scroll] Reached page bottom, stopping scroll.",
+    auto_scroll_reached_bottom: "[Auto Scroll] Server confirmed no more items; auto-add succeeded, stopping scroll.",
     auto_scroll_no_new_items: "[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.",
     auto_scroll_waiting: "[Auto Scroll] No new eligible items found, waiting for next scroll attempt...",
+    auto_scroll_safety_stop: "[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).",
     // HTTP状态检测
     http_status_check_performance_api: "Using Performance API check, no longer sending HEAD requests",
     // 页面状态检测
@@ -212,6 +214,7 @@
     // 设置项
     setting_auto_refresh: "Auto refresh when no items visible",
     setting_auto_add_scroll: "Auto add tasks on infinite scroll",
+    setting_auto_scroll: "Auto-scroll page (auto scan all, off by default)",
     setting_remember_position: "Remember waterfall browsing position",
     setting_auto_resume_429: "Auto resume after 429 errors",
     setting_hide_discounted: "Hide discounted paid items",
@@ -451,6 +454,7 @@
     log_copy_failed: "\u590D\u5236\u65E5\u5FD7\u5931\u8D25:",
     log_auto_add_enabled: '"\u81EA\u52A8\u6DFB\u52A0"\u5DF2\u5F00\u542F\u3002\u5C06\u76F4\u63A5\u5904\u7406\u5F53\u524D"\u5F85\u529E"\u961F\u5217\u4E2D\u7684\u6240\u6709\u4EFB\u52A1\u3002',
     log_auto_add_toggle: "\u65E0\u9650\u6EDA\u52A8\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5DF2{0}\u3002",
+    log_auto_scroll_toggle: "\u81EA\u52A8\u6EDA\u52A8\u9875\u9762\uFF08\u81EA\u52A8\u626B\u63CF\u5168\u90E8\uFF09\u5DF2{0}\u3002",
     log_remember_pos_toggle: "\u8BB0\u4F4F\u7011\u5E03\u6D41\u6D4F\u89C8\u4F4D\u7F6E\u529F\u80FD\u5DF2{0}\u3002",
     log_auto_resume_toggle: "429\u540E\u81EA\u52A8\u6062\u590D\u529F\u80FD\u5DF2{0}\u3002",
     log_auto_resume_start: "\u{1F504} 429\u81EA\u52A8\u6062\u590D\u542F\u52A8\uFF01\u5C06\u5728{0}\u79D2\u540E\u5237\u65B0\u9875\u9762\u5C1D\u8BD5\u6062\u590D...",
@@ -513,9 +517,10 @@
     auto_scroll_attempt: "[\u81EA\u52A8\u6EDA\u52A8] \u961F\u5217\u5DF2\u7A7A\uFF0C\u5C1D\u8BD5\u5411\u4E0B\u6EDA\u52A8\u52A0\u8F7D\u66F4\u591A\u5546\u54C1... (\u5C1D\u8BD5 {0}/{1})",
     auto_scroll_success: "[\u81EA\u52A8\u6EDA\u52A8] \u6210\u529F\u52A0\u8F7D\u5E76\u8BC6\u522B\u5230 {0} \u4E2A\u65B0\u4EFB\u52A1\uFF0C\u7EE7\u7EED\u6267\u884C...",
     auto_scroll_cards_loaded: "[\u81EA\u52A8\u6EDA\u52A8] \u68C0\u6D4B\u5230 {0} \u5F20\u65B0\u5361\u7247\uFF0C\u7EE7\u7EED\u9690\u85CF/\u626B\u63CF\u5E76\u6EDA\u52A8...",
-    auto_scroll_reached_bottom: "[\u81EA\u52A8\u6EDA\u52A8] \u5DF2\u5230\u8FBE\u9875\u9762\u5E95\u90E8\uFF0C\u505C\u6B62\u6EDA\u52A8\u3002",
+    auto_scroll_reached_bottom: "[\u81EA\u52A8\u6EDA\u52A8] \u670D\u52A1\u5668\u786E\u8BA4\u5DF2\u65E0\u66F4\u591A\u5546\u54C1\uFF0C\u81EA\u52A8\u5165\u5E93\u6210\u529F\uFF0C\u505C\u6B62\u6EDA\u52A8\u3002",
     auto_scroll_no_new_items: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u6B21\u6EDA\u52A8\u5747\u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u505C\u6B62\u81EA\u52A8\u6EDA\u52A8\u3002",
     auto_scroll_waiting: "[\u81EA\u52A8\u6EDA\u52A8] \u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B21\u6EDA\u52A8\u5C1D\u8BD5...",
+    auto_scroll_safety_stop: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u8F6E\u672A\u53D1\u73B0\u65B0\u5185\u5BB9\u4E14\u672A\u6536\u5230\u670D\u52A1\u5668\u5230\u5E95\u4FE1\u53F7\uFF0C\u5B89\u5168\u505C\u6B62\uFF08\u672A\u786E\u8BA4\u81EA\u52A8\u5165\u5E93\u6210\u529F\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC/\u63A5\u53E3\uFF09\u3002",
     // HTTP状态检测
     http_status_check_performance_api: "\u4F7F\u7528Performance API\u68C0\u67E5\uFF0C\u4E0D\u518D\u53D1\u9001HEAD\u8BF7\u6C42",
     // 页面状态检测
@@ -569,6 +574,7 @@
     // 设置项
     setting_auto_refresh: "\u65E0\u5546\u54C1\u53EF\u89C1\u65F6\u81EA\u52A8\u5237\u65B0",
     setting_auto_add_scroll: "\u65E0\u9650\u6EDA\u52A8\u65F6\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1",
+    setting_auto_scroll: "\u81EA\u52A8\u6EDA\u52A8\u9875\u9762\uFF08\u81EA\u52A8\u626B\u63CF\u5168\u90E8\uFF0C\u9ED8\u8BA4\u5173\uFF09",
     setting_remember_position: "\u8BB0\u4F4F\u7011\u5E03\u6D41\u6D4F\u89C8\u4F4D\u7F6E",
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
     setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
@@ -761,6 +767,8 @@
       HIDE: "fab_hide_v8",
       AUTO_ADD: "fab_autoAdd_v8",
       // 自动添加设置键
+      AUTO_SCROLL: "fab_autoScroll_v1",
+      // 自动滚动页面（自动扫描全部）开关键
       REMEMBER_POS: "fab_rememberPos_v8",
       LAST_CURSOR: "fab_lastCursor_v8",
       // Store only the cursor string
@@ -853,7 +861,9 @@
     hideSaved: false,
     // 是否隐藏已保存项目
     autoAddOnScroll: false,
-    // 是否在滚动时自动添加任务
+    // 是否在手动滚动时自动添加可见任务（不自动滚页）
+    autoScroll: false,
+    // 新增：脚本是否自动滚动页面以扫描全部商品（默认关，独立于 autoAddOnScroll）
     isAutoScrolling: false,
     // 是否正在自动滚动中
     autoScrollAttempts: 0,
@@ -1921,6 +1931,8 @@
     saveHidePref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
     saveAutoAddPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
     // Save the setting
+    saveAutoScrollPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), "saveAutoScrollPref"),
+    // 保存自动滚动页面开关
     saveRememberPosPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition), "saveRememberPosPref"),
     saveAutoResumePref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
     saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
@@ -3277,7 +3289,7 @@
         Utils.notifyAuthFailure();
         return;
       }
-      if (State.autoAddOnScroll) {
+      if (State.autoAddOnScroll || State.autoScroll) {
         Utils.logger("info", Utils.getText("log_auto_add_enabled"));
         Utils.logger("debug", "\u542F\u52A8\u4EFB\u52A1\u524D\u6B63\u5728\u786E\u8BA4\u5F53\u524D\u9875\u9762\u5546\u54C1\u8BC6\u522B\u72B6\u6001...");
         TaskRunner2.checkVisibleCardsStatus().then(() => {
@@ -3389,6 +3401,22 @@
         State.isTogglingSetting = false;
       }, 200);
     }, "toggleAutoAdd"),
+    // 切换「脚本自动滚动页面以扫描全部」开关（默认关，独立于 autoAddOnScroll）
+    toggleAutoScroll: /* @__PURE__ */ __name(async () => {
+      if (State.isTogglingSetting) return;
+      State.isTogglingSetting = true;
+      State.autoScroll = !State.autoScroll;
+      if (State.autoScroll) {
+        State.isEndOfSearchList = false;
+        State.autoScrollAttempts = 0;
+        State.hasReachedBottomToastShown = false;
+      }
+      await Database.saveAutoScrollPref();
+      Utils.logger("info", Utils.getText("log_auto_scroll_toggle", State.autoScroll ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
+      setTimeout(() => {
+        State.isTogglingSetting = false;
+      }, 200);
+    }, "toggleAutoScroll"),
     toggleAutoResume: /* @__PURE__ */ __name(async () => {
       if (State.isTogglingSetting) return;
       State.isTogglingSetting = true;
@@ -3679,7 +3707,7 @@
       State.isDispatchingTasks = true;
       try {
         if (State.db.todo.length === 0 && State.activeWorkers === 0) {
-          if (State.autoAddOnScroll) {
+          if (State.autoScroll) {
             State.isDispatchingTasks = false;
             TaskRunner2.attemptAutoScroll();
             return;
@@ -4507,7 +4535,7 @@
           }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
-          if (State.autoAddOnScroll) {
+          if (State.autoScroll) {
             TaskRunner2.attemptAutoScroll();
           }
         }
@@ -4597,7 +4625,7 @@
       }
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
-      if (!State.autoAddOnScroll) return;
+      if (!State.autoAddOnScroll && !State.autoScroll) return;
       if (!State.isAuthenticated) {
         if (State.debugMode) {
           Utils.logger("debug", Utils.getText("auth_scan_blocked"));
@@ -4708,7 +4736,7 @@
         if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
           State.autoAddRetryTimer = setTimeout(() => {
             State.autoAddRetryTimer = null;
-            if (State.autoAddOnScroll) {
+            if (State.autoAddOnScroll || State.autoScroll) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u91CD\u8BD5\u5931\u8D25: ${error.message}`));
             }
           }, 2e3);
@@ -4746,7 +4774,7 @@
           if (State.isExecuting) {
             State.executionTotalTasks = State.db.todo.length;
             TaskRunner2.executeBatch();
-          } else if (State.autoAddOnScroll) {
+          } else if (State.autoAddOnScroll || State.autoScroll) {
             TaskRunner2.startExecution();
           }
           if (UI4) UI4.update();
@@ -4797,7 +4825,7 @@
       if (typeof State.autoScrollAttempts === "undefined") {
         State.autoScrollAttempts = 0;
       }
-      const maxScrollAttempts = 3;
+      const maxScrollAttempts = 6;
       Utils.logger("info", Utils.getText("auto_scroll_attempt", State.autoScrollAttempts + 1, maxScrollAttempts));
       const getCurrentCardTotal = /* @__PURE__ */ __name(() => {
         try {
@@ -4881,26 +4909,11 @@
           TaskRunner2.attemptAutoScroll();
           return;
         }
-        const canQuery = typeof document !== "undefined" && typeof document.querySelectorAll === "function";
-        const counts = canQuery ? TaskRunner2.getCardCounts() : { total: 0, hidden: 0, visible: 0 };
-        const isAtPhysicalBottom = typeof window !== "undefined" && window.innerHeight + currentScrollY >= currentScrollHeight - 50;
-        State.autoScrollAttempts++;
-        const physicallyStuck = isAtPhysicalBottom && State.autoScrollAttempts >= maxScrollAttempts;
-        const reachedBottom = physicallyStuck;
-        if (State.autoAddOnScroll && !reachedBottom) {
-          Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
-          TaskRunner2.attemptAutoScroll();
-          return;
-        }
-        if (reachedBottom || State.autoScrollAttempts >= maxScrollAttempts) {
-          if (reachedBottom) {
-            Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
-            if (UI4 && typeof UI4.showToast === "function" && !State.hasReachedBottomToastShown) {
-              State.hasReachedBottomToastShown = true;
-              UI4.showToast(Utils.getText("toast_reached_bottom"), true);
-            }
-          } else {
-            Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
+        if (State.isEndOfSearchList) {
+          Utils.logger("info", Utils.getText("auto_scroll_reached_bottom"));
+          if (UI4 && typeof UI4.showToast === "function" && !State.hasReachedBottomToastShown) {
+            State.hasReachedBottomToastShown = true;
+            UI4.showToast(Utils.getText("toast_reached_bottom"), true);
           }
           State.isAutoScrolling = false;
           const workersStillBusy = State.activeWorkers > 0 || State.db.todo.length > 0;
@@ -4914,8 +4927,19 @@
           }
           return;
         }
-        Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
-        TaskRunner2.attemptAutoScroll();
+        State.autoScrollAttempts++;
+        if (State.autoScrollAttempts >= maxScrollAttempts) {
+          Utils.logger("warn", Utils.getText("auto_scroll_safety_stop", maxScrollAttempts));
+          State.autoScrollAttempts = 0;
+          State.isAutoScrolling = false;
+          return;
+        }
+        if (State.autoScroll) {
+          Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
+          TaskRunner2.attemptAutoScroll();
+          return;
+        }
+        State.isAutoScrolling = false;
       }, 3e3);
     }, "attemptAutoScroll")
   };
@@ -5469,6 +5493,8 @@
           if (!TaskRunner3) return;
           if (stateKey === "autoAddOnScroll") {
             TaskRunner3.toggleAutoAdd();
+          } else if (stateKey === "autoScroll") {
+            TaskRunner3.toggleAutoScroll();
           } else if (stateKey === "rememberScrollPosition") {
             TaskRunner3.toggleRememberPosition();
           } else if (stateKey === "autoResumeAfter429") {
@@ -5492,6 +5518,8 @@
       }, "createSettingRow");
       const autoAddSetting = createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll");
       settingsContent.appendChild(autoAddSetting);
+      const autoScrollSetting = createSettingRow(Utils.getText("setting_auto_scroll"), "autoScroll");
+      settingsContent.appendChild(autoScrollSetting);
       const rememberPosSetting = createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition");
       settingsContent.appendChild(rememberPosSetting);
       const autoResumeSetting = createSettingRow(Utils.getText("setting_auto_resume_429"), "autoResumeAfter429");
@@ -6582,13 +6610,13 @@
           if (State.debugMode) {
             Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
           }
-          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || State.autoAddOnScroll || State.isExecuting || State.db.todo.length > 0;
+          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || State.autoAddOnScroll || State.autoScroll || State.isExecuting || State.db.todo.length > 0;
           if (!shouldProcessNewCards) return;
           TaskRunner2.checkVisibleCardsStatus().then(() => {
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if (State.autoAddOnScroll) {
+            if (State.autoAddOnScroll || State.autoScroll) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -6602,7 +6630,7 @@
     observer.observe(targetNode, { childList: true, subtree: true });
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
-    if (State.autoAddOnScroll) {
+    if (State.autoAddOnScroll || State.autoScroll) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -6722,7 +6750,7 @@
       State.isExecuting = false;
       Database.saveExecutingState();
       await Database.saveTodo();
-      if (!State.autoAddOnScroll || State.isEndOfSearchList) {
+      if (!State.autoAddOnScroll && !State.autoScroll || State.isEndOfSearchList) {
         Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
         if (UI5 && typeof UI5.showToast === "function") {
           UI5.showToast(Utils.getText("toast_all_tasks_completed"), true);
@@ -6847,7 +6875,7 @@
           setTimeout(() => TaskRunner2.executeBatch(), 200);
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-          if (State.autoAddOnScroll) {
+          if (State.autoScroll) {
             TaskRunner2.attemptAutoScroll();
           } else {
             await TaskRunner2.stopExecutionAndSettle();

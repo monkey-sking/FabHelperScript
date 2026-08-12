@@ -889,6 +889,7 @@ async function runDomDependentPart() {
                     State.hideDiscountedPaid ||
                     State.hidePaid ||
                     State.autoAddOnScroll ||
+                    State.autoScroll ||
                     State.isExecuting ||
                     State.db.todo.length > 0;
 
@@ -901,7 +902,7 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if (State.autoAddOnScroll) {
+                    if (State.autoAddOnScroll || State.autoScroll) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -920,8 +921,8 @@ async function runDomDependentPart() {
     // Initial hide/show
     TaskRunner.runHideOrShow();
 
-    // 初始加载时，如果开启了自动添加，则扫描一次现有商品
-    if (State.autoAddOnScroll) {
+    // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
+    if (State.autoAddOnScroll || State.autoScroll) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1076,7 +1077,7 @@ async function main() {
         await Database.saveTodo();
 
         // 仅在非自动滚动加任务模式，或者已经到达全站末尾时，才弹出“所有任务已处理完成”
-        if (!State.autoAddOnScroll || State.isEndOfSearchList) {
+        if ((!State.autoAddOnScroll && !State.autoScroll) || State.isEndOfSearchList) {
             Utils.logger('info', '所有任务已完成。');
             if (UI && typeof UI.showToast === 'function') {
                 UI.showToast(Utils.getText('toast_all_tasks_completed'), true);
@@ -1248,7 +1249,7 @@ async function main() {
             }
 
             if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-                if (State.autoAddOnScroll) {
+                if (State.autoScroll) {
                     TaskRunner.attemptAutoScroll();
                 } else {
                     await TaskRunner.stopExecutionAndSettle();

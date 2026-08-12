@@ -609,6 +609,8 @@ export const UI = {
 
                 if (stateKey === 'autoAddOnScroll') {
                     TaskRunner.toggleAutoAdd();
+                } else if (stateKey === 'autoScroll') {
+                    TaskRunner.toggleAutoScroll();
                 } else if (stateKey === 'rememberScrollPosition') {
                     TaskRunner.toggleRememberPosition();
                 } else if (stateKey === 'autoResumeAfter429') {
@@ -636,6 +638,9 @@ export const UI = {
 
         const autoAddSetting = createSettingRow(Utils.getText('setting_auto_add_scroll'), 'autoAddOnScroll');
         settingsContent.appendChild(autoAddSetting);
+
+        const autoScrollSetting = createSettingRow(Utils.getText('setting_auto_scroll'), 'autoScroll');
+        settingsContent.appendChild(autoScrollSetting);
 
         const rememberPosSetting = createSettingRow(Utils.getText('setting_remember_position'), 'rememberScrollPosition');
         settingsContent.appendChild(rememberPosSetting);

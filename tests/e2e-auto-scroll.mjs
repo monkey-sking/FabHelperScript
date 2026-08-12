@@ -1,16 +1,16 @@
 /**
- * attemptAutoScroll 端到端模拟验证（独立脚本，不依赖 node:test 的定时器）。
+ * attemptAutoScroll 端到端模拟验证（服务器驱动判底版，v3.5.18）。
  *
- * 为什么这么测：
- *   之前的验证把 stopExecutionAndSettle 中和了，等于根本没检测“到底有没有提前停”，
- *   所以真实使用时一滚到底就停。这次保留停止函数并插桩记录，用“有限列表”去跑完整遍历：
- *   - 列表共 TOTAL 个商品，每次滚到底（模拟 Fab 的 IntersectionObserver 哨兵）就加载下一页；
- *   - 加载到 TOTAL 后不再增长，触发“连续无新内容”判定，脚本应在真到底时 stop；
- *   - 最坏情况：一开始就把 isEndOfSearchList 强制置 true（后端误报“已到末尾”），
- *     在 v3.5.13 逻辑下不应影响判底（判底只看连续无新内容 + 物理触底）。
+ * 设计变更：判底的唯一权威信号改为「服务器接口返回 cursors.next === null」，
+ * 即 State.isEndOfSearchList（由 index.js 拦截 /i/listings/search 响应写入）。
+ * 滚动条位置 / scrollHeight / 卡片 DOM 计数不再作为到底依据（Fab 虚拟化，本地信号不可靠）。
  *
- * 关键：直接用动态 import 在 mock 定时器下加载【真实】的 task-runner 模块，
- * 跑的是真实的 attemptAutoScroll / doScroll 代码，停止函数保持真实生效（仅插桩记录）。
+ * 模拟环境：
+ *   - 有限列表 TOTAL=120，每滚到底（模拟 Fab IntersectionObserver 哨兵）加载下一页 24 个；
+ *   - 加载到末页后，模拟「服务器响应 cursors.next === null」置 isEndOfSearchList=true；
+ *   - 脚本应在 isEndOfSearchList=true 时停止并视作自动入库成功，且只在真到底调用一次 stop；
+ *   - Bug B：服务器确认无更多但仍有 2 个 worker 在途，脚本应仅停滚动、不调用
+ *     stopExecutionAndSettle（不误杀 worker），worker 完成后再 settle。
  */
 
 // ---- 0. 补浏览器环境垫片（Node 无 Event 全局，而 doScroll 会 new Event('scroll')）----
@@ -89,17 +89,23 @@ globalThis.document = {
     getElementById: () => null
 };
 
-// 模拟 Fab 的无限滚动加载器：滚到底部（物理触底）且还有商品时，加载下一页
+// 模拟 Fab 的无限滚动加载器 + 服务器：
+//   - 滚到底、还有商品、且服务器未宣告结束时，加载下一页；
+//   - 加载到末页后，模拟「服务器响应 cursors.next === null」置 isEndOfSearchList=true。
 function onScroll() {
     const sh = documentElement.scrollHeight;
     const atBottom = (INNER_HEIGHT + scrollY) >= sh - 50;
-    if (atBottom && cardsLoaded < TOTAL_CARDS) {
+    if (atBottom && cardsLoaded < TOTAL_CARDS && !State.isEndOfSearchList) {
         const load = Math.min(PAGE_SIZE, TOTAL_CARDS - cardsLoaded);
         cardsLoaded += load;
         nearBottomLoads++;
         // 模拟“扫描新页”把商品加入已处理集合（让 newProcessedCount 也作为增长信号）
         for (let i = 0; i < load; i++) {
             State.processedCardUids.add('card-' + (cardsLoaded - load + i));
+        }
+        // 模拟服务器响应：加载到最后一页后，/i/listings/search 返回 cursors.next === null
+        if (cardsLoaded >= TOTAL_CARDS) {
+            State.isEndOfSearchList = true;
         }
     }
 }
@@ -128,7 +134,7 @@ process.on('unhandledRejection', (e) => {
     console.error('[DIAG] UNHANDLED REJECTION:', e && (e.stack || e.message || e));
 });
 
-async function runTraversal({ forceEndOfList, _diag = false }) {
+async function runTraversal({ _diag = false } = {}) {
     // 重置每轮状态
     cardsLoaded = PAGE_SIZE; // 首屏已渲染 24 个（同 Fab 首屏）
     scrollY = 0;
@@ -144,8 +150,10 @@ async function runTraversal({ forceEndOfList, _diag = false }) {
     State.isAutoScrolling = false;
     State.isExecuting = true;
     State.autoAddOnScroll = true;
-    State.isEndOfSearchList = !!forceEndOfList; // 最坏情况：后端提前误报“已到末尾”
+    State.autoScroll = true; // 新增独立开关：显式开启以驱动 attemptAutoScroll 的自循环
+    State.isEndOfSearchList = false; // 由 mock 加载器在末页置 true（模拟服务器 next=null）
     State.hasReachedBottomToastShown = false;
+    State.activeWorkers = 0;
 
     // 启动自动滚动（真实函数）
     const startPromise = TaskRunner.attemptAutoScroll();
@@ -186,7 +194,7 @@ async function runTraversal({ forceEndOfList, _diag = false }) {
     };
 }
 
-// ---- 5. 多轮运行 + 断言 ----
+// ---- 5. 断言 ----
 function assertRun(label, result) {
     const problems = [];
     if (result.hung) problems.push('死循环：50000 次 flush 仍未停止');
@@ -200,25 +208,20 @@ function assertRun(label, result) {
 }
 
 const RUNS = 50;
-const variants = [
-    { name: '正常情况（isEndOfSearchList 保持 false）', forceEndOfList: false },
-    { name: '最坏情况（一开始强制 isEndOfSearchList=true，模拟“滚到底+后端误报结束”）', forceEndOfList: true }
-];
 
 // 先跑一遍诊断
 console.log('--- 诊断单遍 ---');
-await runTraversal({ forceEndOfList: true, _diag: true });
+await runTraversal({ _diag: true });
 console.log('--- 诊断结束 ---\n');
 
 let totalFailures = 0;
 
 await (async () => {
-for (const variant of variants) {
     let failed = 0;
     const firstFailure = [];
     for (let i = 0; i < RUNS; i++) {
-        const r = await runTraversal({ forceEndOfList: variant.forceEndOfList });
-        const problems = assertRun(variant.name, r);
+        const r = await runTraversal();
+        const problems = assertRun('正常完整遍历', r);
         if (problems.length > 0) {
             failed++;
             totalFailures++;
@@ -229,41 +232,43 @@ for (const variant of variants) {
         }
     }
     const status = failed === 0 ? 'PASS' : 'FAIL';
-    console.log(`[${status}] ${variant.name} — ${RUNS - failed}/${RUNS} 遍通过`);
+    console.log(`[${status}] 正常完整遍历（服务器末页 next=null 触发停止）— ${RUNS - failed}/${RUNS} 遍通过`);
     if (failed > 0) {
         console.log('        首次失败原因: ' + firstFailure.join('; '));
     }
-}
 })();
 
-// 额外：打印最坏情况的一遍详细轮次轨迹，证明“滚到底也不提前停”
-console.log('\n=== 最坏情况一遍的轨迹抽样（应看到一路加载到 120 才停）===');
+// 额外：打印正常遍历的一遍详细轮次轨迹，证明“完整加载到 120 后由服务器信号停止”
+console.log('\n=== 正常遍历轨迹抽样（应看到一路加载到 120，随后因 isEndOfSearchList=true 停止）===');
 await (async () => {
     cardsLoaded = PAGE_SIZE; scrollY = 0; nearBottomLoads = 0;
     stopCalled = false; stopCallCount = 0; stopAtCardsLoaded = -1; stopAtAttempts = -1;
     State.db = { todo: [], done: [], failed: [] };
     State.processedCardUids = new Set();
     State.autoScrollAttempts = 0; State.isAutoScrolling = false; State.isExecuting = true;
-    State.autoAddOnScroll = true; State.isEndOfSearchList = true; State.hasReachedBottomToastShown = false;
+    State.autoAddOnScroll = true; State.autoScroll = true;
+    State.isEndOfSearchList = false; State.hasReachedBottomToastShown = false; State.activeWorkers = 0;
     TaskRunner.attemptAutoScroll();
     const trace = [];
     let guard = 0;
+    let last = -1;
     while (!stopCalled && guard < 50000) {
         const before = cardsLoaded;
         flushTimers();
         if (cardsLoaded !== before) {
-            trace.push(`滚完一轮后已加载到 ${cardsLoaded}/${TOTAL_CARDS}（isEndOfSearchList=true 仍继续）`);
+            trace.push(`已加载到 ${cardsLoaded}/${TOTAL_CARDS}（isEndOfSearchList=${State.isEndOfSearchList}）`);
+            last = cardsLoaded;
         }
         await new Promise(res => setImmediate(res));
         guard++;
     }
-    trace.push(`→ 停止于 ${cardsLoaded}/${TOTAL_CARDS}，attempts=${stopAtAttempts}，stop 调用 ${stopCallCount} 次`);
+    trace.push(`→ 停止于 ${cardsLoaded}/${TOTAL_CARDS}，stop 调用 ${stopCallCount} 次（服务器确认无更多 → 自动入库成功）`);
     console.log(trace.join('\n'));
 })();
 
-console.log('\n=== 验证 Bug B：到底时若有在途 worker，不应误杀/不应提前 settle ===');
+console.log('\n=== 验证 Bug B：服务器确认无更多（isEndOfSearchList=true）但仍有 2 个在途 worker，不应误杀/不应提前 settle ===');
 await (async () => {
-    // 场景：列表已滚到底（scrollY 触底），但仍有 2 个 worker 在途处理任务。
+    // 场景：服务器已返回 cursors.next === null（isEndOfSearchList=true），但仍有 2 个 worker 在途处理任务。
     // 期望：自动滚动只停止滚动（isAutoScrolling=false），绝不调用 stopExecutionAndSettle
     //       （否则会 closeAllWorkerTabs 误杀在途 worker → “工作标签页在完成前关闭”）。
     windowMock.scrollTo(0, documentElement.scrollHeight); // 先把滚动位置钉在底部
@@ -272,11 +277,12 @@ await (async () => {
     State.db = { todo: [], done: [], failed: [] };
     State.processedCardUids = new Set();
     State.autoScrollAttempts = 0; State.isAutoScrolling = false; State.isExecuting = true;
-    State.autoAddOnScroll = true; State.isEndOfSearchList = false; State.hasReachedBottomToastShown = false;
-    State.activeWorkers = 2; // 模拟 2 个 worker 在途
+    State.autoAddOnScroll = true;
+    State.autoScroll = true;
+    State.isEndOfSearchList = true; State.hasReachedBottomToastShown = false; State.activeWorkers = 2; // 模拟 2 个 worker 在途
 
     TaskRunner.attemptAutoScroll();
-    // 驱动若干轮（列表到底不会再增长，若逻辑正确应始终保持 stopCalled=false）
+    // 驱动若干轮（服务器已确认无更多，若逻辑正确应始终保持 stopCalled=false）
     let guard = 0;
     while (!stopCalled && guard < 200) {
         flushTimers();
@@ -284,7 +290,7 @@ await (async () => {
         guard++;
     }
     const preserved = (State.activeWorkers === 2) && (stopCalled === false) && (State.isAutoScrolling === false);
-    console.log(`[${preserved ? 'PASS' : 'FAIL'}] 到底时有 2 个在途 worker：stopCalled=${stopCalled}, activeWorkers=${State.activeWorkers}, isAutoScrolling=${State.isAutoScrolling} → 未误杀、仅停滚动`);
+    console.log(`[${preserved ? 'PASS' : 'FAIL'}] 服务器确认无更多 + 2 在途 worker：stopCalled=${stopCalled}, activeWorkers=${State.activeWorkers}, isAutoScrolling=${State.isAutoScrolling} → 未误杀、仅停滚动`);
 
     // 模拟在途 worker 全部完成：activeWorkers 归零、待办清空，再次触发到底收尾
     State.activeWorkers = 0;
@@ -305,7 +311,7 @@ await (async () => {
 
 console.log('\n==== 汇总 ====');
 if (totalFailures === 0) {
-    console.log(`全部 ${RUNS * variants.length} 遍通过：列表均完整遍历到 ${TOTAL_CARDS} 个商品，停止函数只在真到底时调用一次，滚到底+后端误报也不会提前停。`);
+    console.log(`全部 ${RUNS} 遍通过：列表均完整遍历到 ${TOTAL_CARDS} 个商品，并在服务器确认无更多（isEndOfSearchList=true）时停止一次；Bug B 在途 worker 不被误杀。`);
     process.exit(0);
 } else {
     console.log(`存在 ${totalFailures} 遍失败，需继续排查。`);
