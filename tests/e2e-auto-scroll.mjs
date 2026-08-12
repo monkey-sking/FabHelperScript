@@ -261,6 +261,48 @@ await (async () => {
     console.log(trace.join('\n'));
 })();
 
+console.log('\n=== 验证 Bug B：到底时若有在途 worker，不应误杀/不应提前 settle ===');
+await (async () => {
+    // 场景：列表已滚到底（scrollY 触底），但仍有 2 个 worker 在途处理任务。
+    // 期望：自动滚动只停止滚动（isAutoScrolling=false），绝不调用 stopExecutionAndSettle
+    //       （否则会 closeAllWorkerTabs 误杀在途 worker → “工作标签页在完成前关闭”）。
+    windowMock.scrollTo(0, documentElement.scrollHeight); // 先把滚动位置钉在底部
+    cardsLoaded = TOTAL_CARDS; scrollY = windowMock.scrollY; nearBottomLoads = 0;
+    stopCalled = false; stopCallCount = 0; stopAtCardsLoaded = -1; stopAtAttempts = -1;
+    State.db = { todo: [], done: [], failed: [] };
+    State.processedCardUids = new Set();
+    State.autoScrollAttempts = 0; State.isAutoScrolling = false; State.isExecuting = true;
+    State.autoAddOnScroll = true; State.isEndOfSearchList = false; State.hasReachedBottomToastShown = false;
+    State.activeWorkers = 2; // 模拟 2 个 worker 在途
+
+    TaskRunner.attemptAutoScroll();
+    // 驱动若干轮（列表到底不会再增长，若逻辑正确应始终保持 stopCalled=false）
+    let guard = 0;
+    while (!stopCalled && guard < 200) {
+        flushTimers();
+        await new Promise(res => setImmediate(res));
+        guard++;
+    }
+    const preserved = (State.activeWorkers === 2) && (stopCalled === false) && (State.isAutoScrolling === false);
+    console.log(`[${preserved ? 'PASS' : 'FAIL'}] 到底时有 2 个在途 worker：stopCalled=${stopCalled}, activeWorkers=${State.activeWorkers}, isAutoScrolling=${State.isAutoScrolling} → 未误杀、仅停滚动`);
+
+    // 模拟在途 worker 全部完成：activeWorkers 归零、待办清空，再次触发到底收尾
+    State.activeWorkers = 0;
+    State.db = { todo: [], done: [], failed: [] };
+    stopCalled = false;
+    TaskRunner.attemptAutoScroll();
+    guard = 0;
+    while (!stopCalled && guard < 50000) {
+        flushTimers();
+        await new Promise(res => setImmediate(res));
+        guard++;
+    }
+    const settled = stopCalled === true;
+    console.log(`[${settled ? 'PASS' : 'FAIL'}] worker 全部完成后再次到底：stopCalled=${stopCalled} → 正常收尾`);
+
+    if (!preserved || !settled) totalFailures++;
+})();
+
 console.log('\n==== 汇总 ====');
 if (totalFailures === 0) {
     console.log(`全部 ${RUNS * variants.length} 遍通过：列表均完整遍历到 ${TOTAL_CARDS} 个商品，停止函数只在真到底时调用一次，滚到底+后端误报也不会提前停。`);

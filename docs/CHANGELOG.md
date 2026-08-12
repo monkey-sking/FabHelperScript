@@ -1,5 +1,34 @@
 # 更新日志
 
+## 3.5.16 (2026-08-12)
+
+### 功能修复（调优 v3.5.15 的“底部 nudge”：上滚幅度不足，长列表仍中途卡住）
+
+- v3.5.15 的 nudge 仅上滚半屏（≈innerH×0.5）。ego 真实登录环境实测：底部哨兵区较大时半屏上滚不足以让哨兵离开可视区，导致 24→72→96 后又卡在 96（连续 3 轮无增长即停）。
+- 调优：nudge 上滚幅度提升到 **整整一屏以上（innerH×1.2）**，并确保哨兵明确离开可视区再滚回底部；两侧等待各 500ms。
+- 验证：ego 真实 Fab 登录页（页面恒开在底部，最坏情况）注入 v3.5.16，自动滚动连续遍历 `72→96→120→144→168→192→216→240` 全程 `bottom=false / exec=true` 不冻结（80s 仍持续增长，仅在列表真正到底时才停）。对比 v3.5.14（同环境卡在 24）、v3.5.15（卡在 96）。
+
+## 3.5.15 (2026-08-12)
+
+### 功能修复（核心：滚动已到底时无限滚动加载器不重新触发，导致“入库卡在 N / 尝试 1/3 即已到达页面底部”）
+
+- 修复 **自动滚动在页面已处于底部时提前停转（入库卡在 N，或只尝试 1 轮就「已到达页面底部」）**：
+  - 根因：`doScroll` 只做向下滚动。当页面已在底部时，向下滚动无法再推进滚动位置，Fab 的无限滚动 `IntersectionObserver` 哨兵始终处于「已 intersecting」状态，不会重新触发「进入可视区」回调，下一页请求不发、`scrollHeight` 不增长；脚本在连续 3 轮无增长后误判「已到列表末尾」而停转。ego 真实登录环境实测：在底部时 `scrollBy/scrollTo` 无法推进，但**先上滚约半屏、再滚回底部**可让哨兵离开并重新进入可视区，成功触发加载器（24→72）。
+  - 修复：`doScroll` 末尾新增「底部 nudge」——仅当确实已到底（`scrollY >= scrollHeight - innerHeight - 50`）时，先 `scrollTo(0, scrollY - innerH*0.5)`、再 `scrollTo(0, scrollHeight)` 各派发 scroll 事件并重试，重新触发加载器。正常分步下滚过程不受影响。
+  - 验证：ego 真实 Fab 登录页注入 v3.5.15，确认在底部卡住时 nudge 能继续加载下一页；`node --test` 单测与 `e2e-auto-scroll.mjs` 回归保持通过。
+
+## 3.5.14 (2026-08-12)
+
+### 功能修复（核心：自动滚动“到达列表底部”误杀在途 worker，导致大量任务 `工作标签页在完成前关闭`）
+
+- 修复 **自动滚动滚到底后，正在后台处理的入库任务几乎瞬间全部失败（`工作标签页在完成前关闭`，执行时间 0.00s）**：
+  - 用户实测线索：左下角出现「已到达商品列表底部，全部商品扫描完毕」提示后，入库就中断、待入库商品没加上。该提示与误杀 worker 是**同一个动作**。
+  - 根因：`attemptAutoScroll` 到达底部时调用 `stopExecutionAndSettle()`，而它内部 `closeAllWorkerTabs()` 会 `GM_deleteValue(workerId)` 并清空 `State.runningWorkers`——把**正在后台处理任务的 worker 标签页的任务数据删掉**。worker 标签页一打开就读不到自己的任务数据（`GM_getValue(workerId)` 为 null），立即 `closeWorkerTab()` 并上报 `worker_closed`（「工作标签页在完成前关闭」）。此路径在 v3.5.13 之前不暴露：旧版自动滚动在中间 N 就冻住、从未真正滚到底，故 `closeAllWorkerTabs` 不被触发；v3.5.13 让它能正常滚到底后，反而把在途 worker 全杀了。
+  - 修复（两处）：
+    1. `attemptAutoScroll` 到底分支改为：**若仍有 `activeWorkers > 0` 或 `todo` 未空，只停止滚动（`isAutoScrolling = false`）、保留执行与 worker，绝不调用 `stopExecutionAndSettle`**；由 worker 完成流程（index.js 1250）收尾并再次触发 `attemptAutoScroll`，届时 `todo` 空且无活跃 worker 才真正 settle。仅当 `todo` 空且无活跃 worker 时才 settle。补一发 `executeBatch` 兜底待办不被软锁。
+    2. `processDetailPage` 读取任务数据加**重试**：`GM_getValue(workerId)` 初次为 null/无 task 时，间隔 400ms 重试 6 次再判定「任务数据已清理」，兜底跨标签页 GM 存储异步提交导致的瞬时读空（避免误报「工作标签页在完成前关闭」）。
+  - 验证：e2e 新增「到底时有 2 个在途 worker」断言——`stopCalled=false / activeWorkers 保留 / isAutoScrolling=false`（未误杀、仅停滚动），worker 跑完后再到底 `stopCalled=true`（正常收尾）；`node --test` 30/30 + e2e 100/100 全过。`dist` 重建 v3.5.14。
+
 ## 3.5.13 (2026-08-12)
 
 ### 功能修复（核心：后端误报“无下一页”导致一滚到底就停）

@@ -912,6 +912,13 @@ export const TaskRunner = {
 
         try {
             payload = await GM_getValue(workerId);
+            // 跨标签页 GM 存储可能是异步提交：worker 标签页刚打开时偶尔读不到 manager 刚写入的
+            // 任务数据，直接判「数据已清理」会误报「工作标签页在完成前关闭」。重试若干次再放弃。
+            let readRetries = 6;
+            while ((!payload || !payload.task) && readRetries-- > 0) {
+                await new Promise(r => setTimeout(r, 400));
+                payload = await GM_getValue(workerId);
+            }
             if (!payload || !payload.task) {
                 Utils.logger('info', Utils.getText('log_task_data_cleaned'));
                 closeWorkerTab();
@@ -2229,6 +2236,31 @@ export const TaskRunner = {
                 if (typeof window.dispatchEvent === 'function') {
                     window.dispatchEvent(new Event('scroll'));
                 }
+                await new Promise(r => _realSetTimeout(r, 350));
+            }
+            // 关键修复：若已在页面底部（向下滚动无法再推进滚动位置），Fab 的无限滚动
+            // IntersectionObserver 哨兵始终处于「已 intersecting」状态，不会重新触发「进入可视区」
+            // 回调，于是下一页请求不发、scrollHeight 不增长，脚本在 3 轮无增长后误判「已到列表
+            // 末尾」而提前停转（用户实测：入库卡在 N、尝试 1/3 即「已到达页面底部」）。
+            // 此时先上滚约半屏、再滚回底部，让哨兵离开并重新进入可视区，重新触发加载器。
+            // 仅在确实到底时执行，正常分步下滚过程不受影响。
+            if (doc) {
+                const maxScroll = doc.scrollHeight - innerH;
+                const atBottom = (window.scrollY || 0) >= maxScroll - 50;
+                if (atBottom) {
+                    // 上滚超过一整屏，确保底部哨兵明确离开可视区；再滚回底部使其重新进入，触发加载器。
+                    const upBy = Math.round(innerH * 1.2);
+                    window.scrollTo(0, Math.max(0, (window.scrollY || 0) - upBy));
+                    if (typeof window.dispatchEvent === 'function') {
+                        window.dispatchEvent(new Event('scroll'));
+                    }
+                    await new Promise(r => _realSetTimeout(r, 500));
+                    window.scrollTo(0, doc.scrollHeight);
+                    if (typeof window.dispatchEvent === 'function') {
+                        window.dispatchEvent(new Event('scroll'));
+                    }
+                    await new Promise(r => _realSetTimeout(r, 500));
+                }
             }
             return startHeight;
         };
@@ -2305,11 +2337,22 @@ export const TaskRunner = {
                     Utils.logger('info', Utils.getText('auto_scroll_no_new_items', maxScrollAttempts));
                 }
 
-                if (State.isExecuting) {
+                // 关键修复：到达底部/无新内容时，若仍有 worker 在途或待办未空，
+                // 绝不能 stopExecutionAndSettle —— 它会 closeAllWorkerTabs 误杀在途 worker，
+                // 表现为「工作标签页在完成前关闭」、左下角「已到达底部」提示一出现就中断入库。
+                // 此时仅停止滚动，保留执行与 worker；worker 完成后由正常完成流程
+                // (index.js 1250) 收尾并再次触发 attemptAutoScroll，届时 todo 空且无活跃
+                // worker 才真正 settle，避免误杀与漏处理。
+                State.isAutoScrolling = false;
+                const workersStillBusy = State.activeWorkers > 0 || State.db.todo.length > 0;
+                if (State.isExecuting && !workersStillBusy) {
                     await TaskRunner.stopExecutionAndSettle();
                 } else {
                     State.autoScrollAttempts = 0;
-                    State.isAutoScrolling = false;
+                    if (State.isExecuting && State.db.todo.length > 0) {
+                        // 仍待派发：补一发 executeBatch，避免滚动停了但待办无人处理而软锁
+                        setTimeout(() => TaskRunner.executeBatch(), 200);
+                    }
                 }
                 return;
             }

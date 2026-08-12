@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.13-20260812-0453
+// @version      3.5.16-20260812-1025
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3804,6 +3804,11 @@
       __name(closeWorkerTab, "closeWorkerTab");
       try {
         payload = await GM_getValue(workerId);
+        let readRetries = 6;
+        while ((!payload || !payload.task) && readRetries-- > 0) {
+          await new Promise((r) => setTimeout(r, 400));
+          payload = await GM_getValue(workerId);
+        }
         if (!payload || !payload.task) {
           Utils.logger("info", Utils.getText("log_task_data_cleaned"));
           closeWorkerTab();
@@ -4829,6 +4834,24 @@
           if (typeof window.dispatchEvent === "function") {
             window.dispatchEvent(new Event("scroll"));
           }
+          await new Promise((r) => _realSetTimeout(r, 350));
+        }
+        if (doc) {
+          const maxScroll = doc.scrollHeight - innerH;
+          const atBottom = (window.scrollY || 0) >= maxScroll - 50;
+          if (atBottom) {
+            const upBy = Math.round(innerH * 1.2);
+            window.scrollTo(0, Math.max(0, (window.scrollY || 0) - upBy));
+            if (typeof window.dispatchEvent === "function") {
+              window.dispatchEvent(new Event("scroll"));
+            }
+            await new Promise((r) => _realSetTimeout(r, 500));
+            window.scrollTo(0, doc.scrollHeight);
+            if (typeof window.dispatchEvent === "function") {
+              window.dispatchEvent(new Event("scroll"));
+            }
+            await new Promise((r) => _realSetTimeout(r, 500));
+          }
         }
         return startHeight;
       }, "doScroll");
@@ -4879,11 +4902,15 @@
           } else {
             Utils.logger("info", Utils.getText("auto_scroll_no_new_items", maxScrollAttempts));
           }
-          if (State.isExecuting) {
+          State.isAutoScrolling = false;
+          const workersStillBusy = State.activeWorkers > 0 || State.db.todo.length > 0;
+          if (State.isExecuting && !workersStillBusy) {
             await TaskRunner2.stopExecutionAndSettle();
           } else {
             State.autoScrollAttempts = 0;
-            State.isAutoScrolling = false;
+            if (State.isExecuting && State.db.todo.length > 0) {
+              setTimeout(() => TaskRunner2.executeBatch(), 200);
+            }
           }
           return;
         }
