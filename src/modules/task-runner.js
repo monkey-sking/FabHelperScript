@@ -1470,8 +1470,8 @@ export const TaskRunner = {
     },
 
     isCardHidden: (card) => {
-        // 仅以属性判定：隐藏现已统一用 visibility:hidden（保留文档流占位），
-        // 不再依赖 display === 'none'，否则会与“已处理且已隐藏”的稳定态判断冲突。
+        // 仅以 data-fab-hidden 属性判定隐藏态（setCardHidden 用 display:none 隐藏，
+        // 不读 style.display，避免与“已处理且已隐藏”的稳定态判断冲突）。
         return card?.getAttribute?.('data-fab-hidden') === 'true';
     },
 
@@ -1540,24 +1540,16 @@ export const TaskRunner = {
         const wasHidden = TaskRunner.isCardHidden(card);
 
         if (hidden) {
-            // 关键修复：用 visibility:hidden 代替 display:none。
-            // display:none 会把卡片移出文档流，使页面高度塌陷，Fab 的无限滚动
-            // IntersectionObserver sentinel 被永远留在视口内，无法触发下一页请求，
-            // 表现为“隐藏若干商品后不再加载新商品 / 滚动条停在某处”。
-            // visibility:hidden 保留卡片占据的空间，页面高度不变，sentinel 持续
-            // 位于视口外，翻页照常进行；同时禁掉指针与选中，避免误触隐藏项。
-            if (card.style) {
-                card.style.visibility = 'hidden';
-                card.style.pointerEvents = 'none';
-                card.style.userSelect = 'none';
-            }
+            // 按用户原始记录：已入库/已隐藏商品不占高度、不占空间 —— 用 display:none
+            // 彻底移出文档流（不保留占位、不撑高容器）。
+            // 注：曾一度改为 visibility:hidden 保留占位（commit 75e410d），但其理由
+            // “display:none 塌陷导致无限滚动 sentinel 卡视口”已被 8-11 ego 实测证伪：
+            // Fab 为固定容器高度的虚拟化渲染，单卡 display:none 不改变页面总高度
+            // （隐 15 张 docH 塌陷=0），故不触发旧假说，无需保留占位。
+            if (card.style) card.style.display = 'none';
             card.setAttribute?.('data-fab-hidden', 'true');
         } else {
-            if (card.style) {
-                card.style.visibility = '';
-                card.style.pointerEvents = '';
-                card.style.userSelect = '';
-            }
+            if (card.style) card.style.display = '';
             card.removeAttribute?.('data-fab-hidden');
         }
 
@@ -1598,21 +1590,8 @@ export const TaskRunner = {
             TaskRunner._runHideOrShowTimer = null;
         }
 
-        // 容器安全网：隐藏现已统一用 visibility:hidden（保留文档流占位），
-        // 页面高度天然不塌陷，无限滚动 sentinel 始终在视口外，翻页照常；
-        // 这里的 minHeight 仅是兜底（仅作用于最外层可滚动容器 main/#main 及常见网格根），
-        // 不再下探 Fab 嵌套的 flex/transform 包裹层，避免把不该撑高的内层顶高。
-        const containers = (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function')
-            ? document.querySelectorAll('main, #main, .AssetGrid-root, .fabkit-responsive-grid-container')
-            : [];
-        const setContainersMinHeight = (value) => {
-            if (containers && containers.forEach) {
-                containers.forEach(el => { if (el && el.style) el.style.minHeight = value; });
-            }
-        };
-
         if (!TaskRunner.isHideModeActive()) {
-            setContainersMinHeight('');
+            // 关闭隐藏模式：恢复所有卡片占位状态并校准计数
             const allCards = document.querySelectorAll(Config.SELECTORS.card);
             TaskRunner.refreshCardCountCache(allCards);
             TaskRunner.resetHiddenCardState(allCards);
@@ -1620,8 +1599,6 @@ export const TaskRunner = {
             if (UI) UI.update();
             return;
         }
-
-        setContainersMinHeight('120vh');
 
         // 始终基于真实 DOM 校准计数缓存：Fab 无限滚动加载新卡后 document 引用与
         // href 均不变，仅靠 cardCountCache 的 dirty/href 失效条件会让 total 停留在

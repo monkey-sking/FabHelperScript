@@ -1,5 +1,13 @@
 # 更新日志
 
+## 3.5.19 (2026-08-12)
+- 回退隐藏方式：已入库/已隐藏商品改回 `display:none`（不占高度、不占空间），撤销 `75e410d` 引入的 `visibility:hidden` 保留占位。
+  - 依据：用户原始记录要求"隐藏后不占高度、空间"；且 8-11 ego 实测已证伪旧假说——Fab 为固定容器高度的虚拟化渲染，单卡 `display:none` 不改变页面总高度（隐 15 张 docH 塌陷=0），不会触发无限滚动 sentinel 卡视口的旧假说，无需保留占位。
+  - 删除 `runHideOrShow` 的 `minHeight:120vh` 容器兜底（隐藏模式下撑高容器、制造占位，违背"不占空间"，且实测 Fab 不塌陷不需要）。
+  - `isCardHidden` 注释同步（仅以 `data-fab-hidden` 属性判定隐藏态）。
+  - 测试：移除 `pointerEvents/userSelect` 断言（display:none 下不再设置），`visibility` 断言改 `display==='none'`。
+- 单测 30/30、e2e 50/50 全绿。dist 构建 v3.5.19-20260812-1333。
+
 ## 3.5.18 (2026-08-12)
 
 ### 修复（判底信号改由服务器权威：cursors.next === null 才算自动入库成功）

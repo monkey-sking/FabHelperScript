@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.18-20260812-1319
+// @version      3.5.19-20260812-1333
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4316,18 +4316,10 @@
       if (!card) return;
       const wasHidden = TaskRunner2.isCardHidden(card);
       if (hidden) {
-        if (card.style) {
-          card.style.visibility = "hidden";
-          card.style.pointerEvents = "none";
-          card.style.userSelect = "none";
-        }
+        if (card.style) card.style.display = "none";
         card.setAttribute?.("data-fab-hidden", "true");
       } else {
-        if (card.style) {
-          card.style.visibility = "";
-          card.style.pointerEvents = "";
-          card.style.userSelect = "";
-        }
+        if (card.style) card.style.display = "";
         card.removeAttribute?.("data-fab-hidden");
       }
       const isHidden = TaskRunner2.isCardHidden(card);
@@ -4360,16 +4352,7 @@
         clearTimeout(TaskRunner2._runHideOrShowTimer);
         TaskRunner2._runHideOrShowTimer = null;
       }
-      const containers = typeof document !== "undefined" && typeof document.querySelectorAll === "function" ? document.querySelectorAll("main, #main, .AssetGrid-root, .fabkit-responsive-grid-container") : [];
-      const setContainersMinHeight = /* @__PURE__ */ __name((value) => {
-        if (containers && containers.forEach) {
-          containers.forEach((el) => {
-            if (el && el.style) el.style.minHeight = value;
-          });
-        }
-      }, "setContainersMinHeight");
       if (!TaskRunner2.isHideModeActive()) {
-        setContainersMinHeight("");
         const allCards2 = document.querySelectorAll(Config.SELECTORS.card);
         TaskRunner2.refreshCardCountCache(allCards2);
         TaskRunner2.resetHiddenCardState(allCards2);
@@ -4377,7 +4360,6 @@
         if (UI4) UI4.update();
         return;
       }
-      setContainersMinHeight("120vh");
       const allCards = document.querySelectorAll(Config.SELECTORS.card);
       TaskRunner2.refreshCardCountCache(allCards);
       const hideModeKey = TaskRunner2.getHideModeKey();
