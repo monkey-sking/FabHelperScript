@@ -135,6 +135,8 @@ export const zh = {
     auto_scroll_no_new_items: '[自动滚动] 连续 {0} 次滚动均未发现符合条件的新商品，停止自动滚动。',
     auto_scroll_waiting: '[自动滚动] 未发现符合条件的新商品，等待下一次滚动尝试...',
     auto_scroll_safety_stop: '[自动滚动] 连续 {0} 轮未发现新内容且未收到服务器到底信号，安全停止（未确认自动入库成功，请检查网络/接口）。',
+    auto_scroll_resume_hidden: '[自动入库] 页面已无可见商品，主动滚动加载下一页继续隐藏/入库。',
+    auto_scroll_resume_empty: '[自动入库] 页面没有卡片且未到列表末尾，安排一次恢复刷新。',
 
     // HTTP状态检测
     http_status_check_performance_api: '使用Performance API检查，不再发送HEAD请求',

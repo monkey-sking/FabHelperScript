@@ -133,6 +133,8 @@ export const en = {
     auto_scroll_no_new_items: '[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.',
     auto_scroll_waiting: '[Auto Scroll] No new eligible items found, waiting for next scroll attempt...',
     auto_scroll_safety_stop: '[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).',
+    auto_scroll_resume_hidden: '[Auto Add] No visible items remain on page; scrolling to load next page and continue hiding/adding.',
+    auto_scroll_resume_empty: '[Auto Add] Page has no cards and list is not at end; scheduling a recovery refresh.',
 
     // HTTP状态检测
     http_status_check_performance_api: 'Using Performance API check, no longer sending HEAD requests',

@@ -30,6 +30,9 @@ const _realSetTimeout = (typeof setTimeout === 'function') ? setTimeout : (cb) =
 // Forward declaration for UI (will be set via dependency injection)
 let UI = null;
 let countdownRefresh = null;
+// worker 回传监听注册函数（由 index.js 通过 deps 注入）。按 workerId 派生独立回传键
+// 监听，避免旧版单键 WORKER_DONE 在多标签页并发完成时后者覆盖前者导致报告丢失/重复加库。
+let registerWorkerDoneListener = null;
 
 export function setUIReference(uiModule) {
     UI = uiModule;
@@ -37,6 +40,7 @@ export function setUIReference(uiModule) {
 
 export function setDependencies(deps = {}) {
     countdownRefresh = deps.countdownRefresh || countdownRefresh;
+    registerWorkerDoneListener = deps.registerWorkerDoneListener || registerWorkerDoneListener;
 }
 
 export const TaskRunner = {
@@ -261,6 +265,12 @@ export const TaskRunner = {
             State.executionTotalTasks = 0;
             State.executionCompletedTasks = 0;
             State.executionFailedTasks = 0;
+            // 重置会话级跟踪，避免同会话重启后漏处理或重复计数
+            State.processedCardUids = new Set();
+            State.knownCursors = new Set();
+            State.sessionCompleted = new Set();
+            State.sessionFailed = new Set();
+            State.autoScrollAttempts = 0;
             Utils.logger('info', Utils.getText('log_execution_stopped'));
             if (UI) UI.update();
             return;
@@ -530,6 +540,12 @@ export const TaskRunner = {
         State.executionTotalTasks = 0;
         State.executionCompletedTasks = 0;
         State.executionFailedTasks = 0;
+        // 重置会话级跟踪，避免同会话重启后漏处理或重复计数
+        State.processedCardUids = new Set();
+        State.knownCursors = new Set();
+        State.sessionCompleted = new Set();
+        State.sessionFailed = new Set();
+        State.autoScrollAttempts = 0;
         Utils.logger('info', Utils.getText('log_execution_stopped'));
         if (UI) UI.update();
     },
@@ -847,6 +863,9 @@ export const TaskRunner = {
                     instanceId: Config.INSTANCE_ID
                 });
 
+                if (typeof registerWorkerDoneListener === 'function') {
+                    registerWorkerDoneListener(workerId);
+                }
                 GM_openInTab(workerUrl.href, { active: false, insert: true });
             }
 
@@ -908,7 +927,7 @@ export const TaskRunner = {
 
             if (!hasReported && workerId) {
                 try {
-                    GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                    GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
                         workerId: workerId,
                         success: false,
                         logs: [Utils.getText('worker_closed')],
@@ -942,13 +961,11 @@ export const TaskRunner = {
                 return;
             }
 
-            const activeInstance = await GM_getValue('fab_active_instance', null);
-            if (activeInstance && activeInstance.id !== payload.instanceId) {
-                Utils.logger('warn', Utils.getText('log_instance_mismatch', payload.instanceId, activeInstance.id));
-                await GM_deleteValue(workerId);
-                closeWorkerTab();
-                return;
-            }
+            // 注意：不再拿全局 fab_active_instance 与 payload.instanceId 比较来判定
+            // 「实例不符」而自杀。多个搜索标签并存时会互相覆盖 fab_active_instance，
+            // 导致本 worker 的 owner 实例即使仍存活也被误判 mismatch 而自删关闭（漏加库根因）。
+            // worker 自身的 forceCloseTimer 已做超时兜底；是否真正停止由 manager 清理
+            // worker 数据（GM_deleteValue(workerId)）来信号化。
 
             const currentTask = payload.task;
             const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
@@ -1017,7 +1034,7 @@ export const TaskRunner = {
                     logBuffer.push(`⚠️ 检测到 404 页面（商品已下架或不存在），标记为已跳过并关闭。`);
                     success = true; // 不计入失败，加入 done 列表
                     hasReported = true;
-                    GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                    GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
                         workerId,
                         success: true,
                         logs: [...logBuffer, '商品不存在 (404)，已自动跳过'],
@@ -1419,7 +1436,7 @@ export const TaskRunner = {
                 }
                 try {
                     hasReported = true;
-                    await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+                    await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
                         workerId: workerId,
                         success: success,
                         logs: logBuffer,
@@ -1794,7 +1811,7 @@ export const TaskRunner = {
                 }
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
-                if (State.autoScroll) {
+                if (State.autoScroll || State.autoAddOnScroll) {
                     TaskRunner.attemptAutoScroll();
                 }
             }
@@ -2130,8 +2147,12 @@ export const TaskRunner = {
 
     reportTaskDone: async (task, success) => {
         try {
-            await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-                workerId: `worker_task_${task.uid}`,
+            const reportWorkerId = `worker_task_${task.uid}`;
+            if (typeof registerWorkerDoneListener === 'function') {
+                registerWorkerDoneListener(reportWorkerId);
+            }
+            await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + reportWorkerId, {
+                workerId: reportWorkerId,
                 success: success,
                 logs: [Utils.getText('task_report', success ? Utils.getText('task_success') : Utils.getText('task_failed'), task.name || task.uid)],
                 task: task,
@@ -2334,7 +2355,7 @@ export const TaskRunner = {
                 return;
             }
 
-            if (State.autoScroll) {
+            if (State.autoScroll || TaskRunner.isHideModeActive()) {
                 Utils.logger('debug', Utils.getText('auto_scroll_waiting'));
                 TaskRunner.attemptAutoScroll();
                 return;

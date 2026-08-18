@@ -1,5 +1,21 @@
 # 更新日志
 
+## 3.5.20 (2026-08-18)
+
+### 修复（自动入库/隐藏「卡在 N 不动、需手动刷新才能继续」）
+
+- **问题**：自动入库模式下（`autoScroll` 关、`autoAddOnScroll` 开），点击「🔄 重置浏览位置」后自动入库从顶部重跑，隐藏约 72 个商品后永久停转，操作日志安静，只有手动刷新（F5）才能继续。
+- **根因（ego 复现）**：429 限速后页面重载停到错误页、或隐藏后 Fab 虚拟化渲染不再加载新卡时，页面「无可见商品」。此时 `appStatus` 已恢复为 `NORMAL`（探测成功），但：
+  - `checkVisibilityAndRefresh` 的恢复路径只认 `State.autoScroll`（v3.5.17 独立开关后，`autoAddOnScroll` 模式下不再触发）；
+  - 10s 页面状态监控只处理 `RATE_LIMITED` 分支，`NORMAL` 分支不做任何推进。
+  - 于是没有任何机制重新触发滚动/刷新 → 永久停转，直到手动刷新（页面加载时 on-load 扫描才重新驱动）。
+- **修复**：
+  - `index.js` 10s 页面状态监控新增 `NORMAL` 分支：当 `visible===0` 且服务器未确认到底（`!isEndOfSearchList`）且自动入库/自动滚动开启时，若页面上仍有已隐藏卡片则调用 `attemptAutoScroll()` 推进滚动；若页面完全无卡片（如 429 错误页恢复后）则安排一次恢复刷新（受 `autoRefreshEmptyPage` 与既有刷新计划保护）。
+  - `index.js` 10s 页面状态监控新增 `RATE_LIMITED && visible>0` 分支：限速但仍有可见卡片时，现有逻辑不会调度 countdown 刷新（仅 `visible===0` 时调度），也没有任何周期探测入口，会一直卡在限速态（日志安静、需手动刷新）。现改为周期性直接调用 `RateLimitManager.checkRateLimitStatus()` 探测（内部已有 40s 冷静期与 `isCheckingRateLimit` 去重，不会刷接口），恢复后由上面的 `NORMAL` 分支接续推进。
+  - `task-runner.js` `checkVisibilityAndRefresh` 的恢复条件从 `State.autoScroll` 扩展为 `State.autoScroll || State.autoAddOnScroll`，隐藏完当前页后也能主动推进。
+  - 新增 i18n 日志 `auto_scroll_resume_hidden` / `auto_scroll_resume_empty`（zh/en）。
+- 验证：`node --test tests/task-runner.test.js` 单测 30/30 全绿。dist 构建 v3.5.20-<buildTime>。
+
 ## 3.5.19 (2026-08-12)
 - 回退隐藏方式：已入库/已隐藏商品改回 `display:none`（不占高度、不占空间），撤销 `75e410d` 引入的 `visibility:hidden` 保留占位。
   - 依据：用户原始记录要求"隐藏后不占高度、空间"；且 8-11 ego 实测已证伪旧假说——Fab 为固定容器高度的虚拟化渲染，单卡 `display:none` 不改变页面总高度（隐 15 张 docH 塌陷=0），不会触发无限滚动 sentinel 卡视口的旧假说，无需保留占位。

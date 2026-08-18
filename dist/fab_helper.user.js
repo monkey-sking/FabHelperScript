@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.19-20260812-1333
+// @version      3.5.20-20260818-1128
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -161,6 +161,8 @@
     auto_scroll_no_new_items: "[Auto Scroll] No new eligible items found after {0} consecutive scrolls, stopping auto scroll.",
     auto_scroll_waiting: "[Auto Scroll] No new eligible items found, waiting for next scroll attempt...",
     auto_scroll_safety_stop: "[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).",
+    auto_scroll_resume_hidden: "[Auto Add] No visible items remain on page; scrolling to load next page and continue hiding/adding.",
+    auto_scroll_resume_empty: "[Auto Add] Page has no cards and list is not at end; scheduling a recovery refresh.",
     // HTTP状态检测
     http_status_check_performance_api: "Using Performance API check, no longer sending HEAD requests",
     // 页面状态检测
@@ -521,6 +523,8 @@
     auto_scroll_no_new_items: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u6B21\u6EDA\u52A8\u5747\u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u505C\u6B62\u81EA\u52A8\u6EDA\u52A8\u3002",
     auto_scroll_waiting: "[\u81EA\u52A8\u6EDA\u52A8] \u672A\u53D1\u73B0\u7B26\u5408\u6761\u4EF6\u7684\u65B0\u5546\u54C1\uFF0C\u7B49\u5F85\u4E0B\u4E00\u6B21\u6EDA\u52A8\u5C1D\u8BD5...",
     auto_scroll_safety_stop: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u8F6E\u672A\u53D1\u73B0\u65B0\u5185\u5BB9\u4E14\u672A\u6536\u5230\u670D\u52A1\u5668\u5230\u5E95\u4FE1\u53F7\uFF0C\u5B89\u5168\u505C\u6B62\uFF08\u672A\u786E\u8BA4\u81EA\u52A8\u5165\u5E93\u6210\u529F\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC/\u63A5\u53E3\uFF09\u3002",
+    auto_scroll_resume_hidden: "[\u81EA\u52A8\u5165\u5E93] \u9875\u9762\u5DF2\u65E0\u53EF\u89C1\u5546\u54C1\uFF0C\u4E3B\u52A8\u6EDA\u52A8\u52A0\u8F7D\u4E0B\u4E00\u9875\u7EE7\u7EED\u9690\u85CF/\u5165\u5E93\u3002",
+    auto_scroll_resume_empty: "[\u81EA\u52A8\u5165\u5E93] \u9875\u9762\u6CA1\u6709\u5361\u7247\u4E14\u672A\u5230\u5217\u8868\u672B\u5C3E\uFF0C\u5B89\u6392\u4E00\u6B21\u6062\u590D\u5237\u65B0\u3002",
     // HTTP状态检测
     http_status_check_performance_api: "\u4F7F\u7528Performance API\u68C0\u67E5\uFF0C\u4E0D\u518D\u53D1\u9001HEAD\u8BF7\u6C42",
     // 页面状态检测
@@ -772,8 +776,11 @@
       REMEMBER_POS: "fab_rememberPos_v8",
       LAST_CURSOR: "fab_lastCursor_v8",
       // Store only the cursor string
+      // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
+      // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
+      WORKER_DONE_PREFIX: "fab_worker_done_v8_",
+      // 历史遗留键，保留以兼容残存的旧值读取。
       WORKER_DONE: "fab_worker_done_v8",
-      // This is the ONLY key workers use to report back.
       APP_STATUS: "fab_app_status_v1",
       // For tracking 429 rate limiting
       STATUS_HISTORY: "fab_status_history_v1",
@@ -957,6 +964,10 @@
     uiExpanded: true,
     logs: [],
     valueChangeListeners: [],
+    // runDomDependentPart 中创建的定时器句柄，供 beforeunload 时统一清理，避免泄漏
+    domIntervals: [],
+    // 已为哪些 workerId 注册过回传监听，避免重复注册同一键
+    registeredWorkerDoneKeys: /* @__PURE__ */ new Set(),
     // For remembering scroll position
     knownCursors: /* @__PURE__ */ new Set(),
     lastSortMethod: null,
@@ -1019,7 +1030,6 @@
       if (State.UI && State.UI.logPanel) {
         const messageText = args.join(" ");
         const timestamp = (/* @__PURE__ */ new Date()).toLocaleTimeString();
-        const debugPrefix = type === "debug" ? '<span style="color: #34c759;">[DEBUG]</span> ' : "";
         const firstChild = State.UI.logPanel.firstChild;
         if (firstChild && firstChild.dataset.rawText === messageText) {
           const count = parseInt(firstChild.dataset.count || "1") + 1;
@@ -1028,7 +1038,20 @@
           if (timeSpan) timeSpan.textContent = `[${timestamp}]`;
           const contentSpan = firstChild.querySelector(".log-content");
           if (contentSpan) {
-            contentSpan.innerHTML = `${debugPrefix}${messageText} <span style="color: #007aff; font-weight: bold; margin-left: 4px;">(x${count})</span>`;
+            contentSpan.textContent = "";
+            if (type === "debug") {
+              const dbg = document.createElement("span");
+              dbg.style.color = "#34c759";
+              dbg.textContent = "[DEBUG] ";
+              contentSpan.appendChild(dbg);
+            }
+            contentSpan.appendChild(document.createTextNode(messageText));
+            const cnt = document.createElement("span");
+            cnt.style.color = "#007aff";
+            cnt.style.fontWeight = "bold";
+            cnt.style.marginLeft = "4px";
+            cnt.textContent = `(x${count})`;
+            contentSpan.appendChild(cnt);
           }
         } else {
           const logEntry = document.createElement("div");
@@ -1046,7 +1069,22 @@
           } else {
             logEntry.style.color = "#f5f5f7";
           }
-          logEntry.innerHTML = `<span class="log-timestamp" style="color: rgba(255, 255, 255, 0.4);">[${timestamp}]</span> <span class="log-content">${debugPrefix}${messageText}</span>`;
+          const timeSpan = document.createElement("span");
+          timeSpan.className = "log-timestamp";
+          timeSpan.style.color = "rgba(255, 255, 255, 0.4)";
+          timeSpan.textContent = `[${timestamp}]`;
+          logEntry.appendChild(timeSpan);
+          logEntry.appendChild(document.createTextNode(" "));
+          const contentSpan = document.createElement("span");
+          contentSpan.className = "log-content";
+          if (type === "debug") {
+            const dbg = document.createElement("span");
+            dbg.style.color = "#34c759";
+            dbg.textContent = "[DEBUG] ";
+            contentSpan.appendChild(dbg);
+          }
+          contentSpan.appendChild(document.createTextNode(messageText));
+          logEntry.appendChild(contentSpan);
           State.UI.logPanel.prepend(logEntry);
         }
         while (State.UI.logPanel.children.length > 100) {
@@ -1554,7 +1592,9 @@
     timestamps: {
       listings: /* @__PURE__ */ new Map(),
       ownedStatus: /* @__PURE__ */ new Map(),
-      prices: /* @__PURE__ */ new Map()
+      prices: /* @__PURE__ */ new Map(),
+      offerListingUids: /* @__PURE__ */ new Map(),
+      waitingList: /* @__PURE__ */ new Map()
     },
     // 缓存有效期（毫秒）
     TTL: 5 * 60 * 1e3,
@@ -1574,6 +1614,7 @@
           this.timestamps.listings.set(item.uid, now);
           this.extractOfferIds(item).forEach((offerId) => {
             this.offerListingUids.set(offerId, item.uid);
+            this.timestamps.offerListingUids.set(offerId, now);
           });
         }
       });
@@ -1621,7 +1662,10 @@
     // 添加到等待列表
     addToWaitingList: /* @__PURE__ */ __name(function(uids) {
       if (!uids || !Array.isArray(uids)) return;
-      uids.forEach((uid) => this.waitingList.add(uid));
+      uids.forEach((uid) => {
+        this.waitingList.add(uid);
+        this.timestamps.waitingList.set(uid, Date.now());
+      });
       Utils.logger("debug", `[Cache] ${Utils.getText("fab_dom_add_to_waitlist", uids.length, this.waitingList.size)}`);
     }, "addToWaitingList"),
     // 检查并从等待列表中移除
@@ -1724,6 +1768,18 @@
               this[type].delete(key);
               this.timestamps[type].delete(key);
             }
+          }
+        }
+        for (const [offerId, ts] of this.timestamps.offerListingUids.entries()) {
+          if (now - ts > this.TTL) {
+            this.offerListingUids.delete(offerId);
+            this.timestamps.offerListingUids.delete(offerId);
+          }
+        }
+        for (const [uid, ts] of this.timestamps.waitingList.entries()) {
+          if (now - ts > this.TTL) {
+            this.waitingList.delete(uid);
+            this.timestamps.waitingList.delete(uid);
           }
         }
         if (State.debugMode) {
@@ -1866,6 +1922,27 @@
       }
       return cleanUrl;
     }, "normalizeListingUrl"),
+    // 归一化 url 的 Set，避免 isDone 在热路径上对每个 done 项重复 normalize（O(n²)）。
+    doneSet: /* @__PURE__ */ new Set(),
+    // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
+    // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
+    _doneRef: null,
+    // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
+    _safeGet: /* @__PURE__ */ __name(async (key, def) => {
+      try {
+        return await GM_getValue(key, def);
+      } catch (e) {
+        Utils.logger("error", `\u8BFB\u53D6\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
+        return def;
+      }
+    }, "_safeGet"),
+    _safeSet: /* @__PURE__ */ __name((key, val) => {
+      try {
+        GM_setValue(key, val);
+      } catch (e) {
+        Utils.logger("error", `\u5199\u5165\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
+      }
+    }, "_safeSet"),
     getListingUid: /* @__PURE__ */ __name((url) => {
       if (!url) return "";
       const uidMatch = String(url).split("?")[0].match(/\/listings\/([^/?#]+)/i);
@@ -1891,6 +1968,7 @@
       });
       const changed = normalized.length !== State.db.done.length || normalized.some((url, index) => url !== State.db.done[index]);
       State.db.done = normalized;
+      Database.doneSet = new Set(normalized);
       return changed;
     }, "normalizeDoneList"),
     addDoneUrl: /* @__PURE__ */ __name((url) => {
@@ -1899,25 +1977,26 @@
       if (!cleanUrl) return normalizedChanged;
       if (Database.isDone(cleanUrl)) return normalizedChanged;
       State.db.done.push(cleanUrl);
+      Database.doneSet.add(cleanUrl);
       Database.seedDoneOwnedStatusCache();
       return true;
     }, "addDoneUrl"),
     load: /* @__PURE__ */ __name(async () => {
-      State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
-      State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
-      State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
-      State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-      State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false);
-      State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
-      State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
-      State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
-      State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false);
-      State.hidePaid = await GM_getValue(Config.DB_KEYS.HIDE_PAID, false);
-      State.blockLargeResources = await GM_getValue(Config.DB_KEYS.BLOCK_RESOURCES, true);
-      State.debugMode = await GM_getValue("fab_helper_debug_mode", false);
-      State.currentSortOption = await GM_getValue("fab_helper_sort_option", "title_desc");
-      State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false);
-      State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
+      State.db.todo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+      State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
+      State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
+      State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
+      State.autoAddOnScroll = await Database._safeGet(Config.DB_KEYS.AUTO_ADD, false);
+      State.rememberScrollPosition = await Database._safeGet(Config.DB_KEYS.REMEMBER_POS, false);
+      State.autoResumeAfter429 = await Database._safeGet(Config.DB_KEYS.AUTO_RESUME, false);
+      State.autoRefreshEmptyPage = await Database._safeGet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
+      State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false);
+      State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
+      State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
+      State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
+      State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
+      State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
+      State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
       if (Database.normalizeDoneList()) {
         await Database.saveDone();
       }
@@ -1925,25 +2004,25 @@
       Utils.logger("info", Utils.getText("log_db_loaded"), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     }, "load"),
     // 添加保存待办列表的方法
-    saveTodo: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.TODO, State.db.todo), "saveTodo"),
-    saveDone: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.DONE, State.db.done), "saveDone"),
-    saveFailed: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed), "saveFailed"),
-    saveHidePref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
-    saveAutoAddPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
+    saveTodo: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo), "saveTodo"),
+    saveDone: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.DONE, State.db.done), "saveDone"),
+    saveFailed: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed), "saveFailed"),
+    saveHidePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
+    saveAutoAddPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
     // Save the setting
-    saveAutoScrollPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), "saveAutoScrollPref"),
+    saveAutoScrollPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), "saveAutoScrollPref"),
     // 保存自动滚动页面开关
-    saveRememberPosPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition), "saveRememberPosPref"),
-    saveAutoResumePref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
-    saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
+    saveRememberPosPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition), "saveRememberPosPref"),
+    saveAutoResumePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
+    saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
     // 保存无商品自动刷新设置
-    saveHideDiscountedPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), "saveHideDiscountedPref"),
+    saveHideDiscountedPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), "saveHideDiscountedPref"),
     // 保存隐藏打折付费设置
-    saveHidePaidPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.HIDE_PAID, State.hidePaid), "saveHidePaidPref"),
+    saveHidePaidPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), "saveHidePaidPref"),
     // 保存隐藏所有付费设置
-    saveBlockResourcesPref: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
+    saveBlockResourcesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
     // 保存禁用大资源设置
-    saveExecutingState: /* @__PURE__ */ __name(() => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
+    saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
       if (window.confirm(Utils.getText("confirm_clear_data"))) {
@@ -1968,6 +2047,7 @@
         }
         State.db.todo = [];
         State.db.done = [];
+        Database.doneSet = /* @__PURE__ */ new Set();
         State.db.failed = [];
         State.blockLargeResources = true;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
@@ -1980,7 +2060,11 @@
     isDone: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
       const cleanUrl = Database.normalizeListingUrl(url);
-      return State.db.done.some((doneUrl) => Database.normalizeListingUrl(doneUrl) === cleanUrl);
+      if (Database._doneRef !== State.db.done) {
+        Database.doneSet = new Set(State.db.done.map((u) => Database.normalizeListingUrl(u)));
+        Database._doneRef = State.db.done;
+      }
+      return Database.doneSet.has(cleanUrl);
     }, "isDone"),
     isFailed: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
@@ -2127,7 +2211,11 @@
       if (State.statusHistory.length > 50) {
         State.statusHistory = State.statusHistory.slice(-50);
       }
-      await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+      try {
+        await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+      } catch (e) {
+        Utils.logger("error", `\u4FDD\u5B58\u72B6\u6001\u5386\u53F2\u5931\u8D25: ${e.message}`);
+      }
       return true;
     }, "addToHistory"),
     // 进入限速状态
@@ -3118,12 +3206,14 @@
   };
   var UI4 = null;
   var countdownRefresh2 = null;
+  var registerWorkerDoneListener = null;
   function setUIReference3(uiModule) {
     UI4 = uiModule;
   }
   __name(setUIReference3, "setUIReference");
   function setDependencies2(deps = {}) {
     countdownRefresh2 = deps.countdownRefresh || countdownRefresh2;
+    registerWorkerDoneListener = deps.registerWorkerDoneListener || registerWorkerDoneListener;
   }
   __name(setDependencies2, "setDependencies");
   var TaskRunner2 = {
@@ -3280,6 +3370,11 @@
         State.executionTotalTasks = 0;
         State.executionCompletedTasks = 0;
         State.executionFailedTasks = 0;
+        State.processedCardUids = /* @__PURE__ */ new Set();
+        State.knownCursors = /* @__PURE__ */ new Set();
+        State.sessionCompleted = /* @__PURE__ */ new Set();
+        State.sessionFailed = /* @__PURE__ */ new Set();
+        State.autoScrollAttempts = 0;
         Utils.logger("info", Utils.getText("log_execution_stopped"));
         if (UI4) UI4.update();
         return;
@@ -3511,6 +3606,11 @@
       State.executionTotalTasks = 0;
       State.executionCompletedTasks = 0;
       State.executionFailedTasks = 0;
+      State.processedCardUids = /* @__PURE__ */ new Set();
+      State.knownCursors = /* @__PURE__ */ new Set();
+      State.sessionCompleted = /* @__PURE__ */ new Set();
+      State.sessionFailed = /* @__PURE__ */ new Set();
+      State.autoScrollAttempts = 0;
       Utils.logger("info", Utils.getText("log_execution_stopped"));
       if (UI4) UI4.update();
     }, "stop"),
@@ -3761,6 +3861,9 @@
             task,
             instanceId: Config.INSTANCE_ID
           });
+          if (typeof registerWorkerDoneListener === "function") {
+            registerWorkerDoneListener(workerId);
+          }
           GM_openInTab(workerUrl.href, { active: false, insert: true });
         }
         if (dispatchedCount > 0) {
@@ -3808,7 +3911,7 @@
         clearTimeout(forceCloseTimer);
         if (!hasReported && workerId) {
           try {
-            GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+            GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
               workerId,
               success: false,
               logs: [Utils.getText("worker_closed")],
@@ -3839,13 +3942,6 @@
         }
         if (!payload || !payload.task) {
           Utils.logger("info", Utils.getText("log_task_data_cleaned"));
-          closeWorkerTab();
-          return;
-        }
-        const activeInstance = await GM_getValue("fab_active_instance", null);
-        if (activeInstance && activeInstance.id !== payload.instanceId) {
-          Utils.logger("warn", Utils.getText("log_instance_mismatch", payload.instanceId, activeInstance.id));
-          await GM_deleteValue(workerId);
           closeWorkerTab();
           return;
         }
@@ -3900,7 +3996,7 @@
             logBuffer.push(`\u26A0\uFE0F \u68C0\u6D4B\u5230 404 \u9875\u9762\uFF08\u5546\u54C1\u5DF2\u4E0B\u67B6\u6216\u4E0D\u5B58\u5728\uFF09\uFF0C\u6807\u8BB0\u4E3A\u5DF2\u8DF3\u8FC7\u5E76\u5173\u95ED\u3002`);
             success = true;
             hasReported = true;
-            GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+            GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
               workerId,
               success: true,
               logs: [...logBuffer, "\u5546\u54C1\u4E0D\u5B58\u5728 (404)\uFF0C\u5DF2\u81EA\u52A8\u8DF3\u8FC7"],
@@ -4221,7 +4317,7 @@
           }
           try {
             hasReported = true;
-            await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
+            await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
               workerId,
               success,
               logs: logBuffer,
@@ -4517,7 +4613,7 @@
           }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
-          if (State.autoScroll) {
+          if (State.autoScroll || State.autoAddOnScroll) {
             TaskRunner2.attemptAutoScroll();
           }
         }
@@ -4770,8 +4866,12 @@
     }, "handleRateLimit"),
     reportTaskDone: /* @__PURE__ */ __name(async (task, success) => {
       try {
-        await GM_setValue(Config.DB_KEYS.WORKER_DONE, {
-          workerId: `worker_task_${task.uid}`,
+        const reportWorkerId = `worker_task_${task.uid}`;
+        if (typeof registerWorkerDoneListener === "function") {
+          registerWorkerDoneListener(reportWorkerId);
+        }
+        await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + reportWorkerId, {
+          workerId: reportWorkerId,
           success,
           logs: [Utils.getText("task_report", success ? Utils.getText("task_success") : Utils.getText("task_failed"), task.name || task.uid)],
           task,
@@ -4916,7 +5016,7 @@
           State.isAutoScrolling = false;
           return;
         }
-        if (State.autoScroll) {
+        if (State.autoScroll || TaskRunner2.isHideModeActive()) {
           Utils.logger("debug", Utils.getText("auto_scroll_waiting"));
           TaskRunner2.attemptAutoScroll();
           return;
@@ -5919,6 +6019,14 @@
           childList: true,
           subtree: true
         });
+        window.addEventListener("load", () => {
+          setTimeout(() => {
+            try {
+              observer.disconnect();
+            } catch (e) {
+            }
+          }, 2e3);
+        }, { once: true });
         console.log("[Fab Helper] Injected CSP, CSS, and MutationObserver to block images/media/iframes/fonts.");
       }
     } catch (e) {
@@ -6066,7 +6174,8 @@
   setUIReference2(UI5);
   setUIReference3(UI5);
   setDependencies2({
-    countdownRefresh: countdownRefresh3
+    countdownRefresh: countdownRefresh3,
+    registerWorkerDoneListener: registerWorkerDoneListener2
   });
   setTaskRunnerReference(TaskRunner2);
   setDependencies({
@@ -6083,12 +6192,14 @@
         try {
           TaskRunner2.scheduleHideOrShow();
         } catch (e) {
+          Utils.logger("debug", `[ownedStatus] scheduleHideOrShow\u5931\u8D25: ${e.message}`);
         }
       }
       try {
         TaskRunner2.checkVisibleCardsStatus().catch(() => {
         });
       } catch (e) {
+        Utils.logger("debug", `[ownedStatus] \u72B6\u6001\u68C0\u67E5\u5931\u8D25: ${e.message}`);
       }
     }, 50);
   }
@@ -6277,6 +6388,7 @@
             }
             window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
           } catch (e) {
+            Utils.logger("debug", `[XHR\u62E6\u622A] \u6D3E\u53D1\u641C\u7D22\u8BF7\u6C42\u4E8B\u4EF6\u5931\u8D25: ${e.message}`);
           }
         }
         xhr.addEventListener("readystatechange", function() {
@@ -6331,6 +6443,7 @@
                 DataCache.savePrices(responseData.offers);
               }
             } catch (e) {
+              Utils.logger("debug", `[XHR\u62E6\u622A] \u5904\u7406\u54CD\u5E94\u6570\u636E\u5931\u8D25: ${e.message}`);
             }
           }
           if (xhr._url && xhr._url.includes("/i/listings/search")) {
@@ -6437,6 +6550,7 @@
             }
             window.dispatchEvent(new CustomEvent("fab-helper-listings-request"));
           } catch (e) {
+            Utils.logger("debug", `[fetch\u62E6\u622A] \u6D3E\u53D1\u641C\u7D22\u8BF7\u6C42\u4E8B\u4EF6\u5931\u8D25: ${e.message}`);
           }
         }
         if (window._apiWaitStatus) {
@@ -6444,6 +6558,10 @@
         }
         try {
           const response = await originalFetch.apply(this, args);
+          if (response.status === 429) {
+            Utils.logger("warn", `[fetch\u62E6\u622A] \u68C0\u6D4B\u5230429\u54CD\u5E94: ${url}`);
+            RateLimitManager.enterRateLimitedState("fetch\u63A5\u53E3429\u68C0\u6D4B");
+          }
           if (response.ok) {
             const clonedResponse = response.clone();
             clonedResponse.json().then((data) => {
@@ -6484,7 +6602,7 @@
     try {
       setupXHRInterceptor();
       setupFetchInterceptor();
-      setInterval(() => DataCache.cleanupExpired(), 6e4);
+      State.domIntervals.push(setInterval(() => DataCache.cleanupExpired(), 6e4));
       Utils.logger("debug", "\u8BF7\u6C42\u62E6\u622A\u548C\u7F13\u5B58\u7CFB\u7EDF\u5DF2\u521D\u59CB\u5316");
     } catch (e) {
       Utils.logger("error", `\u521D\u59CB\u5316\u8BF7\u6C42\u62E6\u622A\u5668\u5931\u8D25: ${e.message}`);
@@ -6493,6 +6611,15 @@
   __name(setupRequestInterceptors, "setupRequestInterceptors");
   async function runDomDependentPart() {
     if (State.hasRunDomPart) return;
+    if (State.domIntervals && State.domIntervals.length) {
+      State.domIntervals.forEach((id) => {
+        try {
+          clearInterval(id);
+        } catch (e) {
+        }
+      });
+      State.domIntervals = [];
+    }
     if (State.isWorkerTab) {
       State.hasRunDomPart = true;
       return;
@@ -6521,7 +6648,7 @@
         RateLimitManager.recordSuccessfulRequest(source, hasResults);
       }
     };
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
       if (State.appStatus === "NORMAL") {
         let pageText = "";
         const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
@@ -6538,7 +6665,7 @@
           RateLimitManager.enterRateLimitedState(Utils.getText("rate_limit_source_page_content"));
         }
       }
-    }, 5e3);
+    }, 5e3));
     const checkIsErrorPage = /* @__PURE__ */ __name((title, text) => {
       const isCloudflareTitle = title.includes("Cloudflare") || title.includes("Attention Required");
       const is429Text = text.includes("429") || text.includes("Too Many Requests") || text.includes("Too many requests");
@@ -6618,7 +6745,7 @@
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
       }, 3e3);
     }
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
       if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
       const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
       let unprocessedCount = 0;
@@ -6642,8 +6769,8 @@
         }
         TaskRunner2.scheduleHideOrShow();
       }
-    }, 1e4);
-    setInterval(() => {
+    }, 1e4));
+    State.domIntervals.push(setInterval(() => {
       if (State.db.todo.length === 0) return;
       const initialTodoCount = State.db.todo.length;
       State.db.todo = State.db.todo.filter((task) => {
@@ -6654,11 +6781,11 @@
         Utils.logger("info", `[\u81EA\u52A8\u6E05\u7406] \u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\u4E86 ${initialTodoCount - State.db.todo.length} \u4E2A\u5DF2\u5B8C\u6210\u7684\u4EFB\u52A1\u3002`);
         UI5.update();
       }
-    }, 1e4);
+    }, 1e4));
     let lastCardCount = TaskRunner2.getCardCounts().total;
     let noNewCardsCounter = 0;
     let lastScrollY = window.scrollY;
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
       if (State.appStatus !== "NORMAL") return;
       const currentCardCount = TaskRunner2.getCardCounts().total;
       if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
@@ -6673,8 +6800,8 @@
       }
       lastCardCount = currentCardCount;
       lastScrollY = window.scrollY;
-    }, 5e3);
-    setInterval(async () => {
+    }, 5e3));
+    State.domIntervals.push(setInterval(async () => {
       try {
         if (UI5) UI5.update();
         const { visible: actualVisibleCards } = TaskRunner2.getCardCounts();
@@ -6684,16 +6811,30 @@
             const randomDelay = 3e3 + Math.random() * 2e3;
             countdownRefresh3(randomDelay, Utils.getText("rate_limit_no_visible_reason"));
           }
+        } else if (State.appStatus === "RATE_LIMITED") {
+          if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
+            RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
+          }
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling) {
+          const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
+          if (actualHidden > 0) {
+            Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
+            TaskRunner2.attemptAutoScroll();
+          } else if (State.autoRefreshEmptyPage && !State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout) {
+            Utils.logger("info", Utils.getText("auto_scroll_resume_empty"));
+            const randomDelay = 3e3 + Math.random() * 2e3;
+            countdownRefresh3(randomDelay, Utils.getText("rate_limit_no_visible_reason"));
+          }
         }
       } catch (error) {
         Utils.logger("error", `\u9875\u9762\u72B6\u6001\u68C0\u67E5\u51FA\u9519: ${error.message}`);
       }
-    }, 1e4);
-    setInterval(() => {
+    }, 1e4));
+    State.domIntervals.push(setInterval(() => {
       if (State.db.todo.length === 0) return;
       TaskRunner2.ensureTasksAreExecuted();
-    }, 5e3);
-    setInterval(async () => {
+    }, 5e3));
+    State.domIntervals.push(setInterval(async () => {
       try {
         if (State.appStatus !== "NORMAL") return;
         if (window.performance && window.performance.getEntriesByType) {
@@ -6710,7 +6851,7 @@
         }
       } catch (error) {
       }
-    }, 1e4);
+    }, 1e4));
   }
   __name(runDomDependentPart, "runDomDependentPart");
   function ensureUILoaded() {
@@ -6806,68 +6947,6 @@
       State.db.todo = tempTasks;
       await GM_deleteValue("temp_todo_tasks");
     }
-    State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
-      if (!newValue) return;
-      try {
-        await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
-        const { workerId: workerId2, success, task, logs, instanceId, executionTime } = newValue;
-        if (instanceId !== Config.INSTANCE_ID) {
-          Utils.logger("info", `\u6536\u5230\u6765\u81EA\u5176\u4ED6\u5B9E\u4F8B [${instanceId}] \u7684\u5DE5\u4F5C\u62A5\u544A\uFF0C\u5F53\u524D\u5B9E\u4F8B [${Config.INSTANCE_ID}] \u5C06\u5FFD\u7565\u3002`);
-          return;
-        }
-        if (!workerId2 || !task) {
-          Utils.logger("error", "\u6536\u5230\u65E0\u6548\u7684\u5DE5\u4F5C\u62A5\u544A\u3002\u7F3A\u5C11workerId\u6216task\u3002");
-          return;
-        }
-        if (State.runningWorkers[workerId2]) {
-          delete State.runningWorkers[workerId2];
-          State.activeWorkers--;
-        }
-        if (logs && logs.length) {
-          logs.forEach((log) => {
-            Utils.logger("debug", log);
-          });
-        }
-        const isZh = State.lang === "zh";
-        const timeSuffix = executionTime ? ` (${Utils.getText("task_execution_time", (executionTime / 1e3).toFixed(2))})` : "";
-        if (success) {
-          const successMsg = isZh ? `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}` : `\u2705 Task completed: ${task.name}`;
-          Utils.logger("info", successMsg + timeSuffix);
-          await Database.markAsDone(task);
-          State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
-          State.executionCompletedTasks++;
-        } else {
-          const errorLog = logs && logs.length ? logs.find((log) => log.includes(Utils.getText("worker_captcha"))) || logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
-          const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
-          const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
-          Utils.logger("warn", failMsg + timeSuffix);
-          const _failRes = await Database.markAsFailed(task, {
-            reason: cleanError,
-            logs: logs || [],
-            details: {
-              executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",
-              workerId: workerId2,
-              instanceId
-            }
-          });
-          if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
-        }
-        UI5.update();
-        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-          setTimeout(() => TaskRunner2.executeBatch(), 200);
-        }
-        if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-          if (State.autoScroll) {
-            TaskRunner2.attemptAutoScroll();
-          } else {
-            await TaskRunner2.stopExecutionAndSettle();
-          }
-        }
-        TaskRunner2.runHideOrShow();
-      } catch (error) {
-        Utils.logger("error", `\u5904\u7406\u5DE5\u4F5C\u62A5\u544A\u65F6\u51FA\u9519: ${error.message}`);
-      }
-    }));
     State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
       if (!State.isWorkerTab && State.isExecuting !== newValue) {
         Utils.logger("info", Utils.getText("execution_status_changed", newValue ? Utils.getText("status_executing") : Utils.getText("status_stopped")));
@@ -6912,7 +6991,7 @@
         }
       });
     }
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
       if (State.appStatus === "NORMAL" && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
         const inactiveTime = Date.now() - lastNetworkActivityTime;
         if (inactiveTime > 3e4) {
@@ -6922,11 +7001,100 @@
           }, 1500);
         }
       }
-    }, 5e3);
+    }, 5e3));
     Utils.logger("info", Utils.getText("log_init"));
   }
   __name(main, "main");
+  function registerWorkerDoneListener2(workerId) {
+    if (!workerId) return;
+    if (State.registeredWorkerDoneKeys.has(workerId)) return;
+    const key = Config.DB_KEYS.WORKER_DONE_PREFIX + workerId;
+    State.registeredWorkerDoneKeys.add(workerId);
+    const listenerId = GM_addValueChangeListener(key, async (k, oldValue, newValue) => {
+      if (!newValue) return;
+      try {
+        await GM_deleteValue(key);
+        State.registeredWorkerDoneKeys.delete(workerId);
+        const { workerId: wid, success, task, logs, instanceId, executionTime } = newValue;
+        if (instanceId !== Config.INSTANCE_ID) {
+          Utils.logger("info", `\u6536\u5230\u6765\u81EA\u5176\u4ED6\u5B9E\u4F8B [${instanceId}] \u7684\u5DE5\u4F5C\u62A5\u544A\uFF0C\u5F53\u524D\u5B9E\u4F8B [${Config.INSTANCE_ID}] \u5C06\u5FFD\u7565\u3002`);
+          return;
+        }
+        if (!wid || !task) {
+          Utils.logger("error", "\u6536\u5230\u65E0\u6548\u7684\u5DE5\u4F5C\u62A5\u544A\u3002\u7F3A\u5C11workerId\u6216task\u3002");
+          return;
+        }
+        if (State.runningWorkers[wid]) {
+          delete State.runningWorkers[wid];
+          State.activeWorkers--;
+        }
+        if (logs && logs.length) {
+          logs.forEach((log) => {
+            Utils.logger("debug", log);
+          });
+        }
+        const isZh = State.lang === "zh";
+        const timeSuffix = executionTime ? ` (${Utils.getText("task_execution_time", (executionTime / 1e3).toFixed(2))})` : "";
+        if (success) {
+          const successMsg = isZh ? `\u2705 \u4EFB\u52A1\u5B8C\u6210: ${task.name}` : `\u2705 Task completed: ${task.name}`;
+          Utils.logger("info", successMsg + timeSuffix);
+          await Database.markAsDone(task);
+          State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
+          State.executionCompletedTasks++;
+        } else {
+          const errorLog = logs && logs.length ? logs.find((log) => log.includes(Utils.getText("worker_captcha"))) || logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
+          const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
+          Utils.logger("warn", failMsg + timeSuffix);
+          const _failRes = await Database.markAsFailed(task, {
+            reason: cleanError,
+            logs: logs || [],
+            details: {
+              executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",
+              workerId: wid,
+              instanceId
+            }
+          });
+          if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+        }
+        UI5.update();
+        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+          setTimeout(() => TaskRunner2.executeBatch(), 200);
+        }
+        if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+          if (State.autoScroll) {
+            TaskRunner2.attemptAutoScroll();
+          } else {
+            await TaskRunner2.stopExecutionAndSettle();
+          }
+        }
+        TaskRunner2.runHideOrShow();
+      } catch (error) {
+        Utils.logger("error", `\u5904\u7406\u5DE5\u4F5C\u62A5\u544A\u65F6\u51FA\u9519: ${error.message}`);
+      }
+    });
+    State.valueChangeListeners.push(listenerId);
+  }
+  __name(registerWorkerDoneListener2, "registerWorkerDoneListener");
   window.addEventListener("beforeunload", () => {
+    if (State.domIntervals && State.domIntervals.length) {
+      State.domIntervals.forEach((id) => {
+        try {
+          clearInterval(id);
+        } catch (e) {
+        }
+      });
+      State.domIntervals = [];
+    }
+    if (State.valueChangeListeners && State.valueChangeListeners.length) {
+      State.valueChangeListeners.forEach((id) => {
+        try {
+          if (typeof GM_removeValueChangeListener === "function") GM_removeValueChangeListener(id);
+        } catch (e) {
+        }
+      });
+      State.valueChangeListeners = [];
+    }
     InstanceManager.cleanup();
     Utils.cleanup();
   });

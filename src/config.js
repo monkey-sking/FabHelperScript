@@ -23,7 +23,11 @@ export const Config = {
         AUTO_SCROLL: 'fab_autoScroll_v1', // 自动滚动页面（自动扫描全部）开关键
         REMEMBER_POS: 'fab_rememberPos_v8',
         LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
-        WORKER_DONE: 'fab_worker_done_v8', // This is the ONLY key workers use to report back.
+        // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
+        // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
+        WORKER_DONE_PREFIX: 'fab_worker_done_v8_',
+        // 历史遗留键，保留以兼容残存的旧值读取。
+        WORKER_DONE: 'fab_worker_done_v8',
         APP_STATUS: 'fab_app_status_v1', // For tracking 429 rate limiting
         STATUS_HISTORY: 'fab_status_history_v1', // 状态历史记录持久化
         AUTO_RESUME: 'fab_auto_resume_v1', // 自动恢复功能设置

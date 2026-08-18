@@ -92,6 +92,15 @@
                 subtree: true
             });
 
+            // 首屏资源加载完成后断开 observer：初始 DOM（含首屏图片）已被拦截改写，
+            // 后续懒加载图片交由 CSS `display:none` + 三重资源禁用兜底，
+            // 避免 observer 长期驻留造成持续的内存/CPU 占用（性能遗留项）。
+            window.addEventListener('load', () => {
+                setTimeout(() => {
+                    try { observer.disconnect(); } catch (e) { }
+                }, 2000);
+            }, { once: true });
+
             console.log('[Fab Helper] Injected CSP, CSS, and MutationObserver to block images/media/iframes/fonts.');
         }
     } catch (e) {
@@ -284,7 +293,8 @@ setUtilsUIRef(UI);
 setDbUIRef(UI);
 setTaskRunnerUIRef(UI);
 setTaskRunnerDeps({
-    countdownRefresh
+    countdownRefresh,
+    registerWorkerDoneListener
 });
 setUITaskRunnerRef(TaskRunner);
 setRateLimitDeps({
@@ -301,9 +311,9 @@ function triggerOwnedStatusUpdate() {
     clearTimeout(_ownedStatusUpdateTimer);
     _ownedStatusUpdateTimer = setTimeout(() => {
         if (State.hideSaved) {
-            try { TaskRunner.scheduleHideOrShow(); } catch (e) { }
+            try { TaskRunner.scheduleHideOrShow(); } catch (e) { Utils.logger('debug', `[ownedStatus] scheduleHideOrShow失败: ${e.message}`); }
         }
-        try { TaskRunner.checkVisibleCardsStatus().catch(() => { }); } catch (e) { }
+        try { TaskRunner.checkVisibleCardsStatus().catch(() => { }); } catch (e) { Utils.logger('debug', `[ownedStatus] 状态检查失败: ${e.message}`); }
     }, 50);
 }
 
@@ -511,7 +521,7 @@ function setupXHRInterceptor() {
                         State.hasReachedBottomToastShown = false;
                     }
                     window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
-                } catch (e) {}
+                } catch (e) { Utils.logger('debug', `[XHR拦截] 派发搜索请求事件失败: ${e.message}`); }
             }
 
             xhr.addEventListener('readystatechange', function () {
@@ -570,7 +580,7 @@ function setupXHRInterceptor() {
                         } else if (xhr._url.includes('/i/listings/prices-infos') && responseData.offers && Array.isArray(responseData.offers)) {
                             DataCache.savePrices(responseData.offers);
                         }
-                    } catch (e) { }
+                    } catch (e) { Utils.logger('debug', `[XHR拦截] 处理响应数据失败: ${e.message}`); }
                 }
 
                 // Rate limit detection
@@ -700,7 +710,7 @@ function setupFetchInterceptor() {
                         State.hasReachedBottomToastShown = false;
                     }
                     window.dispatchEvent(new CustomEvent('fab-helper-listings-request'));
-                } catch (e) {}
+                } catch (e) { Utils.logger('debug', `[fetch拦截] 派发搜索请求事件失败: ${e.message}`); }
             }
 
             if (window._apiWaitStatus) {
@@ -709,6 +719,13 @@ function setupFetchInterceptor() {
 
             try {
                 const response = await originalFetch.apply(this, args);
+
+                // fetch 路径补 429 检测：原逻辑只处理 response.ok（2xx），429 被直接 return 漏判，
+                // 导致加库过程中触发限速却未进入恢复状态机（性能/并发遗留项）。
+                if (response.status === 429) {
+                    Utils.logger('warn', `[fetch拦截] 检测到429响应: ${url}`);
+                    RateLimitManager.enterRateLimitedState('fetch接口429检测');
+                }
 
                 if (response.ok) {
                     const clonedResponse = response.clone();
@@ -752,7 +769,7 @@ function setupRequestInterceptors() {
     try {
         setupXHRInterceptor();
         setupFetchInterceptor();
-        setInterval(() => DataCache.cleanupExpired(), 60000);
+        State.domIntervals.push(setInterval(() => DataCache.cleanupExpired(), 60000));
         Utils.logger('debug', '请求拦截和缓存系统已初始化');
     } catch (e) {
         Utils.logger('error', `初始化请求拦截器失败: ${e.message}`);
@@ -762,6 +779,13 @@ function setupRequestInterceptors() {
 // Run DOM dependent part
 async function runDomDependentPart() {
     if (State.hasRunDomPart) return;
+
+    // 重入清理：ensureUILoaded 可能在 SPA 路由重渲染时再次触发本函数，
+    // 旧定时器句柄若不清除会持续累积（性能遗留项）。此处先清掉上一轮的 DOM 定时器。
+    if (State.domIntervals && State.domIntervals.length) {
+        State.domIntervals.forEach(id => { try { clearInterval(id); } catch (e) { } });
+        State.domIntervals = [];
+    }
 
     if (State.isWorkerTab) {
         State.hasRunDomPart = true;
@@ -801,7 +825,7 @@ async function runDomDependentPart() {
     };
 
     // Rate limit page content detection
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (State.appStatus === 'NORMAL') {
             let pageText = '';
             const uiContainer = document.getElementById(Config.UI_CONTAINER_ID);
@@ -821,7 +845,7 @@ async function runDomDependentPart() {
                 RateLimitManager.enterRateLimitedState(Utils.getText('rate_limit_source_page_content'));
             }
         }
-    }, 5000);
+    }, 5000));
 
     // Check for 429 error page
     const checkIsErrorPage = (title, text) => {
@@ -932,7 +956,7 @@ async function runDomDependentPart() {
 
     // Periodic card processing check
     // 间隔 10s：跳过已处理隐藏卡片（状态稳定），只检查可见未处理卡片
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
         const cards = document.querySelectorAll(TaskRunner.getVisibleCardSelector());
         let unprocessedCount = 0;
@@ -962,10 +986,10 @@ async function runDomDependentPart() {
             }
             TaskRunner.scheduleHideOrShow();
         }
-    }, 10000);
+    }, 10000));
 
     // Clean completed tasks from todo
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (State.db.todo.length === 0) return;
         const initialTodoCount = State.db.todo.length;
         State.db.todo = State.db.todo.filter(task => {
@@ -977,14 +1001,14 @@ async function runDomDependentPart() {
             Utils.logger('info', `[自动清理] 从待办列表中移除了 ${initialTodoCount - State.db.todo.length} 个已完成的任务。`);
             UI.update();
         }
-    }, 10000);
+    }, 10000));
 
     // Implicit rate limit detection (no new cards on scroll)
     let lastCardCount = TaskRunner.getCardCounts().total;
     let noNewCardsCounter = 0;
     let lastScrollY = window.scrollY;
 
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (State.appStatus !== 'NORMAL') return;
 
         const currentCardCount = TaskRunner.getCardCounts().total;
@@ -1002,10 +1026,10 @@ async function runDomDependentPart() {
 
         lastCardCount = currentCardCount;
         lastScrollY = window.scrollY;
-    }, 5000);
+    }, 5000));
 
     // Page status monitoring — 全量刷新所有状态栏数字，避免各格数据割裂
-    setInterval(async () => {
+    State.domIntervals.push(setInterval(async () => {
         try {
             // 用完整的 UI.update() 同步所有计数（visible/hidden/todo/done/failed）
             if (UI) UI.update();
@@ -1019,20 +1043,43 @@ async function runDomDependentPart() {
                     const randomDelay = 3000 + Math.random() * 2000;
                     countdownRefresh(randomDelay, Utils.getText('rate_limit_no_visible_reason'));
                 }
+            } else if (State.appStatus === 'RATE_LIMITED') {
+                // 限速但页面上仍有可见卡片：现有逻辑不会调度 countdown 刷新（仅 visible===0
+                // 时调度），也没有任何周期探测入口，导致「一直卡在限速态、日志安静、需手动刷新」。
+                // 直接周期性调用探测：内部有 40s 冷静期与 isCheckingRateLimit 去重，不会刷接口。
+                if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout
+                    && !State.isCheckingRateLimit) {
+                    RateLimitManager.checkRateLimitStatus().catch(err =>
+                        Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
+                }
+            } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
+                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling) {
+                // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
+                // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
+                // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
+                const { hidden: actualHidden } = TaskRunner.getCardCounts(true);
+                if (actualHidden > 0) {
+                    Utils.logger('info', Utils.getText('auto_scroll_resume_hidden', actualHidden));
+                    TaskRunner.attemptAutoScroll();
+                } else if (State.autoRefreshEmptyPage && !State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout) {
+                    Utils.logger('info', Utils.getText('auto_scroll_resume_empty'));
+                    const randomDelay = 3000 + Math.random() * 2000;
+                    countdownRefresh(randomDelay, Utils.getText('rate_limit_no_visible_reason'));
+                }
             }
         } catch (error) {
             Utils.logger('error', `页面状态检查出错: ${error.message}`);
         }
-    }, 10000);
+    }, 10000));
 
     // Ensure tasks are executed
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (State.db.todo.length === 0) return;
         TaskRunner.ensureTasksAreExecuted();
-    }, 5000);
+    }, 5000));
 
     // HTTP status check
-    setInterval(async () => {
+    State.domIntervals.push(setInterval(async () => {
         try {
             if (State.appStatus !== 'NORMAL') return;
 
@@ -1049,7 +1096,7 @@ async function runDomDependentPart() {
                 }
             }
         } catch (error) { }
-    }, 10000);
+    }, 10000));
 }
 
 // Ensure UI is loaded
@@ -1180,87 +1227,9 @@ async function main() {
         await GM_deleteValue('temp_todo_tasks');
     }
 
-    // Worker done listener
-    State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.WORKER_DONE, async (key, oldValue, newValue) => {
-        if (!newValue) return;
-
-        try {
-            await GM_deleteValue(Config.DB_KEYS.WORKER_DONE);
-
-            const { workerId, success, task, logs, instanceId, executionTime } = newValue;
-
-            if (instanceId !== Config.INSTANCE_ID) {
-                Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
-                return;
-            }
-
-            if (!workerId || !task) {
-                Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
-                return;
-            }
-
-            if (State.runningWorkers[workerId]) {
-                delete State.runningWorkers[workerId];
-                State.activeWorkers--;
-            }
-
-            if (logs && logs.length) {
-                logs.forEach(log => {
-                    // 工作线程的详细步骤默认作为 debug 级别输出，避免刷屏主控制台
-                    Utils.logger('debug', log);
-                });
-            }
-
-            const isZh = State.lang === 'zh';
-            const timeSuffix = executionTime ? ` (${Utils.getText('task_execution_time', (executionTime / 1000).toFixed(2))})` : '';
-
-            if (success) {
-                const successMsg = isZh ? `✅ 任务完成: ${task.name}` : `✅ Task completed: ${task.name}`;
-                Utils.logger('info', successMsg + timeSuffix);
-                await Database.markAsDone(task);
-                State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
-                State.executionCompletedTasks++;
-            } else {
-                // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
-                const errorLog = logs && logs.length ? 
-                    (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
-                    (isZh ? '工作标签页报告失败' : 'Worker tab reported failure');
-                const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, '') : (isZh ? '未知原因' : 'Unknown reason');
-
-                const failMsg = isZh ? `❌ 任务失败: ${task.name} (${cleanError})` : `❌ Task failed: ${task.name} (${cleanError})`;
-                Utils.logger('warn', failMsg + timeSuffix);
-                const _failRes = await Database.markAsFailed(task, {
-                    reason: cleanError,
-                    logs: logs || [],
-                    details: {
-                        executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
-                        workerId: workerId,
-                        instanceId: instanceId
-                    }
-                });
-                if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
-            }
-
-            UI.update();
-
-            if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
-                // 优化：当一个工作线程结束时，仅等待 200ms 就派发下一个，提高插槽利用效率（原为 1000ms）
-                setTimeout(() => TaskRunner.executeBatch(), 200);
-            }
-
-            if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-                if (State.autoScroll) {
-                    TaskRunner.attemptAutoScroll();
-                } else {
-                    await TaskRunner.stopExecutionAndSettle();
-                }
-            }
-
-            TaskRunner.runHideOrShow();
-        } catch (error) {
-            Utils.logger('error', `处理工作报告时出错: ${error.message}`);
-        }
-    }));
+    // Worker 回传监听已改为「每 worker 独立前缀键」注册，见模块级
+    // registerWorkerDoneListener(workerId)。在派发 worker 前由 TaskRunner 调用，
+    // 旧版单一全局 WORKER_DONE 键已在多标签页并发时造成报告丢失/重复加库（P0）。
 
     // Execution state listener
     State.valueChangeListeners.push(GM_addValueChangeListener(Config.DB_KEYS.IS_EXECUTING, (key, oldValue, newValue) => {
@@ -1319,7 +1288,7 @@ async function main() {
         });
     }
 
-    setInterval(() => {
+    State.domIntervals.push(setInterval(() => {
         if (State.appStatus === 'NORMAL' && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
             const inactiveTime = Date.now() - lastNetworkActivityTime;
             if (inactiveTime > 30000) {
@@ -1329,13 +1298,119 @@ async function main() {
                 }, 1500);
             }
         }
-    }, 5000);
+    }, 5000));
 
     Utils.logger('info', Utils.getText('log_init'));
 }
 
+// 多 worker 并发回传监听：每个 worker 使用独立回传键（WORKER_DONE_PREFIX + workerId），
+// 避免旧版单一全局 WORKER_DONE 键在多标签页并发完成时「后者覆盖前者 / 被其他 worker
+// 监听抢删」导致报告丢失或重复加库（P0 并发根因之一）。该函数为模块级声明，setTaskRunnerDeps
+// 在模块求值阶段即引用它，故必须位于模块作用域（函数声明会提升到模块顶部）。
+function registerWorkerDoneListener(workerId) {
+    if (!workerId) return;
+    if (State.registeredWorkerDoneKeys.has(workerId)) return; // 防重复注册
+
+    const key = Config.DB_KEYS.WORKER_DONE_PREFIX + workerId;
+    State.registeredWorkerDoneKeys.add(workerId);
+
+    const listenerId = GM_addValueChangeListener(key, async (k, oldValue, newValue) => {
+        if (!newValue) return;
+
+        try {
+            // 每 worker 独立键，收到即删，避免该键残留被重复读取
+            await GM_deleteValue(key);
+            State.registeredWorkerDoneKeys.delete(workerId);
+
+            const { workerId: wid, success, task, logs, instanceId, executionTime } = newValue;
+
+            if (instanceId !== Config.INSTANCE_ID) {
+                Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
+                return;
+            }
+
+            if (!wid || !task) {
+                Utils.logger('error', '收到无效的工作报告。缺少workerId或task。');
+                return;
+            }
+
+            if (State.runningWorkers[wid]) {
+                delete State.runningWorkers[wid];
+                State.activeWorkers--;
+            }
+
+            if (logs && logs.length) {
+                logs.forEach(log => {
+                    // 工作线程的详细步骤默认作为 debug 级别输出，避免刷屏主控制台
+                    Utils.logger('debug', log);
+                });
+            }
+
+            const isZh = State.lang === 'zh';
+            const timeSuffix = executionTime ? ` (${Utils.getText('task_execution_time', (executionTime / 1000).toFixed(2))})` : '';
+
+            if (success) {
+                const successMsg = isZh ? `✅ 任务完成: ${task.name}` : `✅ Task completed: ${task.name}`;
+                Utils.logger('info', successMsg + timeSuffix);
+                await Database.markAsDone(task);
+                State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
+                State.executionCompletedTasks++;
+            } else {
+                // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
+                const errorLog = logs && logs.length ?
+                    (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
+                    (isZh ? '工作标签页报告失败' : 'Worker tab reported failure');
+                const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, '') : (isZh ? '未知原因' : 'Unknown reason');
+
+                const failMsg = isZh ? `❌ 任务失败: ${task.name} (${cleanError})` : `❌ Task failed: ${task.name} (${cleanError})`;
+                Utils.logger('warn', failMsg + timeSuffix);
+                const _failRes = await Database.markAsFailed(task, {
+                    reason: cleanError,
+                    logs: logs || [],
+                    details: {
+                        executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
+                        workerId: wid,
+                        instanceId: instanceId
+                    }
+                });
+                if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+            }
+
+            UI.update();
+
+            if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+                // 优化：当一个工作线程结束时，仅等待 200ms 就派发下一个，提高插槽利用效率（原为 1000ms）
+                setTimeout(() => TaskRunner.executeBatch(), 200);
+            }
+
+            if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+                if (State.autoScroll) {
+                    TaskRunner.attemptAutoScroll();
+                } else {
+                    await TaskRunner.stopExecutionAndSettle();
+                }
+            }
+
+            TaskRunner.runHideOrShow();
+        } catch (error) {
+            Utils.logger('error', `处理工作报告时出错: ${error.message}`);
+        }
+    });
+
+    State.valueChangeListeners.push(listenerId);
+}
+
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+    // 清理 DOM 定时器与跨标签页值监听，避免页面卸载后残留定时器/回调泄漏
+    if (State.domIntervals && State.domIntervals.length) {
+        State.domIntervals.forEach(id => { try { clearInterval(id); } catch (e) { } });
+        State.domIntervals = [];
+    }
+    if (State.valueChangeListeners && State.valueChangeListeners.length) {
+        State.valueChangeListeners.forEach(id => { try { if (typeof GM_removeValueChangeListener === 'function') GM_removeValueChangeListener(id); } catch (e) { } });
+        State.valueChangeListeners = [];
+    }
     InstanceManager.cleanup();
     Utils.cleanup();
 });

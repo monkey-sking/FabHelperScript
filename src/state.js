@@ -70,6 +70,10 @@ export const State = {
     uiExpanded: true,
     logs: [],
     valueChangeListeners: [],
+    // runDomDependentPart 中创建的定时器句柄，供 beforeunload 时统一清理，避免泄漏
+    domIntervals: [],
+    // 已为哪些 workerId 注册过回传监听，避免重复注册同一键
+    registeredWorkerDoneKeys: new Set(),
     // For remembering scroll position
     knownCursors: new Set(),
     lastSortMethod: null,

@@ -69,8 +69,12 @@ export const RateLimitManager = {
             State.statusHistory = State.statusHistory.slice(-50);
         }
 
-        // 保存到存储
-        await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+        // 保存到存储（兜底：存储失败仅记日志，不阻断状态机）
+        try {
+            await GM_setValue(Config.DB_KEYS.STATUS_HISTORY, State.statusHistory);
+        } catch (e) {
+            Utils.logger('error', `保存状态历史失败: ${e.message}`);
+        }
         return true;
     },
 

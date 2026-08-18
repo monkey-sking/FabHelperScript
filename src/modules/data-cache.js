@@ -24,7 +24,9 @@ export const DataCache = {
     timestamps: {
         listings: new Map(),
         ownedStatus: new Map(),
-        prices: new Map()
+        prices: new Map(),
+        offerListingUids: new Map(),
+        waitingList: new Map()
     },
 
     // 缓存有效期（毫秒）
@@ -48,6 +50,7 @@ export const DataCache = {
 
                 this.extractOfferIds(item).forEach(offerId => {
                     this.offerListingUids.set(offerId, item.uid);
+                this.timestamps.offerListingUids.set(offerId, now);
                 });
             }
         });
@@ -102,7 +105,10 @@ export const DataCache = {
     // 添加到等待列表
     addToWaitingList: function (uids) {
         if (!uids || !Array.isArray(uids)) return;
-        uids.forEach(uid => this.waitingList.add(uid));
+        uids.forEach(uid => {
+            this.waitingList.add(uid);
+            this.timestamps.waitingList.set(uid, Date.now());
+        });
         Utils.logger('debug', `[Cache] ${Utils.getText('fab_dom_add_to_waitlist', uids.length, this.waitingList.size)}`);
     },
 
@@ -229,6 +235,20 @@ export const DataCache = {
                         this[type].delete(key);
                         this.timestamps[type].delete(key);
                     }
+                }
+            }
+
+            // 一并清理 offer→uid 映射与等待列表，避免长会话内存只增不减
+            for (const [offerId, ts] of this.timestamps.offerListingUids.entries()) {
+                if (now - ts > this.TTL) {
+                    this.offerListingUids.delete(offerId);
+                    this.timestamps.offerListingUids.delete(offerId);
+                }
+            }
+            for (const [uid, ts] of this.timestamps.waitingList.entries()) {
+                if (now - ts > this.TTL) {
+                    this.waitingList.delete(uid);
+                    this.timestamps.waitingList.delete(uid);
                 }
             }
 

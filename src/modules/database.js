@@ -21,6 +21,25 @@ export const Database = {
         return cleanUrl;
     },
 
+    // 归一化 url 的 Set，避免 isDone 在热路径上对每个 done 项重复 normalize（O(n²)）。
+    doneSet: new Set(),
+    // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
+    // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
+    _doneRef: null,
+
+    // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
+    _safeGet: async (key, def) => {
+        try { return await GM_getValue(key, def); } catch (e) {
+            Utils.logger('error', `读取存储失败 [${key}]: ${e.message}`);
+            return def;
+        }
+    },
+    _safeSet: (key, val) => {
+        try { GM_setValue(key, val); } catch (e) {
+            Utils.logger('error', `写入存储失败 [${key}]: ${e.message}`);
+        }
+    },
+
     getListingUid: (url) => {
         if (!url) return '';
         const uidMatch = String(url).split('?')[0].match(/\/listings\/([^/?#]+)/i);
@@ -54,6 +73,7 @@ export const Database = {
         const changed = normalized.length !== State.db.done.length ||
             normalized.some((url, index) => url !== State.db.done[index]);
         State.db.done = normalized;
+        Database.doneSet = new Set(normalized);
         return changed;
     },
 
@@ -63,28 +83,29 @@ export const Database = {
         if (!cleanUrl) return normalizedChanged;
         if (Database.isDone(cleanUrl)) return normalizedChanged;
         State.db.done.push(cleanUrl);
+        Database.doneSet.add(cleanUrl);
         Database.seedDoneOwnedStatusCache();
         return true;
     },
 
     load: async () => {
         // 从存储中加载待办列表
-        State.db.todo = await GM_getValue(Config.DB_KEYS.TODO, []);
-        State.db.done = await GM_getValue(Config.DB_KEYS.DONE, []);
-        State.db.failed = await GM_getValue(Config.DB_KEYS.FAILED, []);
-        State.hideSaved = await GM_getValue(Config.DB_KEYS.HIDE, false);
-        State.autoAddOnScroll = await GM_getValue(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
-        State.rememberScrollPosition = await GM_getValue(Config.DB_KEYS.REMEMBER_POS, false);
-        State.autoResumeAfter429 = await GM_getValue(Config.DB_KEYS.AUTO_RESUME, false);
-        State.autoRefreshEmptyPage = await GM_getValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
-        State.hideDiscountedPaid = await GM_getValue(Config.DB_KEYS.HIDE_DISCOUNTED, false); // 加载隐藏打折付费设置
-        State.hidePaid = await GM_getValue(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
-        State.blockLargeResources = await GM_getValue(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
-        State.debugMode = await GM_getValue('fab_helper_debug_mode', false); // 加载调试模式设置
-        State.currentSortOption = await GM_getValue('fab_helper_sort_option', 'title_desc'); // 加载排序设置
-        State.isExecuting = await GM_getValue(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
+        State.db.todo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+        State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
+        State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
+        State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
+        State.autoAddOnScroll = await Database._safeGet(Config.DB_KEYS.AUTO_ADD, false); // Load the setting
+        State.rememberScrollPosition = await Database._safeGet(Config.DB_KEYS.REMEMBER_POS, false);
+        State.autoResumeAfter429 = await Database._safeGet(Config.DB_KEYS.AUTO_RESUME, false);
+        State.autoRefreshEmptyPage = await Database._safeGet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true); // 加载无商品自动刷新设置
+        State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false); // 加载隐藏打折付费设置
+        State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
+        State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
+        State.debugMode = await Database._safeGet('fab_helper_debug_mode', false); // 加载调试模式设置
+        State.currentSortOption = await Database._safeGet('fab_helper_sort_option', 'title_desc'); // 加载排序设置
+        State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
-        State.statusHistory = await GM_getValue(Config.DB_KEYS.STATUS_HISTORY, []);
+        State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
 
         if (Database.normalizeDoneList()) {
             await Database.saveDone();
@@ -95,19 +116,19 @@ export const Database = {
         Utils.logger('info', Utils.getText('log_db_loaded'), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
     },
     // 添加保存待办列表的方法
-    saveTodo: () => GM_setValue(Config.DB_KEYS.TODO, State.db.todo),
-    saveDone: () => GM_setValue(Config.DB_KEYS.DONE, State.db.done),
-    saveFailed: () => GM_setValue(Config.DB_KEYS.FAILED, State.db.failed),
-    saveHidePref: () => GM_setValue(Config.DB_KEYS.HIDE, State.hideSaved),
-    saveAutoAddPref: () => GM_setValue(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
-    saveAutoScrollPref: () => GM_setValue(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), // 保存自动滚动页面开关
-    saveRememberPosPref: () => GM_setValue(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
-    saveAutoResumePref: () => GM_setValue(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
-    saveAutoRefreshEmptyPref: () => GM_setValue(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
-    saveHideDiscountedPref: () => GM_setValue(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), // 保存隐藏打折付费设置
-    saveHidePaidPref: () => GM_setValue(Config.DB_KEYS.HIDE_PAID, State.hidePaid), // 保存隐藏所有付费设置
-    saveBlockResourcesPref: () => GM_setValue(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), // 保存禁用大资源设置
-    saveExecutingState: () => GM_setValue(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
+    saveTodo: () => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo),
+    saveDone: () => Database._safeSet(Config.DB_KEYS.DONE, State.db.done),
+    saveFailed: () => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed),
+    saveHidePref: () => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved),
+    saveAutoAddPref: () => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
+    saveAutoScrollPref: () => Database._safeSet(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), // 保存自动滚动页面开关
+    saveRememberPosPref: () => Database._safeSet(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition),
+    saveAutoResumePref: () => Database._safeSet(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429),
+    saveAutoRefreshEmptyPref: () => Database._safeSet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), // 保存无商品自动刷新设置
+    saveHideDiscountedPref: () => Database._safeSet(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), // 保存隐藏打折付费设置
+    saveHidePaidPref: () => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), // 保存隐藏所有付费设置
+    saveBlockResourcesPref: () => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), // 保存禁用大资源设置
+    saveExecutingState: () => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
         if (window.confirm(Utils.getText('confirm_clear_data'))) {
@@ -132,6 +153,7 @@ export const Database = {
             }
             State.db.todo = [];
             State.db.done = [];
+            Database.doneSet = new Set();
             State.db.failed = [];
             State.blockLargeResources = true;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
@@ -145,7 +167,14 @@ export const Database = {
     isDone: (url) => {
         if (!url) return false;
         const cleanUrl = Database.normalizeListingUrl(url);
-        return State.db.done.some(doneUrl => Database.normalizeListingUrl(doneUrl) === cleanUrl);
+        // State.db.done 可能被直接重新赋值（测试 / 直接赋值加载），doneSet 未同步；
+        // 用数组引用比对检测重赋值（O(1)），命中则从数组重建 Set，保持查询 O(1)。
+        // 生产路径只经 normalizeDoneList/addDoneUrl 写入，引用/push 与 Set 始终一致。
+        if (Database._doneRef !== State.db.done) {
+            Database.doneSet = new Set(State.db.done.map(u => Database.normalizeListingUrl(u)));
+            Database._doneRef = State.db.done;
+        }
+        return Database.doneSet.has(cleanUrl);
     },
     isFailed: (url) => {
         if (!url) return false;
