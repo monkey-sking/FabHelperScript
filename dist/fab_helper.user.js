@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260818-1128
+// @version      3.5.20-20260821-1025
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -815,36 +815,79 @@
     // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
     OWNED_SUCCESS_CRITERIA: {
       // Check for an H2 tag with the specific success text.
-      h2Text: ["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library"],
+      h2Text: ["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "Saved in Library", "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D", "\u5DF2\u4FDD\u5B58\u5728\u8D26\u6237\u4E2D", "\u5DF2\u5728\u5E93\u4E2D"],
       // Check for buttons/links with these texts.
-      buttonTexts: ["\u5728\u6211\u7684\u5E93\u4E2D\u67E5\u770B", "View in My Library"],
+      buttonTexts: ["\u5728\u6211\u7684\u5E93\u4E2D\u67E5\u770B", "View in My Library", "View in Library", "\u5728\u5E93\u4E2D\u67E5\u770B", "View in Account", "\u5728\u8D26\u6237\u4E2D\u67E5\u770B", "\u5DF2\u5728\u5E93\u4E2D", "\u5DF2\u62E5\u6709"],
       // Check for the temporary success popup (snackbar).
-      snackbarText: ["\u4EA7\u54C1\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "Product added to your library"]
+      snackbarText: ["\u4EA7\u54C1\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "Product added to your library", "Added to library", "\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "\u5DF2\u52A0\u5165\u60A8\u7684\u5E93\u4E2D"]
     },
     ACQUISITION_TEXT_SET: /* @__PURE__ */ new Set([
       "\u6DFB\u52A0\u5230\u6211\u7684\u5E93",
       "Add to my library",
+      "\u6DFB\u52A0\u5230\u5E93",
+      "Add to Library",
+      "Add to library",
       "\u52A0\u5165\u8D2D\u7269\u8F66",
       "Add to cart",
+      "Add to Cart",
       "\u7ED3\u8D26",
       "Checkout",
       "\u7ACB\u5373\u83B7\u53D6",
       "Get it",
+      "Get It",
       "\u514D\u8D39\u83B7\u53D6",
       "Get for free",
+      "Get for Free",
+      "Get Free",
+      "Get free",
+      "\u514D\u8D39\u9886\u53D6",
+      "\u9886\u53D6",
+      "\u83B7\u53D6",
       "\u5B8C\u6210\u8BA2\u5355",
       "Complete order",
+      "Complete Order",
       "\u7ACB\u5373\u8D2D\u4E70",
       "Buy now",
+      "Buy Now",
       "\u83B7\u53D6\u8D44\u6E90",
       "Get asset",
+      "Get Asset",
       "Place order",
+      "Place Order",
       "\u786E\u8BA4\u8BA2\u5355",
-      "\u4E0B\u5355"
+      "\u4E0B\u5355",
+      "\u514D\u8D39\u4E0B\u5355",
+      "Claim",
+      "Claim for free",
+      "Claim Item",
+      "Claim item",
+      "Claim free",
+      "Add to Account",
+      "Add to account",
+      "\u6DFB\u52A0\u5230\u8D26\u6237"
     ]),
     // Kept for backward compatibility with recon logic.
-    SAVED_TEXT_SET: /* @__PURE__ */ new Set(["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "\u5728\u6211\u7684\u5E93\u4E2D", "In My Library"]),
-    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "Free*", "0.00", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free"]),
+    SAVED_TEXT_SET: /* @__PURE__ */ new Set([
+      "\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D",
+      "Saved in My Library",
+      "Saved in my library",
+      "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D",
+      "Saved in Library",
+      "Saved in library",
+      "\u5728\u6211\u7684\u5E93\u4E2D",
+      "In My Library",
+      "In my library",
+      "\u5728\u5E93\u4E2D",
+      "In Library",
+      "In library",
+      "\u5DF2\u5728\u5E93\u4E2D",
+      "In Account",
+      "In account",
+      "\u5DF2\u5728\u8D26\u6237\u4E2D",
+      "\u5DF2\u62E5\u6709",
+      "\u5DF2\u4FDD\u5B58"
+    ]),
+    FREE_TEXT_SET: /* @__PURE__ */ new Set(["\u514D\u8D39", "Free", "Free*", "0.00", "\u8D77\u59CB\u4EF7\u683C \u514D\u8D39", "Starting at Free", "\u4F4E\u81F3 \u514D\u8D39"]),
     EXTERNAL_CTA_TEXT_SET: /* @__PURE__ */ new Set([
       "\u5728\u5916\u90E8\u7F51\u7AD9\u67E5\u770B",
       "View on external website"
@@ -1182,15 +1225,21 @@
         element.focus();
       } catch (e) {
       }
-      setTimeout(() => {
-        const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
-        Utils.logger("info", `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
-        const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
+      const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+      const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
+      try {
         element.dispatchEvent(new PointerEvent("pointerdown", eventOptions));
         element.dispatchEvent(new MouseEvent("mousedown", eventOptions));
         element.dispatchEvent(new PointerEvent("pointerup", eventOptions));
         element.dispatchEvent(new MouseEvent("mouseup", eventOptions));
         element.click();
+      } catch (e) {
+      }
+      setTimeout(() => {
+        try {
+          element.click();
+        } catch (e) {
+        }
       }, 50);
     }, "deepClick"),
     cleanup: /* @__PURE__ */ __name(() => {
@@ -3244,9 +3293,27 @@
       if (!root || typeof root.querySelectorAll !== "function") {
         return { handled: false };
       }
+      try {
+        const buttons = root.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]');
+        if (buttons && buttons.length > 0) {
+          const hasAcquisitionButton = [...buttons].some((btn) => {
+            const text2 = Utils.normalizeWhitespace(btn?.textContent || "").toLowerCase();
+            return [...Config.ACQUISITION_TEXT_SET].some((k) => text2.includes(k.toLowerCase()));
+          });
+          if (hasAcquisitionButton) {
+            return { handled: false };
+          }
+        }
+      } catch (e) {
+      }
       const currentHref = typeof window !== "undefined" && window.location?.href ? window.location.href : "https://www.fab.com/";
       const currentHostname = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "www.fab.com";
-      const links = [...root.querySelectorAll("a[href]")];
+      let links = [];
+      try {
+        links = [...root.querySelectorAll("a[href]")];
+      } catch (e) {
+        return { handled: false };
+      }
       const externalLink = links.find((link) => {
         const text2 = Utils.normalizeWhitespace(link.textContent || "");
         if (!text2 || ![...Config.EXTERNAL_CTA_TEXT_SET].some((label) => text2.includes(label))) {
@@ -3956,7 +4023,7 @@
             while (Date.now() - startTime2 < maxWait) {
               const currentState = document.readyState;
               const hasMainContent = document.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
-              const hasButtons = document.querySelectorAll("button").length > 0;
+              const hasButtons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]').length > 0;
               const hasTitle = document.querySelector("h1, .fabkit-Heading--xl");
               if (currentState !== lastState) {
                 logBuffer.push(`\u9875\u9762\u72B6\u6001: ${currentState}`);
@@ -4009,13 +4076,14 @@
           }
           await (/* @__PURE__ */ __name(function waitForKeyElement(maxWait = 2e3) {
             const matchKey = /* @__PURE__ */ __name(() => {
-              const buttons = document.querySelectorAll("button");
+              const buttons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]');
               for (const btn of buttons) {
                 const t = Utils.normalizeWhitespace(btn.textContent || "");
                 if (!t) continue;
-                if (Config.ACQUISITION_TEXT_SET.has(t)) return true;
-                if (Config.SAVED_TEXT_SET.has(t)) return true;
-                if (Config.EXTERNAL_CTA_TEXT_SET.has(t)) return true;
+                const lowerT = t.toLowerCase();
+                if ([...Config.ACQUISITION_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
+                if ([...Config.SAVED_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
+                if ([...Config.EXTERNAL_CTA_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
               }
               const bodyText = document.body && document.body.textContent;
               if (bodyText) {
@@ -4099,13 +4167,13 @@
               if (snackbar && criteria.snackbarText.some((text) => snackbar.textContent.includes(text))) {
                 return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
               }
-              const successHeader = document.querySelector("h2");
+              const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]')];
+              const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((keyword) => btn.textContent.includes(keyword)));
+              if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+              const successHeader = document.querySelector('.product-detail h2, main h2, [class*="detail"] h2, [class*="product"] h2');
               if (successHeader && criteria.h2Text.some((text) => successHeader.textContent.includes(text))) {
                 return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
               }
-              const allButtons = [...document.querySelectorAll("button, a.fabkit-Button-root")];
-              const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((keyword) => btn.textContent.includes(keyword)));
-              if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
               return { owned: false };
             }, "isItemOwned");
             const initialState = isItemOwned();
@@ -4120,7 +4188,8 @@
               }
             }
             if (!success) {
-              const allVisibleButtons = [...document.querySelectorAll("button")].filter((btn) => {
+              const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
+              const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
                 const rect = btn.getBoundingClientRect();
                 const text = btn.textContent.trim();
                 return rect.width > 0 && rect.height > 0 && text.length > 0;
@@ -4188,7 +4257,7 @@
                 }
               }
               if (!success) {
-                const freshButtons = [...document.querySelectorAll("button")].filter((btn) => {
+                const freshButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
                   const rect = btn.getBoundingClientRect();
                   const text = btn.textContent.trim();
                   return rect.width > 0 && rect.height > 0 && text.length > 0;
@@ -4273,7 +4342,23 @@
                                 return true;
                               }
                             }
-                            return text.includes("place order") || text.includes("\u4E0B\u5355") || text.includes("checkout") || text.includes("\u7ED3\u8D26") || text.includes("complete order") || text.includes("\u5B8C\u6210\u8BA2\u5355") || text.includes("confirm");
+                            const checkoutKeywords = [
+                              "place order",
+                              "\u4E0B\u5355",
+                              "checkout",
+                              "\u7ED3\u8D26",
+                              "complete order",
+                              "\u5B8C\u6210\u8BA2\u5355",
+                              "confirm",
+                              "\u786E\u8BA4",
+                              "claim",
+                              "\u9886\u53D6",
+                              "get",
+                              "\u83B7\u53D6",
+                              "pay",
+                              "\u652F\u4ED8"
+                            ];
+                            return checkoutKeywords.some((kw) => text.includes(kw));
                           });
                         }
                         if (checkoutBtn && !checkoutBtn.disabled) {

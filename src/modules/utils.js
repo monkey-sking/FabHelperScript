@@ -208,24 +208,23 @@ export const Utils = {
         // Ensure element is focused if possible
         try { element.focus(); } catch (e) { }
 
-        // A small delay to ensure the browser's event loop is clear and any framework
-        // event listeners on the element have had a chance to attach.
-        setTimeout(() => {
-            const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
 
-            Utils.logger('info', `Performing deep click on element: <${element.tagName.toLowerCase()} class="${element.className}">`);
-
-            const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
-
-            // Pointer events sequence
+        try {
             element.dispatchEvent(new PointerEvent('pointerdown', eventOptions));
             element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
             element.dispatchEvent(new PointerEvent('pointerup', eventOptions));
             element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-
-            // Standard click
             element.click();
-        }, 50); // 50ms delay
+        } catch (e) { /* ignore */ }
+
+        // A small delay fallback to ensure the browser's event loop processes framework handlers
+        setTimeout(() => {
+            try {
+                element.click();
+            } catch (e) { /* ignore */ }
+        }, 50);
     },
     cleanup: () => {
         if (State.watchdogTimer) {

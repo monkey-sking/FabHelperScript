@@ -80,13 +80,36 @@ export const TaskRunner = {
             return { handled: false };
         }
 
+        // 防误判：如果页面上存在“添加到库 / 购买 / 免费获取”等主动作按钮，绝不判为外部链接处理项
+        try {
+            const buttons = root.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]');
+            if (buttons && buttons.length > 0) {
+                const hasAcquisitionButton = [...buttons].some(btn => {
+                    const text = Utils.normalizeWhitespace(btn?.textContent || '').toLowerCase();
+                    return [...Config.ACQUISITION_TEXT_SET].some(k => text.includes(k.toLowerCase()));
+                });
+                if (hasAcquisitionButton) {
+                    return { handled: false };
+                }
+            }
+        } catch (e) {
+            // Unit test mock querySelectorAll support
+        }
+
         const currentHref = (typeof window !== 'undefined' && window.location?.href)
             ? window.location.href
             : 'https://www.fab.com/';
         const currentHostname = (typeof window !== 'undefined' && window.location?.hostname)
             ? window.location.hostname
             : 'www.fab.com';
-        const links = [...root.querySelectorAll('a[href]')];
+        
+        let links = [];
+        try {
+            links = [...root.querySelectorAll('a[href]')];
+        } catch (e) {
+            return { handled: false };
+        }
+
         const externalLink = links.find(link => {
             const text = Utils.normalizeWhitespace(link.textContent || '');
             if (!text || ![...Config.EXTERNAL_CTA_TEXT_SET].some(label => text.includes(label))) {
@@ -981,7 +1004,7 @@ export const TaskRunner = {
                     while (Date.now() - startTime < maxWait) {
                         const currentState = document.readyState;
                         const hasMainContent = document.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
-                        const hasButtons = document.querySelectorAll('button').length > 0;
+                        const hasButtons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]').length > 0;
                         const hasTitle = document.querySelector('h1, .fabkit-Heading--xl');
 
                         if (currentState !== lastState) {
@@ -1051,13 +1074,14 @@ export const TaskRunner = {
                 // 之前这里是无条件 setTimeout(2000)，是单任务耗时的主要来源。
                 await (function waitForKeyElement(maxWait = 2000) {
                     const matchKey = () => {
-                        const buttons = document.querySelectorAll('button');
+                        const buttons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]');
                         for (const btn of buttons) {
                             const t = Utils.normalizeWhitespace(btn.textContent || '');
                             if (!t) continue;
-                            if (Config.ACQUISITION_TEXT_SET.has(t)) return true;
-                            if (Config.SAVED_TEXT_SET.has(t)) return true;
-                            if (Config.EXTERNAL_CTA_TEXT_SET.has(t)) return true;
+                            const lowerT = t.toLowerCase();
+                            if ([...Config.ACQUISITION_TEXT_SET].some(k => lowerT.includes(k.toLowerCase()))) return true;
+                            if ([...Config.SAVED_TEXT_SET].some(k => lowerT.includes(k.toLowerCase()))) return true;
+                            if ([...Config.EXTERNAL_CTA_TEXT_SET].some(k => lowerT.includes(k.toLowerCase()))) return true;
                         }
                         const bodyText = document.body && document.body.textContent;
                         if (bodyText) {
@@ -1153,13 +1177,14 @@ export const TaskRunner = {
                         if (snackbar && criteria.snackbarText.some(text => snackbar.textContent.includes(text))) {
                             return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
                         }
-                        const successHeader = document.querySelector('h2');
+                        const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]')];
+                        const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
+                        if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+
+                        const successHeader = document.querySelector('.product-detail h2, main h2, [class*="detail"] h2, [class*="product"] h2');
                         if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) {
                             return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
                         }
-                        const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root')];
-                        const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
-                        if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
                         return { owned: false };
                     };
 
@@ -1177,7 +1202,8 @@ export const TaskRunner = {
 
                     if (!success) {
                         // 记录关键按钮的文本，减少噪音
-                        const allVisibleButtons = [...document.querySelectorAll('button')].filter(btn => {
+                        const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
+                        const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
                             const rect = btn.getBoundingClientRect();
                             const text = btn.textContent.trim();
                             return rect.width > 0 && rect.height > 0 && text.length > 0;
@@ -1264,7 +1290,7 @@ export const TaskRunner = {
                         // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
                         if (!success) {
                             // 重新查询页面按钮（许可选择后按钮可能已更新）
-                            const freshButtons = [...document.querySelectorAll('button')].filter(btn => {
+                            const freshButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
                                 const rect = btn.getBoundingClientRect();
                                 const text = btn.textContent.trim();
                                 return rect.width > 0 && rect.height > 0 && text.length > 0;
@@ -1381,10 +1407,16 @@ export const TaskRunner = {
                                                         }
                                                     }
 
-                                                    return text.includes('place order') || text.includes('下单') ||
-                                                        text.includes('checkout') || text.includes('结账') ||
-                                                        text.includes('complete order') || text.includes('完成订单') ||
-                                                        text.includes('confirm');
+                                                    const checkoutKeywords = [
+                                                        'place order', '下单',
+                                                        'checkout', '结账',
+                                                        'complete order', '完成订单',
+                                                        'confirm', '确认',
+                                                        'claim', '领取',
+                                                        'get', '获取',
+                                                        'pay', '支付'
+                                                    ];
+                                                    return checkoutKeywords.some(kw => text.includes(kw));
                                                 });
                                             }
 

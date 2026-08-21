@@ -54,27 +54,37 @@ export const Config = {
     // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
     OWNED_SUCCESS_CRITERIA: {
         // Check for an H2 tag with the specific success text.
-        h2Text: ['已保存在我的库中', 'Saved in My Library'],
+        h2Text: ['已保存在我的库中', 'Saved in My Library', 'Saved in Library', '已保存在库中', '已保存在账户中', '已在库中'],
         // Check for buttons/links with these texts.
-        buttonTexts: ['在我的库中查看', 'View in My Library'],
+        buttonTexts: ['在我的库中查看', 'View in My Library', 'View in Library', '在库中查看', 'View in Account', '在账户中查看', '已在库中', '已拥有'],
         // Check for the temporary success popup (snackbar).
-        snackbarText: ['产品已添加至您的库中', 'Product added to your library'],
+        snackbarText: ['产品已添加至您的库中', 'Product added to your library', 'Added to library', '已添加至您的库中', '已加入您的库中'],
     },
     ACQUISITION_TEXT_SET: new Set([
         '添加到我的库', 'Add to my library',
-        '加入购物车', 'Add to cart',
+        '添加到库', 'Add to Library', 'Add to library',
+        '加入购物车', 'Add to cart', 'Add to Cart',
         '结账', 'Checkout',
-        '立即获取', 'Get it',
-        '免费获取', 'Get for free',
-        '完成订单', 'Complete order',
-        '立即购买', 'Buy now',
-        '获取资源', 'Get asset',
-        'Place order', '确认订单', '下单'
+        '立即获取', 'Get it', 'Get It',
+        '免费获取', 'Get for free', 'Get for Free', 'Get Free', 'Get free',
+        '免费领取', '领取', '获取',
+        '完成订单', 'Complete order', 'Complete Order',
+        '立即购买', 'Buy now', 'Buy Now',
+        '获取资源', 'Get asset', 'Get Asset',
+        'Place order', 'Place Order', '确认订单', '下单', '免费下单',
+        'Claim', 'Claim for free', 'Claim Item', 'Claim item', 'Claim free',
+        'Add to Account', 'Add to account', '添加到账户'
     ]),
 
     // Kept for backward compatibility with recon logic.
-    SAVED_TEXT_SET: new Set(['已保存在我的库中', 'Saved in My Library', '在我的库中', 'In My Library']),
-    FREE_TEXT_SET: new Set(['免费', 'Free', 'Free*', '0.00', '起始价格 免费', 'Starting at Free']),
+    SAVED_TEXT_SET: new Set([
+        '已保存在我的库中', 'Saved in My Library', 'Saved in my library',
+        '已保存在库中', 'Saved in Library', 'Saved in library',
+        '在我的库中', 'In My Library', 'In my library',
+        '在库中', 'In Library', 'In library',
+        '已在库中', 'In Account', 'In account', '已在账户中', '已拥有', '已保存'
+    ]),
+    FREE_TEXT_SET: new Set(['免费', 'Free', 'Free*', '0.00', '起始价格 免费', 'Starting at Free', '低至 免费']),
     EXTERNAL_CTA_TEXT_SET: new Set([
         '在外部网站查看',
         'View on external website'
