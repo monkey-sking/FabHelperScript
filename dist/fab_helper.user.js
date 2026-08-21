@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1113
+// @version      3.5.20-20260821-1129
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4827,8 +4827,12 @@
         let skippedUnsettled = 0;
         cardsToProcess.forEach((card) => {
           const link = card.querySelector(Config.SELECTORS.cardLink);
-          const url = link ? link.href.split("?")[0] : null;
-          if (!url) return;
+          const rawHref = link ? link.href : "";
+          if (!rawHref) return;
+          const uidMatch = rawHref.match(/listings\/([a-f0-9-]{32,36})/i);
+          if (!uidMatch || !uidMatch[1]) return;
+          const uid = uidMatch[1];
+          const url = `https://www.fab.com/listings/${uid}`;
           if (!TaskRunner2.isCardSettled(card)) {
             skippedUnsettled++;
             return;
@@ -4851,20 +4855,16 @@
             skippedAlreadyOwned++;
             return;
           }
-          const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
-          if (uidMatch && uidMatch[1]) {
-            const uid = uidMatch[1];
-            if (DataCache.ownedStatus.has(uid)) {
-              const status = DataCache.ownedStatus.get(uid);
-              if (status && status.acquired) {
-                skippedAlreadyOwned++;
-                return;
-              }
+          if (DataCache.ownedStatus.has(uid)) {
+            const status = DataCache.ownedStatus.get(uid);
+            if (status && status.acquired) {
+              skippedAlreadyOwned++;
+              return;
             }
           }
           if (!TaskRunner2.isFreeCard(card)) return;
           const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
-          newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
+          newlyAddedList.push({ name, url, type: "detail", uid });
         });
         if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
           State.autoAddRetryTimer = setTimeout(() => {

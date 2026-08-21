@@ -2027,8 +2027,15 @@ export const TaskRunner = {
 
             cardsToProcess.forEach(card => {
                 const link = card.querySelector(Config.SELECTORS.cardLink);
-                const url = link ? link.href.split('?')[0] : null;
-                if (!url) return;
+                const rawHref = link ? link.href : '';
+                if (!rawHref) return;
+
+                // 强要求：必须提取出合法的 listing UUID。对于任何 /search?tags=... 或非商品页链接一律杀掉，绝不加入待办队列！
+                const uidMatch = rawHref.match(/listings\/([a-f0-9-]{32,36})/i);
+                if (!uidMatch || !uidMatch[1]) return;
+
+                const uid = uidMatch[1];
+                const url = `https://www.fab.com/listings/${uid}`;
 
                 if (!TaskRunner.isCardSettled(card)) {
                     skippedUnsettled++;
@@ -2060,15 +2067,11 @@ export const TaskRunner = {
                     return;
                 }
 
-                const uidMatch = url.match(/listings\/([a-f0-9-]+)/);
-                if (uidMatch && uidMatch[1]) {
-                    const uid = uidMatch[1];
-                    if (DataCache.ownedStatus.has(uid)) {
-                        const status = DataCache.ownedStatus.get(uid);
-                        if (status && status.acquired) {
-                            skippedAlreadyOwned++;
-                            return;
-                        }
+                if (DataCache.ownedStatus.has(uid)) {
+                    const status = DataCache.ownedStatus.get(uid);
+                    if (status && status.acquired) {
+                        skippedAlreadyOwned++;
+                        return;
                     }
                 }
 
@@ -2077,7 +2080,7 @@ export const TaskRunner = {
                 const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
                     card.querySelector('a[href*="/listings/"]')?.textContent.trim() ||
                     Utils.getText('untitled');
-                newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+                newlyAddedList.push({ name, url, type: 'detail', uid });
             });
 
             if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
