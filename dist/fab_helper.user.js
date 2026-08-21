@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1129
+// @version      3.5.20-20260821-1139
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1226,18 +1226,24 @@
       } catch (e) {
       }
       const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
-      const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
+      const PointerEvt = pageWindow.PointerEvent || PointerEvent;
+      const MouseEvt = pageWindow.MouseEvent || MouseEvent;
+      const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true, buttons: 1, button: 0 };
       try {
-        element.dispatchEvent(new PointerEvent("pointerdown", eventOptions));
-        element.dispatchEvent(new MouseEvent("mousedown", eventOptions));
-        element.dispatchEvent(new PointerEvent("pointerup", eventOptions));
-        element.dispatchEvent(new MouseEvent("mouseup", eventOptions));
-        element.click();
+        element.dispatchEvent(new PointerEvt("pointerdown", eventOptions));
+        element.dispatchEvent(new MouseEvt("mousedown", eventOptions));
+        element.dispatchEvent(new PointerEvt("pointerup", eventOptions));
+        element.dispatchEvent(new MouseEvt("mouseup", eventOptions));
+        if (typeof element.click === "function") {
+          element.click();
+        }
       } catch (e) {
       }
       setTimeout(() => {
         try {
-          element.click();
+          if (typeof element.click === "function") {
+            element.click();
+          }
         } catch (e) {
         }
       }, 50);
@@ -2031,7 +2037,8 @@
       return true;
     }, "addDoneUrl"),
     load: /* @__PURE__ */ __name(async () => {
-      State.db.todo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+      const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+      State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && t.url && t.url.includes("/listings/")) : [];
       State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
       State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
       State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
@@ -4228,57 +4235,39 @@
                 }
               }
               if (!success) {
-                const freshButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
-                  const text = btn.textContent.trim();
-                  const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
-                  const isHidden = style && (style.display === "none" || style.visibility === "hidden");
-                  return text.length > 0 && !isHidden;
-                });
-                const freshCritical = freshButtons.filter((btn) => {
-                  const text = btn.textContent;
-                  return criticalKeywords.some((key) => text.includes(key));
-                });
-                logBuffer.push(`=== \u91CD\u65B0\u68C0\u6D4B: \u53EF\u89C1=${freshButtons.length}, \u5173\u952E=${freshCritical.length} ===`);
-                if (freshCritical.length > 0) {
-                  freshCritical.slice(0, 3).forEach((btn, i) => {
-                    logBuffer.push(`  \u5173\u952E\u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                let actionButton = null;
+                const findActionBtnStart = Date.now();
+                const findActionBtnMaxWait = 8e3;
+                while (!actionButton && Date.now() - findActionBtnStart < findActionBtnMaxWait) {
+                  const freshButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
+                    const text = btn.textContent.trim();
+                    const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                    const isHidden = style && (style.display === "none" || style.visibility === "hidden");
+                    return text.length > 0 && !isHidden;
                   });
-                }
-                let actionButton = freshButtons.find((btn) => {
-                  const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                  return [...Config.ACQUISITION_TEXT_SET].some(
-                    (keyword) => text.includes(keyword.toLowerCase())
-                  );
-                });
-                if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                     return [...Config.ACQUISITION_TEXT_SET].some(
                       (keyword) => text.includes(keyword.toLowerCase())
                     );
                   });
-                }
-                if (!actionButton) {
-                  actionButton = freshButtons.find((btn) => {
-                    const text = Utils.normalizeWhitespace(btn.textContent);
-                    const isPopup = btn.getAttribute("aria-haspopup") === "true";
-                    const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
-                    const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
-                    const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
-                    return hasFreeText && hasDiscount && hasPersonal;
-                  });
-                  if (actionButton) {
-                    logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                  if (!actionButton) {
+                    actionButton = freshButtons.find((btn) => {
+                      const text = Utils.normalizeWhitespace(btn.textContent);
+                      const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
+                      const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
+                      const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
+                      return hasFreeText && hasDiscount && hasPersonal;
+                    });
                   }
-                }
-                if (!actionButton) {
-                  actionButton = freshButtons.find((btn) => {
-                    const text = btn.textContent.toLowerCase();
-                    return text.includes("add") && text.includes("library") || text.includes("\u6DFB\u52A0") && text.includes("\u5E93");
-                  });
-                  if (actionButton) {
-                    logBuffer.push(`\u901A\u8FC7\u5907\u7528\u65B9\u6848\u627E\u5230\u6309\u94AE: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                  if (!actionButton) {
+                    actionButton = freshButtons.find((btn) => {
+                      const text = btn.textContent.toLowerCase();
+                      return text.includes("add") && text.includes("library") || text.includes("\u6DFB\u52A0") && text.includes("\u5E93");
+                    });
                   }
+                  if (actionButton) break;
+                  await new Promise((r) => setTimeout(r, 400));
                 }
                 if (actionButton) {
                   logBuffer.push(`Found add button [${actionButton.textContent.trim().substring(0, 30)}], clicking it.`);
@@ -4302,8 +4291,6 @@
                         );
                         if (!checkoutBtn) {
                           checkoutBtn = allButtonsWithShadow.find((btn) => {
-                            const rect = btn.getBoundingClientRect();
-                            if (rect.width === 0 || rect.height === 0) return false;
                             const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                             if (text.includes("buy now") || text.includes("\u7ACB\u5373\u8D2D\u4E70")) return false;
                             const isCheckoutContext = btn.ownerDocument !== document || window.location.pathname.includes("/payment/");

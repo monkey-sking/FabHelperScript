@@ -89,8 +89,9 @@ export const Database = {
     },
 
     load: async () => {
-        // 从存储中加载待办列表
-        State.db.todo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+        // 从存储中加载待办列表（清洗过滤掉任何非 /listings/ 的历史残留链接）
+        const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+        State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter(t => t && t.url && t.url.includes('/listings/')) : [];
         State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
         State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
         State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);

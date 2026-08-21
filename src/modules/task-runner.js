@@ -1259,70 +1259,49 @@ export const TaskRunner = {
 
                         // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
                         if (!success) {
-                            // 重新查询页面按钮
-                            const freshButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
-                                const text = btn.textContent.trim();
-                                const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
-                                const isHidden = style && (style.display === 'none' || style.visibility === 'hidden');
-                                return text.length > 0 && !isHidden;
-                            });
+                            // 持续轮询最多 8 秒查找动作按钮（防止前端 CSR/GraphQL 异步渲染延迟导致瞬间放弃）
+                            let actionButton = null;
+                            const findActionBtnStart = Date.now();
+                            const findActionBtnMaxWait = 8000;
 
-                            const freshCritical = freshButtons.filter(btn => {
-                                const text = btn.textContent;
-                                return criticalKeywords.some(key => text.includes(key));
-                            });
-
-                            logBuffer.push(`=== 重新检测: 可见=${freshButtons.length}, 关键=${freshCritical.length} ===`);
-                            if (freshCritical.length > 0) {
-                                freshCritical.slice(0, 3).forEach((btn, i) => {
-                                    logBuffer.push(`  关键按钮${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
+                            while (!actionButton && (Date.now() - findActionBtnStart < findActionBtnMaxWait)) {
+                                const freshButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
+                                    const text = btn.textContent.trim();
+                                    const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                                    const isHidden = style && (style.display === 'none' || style.visibility === 'hidden');
+                                    return text.length > 0 && !isHidden;
                                 });
-                            }
 
-                            // 寻找动作按钮（匹配 ACQUISITION_TEXT_SET 集合中的任意动作文案）
-                            let actionButton = freshButtons.find(btn => {
-                                const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
-                                    text.includes(keyword.toLowerCase())
-                                );
-                            });
-
-                            // 2. 如果没找到，再寻找只要包含关键词的按钮 (包含可能的弹出式选择器，虽然概率低)
-                            if (!actionButton) {
+                                // 寻找动作按钮（匹配 ACQUISITION_TEXT_SET 集合中的任意动作文案）
                                 actionButton = freshButtons.find(btn => {
                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
                                     return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                         text.includes(keyword.toLowerCase())
                                     );
                                 });
-                            }
 
-                            // 3. 兜底方案：如果是限时免费商品的价格/许可按钮 (排除掉 aria-haspopup="true" 的选择器，除非它是唯一的)
-                            if (!actionButton) {
-                                actionButton = freshButtons.find(btn => {
-                                    const text = Utils.normalizeWhitespace(btn.textContent);
-                                    const isPopup = btn.getAttribute('aria-haspopup') === 'true';
-                                    const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
-                                    const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
-                                    const hasPersonal = text.includes('个人') || text.includes('Personal');
-                                    return hasFreeText && hasDiscount && hasPersonal;
-                                });
-
-                                if (actionButton) {
-                                    logBuffer.push(`Found limited-time free license button: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                                // 兜底：限时免费/折扣按钮
+                                if (!actionButton) {
+                                    actionButton = freshButtons.find(btn => {
+                                        const text = Utils.normalizeWhitespace(btn.textContent);
+                                        const hasFreeText = [...Config.FREE_TEXT_SET].some(freeWord => text.includes(freeWord));
+                                        const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
+                                        const hasPersonal = text.includes('个人') || text.includes('Personal');
+                                        return hasFreeText && hasDiscount && hasPersonal;
+                                    });
                                 }
-                            }
 
-                            // 4. 备用方案：查找包含 "add" 和 "library" 的按钮
-                            if (!actionButton) {
-                                actionButton = freshButtons.find(btn => {
-                                    const text = btn.textContent.toLowerCase();
-                                    return (text.includes('add') && text.includes('library')) ||
-                                        (text.includes('添加') && text.includes('库'));
-                                });
-                                if (actionButton) {
-                                    logBuffer.push(`通过备用方案找到按钮: "${actionButton.textContent.trim().substring(0, 50)}"`);
+                                // 兜底：包含 add 与 library
+                                if (!actionButton) {
+                                    actionButton = freshButtons.find(btn => {
+                                        const text = btn.textContent.toLowerCase();
+                                        return (text.includes('add') && text.includes('library')) ||
+                                            (text.includes('添加') && text.includes('库'));
+                                    });
                                 }
+
+                                if (actionButton) break;
+                                await new Promise(r => setTimeout(r, 400));
                             }
 
                             if (actionButton) {
@@ -1332,7 +1311,6 @@ export const TaskRunner = {
                                 // 等待添加操作完成
                                 try {
                                     await new Promise((resolve, reject) => {
-                                        // 延长超时时间以适应较慢的结账流程 (60s)
                                         const timeout = 60000;
                                         const startTime = Date.now();
 
@@ -1355,18 +1333,12 @@ export const TaskRunner = {
                                                 btn.classList.contains('payment-order-confirm__btn')
                                             );
 
-                                            // B. 备用：通过文本查找
+                                            // B. 备用：通过文本查找（不判定 getBoundingClientRect，全面支持后台标签页）
                                             if (!checkoutBtn) {
                                                 checkoutBtn = allButtonsWithShadow.find(btn => {
-                                                    const rect = btn.getBoundingClientRect();
-                                                    if (rect.width === 0 || rect.height === 0) return false;
-
                                                     const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                                    // 排除掉主页面的 "Buy Now"
                                                     if (text.includes('buy now') || text.includes('立即购买')) return false;
 
-                                                    // 如果处于支付/结账上下文中（例如在 iframe 内部，或 URL 包含 payment/purchase），
-                                                    // “Add to library”/“添加到库” 按钮即为最终的确认结账按钮
                                                     const isCheckoutContext = (btn.ownerDocument !== document) || window.location.pathname.includes('/payment/');
                                                     if (isCheckoutContext) {
                                                         if (text.includes('add to library') || text.includes('添加到库') || text.includes('add to account') || text.includes('添加到账户')) {
@@ -1388,7 +1360,6 @@ export const TaskRunner = {
                                             }
 
                                             if (checkoutBtn && !checkoutBtn.disabled) {
-                                                // 仅仅在按钮未被点击过或距离上次点击超过2秒时点击
                                                 const lastClickTime = parseInt(checkoutBtn.dataset.lastClickTime || '0');
                                                 const now = Date.now();
 
@@ -1399,13 +1370,11 @@ export const TaskRunner = {
                                                 }
                                             }
 
-                                            // 3. 超时检查
                                             if (Date.now() - startTime > timeout) {
                                                 clearInterval(interval);
-                                                // Extend timeout message to suggest manual intervention if needed
                                                 reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
                                             }
-                                        }, 500); // 500ms check interval
+                                        }, 500);
                                     });
 
                                 } catch (timeoutError) {

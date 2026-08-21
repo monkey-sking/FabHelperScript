@@ -209,20 +209,26 @@ export const Utils = {
         try { element.focus(); } catch (e) { }
 
         const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
-        const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true };
+        const PointerEvt = pageWindow.PointerEvent || PointerEvent;
+        const MouseEvt = pageWindow.MouseEvent || MouseEvent;
+        const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true, buttons: 1, button: 0 };
 
         try {
-            element.dispatchEvent(new PointerEvent('pointerdown', eventOptions));
-            element.dispatchEvent(new MouseEvent('mousedown', eventOptions));
-            element.dispatchEvent(new PointerEvent('pointerup', eventOptions));
-            element.dispatchEvent(new MouseEvent('mouseup', eventOptions));
-            element.click();
+            element.dispatchEvent(new PointerEvt('pointerdown', eventOptions));
+            element.dispatchEvent(new MouseEvt('mousedown', eventOptions));
+            element.dispatchEvent(new PointerEvt('pointerup', eventOptions));
+            element.dispatchEvent(new MouseEvt('mouseup', eventOptions));
+            if (typeof element.click === 'function') {
+                element.click();
+            }
         } catch (e) { /* ignore */ }
 
         // A small delay fallback to ensure the browser's event loop processes framework handlers
         setTimeout(() => {
             try {
-                element.click();
+                if (typeof element.click === 'function') {
+                    element.click();
+                }
             } catch (e) { /* ignore */ }
         }, 50);
     },
