@@ -1206,7 +1206,7 @@ export const TaskRunner = {
                     if (!success) {
                         // 记录关键按钮的文本，减少噪音
                         // 记录关键按钮的文本（注意：后台标签页可能被浏览器渲染挂起导致 getBoundingClientRect 返回 0，因此只需检查文本非空且非隐藏）
-                        const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
+                        const buttonSelector = 'button, .fabkit-Button-root, [role="button"], [class*="Button"], [class*="button"], a[href]';
                         const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
                             const text = btn.textContent.trim();
                             const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;

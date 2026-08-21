@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1053
+// @version      3.5.20-20260821-1103
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4189,7 +4189,7 @@
               }
             }
             if (!success) {
-              const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
+              const buttonSelector = 'button, .fabkit-Button-root, [role="button"], [class*="Button"], [class*="button"], a[href]';
               const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
                 const text = btn.textContent.trim();
                 const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
