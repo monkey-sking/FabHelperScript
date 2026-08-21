@@ -1161,8 +1161,8 @@ async function main() {
         State.isWorkerTab = true;
         State.workerTaskId = workerId;
 
-        // worker tab: 启动前强校验 session，避免在未登录页里空跑
-        if (!hasCookie || !(await Utils.verifyServerSession())) {
+        // worker tab: 快速 cookie 校验，避免在未登录页里空跑（不阻塞异步 API 校验，交由 processDetailPage 内部处理）
+        if (!hasCookie) {
             Utils.logger('error', Utils.getText('auth_worker_aborted'));
             return;
         }

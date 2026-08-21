@@ -1181,10 +1181,13 @@ export const TaskRunner = {
                         const ownedButton = allButtons.find(btn => criteria.buttonTexts.some(keyword => btn.textContent.includes(keyword)));
                         if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
 
-                        const successHeader = document.querySelector('.product-detail h2, main h2, [class*="detail"] h2, [class*="product"] h2');
-                        if (successHeader && criteria.h2Text.some(text => successHeader.textContent.includes(text))) {
-                            return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
-                        }
+                        // 只有带有明确完整文案“已保存在我的库中”的指定状态标签才作为拥有判定
+                        const ownedBadge = allButtons.find(btn => {
+                            const text = Utils.normalizeWhitespace(btn.textContent || '');
+                            return text === '已保存在我的库中' || text === 'Saved in My Library' || text === 'Saved in library' || text === '已保存在库中';
+                        });
+                        if (ownedBadge) return { owned: true, reason: `Badge text "${ownedBadge.textContent}"` };
+
                         return { owned: false };
                     };
 
@@ -1202,11 +1205,13 @@ export const TaskRunner = {
 
                     if (!success) {
                         // 记录关键按钮的文本，减少噪音
+                        // 记录关键按钮的文本（注意：后台标签页可能被浏览器渲染挂起导致 getBoundingClientRect 返回 0，因此只需检查文本非空且非隐藏）
                         const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
                         const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
-                            const rect = btn.getBoundingClientRect();
                             const text = btn.textContent.trim();
-                            return rect.width > 0 && rect.height > 0 && text.length > 0;
+                            const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                            const isHidden = style && (style.display === 'none' || style.visibility === 'hidden');
+                            return text.length > 0 && !isHidden;
                         });
 
                         const criticalKeywords = [...Config.ACQUISITION_TEXT_SET, ...Config.FREE_TEXT_SET, '许可', 'License', 'Select', '选择', 'Add', '添加', 'Library', '库'];
@@ -1289,11 +1294,12 @@ export const TaskRunner = {
 
                         // 如果许可选择后仍未成功，或者不需要选择许可，尝试点击添加按钮
                         if (!success) {
-                            // 重新查询页面按钮（许可选择后按钮可能已更新）
+                            // 重新查询页面按钮
                             const freshButtons = [...document.querySelectorAll(buttonSelector)].filter(btn => {
-                                const rect = btn.getBoundingClientRect();
                                 const text = btn.textContent.trim();
-                                return rect.width > 0 && rect.height > 0 && text.length > 0;
+                                const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                                const isHidden = style && (style.display === 'none' || style.visibility === 'hidden');
+                                return text.length > 0 && !isHidden;
                             });
 
                             const freshCritical = freshButtons.filter(btn => {
@@ -1308,16 +1314,12 @@ export const TaskRunner = {
                                 });
                             }
 
-                            // 寻找动作按钮的逻辑逻辑优化：
-                            // 1. 优先寻找包含动作关键词且不是下拉弹出(aria-haspopup)的按钮
+                            // 寻找动作按钮（匹配 ACQUISITION_TEXT_SET 集合中的任意动作文案）
                             let actionButton = freshButtons.find(btn => {
                                 const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                                const isPopup = btn.getAttribute('aria-haspopup') === 'true';
-                                const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(keyword =>
+                                return [...Config.ACQUISITION_TEXT_SET].some(keyword =>
                                     text.includes(keyword.toLowerCase())
                                 );
-
-                                return !isPopup && matchesKeyword;
                             });
 
                             // 2. 如果没找到，再寻找只要包含关键词的按钮 (包含可能的弹出式选择器，虽然概率低)

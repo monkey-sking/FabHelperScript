@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1025
+// @version      3.5.20-20260821-1047
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -815,9 +815,9 @@
     // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
     OWNED_SUCCESS_CRITERIA: {
       // Check for an H2 tag with the specific success text.
-      h2Text: ["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "Saved in Library", "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D", "\u5DF2\u4FDD\u5B58\u5728\u8D26\u6237\u4E2D", "\u5DF2\u5728\u5E93\u4E2D"],
+      h2Text: ["\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D", "Saved in My Library", "Saved in Library", "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D"],
       // Check for buttons/links with these texts.
-      buttonTexts: ["\u5728\u6211\u7684\u5E93\u4E2D\u67E5\u770B", "View in My Library", "View in Library", "\u5728\u5E93\u4E2D\u67E5\u770B", "View in Account", "\u5728\u8D26\u6237\u4E2D\u67E5\u770B", "\u5DF2\u5728\u5E93\u4E2D", "\u5DF2\u62E5\u6709"],
+      buttonTexts: ["\u5728\u6211\u7684\u5E93\u4E2D\u67E5\u770B", "View in My Library", "View in Library", "\u5728\u5E93\u4E2D\u67E5\u770B", "View in Account", "\u5728\u8D26\u6237\u4E2D\u67E5\u770B", "View in library"],
       // Check for the temporary success popup (snackbar).
       snackbarText: ["\u4EA7\u54C1\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "Product added to your library", "Added to library", "\u5DF2\u6DFB\u52A0\u81F3\u60A8\u7684\u5E93\u4E2D", "\u5DF2\u52A0\u5165\u60A8\u7684\u5E93\u4E2D"]
     },
@@ -4170,10 +4170,11 @@
               const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]')];
               const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((keyword) => btn.textContent.includes(keyword)));
               if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-              const successHeader = document.querySelector('.product-detail h2, main h2, [class*="detail"] h2, [class*="product"] h2');
-              if (successHeader && criteria.h2Text.some((text) => successHeader.textContent.includes(text))) {
-                return { owned: true, reason: `H2 text "${successHeader.textContent}"` };
-              }
+              const ownedBadge = allButtons.find((btn) => {
+                const text = Utils.normalizeWhitespace(btn.textContent || "");
+                return text === "\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D" || text === "Saved in My Library" || text === "Saved in library" || text === "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D";
+              });
+              if (ownedBadge) return { owned: true, reason: `Badge text "${ownedBadge.textContent}"` };
               return { owned: false };
             }, "isItemOwned");
             const initialState = isItemOwned();
@@ -4190,9 +4191,10 @@
             if (!success) {
               const buttonSelector = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
               const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
-                const rect = btn.getBoundingClientRect();
                 const text = btn.textContent.trim();
-                return rect.width > 0 && rect.height > 0 && text.length > 0;
+                const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                const isHidden = style && (style.display === "none" || style.visibility === "hidden");
+                return text.length > 0 && !isHidden;
               });
               const criticalKeywords = [...Config.ACQUISITION_TEXT_SET, ...Config.FREE_TEXT_SET, "\u8BB8\u53EF", "License", "Select", "\u9009\u62E9", "Add", "\u6DFB\u52A0", "Library", "\u5E93"];
               const criticalButtons = allVisibleButtons.filter((btn) => {
@@ -4258,9 +4260,10 @@
               }
               if (!success) {
                 const freshButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
-                  const rect = btn.getBoundingClientRect();
                   const text = btn.textContent.trim();
-                  return rect.width > 0 && rect.height > 0 && text.length > 0;
+                  const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
+                  const isHidden = style && (style.display === "none" || style.visibility === "hidden");
+                  return text.length > 0 && !isHidden;
                 });
                 const freshCritical = freshButtons.filter((btn) => {
                   const text = btn.textContent;
@@ -4274,11 +4277,9 @@
                 }
                 let actionButton = freshButtons.find((btn) => {
                   const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                  const isPopup = btn.getAttribute("aria-haspopup") === "true";
-                  const matchesKeyword = [...Config.ACQUISITION_TEXT_SET].some(
+                  return [...Config.ACQUISITION_TEXT_SET].some(
                     (keyword) => text.includes(keyword.toLowerCase())
                   );
-                  return !isPopup && matchesKeyword;
                 });
                 if (!actionButton) {
                   actionButton = freshButtons.find((btn) => {
@@ -6987,7 +6988,7 @@
     if (workerId) {
       State.isWorkerTab = true;
       State.workerTaskId = workerId;
-      if (!hasCookie || !await Utils.verifyServerSession()) {
+      if (!hasCookie) {
         Utils.logger("error", Utils.getText("auth_worker_aborted"));
         return;
       }

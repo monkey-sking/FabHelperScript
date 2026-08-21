@@ -54,9 +54,9 @@ export const Config = {
     // Centralized keyword sets, based STRICTLY on the rules in FAB_HELPER_RULES.md
     OWNED_SUCCESS_CRITERIA: {
         // Check for an H2 tag with the specific success text.
-        h2Text: ['已保存在我的库中', 'Saved in My Library', 'Saved in Library', '已保存在库中', '已保存在账户中', '已在库中'],
+        h2Text: ['已保存在我的库中', 'Saved in My Library', 'Saved in Library', '已保存在库中'],
         // Check for buttons/links with these texts.
-        buttonTexts: ['在我的库中查看', 'View in My Library', 'View in Library', '在库中查看', 'View in Account', '在账户中查看', '已在库中', '已拥有'],
+        buttonTexts: ['在我的库中查看', 'View in My Library', 'View in Library', '在库中查看', 'View in Account', '在账户中查看', 'View in library'],
         // Check for the temporary success popup (snackbar).
         snackbarText: ['产品已添加至您的库中', 'Product added to your library', 'Added to library', '已添加至您的库中', '已加入您的库中'],
     },
