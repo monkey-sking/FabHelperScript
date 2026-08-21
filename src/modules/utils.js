@@ -482,14 +482,14 @@ export const Utils = {
                 const tagName = node.tagName;
                 const role = node.getAttribute && node.getAttribute('role');
                 const type = node.getAttribute && node.getAttribute('type');
-                const className = (node.className && typeof node.className === 'string') ? node.className : '';
+                const className = (node.className && typeof node.className === 'string') ? node.className.toLowerCase() : '';
 
                 // 1. Basic Buttons
                 if (tagName === 'BUTTON') {
                     interactables.push(node);
                 }
                 // 2. Links that validly look like buttons
-                else if (tagName === 'A' && (role === 'button' || className.includes('btn') || className.includes('button'))) {
+                else if (tagName === 'A' && (role === 'button' || className.includes('btn') || className.includes('button') || className.includes('fabkit'))) {
                     interactables.push(node);
                 }
                 // 3. Inputs (submit/button)
@@ -497,7 +497,7 @@ export const Utils = {
                     interactables.push(node);
                 }
                 // 4. Divs/Spans acting as buttons (common in modern frameworks)
-                else if (role === 'button' || className.includes('payment-order-confirm__btn') || className.includes('place-order')) {
+                else if (role === 'button' || className.includes('button') || className.includes('btn') || className.includes('payment-order-confirm') || className.includes('place-order')) {
                     interactables.push(node);
                 }
             }

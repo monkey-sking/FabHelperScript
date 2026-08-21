@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1047
+// @version      3.5.20-20260821-1053
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1480,14 +1480,14 @@
           const tagName = node.tagName;
           const role = node.getAttribute && node.getAttribute("role");
           const type = node.getAttribute && node.getAttribute("type");
-          const className = node.className && typeof node.className === "string" ? node.className : "";
+          const className = node.className && typeof node.className === "string" ? node.className.toLowerCase() : "";
           if (tagName === "BUTTON") {
             interactables.push(node);
-          } else if (tagName === "A" && (role === "button" || className.includes("btn") || className.includes("button"))) {
+          } else if (tagName === "A" && (role === "button" || className.includes("btn") || className.includes("button") || className.includes("fabkit"))) {
             interactables.push(node);
           } else if (tagName === "INPUT" && (type === "submit" || type === "button" || type === "reset")) {
             interactables.push(node);
-          } else if (role === "button" || className.includes("payment-order-confirm__btn") || className.includes("place-order")) {
+          } else if (role === "button" || className.includes("button") || className.includes("btn") || className.includes("payment-order-confirm") || className.includes("place-order")) {
             interactables.push(node);
           }
         }
