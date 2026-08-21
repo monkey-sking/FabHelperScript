@@ -1032,39 +1032,7 @@ export const TaskRunner = {
                     logBuffer.push(`⚠️ 警告: 页面可能未完全加载，这可能导致操作失败`);
                 }
 
-                // --- 404 / 商品已下架检测 ---
-                // 仅精准检查页面 h1 或 title 中的 404/页面不存在报错短语，切勿全页 body 搜索 "404"（防止商品描述中包含 4040/404/分辨率等数字引发误判跳过）
-                const is404Page = (() => {
-                    const title = document.title || '';
-                    const h1 = document.querySelector('h1');
-                    const h1Text = h1 ? h1.textContent : '';
-                    const NOT_FOUND_PHRASES = [
-                        "Sorry, we couldn't find that page",
-                        "抱歉，找不到该页面",
-                        "Page not found",
-                        "404 Not Found",
-                        "404 - Page Not Found"
-                    ];
-                    return NOT_FOUND_PHRASES.some(phrase =>
-                        title.includes(phrase) || h1Text.includes(phrase)
-                    );
-                })();
 
-                if (is404Page) {
-                    logBuffer.push(`⚠️ 检测到 404 页面（商品已下架或不存在），标记为已跳过并关闭。`);
-                    success = true; // 不计入失败，加入 done 列表
-                    hasReported = true;
-                    GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
-                        workerId,
-                        success: true,
-                        logs: [...logBuffer, '商品不存在 (404)，已自动跳过'],
-                        task: currentTask,
-                        instanceId: payload.instanceId,
-                        executionTime: Date.now() - startTime
-                    });
-                    closeWorkerTab();
-                    return;
-                }
 
                 // 等待关键 UI 元素出现（领取按钮 / 已保存指示器 / 外部 CTA），
                 // 最长 2000ms 保留旧行为上限；如果元素已经在 DOM 上则立即继续。
