@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1103
+// @version      3.5.20-20260821-1110
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4044,19 +4044,18 @@
             logBuffer.push(`\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25`);
           }
           const is404Page = (() => {
-            const bodyText = document.body ? document.body.textContent : "";
             const title = document.title || "";
             const h1 = document.querySelector("h1");
             const h1Text = h1 ? h1.textContent : "";
             const NOT_FOUND_PHRASES = [
               "Sorry, we couldn't find that page",
               "\u62B1\u6B49\uFF0C\u627E\u4E0D\u5230\u8BE5\u9875\u9762",
-              "\u627E\u4E0D\u5230\u8BE5\u9875\u9762",
               "Page not found",
-              "404"
+              "404 Not Found",
+              "404 - Page Not Found"
             ];
             return NOT_FOUND_PHRASES.some(
-              (phrase) => bodyText.includes(phrase) || title.includes(phrase) || h1Text.includes(phrase)
+              (phrase) => title.includes(phrase) || h1Text.includes(phrase)
             );
           })();
           if (is404Page) {

@@ -1033,23 +1033,20 @@ export const TaskRunner = {
                 }
 
                 // --- 404 / 商品已下架检测 ---
-                // "Sorry, we couldn't find that page" 页面同样会通过 waitForPageReady，
-                // 若不提前识别会白白等待超时（15s+）后再上报失败。
-                // 检测到 404 后标记为 done（跳过）并立即关闭，不计入失败。
+                // 仅精准检查页面 h1 或 title 中的 404/页面不存在报错短语，切勿全页 body 搜索 "404"（防止商品描述中包含 4040/404/分辨率等数字引发误判跳过）
                 const is404Page = (() => {
-                    const bodyText = document.body ? document.body.textContent : '';
                     const title = document.title || '';
                     const h1 = document.querySelector('h1');
                     const h1Text = h1 ? h1.textContent : '';
                     const NOT_FOUND_PHRASES = [
                         "Sorry, we couldn't find that page",
                         "抱歉，找不到该页面",
-                        "找不到该页面",
                         "Page not found",
-                        "404",
+                        "404 Not Found",
+                        "404 - Page Not Found"
                     ];
                     return NOT_FOUND_PHRASES.some(phrase =>
-                        bodyText.includes(phrase) || title.includes(phrase) || h1Text.includes(phrase)
+                        title.includes(phrase) || h1Text.includes(phrase)
                     );
                 })();
 
