@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260821-1139
+// @version      3.5.20-20260822-1833
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -950,6 +950,9 @@
     // 新增：标记是否正在扫描任务，防止重复扫描
     processedCardUids: /* @__PURE__ */ new Set(),
     // 新增：已处理过的卡片UID，防止重复添加
+    totalScannedOwned: 0,
+    // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
+    // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
     savedCursor: null,
     // Holds the loaded cursor for hijacking
     isEndOfSearchList: false,
@@ -4890,6 +4893,7 @@
           }
           if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
             Utils.logger("debug", Utils.getText("debug_filter_owned", skippedAlreadyOwned, skippedInTodo));
+            State.totalScannedOwned += skippedAlreadyOwned;
           }
           if (State.isExecuting) {
             State.executionTotalTasks = State.db.todo.length;
@@ -4960,15 +4964,34 @@
       }, "getCurrentCardTotal");
       const previousCardTotal = getCurrentCardTotal();
       const previousProcessedTotal = State.processedCardUids.size;
+      const previousScannedOwned = State.totalScannedOwned;
       const previousScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
       const previousScrollY = typeof window !== "undefined" ? window.scrollY : 0;
       const doScroll = /* @__PURE__ */ __name(async () => {
         if (typeof window === "undefined") return;
         const doc = typeof document !== "undefined" && document.documentElement ? document.documentElement : null;
-        const startHeight = doc ? doc.scrollHeight : 0;
         const innerH = window.innerHeight || 800;
+        const PLACEHOLDER_COUNT = 3;
+        let placeholderCards = [];
+        const startHeight = doc ? doc.scrollHeight : 0;
+        const isPageCollapsed = doc && doc.scrollHeight < innerH * 1.5;
+        if (isPageCollapsed && doc) {
+          const allHidden = Array.from(doc.querySelectorAll(
+            `${Config.SELECTORS.card}[data-fab-hidden="true"]`
+          ));
+          placeholderCards = allHidden.slice(-PLACEHOLDER_COUNT);
+          placeholderCards.forEach((card) => {
+            card.style.display = "";
+            card.style.visibility = "hidden";
+            card.style.pointerEvents = "none";
+          });
+          if (placeholderCards.length > 0) {
+            Utils.logger("debug", `[\u81EA\u52A8\u6EDA\u52A8] \u9875\u9762\u584C\u9677\uFF0C\u4E34\u65F6\u6062\u590D ${placeholderCards.length} \u5F20\u5360\u4F4D\u5361\u4EE5\u89E6\u53D1 sentinel`);
+            await new Promise((r) => _realSetTimeout(r, 50));
+          }
+        }
         const steps = 6;
-        const remaining = startHeight - (window.scrollY || 0);
+        const remaining = (doc ? doc.scrollHeight : 0) - (window.scrollY || 0);
         const stepSize = Math.max(300, Math.floor(remaining / steps));
         for (let i = 1; i <= steps; i++) {
           if (typeof window.scrollBy === "function") {
@@ -5005,6 +5028,11 @@
             await new Promise((r) => _realSetTimeout(r, 500));
           }
         }
+        placeholderCards.forEach((card) => {
+          card.style.display = "none";
+          card.style.visibility = "";
+          card.style.pointerEvents = "";
+        });
         return startHeight;
       }, "doScroll");
       await doScroll();
@@ -5024,10 +5052,11 @@
         const currentProcessedTotal = State.processedCardUids.size;
         const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
         const newDomCardCount = currentCardTotal - previousCardTotal;
+        const newScannedOwnedCount = State.totalScannedOwned - previousScannedOwned;
         const scrollHeightGrew = currentScrollHeight > previousScrollHeight + 2;
-        if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew) {
+        if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew || newScannedOwnedCount > 0) {
           State.autoScrollAttempts = 0;
-          const loadedCount = newProcessedCount > 0 ? newProcessedCount : newDomCardCount > 0 ? newDomCardCount : currentScrollHeight - previousScrollHeight;
+          const loadedCount = newProcessedCount > 0 ? newProcessedCount : newScannedOwnedCount > 0 ? newScannedOwnedCount : newDomCardCount > 0 ? newDomCardCount : currentScrollHeight - previousScrollHeight;
           Utils.logger("debug", Utils.getText("auto_scroll_cards_loaded", loadedCount));
           TaskRunner2.runHideOrShow();
           TaskRunner2.attemptAutoScroll();

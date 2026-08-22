@@ -2095,6 +2095,8 @@ export const TaskRunner = {
 
                 if (skippedAlreadyOwned > 0 || skippedInTodo > 0) {
                     Utils.logger('debug', Utils.getText('debug_filter_owned', skippedAlreadyOwned, skippedInTodo));
+                    // 累加至全局计数器，供 attemptAutoScroll 用作快照差值（第4个进度信号）
+                    State.totalScannedOwned += skippedAlreadyOwned;
                 }
 
                 if (State.isExecuting) {
@@ -2184,6 +2186,13 @@ export const TaskRunner = {
         };
         const previousCardTotal = getCurrentCardTotal();
         const previousProcessedTotal = State.processedCardUids.size;
+        // 第4个进度信号：已入库扫描数快照（State.totalScannedOwned）。
+        // 当某一页商品全部已入库时，Fab 虚拟化列表使 DOM 卡片数不增长，display:none
+        // 使 scrollHeight 塌陷不增长，已入库的卡直接被跳过不加入 processedCardUids——
+        // 三个旧信号全部为 0，脚本误判"无新内容"进而安全停止。
+        // totalScannedOwned 在 runScan 每次扫到已入库卡时累加，差值 > 0 说明
+        // 滚动后确有新卡被加载并识别为已入库，应重置计数继续滚动。
+        const previousScannedOwned = State.totalScannedOwned;
         const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
@@ -2200,10 +2209,40 @@ export const TaskRunner = {
         const doScroll = async () => {
             if (typeof window === 'undefined') return;
             const doc = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null;
-            const startHeight = doc ? doc.scrollHeight : 0;
             const innerH = window.innerHeight || 800;
+
+            // 关键修复：当所有卡片都被 display:none 隐藏时，页面高度塌陷至接近视口高度，
+            // 实际上无法滚动。Fab 的无限滚动 sentinel（IntersectionObserver 哨兵）本在卡片列表
+            // 末尾，随卡片塌陷后也收缩到顶部、始终在视口内，导致"进入视口"回调永远不触发，
+            // 新页面永远不加载。
+            // 解决方案：滚动前将最后几张隐藏卡片临时从 display:none 改为
+            // visibility:hidden（保留文档流占位但对用户不可见），使页面有真实高度、
+            // sentinel 沉到底部；滚动结束后立刻恢复 display:none。
+            // 用真实 DOM 内容撑高比注入 min-height 更可靠（不受 Fab 自身容器样式覆盖影响）。
+            const PLACEHOLDER_COUNT = 3; // 保留几张占位卡，足够撑开 sentinel 即可
+            let placeholderCards = [];
+            const startHeight = doc ? doc.scrollHeight : 0;
+            const isPageCollapsed = doc && (doc.scrollHeight < innerH * 1.5);
+            if (isPageCollapsed && doc) {
+                const allHidden = Array.from(doc.querySelectorAll(
+                    `${Config.SELECTORS.card}[data-fab-hidden="true"]`
+                ));
+                // 取末尾几张：末尾卡在 DOM 中最靠近 sentinel，临时恢复占位效果最佳
+                placeholderCards = allHidden.slice(-PLACEHOLDER_COUNT);
+                placeholderCards.forEach(card => {
+                    card.style.display = '';
+                    card.style.visibility = 'hidden';
+                    card.style.pointerEvents = 'none';
+                });
+                if (placeholderCards.length > 0) {
+                    Utils.logger('debug', `[自动滚动] 页面塌陷，临时恢复 ${placeholderCards.length} 张占位卡以触发 sentinel`);
+                    // 等一帧让布局更新，确保 sentinel 沉至底部
+                    await new Promise(r => _realSetTimeout(r, 50));
+                }
+            }
+
             const steps = 6;
-            const remaining = startHeight - (window.scrollY || 0);
+            const remaining = (doc ? doc.scrollHeight : 0) - (window.scrollY || 0);
             const stepSize = Math.max(300, Math.floor(remaining / steps));
             for (let i = 1; i <= steps; i++) {
                 if (typeof window.scrollBy === 'function') {
@@ -2248,6 +2287,12 @@ export const TaskRunner = {
                     await new Promise(r => _realSetTimeout(r, 500));
                 }
             }
+            // 滚动完成，立刻将占位卡恢复为 display:none，避免闪烁或被扫描逻辑误识别
+            placeholderCards.forEach(card => {
+                card.style.display = 'none';
+                card.style.visibility = '';
+                card.style.pointerEvents = '';
+            });
             return startHeight;
         };
         await doScroll();
@@ -2273,14 +2318,23 @@ export const TaskRunner = {
             const currentProcessedTotal = State.processedCardUids.size;
             const newProcessedCount = currentProcessedTotal - previousProcessedTotal;
             const newDomCardCount = currentCardTotal - previousCardTotal;
+            // 第4个进度信号：已入库扫描增量（newScannedOwnedCount）。
+            // Fab 虚拟化列表导致 DOM 卡片数不增长；display:none 隐藏导致 scrollHeight 塌陷；
+            // 已入库的卡被跳过不加入 processedCardUids —— 三个旧信号全盲。
+            // State.totalScannedOwned 在 runScan 每次扫到已入库卡时累加，差值 > 0 说明
+            // 滚动后确有新卡被加载并被认定为已入库（即使不需要入库操作也算进度），应继续滚动。
+            const newScannedOwnedCount = State.totalScannedOwned - previousScannedOwned;
             // scrollHeight 增长是「确有新内容」的最强信号：只要页面被无限滚动撑高，
             // 就说明下一页已加载，应继续滚动。即便卡片计数/已处理计数因其它因素暂时未变，
             // 也不应据此误判到底。
             const scrollHeightGrew = currentScrollHeight > previousScrollHeight + 2;
 
-            if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew) {
+            if (newProcessedCount > 0 || newDomCardCount > 0 || scrollHeightGrew || newScannedOwnedCount > 0) {
                 State.autoScrollAttempts = 0;
-                const loadedCount = newProcessedCount > 0 ? newProcessedCount : (newDomCardCount > 0 ? newDomCardCount : (currentScrollHeight - previousScrollHeight));
+                const loadedCount = newProcessedCount > 0 ? newProcessedCount
+                    : (newScannedOwnedCount > 0 ? newScannedOwnedCount
+                    : (newDomCardCount > 0 ? newDomCardCount
+                    : (currentScrollHeight - previousScrollHeight)));
                 Utils.logger('debug', Utils.getText('auto_scroll_cards_loaded', loadedCount));
                 TaskRunner.runHideOrShow();
                 TaskRunner.attemptAutoScroll();
