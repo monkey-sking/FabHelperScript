@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260822-1833
+// @version      3.5.20-20260822-1837
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -4539,6 +4539,7 @@
           return;
         }
         if (TaskRunner2.isCardHidden(card)) {
+          if (card.getAttribute("data-fab-scroll-placeholder") === "true") return;
           TaskRunner2.setCardHidden(card, true);
           return;
         }
@@ -4984,6 +4985,7 @@
             card.style.display = "";
             card.style.visibility = "hidden";
             card.style.pointerEvents = "none";
+            card.setAttribute("data-fab-scroll-placeholder", "true");
           });
           if (placeholderCards.length > 0) {
             Utils.logger("debug", `[\u81EA\u52A8\u6EDA\u52A8] \u9875\u9762\u584C\u9677\uFF0C\u4E34\u65F6\u6062\u590D ${placeholderCards.length} \u5F20\u5360\u4F4D\u5361\u4EE5\u89E6\u53D1 sentinel`);
@@ -5032,6 +5034,7 @@
           card.style.display = "none";
           card.style.visibility = "";
           card.style.pointerEvents = "";
+          card.removeAttribute("data-fab-scroll-placeholder");
         });
         return startHeight;
       }, "doScroll");

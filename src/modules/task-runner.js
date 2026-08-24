@@ -1638,6 +1638,9 @@ export const TaskRunner = {
             }
 
             if (TaskRunner.isCardHidden(card)) {
+                // 跳过 doScroll 临时占位卡（visibility:hidden 占位用，display 已恢复但仍标为 hidden）
+                // 若此时强制 setCardHidden(true) 会把 display:none 打回去，使 sentinel 触发失效。
+                if (card.getAttribute('data-fab-scroll-placeholder') === 'true') return;
                 TaskRunner.setCardHidden(card, true);
                 return;
             }
@@ -2233,6 +2236,7 @@ export const TaskRunner = {
                     card.style.display = '';
                     card.style.visibility = 'hidden';
                     card.style.pointerEvents = 'none';
+                    card.setAttribute('data-fab-scroll-placeholder', 'true'); // 防止 runHideOrShow 重新 display:none
                 });
                 if (placeholderCards.length > 0) {
                     Utils.logger('debug', `[自动滚动] 页面塌陷，临时恢复 ${placeholderCards.length} 张占位卡以触发 sentinel`);
@@ -2292,6 +2296,7 @@ export const TaskRunner = {
                 card.style.display = 'none';
                 card.style.visibility = '';
                 card.style.pointerEvents = '';
+                card.removeAttribute('data-fab-scroll-placeholder');
             });
             return startHeight;
         };
