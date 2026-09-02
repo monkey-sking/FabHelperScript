@@ -1091,7 +1091,10 @@ test('attemptAutoScroll stops execution when server confirms no more (isEndOfSea
 
     globalThis.document = {
         documentElement: {
-            scrollHeight: 900 // 800 innerHeight + 100 scrollY = 900 scrollHeight (reached bottom)
+            scrollHeight: 900, // 800 innerHeight + 100 scrollY = 900 scrollHeight (reached bottom)
+            // doScroll() 判定页面塌陷时会用 documentElement.querySelectorAll 查找隐藏占位卡，
+            // mock 必须提供该方法，否则 attemptAutoScroll 直接抛 TypeError。
+            querySelectorAll: () => []
         }
     };
 
@@ -1162,7 +1165,9 @@ test('attemptAutoScroll keeps scrolling when physically at bottom but server has
 
     globalThis.document = {
         documentElement: {
-            scrollHeight: 900 // physically at bottom: 800 + 100 = 900 >= 900 - 50
+            scrollHeight: 900, // physically at bottom: 800 + 100 = 900 >= 900 - 50
+            // 同上：doScroll() 通过 documentElement.querySelectorAll 查找占位卡
+            querySelectorAll: () => []
         },
         querySelectorAll: () => []
     };

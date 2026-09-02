@@ -2199,16 +2199,17 @@ export const TaskRunner = {
         const previousScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
         const previousScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;
 
-        // 卡片现统一用 visibility:hidden 隐藏（保留文档流占位，页面高度始终不变），
-        // 因此不再需要把隐藏卡片临时恢复成 display:none 来“撑高”页面后再滚动——
-        // 那种反复切换 display 的做法会在滚动过程中造成布局抖动，并引发
-        // “滚动条在中间就持续刷新入库/隐藏”的错觉。直接滚动到底部即可触发 Fab
-        // 的无限滚动加载下一页。
         // 分步下滚触发加载：很多站点的无限滚动加载器基于 IntersectionObserver 哨兵，
         // 若用 scrollTo 一把跳到页面底部，哨兵会被「跳过」（已落到可视区之上），
         // 既不触发「进入可视区」回调，也不发起下一页请求，于是 scrollHeight 不增长、
         // newDomCardCount 恒为 0，脚本误判「已到列表末尾」而提前停转（表现：入库卡在 N）。
         // 分步向下滚动可让哨兵从下方逐帧进入可视区，稳定触发加载。
+        //
+        // 卡片隐藏方式说明（3.5.19 定稿）：隐藏卡片一律用 display:none，不保留占位。
+        // 中途曾改为 visibility:hidden 保留文档流占位，但实测 Fab 是固定容器高度的
+        // 虚拟化渲染，单卡 display:none 并不会让文档高度塌陷，保留占位没有收益，
+        // 故已回退。由此产生的「整页卡片全被 display:none → 页面高度塌陷 → sentinel
+        // 沉到视口顶部 → 永不触发下一页」问题，由 doScroll 内的占位卡临时恢复处理。
         const doScroll = async () => {
             if (typeof window === 'undefined') return;
             const doc = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement : null;
