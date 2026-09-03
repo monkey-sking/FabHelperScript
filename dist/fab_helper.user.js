@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.20-20260902-1816
+// @version      3.5.21-20260903-0816
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -795,8 +795,11 @@
       // 隐藏打折的付费商品
       HIDE_PAID: "fab_hidePaid_v8",
       // 隐藏所有付费商品
-      BLOCK_RESOURCES: "fab_block_resources_v1"
+      BLOCK_RESOURCES: "fab_block_resources_v1",
       // 禁用大资源设置键
+      // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
+      // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
+      EVENT_LOG: "fab_event_log_v1"
       // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {
