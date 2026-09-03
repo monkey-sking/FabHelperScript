@@ -132,6 +132,38 @@ export const ApiClaim = {
 let domClaimImpl = null;
 export const setDomClaim = (fn) => { domClaimImpl = fn; };
 
+/**
+ * 把注入实现的返回值归一成规范形态。
+ *
+ * 之所以需要这层：现有 DOM 自动化（task-runner 的 worker 协议）返回的是
+ * { success: true }，而本模块的规范字段是 { result }。若不做归一，
+ * 接入时 result 为 undefined，ClaimExecutor 会静默判成
+ * 「没有可用的领取策略」—— 线上表现为全部领取失败且看不出原因。
+ *
+ * 支持三种形态：布尔（旧式）、{ success }（现有 worker 协议）、{ result }（规范）。
+ * 无法识别的返回一律判为终态失败，绝不退化成「可重试」，避免无限回落。
+ */
+export const normalizeClaimOutcome = (raw) => {
+    if (typeof raw === 'boolean') {
+        return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: '' };
+    }
+    if (raw && typeof raw === 'object') {
+        if (raw.result) return raw;
+        if (typeof raw.success === 'boolean') {
+            return {
+                result: raw.success ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE,
+                reason: typeof raw.reason === 'string' ? raw.reason : '',
+                retryable: raw.retryable === true
+            };
+        }
+    }
+    return {
+        result: CLAIM_RESULT.FAILURE,
+        reason: '领取返回值无法识别',
+        retryable: false
+    };
+};
+
 export const DomClaim = {
     name: 'dom',
     isAvailable: () => typeof domClaimImpl === 'function',
@@ -139,12 +171,7 @@ export const DomClaim = {
         if (!DomClaim.isAvailable()) {
             return { result: CLAIM_RESULT.UNAVAILABLE, reason: 'DOM 领取未注入' };
         }
-        const result = await domClaimImpl(task);
-        // 兼容旧布尔式返回值
-        if (typeof result === 'boolean') {
-            return { result: result ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: '' };
-        }
-        return result;
+        return normalizeClaimOutcome(await domClaimImpl(task));
     }
 };
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-    ApiClaim, DomClaim, ClaimExecutor, CLAIM_RESULT, setDomClaim
+    ApiClaim, DomClaim, ClaimExecutor, CLAIM_RESULT, setDomClaim, normalizeClaimOutcome
 } from '../src/modules/claim-strategy.js';
 import { Utils } from '../src/modules/utils.js';
 
@@ -211,4 +211,46 @@ test('stats 聚合可观测指标', async () => {
     assert.equal(s.api.success, 2);
     assert.equal(s.dom.attempts, 0);
     assert.equal(s.fallbackRate, 0);
+});
+
+// ── 返回值归一：现有 DOM 自动化的 { success } 与本模块的 { result } 必须互通 ──
+// 不做归一的话，接入 task-runner 时 result 为 undefined，会被静默判成
+// 「没有可用的领取策略」——线上表现为全部领取失败且无原因可查。
+
+test('归一 { success: true }（现有 worker 协议）为成功', () => {
+    const r = normalizeClaimOutcome({ success: true });
+    assert.equal(r.result, CLAIM_RESULT.SUCCESS);
+});
+
+test('归一 { success: false } 为失败，并保留原因与可重试标记', () => {
+    const r = normalizeClaimOutcome({ success: false, reason: '按钮未找到', retryable: true });
+    assert.equal(r.result, CLAIM_RESULT.FAILURE);
+    assert.equal(r.reason, '按钮未找到');
+    assert.equal(r.retryable, true);
+});
+
+test('归一布尔返回值为成功 / 失败', () => {
+    assert.equal(normalizeClaimOutcome(true).result, CLAIM_RESULT.SUCCESS);
+    assert.equal(normalizeClaimOutcome(false).result, CLAIM_RESULT.FAILURE);
+});
+
+test('已是规范形态的 { result } 原样返回', () => {
+    const input = { result: CLAIM_RESULT.RATE_LIMITED, retryAfterMs: 3000 };
+    assert.equal(normalizeClaimOutcome(input), input);
+});
+
+test('无法识别的返回判为终态失败，绝不退化成可重试（否则会无限回落）', () => {
+    [null, undefined, 42, {}, { success: 'yes' }].forEach(bad => {
+        const r = normalizeClaimOutcome(bad);
+        assert.equal(r.result, CLAIM_RESULT.FAILURE);
+        assert.equal(r.retryable, false);
+    });
+});
+
+test('注入返回 { success: true } 时流水线能真正领取成功（端到端守住该契约）', async () => {
+    resetAll();
+    setDomClaim(async () => ({ success: true }));
+    const r = await ClaimExecutor.claim({ uid: 'u1' });
+    assert.equal(r.result, CLAIM_RESULT.SUCCESS, 'worker 协议的返回值必须被正确识别');
+    assert.equal(r.strategy, 'dom');
 });

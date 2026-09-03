@@ -1,0 +1,14 @@
+{
+  "_meta": {
+    "_source": "docs/chat_history/为什么页面正常仍触发刷新.md 中记录的搜索响应（隐性限速检测日志）",
+    "_note": "真实抓到的末页空响应：cursors.next === null 是「到底」的唯一权威信号。"
+  },
+  "aggregations": null,
+  "cursors": {
+    "next": null,
+    "previous": null
+  },
+  "next": null,
+  "previous": null,
+  "results": []
+}

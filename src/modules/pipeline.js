@@ -35,7 +35,9 @@ export const Pipeline = {
         fetchPage: null,
         // 复查某 uid 是否确实已入库，返回 boolean
         verifyOwned: null,
-        // 过滤不需要领取的商品，返回 null 表示领取，返回字符串表示跳过原因
+        // 扫描阶段过滤商品：返回 null 表示纳入待领，返回字符串表示跳过原因。
+        // 入参是 fetchPage 给出的完整商品对象（含价格、许可证），
+        // 不是事件日志条目 —— 后者在领取阶段只剩 uid / name / url。
         filter: null
     },
 
@@ -122,12 +124,26 @@ export const Pipeline = {
         const page = await Pipeline.deps.fetchPage(Pipeline.cursor);
         Pipeline.pagesFetched += 1;
 
+        // 过滤发生在扫描阶段，而不是领取阶段：此时手里才有完整的商品对象
+        // （价格、许可证、是否免费）。等到领取阶段，事件日志里只剩下
+        // uid / name / url，「这个商品是否免费」已经无从判断。
+        let discovered = 0;
+        let skipped = 0;
         (page.items || []).forEach(item => {
             // 已入库/已失败/已跳过的不再重复发现
-            if (!EventLog.isKnown(item.uid)) {
+            if (EventLog.isKnown(item.uid)) return;
+
+            const skipReason = Pipeline.deps.filter ? Pipeline.deps.filter(item) : null;
+            if (skipReason) {
+                EventLog.append(item.uid, EVENT_STATE.SKIPPED, {
+                    name: item.name, url: item.url, reason: skipReason, ts: now
+                });
+                skipped += 1;
+            } else {
                 EventLog.append(item.uid, EVENT_STATE.DISCOVERED, {
                     name: item.name, url: item.url, ts: now
                 });
+                discovered += 1;
             }
         });
 
@@ -145,6 +161,8 @@ export const Pipeline = {
         return {
             action: 'scan',
             pageItems: (page.items || []).length,
+            discovered,
+            skipped,
             cursor: Pipeline.cursor,
             endOfList: Pipeline.isEndOfList,
             state: Pipeline.fsm.state
@@ -169,13 +187,9 @@ export const Pipeline = {
             return { action: 'drain', state: Pipeline.fsm.state };
         }
 
+        // 过滤已在扫描阶段完成（见 _stepScan），这里不重复执行：
+        // 领取阶段拿不到商品详情，且重复过滤会让「跳过原因」出现两条互相矛盾的归因。
         const task = todo[0];
-
-        const skipReason = Pipeline.deps.filter ? Pipeline.deps.filter(task) : null;
-        if (skipReason) {
-            EventLog.append(task.uid, EVENT_STATE.SKIPPED, { reason: skipReason, ts: now });
-            return { action: 'skip', uid: task.uid, reason: skipReason };
-        }
 
         const outcome = await Pipeline.executor.claim(task);
 

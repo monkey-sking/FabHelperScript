@@ -1,0 +1,318 @@
+{
+  "_meta": {
+    "_source": "docs/chat_history/添加热更功能以便快速更新.md:5066 起的用户抓包原文",
+    "_note": [
+      "原始响应为用户手工删节后粘贴，JSON 已破损；此处仅保留可完整解析的 4 个商品对象。",
+      "thumbnails / assetFormats 已被剔除（体积大且与判定无关），tags 截断为前 3 个。",
+      "isFree 与 startingPrice.price 未作任何改动 —— 二者在真实数据中的矛盾是本夹具的核心价值。",
+      "请求 URL 为 /i/listings/search?is_free=1&sort_by=title&cursor=...，即已被服务端按免费过滤。"
+    ]
+  },
+  "aggregations": null,
+  "cursors": {
+    "next": "cD0lMjhGUkVFJTI5K0xvdytQb2x5JTNBK0NhbWFybytTUysyMDE2Ky0rM0QrTXVzY2xlK0NhcitNb2RlbA==",
+    "previous": "cj0xJnA9JTIyUHJlc2Vydm9ucytsYStDcmVhdGlvbiUyMislMjhnaWFudCttdXJhbCUyOQ=="
+  },
+  "next": "https://www.fab.com/i/listings/search?cursor=cD0lMjhGUkVFJTI5K0xvdytQb2x5JTNBK0NhbWFybytTUysyMDE2Ky0rM0QrTXVzY2xlK0NhcitNb2RlbA%3D%3D&is_free=1&sort_by=title",
+  "previous": "https://www.fab.com/i/listings/search?cursor=cj0xJnA9JTIyUHJlc2Vydm9ucytsYStDcmVhdGlvbiUyMislMjhnaWFudCttdXJhbCUyOQ%3D%3D&is_free=1&sort_by=title",
+  "results": [
+    {
+      "catalogItemId": "",
+      "offerId": "",
+      "promotionRequestId": "",
+      "availableInEurope": true,
+      "averageRating": 0,
+      "category": {
+        "uid": "b2043d1b-0579-419a-a99e-5fbffc8a21c5",
+        "name": "Art & Statues",
+        "path": "objects-decor/art-statues",
+        "slug": "objects-decor--art-statues"
+      },
+      "isDiscounted": false,
+      "hasEffectiveDiscounts": false,
+      "isFree": false,
+      "licenses": [
+        {
+          "type": "",
+          "isCc0": false,
+          "name": "Personal",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "eec3bdd5-ba7a-45a8-b15d-67462b9630f6"
+        },
+        {
+          "type": "",
+          "isCc0": false,
+          "name": "Professional",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "eec3bdd5-ba7a-45a8-b15d-67462b9630f9"
+        }
+      ],
+      "listingType": "3d-model",
+      "publishedAt": "2024-10-12T17:43:21.775493Z",
+      "reviewCount": 0,
+      "startingPrice": {
+        "currencyCode": "USD",
+        "discountSettings": null,
+        "discountType": null,
+        "discountedPrice": null,
+        "effectiveDiscountPercentage": null,
+        "lowestPriorPrice": null,
+        "offerId": "6d30ae93f19647ee8c276d855edcee89",
+        "price": 0,
+        "priceTierId": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+        "vatPercentage": 0
+      },
+      "isMature": false,
+      "tags": [
+        {
+          "name": "Art",
+          "slug": "art",
+          "uid": "05552731-239b-4285-8713-d7051835f39e"
+        },
+        {
+          "name": "Drone",
+          "slug": "drone",
+          "uid": "09e8dd20-820c-4904-86ae-ebf8c73c5560"
+        },
+        {
+          "name": "Street",
+          "slug": "street",
+          "uid": "1714b21a-573d-4d0e-aa60-faa1144f56e0"
+        }
+      ],
+      "title": "\"Preservons la Creation\" (giant mural)",
+      "uid": "f32c6ac7-ae94-4fd5-be5a-0d9985b99917",
+      "lastUpdatedAt": "2025-02-24T12:19:44.374390Z",
+      "user": {
+        "account": "",
+        "avatars": [],
+        "coverImageUrl": "https://cdn1.epicgames.com/fab/seller/o-mexackzr7yxx9nq3ben6qz3vegqehg/backgroundImage/blob-1920x540-c626e0f8e1005cf4f8cb138c3f3eda98.jpg",
+        "isSeller": true,
+        "profileImageUrl": "https://cdn1.epicgames.com/fab/seller/o-mexackzr7yxx9nq3ben6qz3vegqehg/profileImage/blob-500x500-b919e9f097d687f994cd6fc5d044fa3a.jpg",
+        "sellerName": "Austin Beaulier",
+        "sellerId": "o-mexackzr7yxx9nq3ben6qz3vegqehg",
+        "uid": "9bb908bb-961d-4ccc-8c05-31dfe18de043"
+      }
+    },
+    {
+      "catalogItemId": "",
+      "offerId": "",
+      "promotionRequestId": "",
+      "availableInEurope": true,
+      "averageRating": 0,
+      "category": {
+        "uid": "b2043d1b-0579-419a-a99e-5fbffc8a21c5",
+        "name": "Art & Statues",
+        "path": "objects-decor/art-statues",
+        "slug": "objects-decor--art-statues"
+      },
+      "isDiscounted": false,
+      "hasEffectiveDiscounts": false,
+      "isFree": true,
+      "licenses": [
+        {
+          "type": "",
+          "isCc0": true,
+          "name": "CC-BY",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "fc23593c-8271-45b8-a041-ca58c53e0146"
+        }
+      ],
+      "listingType": "3d-model",
+      "publishedAt": "2024-10-03T16:49:07.220391Z",
+      "reviewCount": 0,
+      "startingPrice": {
+        "currencyCode": "USD",
+        "discountSettings": null,
+        "discountType": null,
+        "discountedPrice": null,
+        "effectiveDiscountPercentage": null,
+        "lowestPriorPrice": null,
+        "offerId": "9e837da3e7c2476693ab4996dae0a0f5",
+        "price": 0,
+        "priceTierId": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+        "vatPercentage": 0
+      },
+      "isMature": false,
+      "tags": [
+        {
+          "name": "Puzzle",
+          "slug": "puzzle",
+          "uid": "3d422638-a9e5-4222-ba56-d9103ffd61e1"
+        },
+        {
+          "name": "Cube",
+          "slug": "cube",
+          "uid": "6fdd9976-0141-4db7-950a-20e809605fde"
+        },
+        {
+          "name": "Toy",
+          "slug": "toy",
+          "uid": "9a97c429-2fe7-436f-b6c2-d1cc72e516ea"
+        }
+      ],
+      "title": "\"Rubik's Cube\"//魔术方块",
+      "uid": "20121d20-b012-4f32-adb7-9c7e9c482373",
+      "lastUpdatedAt": "2025-02-24T11:38:35.572692Z",
+      "user": {
+        "account": "",
+        "avatars": [],
+        "coverImageUrl": "https://cdn1.epicgames.com/fab/seller/o-3usnpav7s7ky2cyqvygss5c4zk5zsx/cover/af7964cb.png",
+        "isSeller": true,
+        "profileImageUrl": "https://cdn1.epicgames.com/fab/seller/o-3usnpav7s7ky2cyqvygss5c4zk5zsx/profile/bea227f1.jpg",
+        "sellerName": "SeaMelon00",
+        "sellerId": "o-3usnpav7s7ky2cyqvygss5c4zk5zsx",
+        "uid": "bcf6d675-d67d-47e2-b8a5-cee34208212d"
+      }
+    },
+    {
+      "catalogItemId": "",
+      "offerId": "",
+      "promotionRequestId": "",
+      "availableInEurope": true,
+      "averageRating": 0,
+      "category": {
+        "uid": "923f0caf-2fed-4ab4-94a3-e0a86ff711b0",
+        "name": "Weapons & Combat",
+        "path": "weapons-combat",
+        "slug": "weapons-combat"
+      },
+      "isDiscounted": false,
+      "hasEffectiveDiscounts": false,
+      "isFree": false,
+      "licenses": [
+        {
+          "type": "",
+          "isCc0": false,
+          "name": "Personal",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "eec3bdd5-ba7a-45a8-b15d-67462b9630f6"
+        },
+        {
+          "type": "",
+          "isCc0": false,
+          "name": "Professional",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "eec3bdd5-ba7a-45a8-b15d-67462b9630f9"
+        }
+      ],
+      "listingType": "3d-model",
+      "publishedAt": "2024-10-23T16:05:20.647575Z",
+      "reviewCount": 0,
+      "startingPrice": {
+        "currencyCode": "USD",
+        "discountSettings": null,
+        "discountType": null,
+        "discountedPrice": null,
+        "effectiveDiscountPercentage": null,
+        "lowestPriorPrice": null,
+        "offerId": "a1104382b5074f5daddc89a292af35c5",
+        "price": 0,
+        "priceTierId": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+        "vatPercentage": 0
+      },
+      "isMature": false,
+      "tags": [
+        {
+          "name": "Videogame",
+          "slug": "videogame",
+          "uid": "0aca51ea-a580-4337-a3ad-3d2e92804b0e"
+        },
+        {
+          "name": "Baked",
+          "slug": "baked",
+          "uid": "4b9f0895-cc7f-4de9-9311-f25838028ea9"
+        },
+        {
+          "name": "Firearm",
+          "slug": "firearm",
+          "uid": "54c8f6dd-fce8-480f-b482-d07ac386b875"
+        }
+      ],
+      "title": "(AAC) HONEY BADGER PDW",
+      "uid": "02b4b55a-7087-4a1a-8e47-1b431ecc7abe",
+      "lastUpdatedAt": "2025-02-24T12:43:05.690791Z",
+      "user": {
+        "account": "",
+        "avatars": [],
+        "coverImageUrl": null,
+        "isSeller": true,
+        "profileImageUrl": "https://cdn1.epicgames.com/fab/seller/o-jf6b5f2ms3muthqyzlrlxvqqk4ey9j/profileImage/blob-500x500-5aaaf04c5e70d70f9af0d559c4f807b5.jpg",
+        "sellerName": "Badboy17aiden",
+        "sellerId": "o-jf6b5f2ms3muthqyzlrlxvqqk4ey9j",
+        "uid": "1660928e-f349-4fda-b6d0-913048c9eabf"
+      }
+    },
+    {
+      "catalogItemId": "",
+      "offerId": "",
+      "promotionRequestId": "",
+      "availableInEurope": true,
+      "averageRating": 0,
+      "category": {
+        "uid": "18e672da-2da2-4d1b-b0a1-b6a64f108c69",
+        "name": "Electronics & Technology",
+        "path": "electronics-technology",
+        "slug": "electronics-technology"
+      },
+      "isDiscounted": false,
+      "hasEffectiveDiscounts": false,
+      "isFree": true,
+      "licenses": [
+        {
+          "type": "",
+          "isCc0": true,
+          "name": "CC-BY",
+          "priceTier": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+          "uid": "fc23593c-8271-45b8-a041-ca58c53e0146"
+        }
+      ],
+      "listingType": "3d-model",
+      "publishedAt": "2024-10-10T21:36:18.998466Z",
+      "reviewCount": 0,
+      "startingPrice": {
+        "currencyCode": "USD",
+        "discountSettings": null,
+        "discountType": null,
+        "discountedPrice": null,
+        "effectiveDiscountPercentage": null,
+        "lowestPriorPrice": null,
+        "offerId": "22a4223b54964e6ca98623d9ceeb5e01",
+        "price": 0,
+        "priceTierId": "45da1a2f292a46c78dab0c98c5181e9a_USD_0_1701881379100",
+        "vatPercentage": 0
+      },
+      "isMature": false,
+      "tags": [
+        {
+          "name": "Album",
+          "slug": "album",
+          "uid": "4c4ab048-3ac9-4ab2-8886-4961ea987976"
+        },
+        {
+          "name": "Record",
+          "slug": "record",
+          "uid": "5449bebc-3431-4111-b991-d4d7a05b2f75"
+        },
+        {
+          "name": "Music",
+          "slug": "music",
+          "uid": "76d3689a-6e84-4d37-9d54-20cc3548b2fd"
+        }
+      ],
+      "title": "(Anisotropic) Record test",
+      "uid": "91b91a11-de6c-4f06-9afa-b639a9a82e4d",
+      "lastUpdatedAt": "2025-02-24T12:13:14.474343Z",
+      "user": {
+        "account": "",
+        "avatars": [],
+        "coverImageUrl": null,
+        "isSeller": true,
+        "profileImageUrl": null,
+        "sellerName": "DavidHenson3d",
+        "sellerId": "o-rhweh4xyj5u9qzf5efnj22myred4f2",
+        "uid": "29262fbd-9b30-46dd-9ca8-7d99393e6d1e"
+      }
+    }
+  ]
+}
