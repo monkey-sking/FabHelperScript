@@ -65,6 +65,19 @@ export const TaskStateMachine = {
         TaskStateMachine.history = [];
     },
 
+    /**
+     * 把「进入当前状态的时刻」推到 now，仅动时钟、不动状态。
+     *
+     * 用于外部长时间没有推进状态机之后恢复（用户暂停执行、标签页被冻结/休眠）：
+     * 不重置时钟的话，暂停时长会被算进超时判定，恢复瞬间就直接触发超时转移 ——
+     * 最典型的后果是 SCANNING 暂停几分钟后一恢复就超时，被当成「列表已到底」
+     * 而提前结束整轮枚举。
+     */
+    refreshClock: (now = Date.now()) => {
+        TaskStateMachine.enteredAt = now;
+        return TaskStateMachine.enteredAt;
+    },
+
     canTransition: (to) => {
         const from = TaskStateMachine.state;
         if (from === to) return false;

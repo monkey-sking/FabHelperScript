@@ -22,9 +22,18 @@ src/
     ├── page-diagnostics.js # 页面诊断工具
     ├── page-patcher.js  # 页面修补与游标管理
     ├── rate-limit-manager.js # 限速检测与恢复
-    ├── task-runner.js   # 任务调度与执行核心
+    ├── task-runner.js   # 任务调度与执行核心（旧路径）
     ├── ui.js            # 界面渲染与交互
-    └── utils.js         # 通用工具函数
+    ├── utils.js         # 通用工具函数
+    └── （新流水线，见下节）
+        ├── event-log.js        # 事件日志：单一真相源
+        ├── state-machine.js    # 六态任务状态机
+        ├── rate-limiter.js     # 令牌桶（AIMD）
+        ├── claim-strategy.js   # ApiClaim / DomClaim 双策略
+        ├── listing-source.js   # /i/listings/search 分页枚举
+        ├── pipeline.js         # 单标签页流水线编排
+        ├── pipeline-adapter.js # 与真实页面/GM 存储对接
+        └── pipeline-scheduler.js # 调度策略（可脱离定时器测试）
 ```
 
 ## 核心模块架构
@@ -47,6 +56,68 @@ graph TD
     API --> RateLimitManager
     API --> DataCache
 ```
+
+## 新一代流水线（API 优先架构，默认关闭）
+
+旧链路是「滚动 DOM 骗页面发搜索请求 → 从卡片 DOM 里抠 uid → 开 7 个 worker 标签页
+→ 每个标签加载完整详情页 → DOM 点击」。它把「并发」这个抽象安在了「开几个标签页」上，
+而标签数只是请求速率的拙劣代理：后台标签被浏览器节流后两者彻底脱钩，为了维持住节流后的
+标签，又必须引入 Worker 心跳、WebRTC 防冻结、卡死看门狗……
+
+新架构换掉的是控制变量，不是写法：
+
+| 关注点 | 旧实现 | 新实现 |
+| --- | --- | --- |
+| 枚举 | 滚动 DOM，靠哨兵是否触发来猜「是否到底」 | 直接调 `/i/listings/search`，由 `cursors.next === null` 权威判定 |
+| 并发 | 7 个 worker 标签页 | 令牌桶按速率（次/分钟）节流，单标签页顺序推进 |
+| 状态 | `todo` / `done` / `failed` 三份并行数组手工互清 | 事件日志（append-only），三份都是其派生视图 |
+| 异常 | 四处互不知情的刷新兜底 | 统一收敛到 `RATE_LIMITED` 一条退避回路 |
+| 领取 | DOM 自动化（class hash + 多语言文案匹配） | `ApiClaim` 主路径 + `DomClaim` 回落，用回落率监控 |
+
+分层与职责：
+
+- **event-log.js** —— 单一真相源。按规范 listing uid 追加不可变事件，
+  `todo` / `done` / `failed` 全部是派生视图，「最新事件优先」。
+  一致性由模型保证，而不是由调用点保证。
+- **state-machine.js** —— `IDLE / SCANNING / CLAIMING / VERIFYING / RATE_LIMITED / DONE`
+  六态。超时策略集中在一张表里；`refreshClock()` 供长时间暂停后恢复，
+  避免把暂停时长算进超时判定。
+- **rate-limiter.js** —— 令牌桶 + AIMD。收到 429 就按 `Retry-After` 暂停并把速率折半，
+  连续成功则缓慢回到基准。
+- **claim-strategy.js** —— `ApiClaim`（接口领取，端点待抓包确认）与
+  `DomClaim`（回落，实现由外部注入）。`ClaimExecutor` 统计回落率，
+  回落率长期为 1 即说明接口路径没接好。
+- **listing-source.js** —— 分页枚举。**注意**：抓包样本里 4 个商品全部
+  `startingPrice.price === 0`，但只有 2 个 `isFree === true`，因此 `isFree`
+  看起来只标记 CC0 许可，绝不能作为唯一判据。默认用 `FLAG_OR_PRICE` 并集。
+- **pipeline.js** —— 编排「一步做什么」。所有副作用通过 `deps` 注入，
+  时间由调用方注入，因此整条流程可以在测试里同步跑完。
+- **pipeline-adapter.js** —— 把上述模块接到真实环境：`GM_xmlhttpRequest` 网络层、
+  `Database.isDone` 入库复查、事件日志的持久化与旧数据层回写。
+- **pipeline-scheduler.js** —— 决定「多快做、做完了要不要再来一遍」。
+  定时器与时钟全部注入，调度策略因此可测。
+
+调度器的三条硬约束（每条都对应旧实现的一个具体故障）：
+
+1. **一轮到底后不自动重扫**。执行开关保持开启时若自动重扫，脚本会在几秒内把整份
+   免费列表重新翻一遍，既无意义地反复请求接口，也放大被风控的概率。
+   重新枚举需要满足其一：用户重新拨动过执行开关，或到了 `PIPELINE_RESCAN_INTERVAL_MS`。
+2. **重新枚举保留事件历史**（`restart` 而非 `reset`）。历史里已 `CLAIMED` / `FAILED` /
+   `SKIPPED` 的 uid 不会再次进入待领队列 —— 这是不重复领取的唯一保证。
+3. **任何异常都必须换成退避时长**。吞掉异常后按 0 延迟继续调度，等于以最快速度
+   反复猛打接口，一次偶发 429 会被自己打成持续风控。
+
+### 开关与现状
+
+- `Config.USE_API_PIPELINE`（默认 `false`）：打开后新流水线取代旧的滚动枚举与
+  worker 领取路径。**当前尚未具备生产可用性**：领取后端一个都没接上
+  （`ApiClaim` 端点待抓包确认，`DomClaim` 的 `acquireFn` 尚未从 `task-runner`
+  抽出单商品入口），因此调度器会检测到「无领取后端」并拒绝启动，
+  避免整页商品被逐条标记为领取失败。
+- `Config.PIPELINE_RESCAN_INTERVAL_MS`（默认 `0`）：一轮到底后的自动重扫间隔，
+  0 表示不自动重扫。
+- `hasClaimBackend()` 是启动前的安全闸门；接好任一路领取后端后，
+  打开 `USE_API_PIPELINE` 即可切换，无需改动流程代码。
 
 ## 模块说明
 

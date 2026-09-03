@@ -22,7 +22,8 @@ import { ClaimExecutor } from '../src/modules/claim-strategy.js';
 import { ListingSource, FREE_POLICY } from '../src/modules/listing-source.js';
 import {
     bootstrapPipeline,
-    resetPipelineAdapters
+    resetPipelineAdapters,
+    hasClaimBackend
 } from '../src/modules/pipeline-adapter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,22 @@ function makeAcquireFn(fakeDb) {
     return async (task) => {
         fakeDb._mark(task.uid);
         return { success: true };
+    };
+}
+
+const UID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
+/**
+ * 接口领取替身：模拟「POST 成功 → 服务端标记为已入库」。
+ * 替身必须按 uid 逐个标记，不能一律返回 true —— 扫描阶段的「已入库」判定
+ * 也读同一个 isDone，一律为 true 会让所有商品在扫描阶段就被当成已拥有而跳过。
+ */
+function makeApiFetchImpl(fakeDb) {
+    return async (req) => {
+        const blob = `${req && req.url ? req.url : ''} ${req && req.data ? req.data : ''}`;
+        const match = blob.match(UID_RE);
+        if (match) fakeDb._mark(match[0]);
+        return { status: 200, responseText: '{}' };
     };
 }
 
@@ -149,9 +166,9 @@ test('ApiClaim 主路径：配置领取端点后 claims 经 api 策略，回落�
     // 领取 POST 端点已确认，ApiClaim 接管；不再依赖 DomClaim
     bootstrapPipeline({
         fetchImpl: fixtureFetch(),
-        database: { isDone: () => true }, // 服务端已反映入库
+        database: fakeDb,
         apiEndpoint: 'https://www.fab.com/i/listings/claim',
-        apiFetchImpl: async () => ({ status: 200, responseText: '{}' }),
+        apiFetchImpl: makeApiFetchImpl(fakeDb),
         ratePerMin: 100000,
         burst: 100
     });
@@ -166,6 +183,56 @@ test('ApiClaim 主路径：配置领取端点后 claims 经 api 策略，回落�
     assert.equal(cs.api.success, 4);
     assert.equal(cs.dom.attempts, 0);
     assert.equal(cs.fallbackRate, 0);
+});
+
+test('hasClaimBackend：没有领取后端时为 false，注入后为 true', async () => {
+    resetPipelineAdapters();
+    assert.equal(hasClaimBackend(), false, '未注入任何领取实现时，调度方必须拒绝启动');
+
+    // 注入 DomClaim 后可用
+    bootstrapPipeline({ fetchImpl: fixtureFetch(), acquireFn: async () => ({ success: true }) });
+    assert.equal(hasClaimBackend(), true);
+
+    // 换成 ApiClaim 端点后同样可用
+    resetPipelineAdapters();
+    bootstrapPipeline({
+        fetchImpl: fixtureFetch(),
+        apiEndpoint: 'https://www.fab.com/i/listings/claim',
+        apiFetchImpl: async () => ({ status: 200, responseText: '{}' })
+    });
+    assert.equal(hasClaimBackend(), true);
+
+    resetPipelineAdapters();
+});
+
+test('已入库商品在扫描阶段即被跳过，不会进入待领队列', async () => {
+    resetPipelineAdapters();
+    const fakeDb = makeFakeDb();
+    // 预置两个「早就领过」的商品（模拟从旧数据层迁移上来的存量）
+    fakeDb._mark('f32c6ac7-ae94-4fd5-be5a-0d9985b99917');
+    fakeDb._mark('20121d20-b012-4f32-adb7-9c7e9c482373');
+
+    let claimCalls = 0;
+    bootstrapPipeline({
+        fetchImpl: fixtureFetch(),
+        database: fakeDb,
+        acquireFn: async (task) => {
+            claimCalls += 1;
+            fakeDb._mark(task.uid);
+            return { success: true };
+        },
+        ratePerMin: 100000,
+        burst: 100
+    });
+    Pipeline.start(0);
+    await Pipeline.run({ maxSteps: 500, now: 0, advance: 1 });
+
+    const stats = EventLog.stats();
+    assert.equal(stats.claimed, 2, '只有未入库的两个应被领取');
+    assert.equal(claimCalls, 2, '已入库商品不得占用领取次数');
+    const skipped = [...EventLog._latest.values()].filter(e => e.state === EVENT_STATE.SKIPPED);
+    assert.equal(skipped.length, 2);
+    assert.ok(skipped.every(e => e.reason === 'already_owned'));
 });
 
 test('resetPipelineAdapters 清除注入，避免用例间泄漏', async () => {

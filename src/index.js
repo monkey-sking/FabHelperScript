@@ -130,10 +130,16 @@ import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.j
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
 
-// API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下两行仅引入，不执行任何逻辑。
+// API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下仅引入，不执行任何逻辑。
 import { Pipeline } from './modules/pipeline.js';
-import { STATE as PIPELINE_STATE } from './modules/state-machine.js';
-import { bootstrapPipeline, gmFetchImpl } from './modules/pipeline-adapter.js';
+import { createPipelineScheduler } from './modules/pipeline-scheduler.js';
+import {
+    bootstrapPipeline,
+    gmFetchImpl,
+    hasClaimBackend,
+    loadEventLog,
+    persistEventLog
+} from './modules/pipeline-adapter.js';
 
 // Global countdown variables
 let currentCountdownInterval = null;
@@ -952,7 +958,9 @@ async function runDomDependentPart() {
 
     // API 优先流水线：开关开启时取代旧的滚动枚举 + worker 领取路径
     if (Config.USE_API_PIPELINE) {
-        startApiPipeline();
+        // 内部会在「没有领取后端」时主动拒绝启动，因此这里必须接住异常，
+        // 否则一个未处理的拒绝会静默吞掉问题。
+        startApiPipeline().catch(e => Utils.logger('error', `[Pipeline] 启动失败: ${e.message}`));
     }
 
     // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
@@ -1431,51 +1439,43 @@ window.addEventListener('load', () => {
     setTimeout(ensureUILoaded, 2000);
 });
 
-// ─── API 优先流水线控制器 ────────────────────────────────────────────────
+// ─── API 优先流水线装配 ──────────────────────────────────────────────────
 // 仅在 Config.USE_API_PIPELINE 开启时由 runDomDependentPart 调用。
 // 取代旧的「滚动触发加载 + 开 worker 标签页领取」：枚举走 cursor 分页，
 // 领取走 ApiClaim（已确认端点时）或注入的 DomClaim，全程单标签页、按速率推进。
-let _apiPipelineTimer = null;
+//
+// 这里只做装配，调度策略本身（何时推进、何时重扫、失败如何退避）在
+// pipeline-scheduler 模块里，可以脱离真实定时器被测试。
+let _apiPipelineScheduler = null;
+
 async function startApiPipeline() {
     if (State.isWorkerTab) return;
 
     bootstrapPipeline({ fetchImpl: gmFetchImpl });
 
-    const tick = async () => {
-        if (!Config.USE_API_PIPELINE) { _apiPipelineTimer = null; return; }
+    // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
+    // 事件日志被污染，用户还看不出原因。（旧路径已被同一个开关关掉，
+    // 因此这里必须把回退方法说清楚。）
+    if (!hasClaimBackend()) {
+        Utils.logger('error',
+            '[Pipeline] 未配置任何领取后端（DomClaim 未注入、ApiClaim 端点未确认），流水线不启动。' +
+            '请注入 acquireFn 或配置 apiEndpoint；在此之前请把 USE_API_PIPELINE 置回 false 以使用旧路径。');
+        return;
+    }
 
-        const now = Date.now();
-        try {
-            if (State.isExecuting) {
-                // 执行开关刚打开或上一轮已到底时，重新起一程枚举
-                if (Pipeline.fsm.is(PIPELINE_STATE.IDLE) || Pipeline.fsm.is(PIPELINE_STATE.DONE)) {
-                    Pipeline.reset(now);
-                    Pipeline.start(now);
-                }
-                await Pipeline.tick(now);
-            }
-        } catch (e) {
-            Utils.logger('error', `[Pipeline] tick 出错: ${e.message}`);
-        }
+    // 事件历史不落盘 = 每次刷新页面都从零开始，已领过的商品会被重新领一遍
+    await loadEventLog();
 
-        if (!State.isExecuting) {
-            // 未在执行：低频空转，等待用户开启执行
-            _apiPipelineTimer = setTimeout(tick, 2000);
-            return;
-        }
-
-        const delay = Pipeline.nextDelayMs(Date.now());
-        if (!Number.isFinite(delay)) {
-            // 已到列表末尾：周期性复查，待下次开启执行时重新枚举
-            Utils.logger('info', '[Pipeline] 已到达列表末尾，暂停调度（再次开启执行将重新枚举）。');
-            _apiPipelineTimer = setTimeout(tick, 5000);
-            return;
-        }
-        _apiPipelineTimer = setTimeout(tick, Math.max(0, delay));
-    };
+    _apiPipelineScheduler = createPipelineScheduler({
+        pipeline: Pipeline,
+        isExecuting: () => State.isExecuting,
+        persist: () => persistEventLog(),
+        rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
+        log: (level, msg) => Utils.logger(level, msg)
+    });
+    _apiPipelineScheduler.start();
 
     Utils.logger('info', '[Pipeline] API 优先流水线已启动（取代旧滚动枚举 + worker 领取）。');
-    tick();
 }
 
 // ─── 锁屏 / 后台冻结恢复 ───────────────────────────────────────────────────

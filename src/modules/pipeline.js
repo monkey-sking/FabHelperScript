@@ -60,16 +60,38 @@ export const Pipeline = {
     maxConsecutiveRateLimits: 5,
     consecutiveRateLimits: 0,
 
-    reset: (now = 0) => {
+    /** 清空「一程运行态」：游标、到底标记、限速、状态机、领取指标。不含事件历史。 */
+    _resetRun: (now = 0) => {
         Pipeline.cursor = null;
         Pipeline.isEndOfList = false;
         Pipeline.pendingVerify = null;
         Pipeline.pagesFetched = 0;
         Pipeline.consecutiveRateLimits = 0;
-        EventLog.reset();
         RateLimiter.reset(now);
         TaskStateMachine.reset(now);
         ClaimExecutor.resetMetrics();
+    },
+
+    /**
+     * 彻底重来：连事件历史一起清空。
+     * 只在「换号重跑 / 测试数据清零」这类场景才对。
+     */
+    reset: (now = 0) => {
+        Pipeline._resetRun(now);
+        EventLog.reset();
+    },
+
+    /**
+     * 重新起一程枚举，但保留事件历史。
+     *
+     * 保留历史是「不重复领取」的唯一保证：_stepScan 会用 EventLog.isKnown 拦下
+     * 已 CLAIMED / FAILED / SKIPPED 的 uid，它们不会再次进入待领队列。
+     * 这里若误用 reset()，每重扫一次历史就归零，已入库的商品会被反复领取 ——
+     * 而重扫恰恰是执行开关保持开启时的默认行为，因此这个区别是致命的。
+     */
+    restart: (now = Date.now()) => {
+        Pipeline._resetRun(now);
+        return Pipeline.start(now);
     },
 
     start: (now = Date.now()) => {
@@ -121,7 +143,27 @@ export const Pipeline = {
             return { action: 'error', reason: '未配置 fetchPage' };
         }
 
-        const page = await Pipeline.deps.fetchPage(Pipeline.cursor);
+        let page;
+        try {
+            page = await Pipeline.deps.fetchPage(Pipeline.cursor);
+        } catch (e) {
+            // 分页失败必须退避，绝不能当成「这一页是空的」继续推进：
+            // 那样 nextDelayMs 返回 0，调度器会以最快速度反复重试，
+            // 一次偶发 429 会被自己打成持续风控。
+            // 退避时长优先听服务端的 Retry-After；没有则交给限速器按
+            // 指数退避（30s 起，上限 10 分钟）。
+            const retryAfterMs = e && Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null;
+            const pause = Pipeline.limiter.penalize(retryAfterMs, now);
+            Pipeline.fsm.hitRateLimit(now, pause.pauseMs);
+            // 注意：这里刻意不推进 Pipeline.cursor，退避结束后仍从同一页重试
+            return {
+                action: 'scan_error',
+                error: (e && e.message) || String(e),
+                status: (e && e.status) || 0,
+                pauseMs: pause.pauseMs,
+                state: Pipeline.fsm.state
+            };
+        }
         Pipeline.pagesFetched += 1;
 
         // 过滤发生在扫描阶段，而不是领取阶段：此时手里才有完整的商品对象

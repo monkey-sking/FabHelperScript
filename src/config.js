@@ -16,6 +16,11 @@ export const Config = {
     // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
     // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
     USE_API_PIPELINE: false,
+    // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
+    // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
+    // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
+    // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
+    PIPELINE_RESCAN_INTERVAL_MS: 0,
     UI_CONTAINER_ID: 'fab-helper-container',
     UI_LOG_ID: 'fab-helper-log',
     DB_KEYS: {

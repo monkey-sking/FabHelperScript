@@ -274,6 +274,96 @@ test('status 聚合全流程可观测指标', async () => {
     assert.equal(s.claims.fallbackRate, 1, '当前无领取端点，全部走 DOM 回落');
 });
 
+test('分页失败必须退避：不按 0 延迟反复猛打接口，退避后补扫同一页', async () => {
+    setup();
+    let calls = 0;
+    Pipeline.configure({
+        fetchPage: async () => {
+            calls += 1;
+            if (calls === 1) {
+                // 与 ListingSource.SearchError 同形：带 status 与 retryAfterMs
+                throw Object.assign(new Error('搜索接口限速'), {
+                    name: 'SearchError', status: 429, retryAfterMs: 30000
+                });
+            }
+            return { items: [mkItem(1)], nextCursor: null };
+        }
+    });
+
+    Pipeline.start(0);
+    const step = await Pipeline.tick(0);
+
+    assert.equal(step.action, 'scan_error');
+    assert.equal(step.status, 429);
+    assert.equal(Pipeline.fsm.state, STATE.RATE_LIMITED, '分页失败应转入退避态');
+    // 关键：nextDelayMs 不能是 0，否则调度器会以最快速度重试，把偶发 429 打成持续风控
+    assert.ok(Pipeline.nextDelayMs(0) >= 30000, `退避时长应覆盖 Retry-After，实际 ${Pipeline.nextDelayMs(0)}`);
+
+    // 退避未结束前不得再发请求
+    await Pipeline.tick(1000);
+    assert.equal(calls, 1, '退避期间不得叠加请求');
+
+    // 退避结束后应恢复，并把刚才失败的那页补扫完（游标未被推进）
+    await Pipeline.run({ maxSteps: 100, now: 30000 });
+    assert.equal(calls, 2);
+    assert.equal(EventLog.stats().claimed, 1);
+    assert.equal(Pipeline.fsm.state, STATE.DONE);
+});
+
+test('分页持续失败且没有 Retry-After 时按指数退避，不会以 0 延迟反复重试', async () => {
+    setup();
+    let calls = 0;
+    Pipeline.configure({
+        fetchPage: async () => {
+            calls += 1;
+            throw Object.assign(new Error('网络不可达'), {
+                name: 'SearchError', status: 0, retryAfterMs: null
+            });
+        }
+    });
+
+    Pipeline.start(0);
+    // 跑到状态机把 RATE_LIMITED 交回用户为止（上限 10 分钟）。
+    // 若失败后按 nextDelayMs=0 重试，这段时间里会打出成百上千次请求；
+    // 指数退避（30s→60s→120s…）下只会有个位数。
+    const steps = await Pipeline.run({ maxSteps: 500, now: 0 });
+    const elapsed = steps[steps.length - 1].at;
+
+    assert.ok(elapsed >= 600000, `应撑满退避上限，实际 ${elapsed}ms`);
+    assert.ok(calls <= 8, `10 分钟内的失败重试应是个位数，实际 ${calls} 次`);
+    assert.ok(calls >= 3, '退避结束后应当重试，而不是一次失败就放弃');
+});
+
+test('restart 保留历史：重新枚举不会重复领取已入库商品，reset 才会清空', async () => {
+    setup();
+    let claimCalls = 0;
+    setDomClaim(async () => { claimCalls += 1; return { result: CLAIM_RESULT.SUCCESS }; });
+    // 同一份列表：首页 2 个，次页 1 个。重扫时会被原样再翻一遍。
+    Pipeline.configure({
+        fetchPage: async (cursor) => (cursor
+            ? { items: [mkItem(3)], nextCursor: null }
+            : { items: [mkItem(1), mkItem(2)], nextCursor: 'c1' })
+    });
+
+    Pipeline.start(0);
+    await Pipeline.run({ maxSteps: 200, now: 0, advance: 1 });
+    assert.equal(EventLog.stats().claimed, 3);
+    assert.equal(claimCalls, 3);
+
+    Pipeline.restart(1000);
+    assert.equal(Pipeline.fsm.state, STATE.SCANNING);
+    await Pipeline.run({ maxSteps: 200, now: 1000, advance: 1 });
+
+    assert.equal(Pipeline.fsm.state, STATE.DONE);
+    assert.equal(Pipeline.pagesFetched, 2, '重扫确实重新翻了整份列表');
+    assert.equal(claimCalls, 3, '重扫不得产生任何新的领取请求');
+    assert.equal(EventLog.stats().claimed, 3, '已领取的商品不得被重复领取');
+
+    // 对照：reset 才是「彻底重来」，会连历史一起清空
+    Pipeline.reset(2000);
+    assert.equal(EventLog.stats().total, 0);
+});
+
 test('整个流程可在同一 uid 上先失败后成功（事件日志天然支持重试）', async () => {
     setup();
     let attempt = 0;

@@ -5,6 +5,7 @@ import { Config } from '../config.js';
 import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { DataCache } from './data-cache.js';
+import { EventLog } from './event-log.js';
 
 // Forward declaration for circular dependency
 let UI = null;
@@ -137,6 +138,10 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.TODO);
             await GM_deleteValue(Config.DB_KEYS.DONE);
             await GM_deleteValue(Config.DB_KEYS.FAILED);
+            // 新流水线的事件历史同样要清：它记录了「哪些商品已处理过」，
+            // 不清的话重置后重新执行会一无所获（所有商品都被判定为已处理）。
+            await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
+            EventLog.reset();
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置

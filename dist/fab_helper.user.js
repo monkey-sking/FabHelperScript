@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260903-0855
+// @version      3.5.21-20260903-1446
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -765,6 +765,11 @@
     // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
     // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
     USE_API_PIPELINE: false,
+    // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
+    // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
+    // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
+    // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
+    PIPELINE_RESCAN_INTERVAL_MS: 0,
     UI_CONTAINER_ID: "fab-helper-container",
     UI_LOG_ID: "fab-helper-log",
     DB_KEYS: {
@@ -1972,6 +1977,176 @@
     }, "checkItemsPrices")
   };
 
+  // src/modules/event-log.js
+  var EVENT_STATE = {
+    DISCOVERED: "discovered",
+    // 在列表中发现，等待领取
+    CLAIMED: "claimed",
+    // 领取成功（已入库）
+    FAILED: "failed",
+    // 领取最终失败（含归因）
+    SKIPPED: "skipped"
+    // 主动跳过（付费 / 外部站 / 不可购买）
+  };
+  var EventLog = {
+    events: [],
+    // uid -> 该 uid 的最新事件，派生视图的唯一依据
+    _latest: /* @__PURE__ */ new Map(),
+    /**
+     * 从 URL 或裸 uid 提取规范 uid。
+     * 与 Database.getListingUid 行为一致（有测试守护两者不漂移），
+     * 此处独立实现是为了让本模块不依赖 Database，保持可单独测试。
+     */
+    uidOf: /* @__PURE__ */ __name((urlOrUid) => {
+      if (!urlOrUid) return "";
+      const match = String(urlOrUid).split("?")[0].match(/\/listings\/([^/?#]+)/i);
+      if (match && match[1]) return match[1].toLowerCase();
+      const bare = String(urlOrUid).trim().toLowerCase();
+      return /^[a-z0-9_-]+$/.test(bare) ? bare : "";
+    }, "uidOf"),
+    canonicalUrl: /* @__PURE__ */ __name((uid) => `https://www.fab.com/listings/${uid}`, "canonicalUrl"),
+    reset: /* @__PURE__ */ __name(() => {
+      EventLog.events = [];
+      EventLog._latest = /* @__PURE__ */ new Map();
+    }, "reset"),
+    _rebuildIndex: /* @__PURE__ */ __name(() => {
+      EventLog._latest = /* @__PURE__ */ new Map();
+      EventLog.events.forEach((e) => EventLog._latest.set(e.uid, e));
+    }, "_rebuildIndex"),
+    load: /* @__PURE__ */ __name(async () => {
+      let raw = [];
+      try {
+        raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
+      } catch (e) {
+        Utils.logger("error", `\u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
+        raw = [];
+      }
+      if (!Array.isArray(raw)) raw = [];
+      EventLog.events = raw.filter(
+        (e) => e && typeof e.uid === "string" && e.uid && Object.values(EVENT_STATE).includes(e.state)
+      );
+      EventLog._rebuildIndex();
+      return EventLog.events.length;
+    }, "load"),
+    save: /* @__PURE__ */ __name(() => {
+      try {
+        GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+      } catch (e) {
+        Utils.logger("error", `\u5199\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
+      }
+    }, "save"),
+    /**
+     * 追加一条事件。name / url 若本次未提供，则继承该 uid 上一次已知的值，
+     * 这样任何时刻的派生视图都能还原出完整任务对象，而不必回头翻历史事件。
+     */
+    append: /* @__PURE__ */ __name((uid, state, meta = {}) => {
+      const id = EventLog.uidOf(uid);
+      if (!id) return null;
+      if (!Object.values(EVENT_STATE).includes(state)) return null;
+      const prev = EventLog._latest.get(id);
+      const event = {
+        uid: id,
+        state,
+        ts: meta.ts != null ? meta.ts : Date.now(),
+        name: meta.name || prev && prev.name || "",
+        url: meta.url || prev && prev.url || EventLog.canonicalUrl(id),
+        reason: meta.reason || ""
+      };
+      EventLog.events.push(event);
+      EventLog._latest.set(id, event);
+      return event;
+    }, "append"),
+    appendMany: /* @__PURE__ */ __name((entries) => entries.map((e) => EventLog.append(e.uid, e.state, e)).filter(Boolean), "appendMany"),
+    latestOf: /* @__PURE__ */ __name((uid) => {
+      const id = EventLog.uidOf(uid);
+      return id ? EventLog._latest.get(id) || null : null;
+    }, "latestOf"),
+    stateOf: /* @__PURE__ */ __name((uid) => {
+      const latest = EventLog.latestOf(uid);
+      return latest ? latest.state : null;
+    }, "stateOf"),
+    isDone: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.CLAIMED, "isDone"),
+    isFailed: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.FAILED, "isFailed"),
+    isSkipped: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.SKIPPED, "isSkipped"),
+    isPending: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.DISCOVERED, "isPending"),
+    isKnown: /* @__PURE__ */ __name((uid) => EventLog.latestOf(uid) !== null, "isKnown"),
+    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getTodo"),
+    getDone: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.CLAIMED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getDone"),
+    getFailed: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.FAILED).map((e) => ({
+      uid: e.uid,
+      url: e.url,
+      name: e.name,
+      failureReason: e.reason || "\u672A\u77E5\u539F\u56E0",
+      failedAt: new Date(e.ts).toISOString()
+    })), "getFailed"),
+    stats: /* @__PURE__ */ __name(() => {
+      const counts = { total: EventLog._latest.size };
+      Object.values(EVENT_STATE).forEach((s) => {
+        counts[s] = 0;
+      });
+      EventLog._latest.forEach((e) => {
+        counts[e.state] += 1;
+      });
+      return counts;
+    }, "stats"),
+    /**
+     * 控制存储体积。只保留最近 maxEvents 条，但保证每个 uid 的最新事件绝不丢失
+     * （丢失会让该 uid 在派生视图里凭空消失，等于数据损坏）。
+     */
+    prune: /* @__PURE__ */ __name((maxEvents) => {
+      if (!Number.isFinite(maxEvents) || maxEvents <= 0) return 0;
+      if (EventLog.events.length <= maxEvents) return 0;
+      const before = EventLog.events.length;
+      const kept = EventLog.events.slice(-maxEvents);
+      const previousLatest = new Map(EventLog._latest);
+      EventLog.events = kept;
+      EventLog._rebuildIndex();
+      const recovered = [];
+      previousLatest.forEach((event, uid) => {
+        if (!EventLog._latest.has(uid)) recovered.push(event);
+      });
+      if (recovered.length > 0) {
+        EventLog.events = recovered.concat(EventLog.events);
+        EventLog._rebuildIndex();
+      }
+      return before - EventLog.events.length;
+    }, "prune"),
+    /**
+     * 一次性导入旧的三份并行数组，用于从旧版本迁移。
+     * ts 递增保证 discovered 早于其后续结果事件，派生视图才正确。
+     */
+    importLegacy: /* @__PURE__ */ __name(({ todo = [], done = [], failed = [] }) => {
+      let ts = Date.now() - (todo.length + done.length + failed.length + 1) * 1e3;
+      const nextTs = /* @__PURE__ */ __name(() => ts += 1e3, "nextTs");
+      todo.forEach((task) => {
+        EventLog.append(task.uid || task.url, EVENT_STATE.DISCOVERED, {
+          ts: nextTs(),
+          name: task.name,
+          url: task.url
+        });
+      });
+      done.forEach((entry) => {
+        const url = typeof entry === "string" ? entry : entry.url;
+        EventLog.append(url, EVENT_STATE.CLAIMED, { ts: nextTs() });
+      });
+      failed.forEach((task) => {
+        EventLog.append(task.uid || task.url, EVENT_STATE.FAILED, {
+          ts: nextTs(),
+          name: task.name,
+          url: task.url,
+          reason: task.failureReason
+        });
+      });
+      return EventLog.events.length;
+    }, "importLegacy"),
+    /** 反向导出为旧格式，用于灰度期间回退到旧数据层。 */
+    exportLegacy: /* @__PURE__ */ __name(() => ({
+      todo: EventLog.getTodo(),
+      done: EventLog.getDone().map((e) => e.url),
+      failed: EventLog.getFailed()
+    }), "exportLegacy")
+  };
+
   // src/modules/database.js
   var UI2 = null;
   var setUIReference2 = /* @__PURE__ */ __name((uiModule) => {
@@ -2095,6 +2270,8 @@
         await GM_deleteValue(Config.DB_KEYS.TODO);
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
+        await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
+        EventLog.reset();
         await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
         await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
@@ -6025,176 +6202,6 @@
     }, "updateDebugTab")
   };
 
-  // src/modules/event-log.js
-  var EVENT_STATE = {
-    DISCOVERED: "discovered",
-    // 在列表中发现，等待领取
-    CLAIMED: "claimed",
-    // 领取成功（已入库）
-    FAILED: "failed",
-    // 领取最终失败（含归因）
-    SKIPPED: "skipped"
-    // 主动跳过（付费 / 外部站 / 不可购买）
-  };
-  var EventLog = {
-    events: [],
-    // uid -> 该 uid 的最新事件，派生视图的唯一依据
-    _latest: /* @__PURE__ */ new Map(),
-    /**
-     * 从 URL 或裸 uid 提取规范 uid。
-     * 与 Database.getListingUid 行为一致（有测试守护两者不漂移），
-     * 此处独立实现是为了让本模块不依赖 Database，保持可单独测试。
-     */
-    uidOf: /* @__PURE__ */ __name((urlOrUid) => {
-      if (!urlOrUid) return "";
-      const match = String(urlOrUid).split("?")[0].match(/\/listings\/([^/?#]+)/i);
-      if (match && match[1]) return match[1].toLowerCase();
-      const bare = String(urlOrUid).trim().toLowerCase();
-      return /^[a-z0-9_-]+$/.test(bare) ? bare : "";
-    }, "uidOf"),
-    canonicalUrl: /* @__PURE__ */ __name((uid) => `https://www.fab.com/listings/${uid}`, "canonicalUrl"),
-    reset: /* @__PURE__ */ __name(() => {
-      EventLog.events = [];
-      EventLog._latest = /* @__PURE__ */ new Map();
-    }, "reset"),
-    _rebuildIndex: /* @__PURE__ */ __name(() => {
-      EventLog._latest = /* @__PURE__ */ new Map();
-      EventLog.events.forEach((e) => EventLog._latest.set(e.uid, e));
-    }, "_rebuildIndex"),
-    load: /* @__PURE__ */ __name(async () => {
-      let raw = [];
-      try {
-        raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
-      } catch (e) {
-        Utils.logger("error", `\u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
-        raw = [];
-      }
-      if (!Array.isArray(raw)) raw = [];
-      EventLog.events = raw.filter(
-        (e) => e && typeof e.uid === "string" && e.uid && Object.values(EVENT_STATE).includes(e.state)
-      );
-      EventLog._rebuildIndex();
-      return EventLog.events.length;
-    }, "load"),
-    save: /* @__PURE__ */ __name(() => {
-      try {
-        GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
-      } catch (e) {
-        Utils.logger("error", `\u5199\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
-      }
-    }, "save"),
-    /**
-     * 追加一条事件。name / url 若本次未提供，则继承该 uid 上一次已知的值，
-     * 这样任何时刻的派生视图都能还原出完整任务对象，而不必回头翻历史事件。
-     */
-    append: /* @__PURE__ */ __name((uid, state, meta = {}) => {
-      const id = EventLog.uidOf(uid);
-      if (!id) return null;
-      if (!Object.values(EVENT_STATE).includes(state)) return null;
-      const prev = EventLog._latest.get(id);
-      const event = {
-        uid: id,
-        state,
-        ts: meta.ts != null ? meta.ts : Date.now(),
-        name: meta.name || prev && prev.name || "",
-        url: meta.url || prev && prev.url || EventLog.canonicalUrl(id),
-        reason: meta.reason || ""
-      };
-      EventLog.events.push(event);
-      EventLog._latest.set(id, event);
-      return event;
-    }, "append"),
-    appendMany: /* @__PURE__ */ __name((entries) => entries.map((e) => EventLog.append(e.uid, e.state, e)).filter(Boolean), "appendMany"),
-    latestOf: /* @__PURE__ */ __name((uid) => {
-      const id = EventLog.uidOf(uid);
-      return id ? EventLog._latest.get(id) || null : null;
-    }, "latestOf"),
-    stateOf: /* @__PURE__ */ __name((uid) => {
-      const latest = EventLog.latestOf(uid);
-      return latest ? latest.state : null;
-    }, "stateOf"),
-    isDone: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.CLAIMED, "isDone"),
-    isFailed: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.FAILED, "isFailed"),
-    isSkipped: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.SKIPPED, "isSkipped"),
-    isPending: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.DISCOVERED, "isPending"),
-    isKnown: /* @__PURE__ */ __name((uid) => EventLog.latestOf(uid) !== null, "isKnown"),
-    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getTodo"),
-    getDone: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.CLAIMED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getDone"),
-    getFailed: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.FAILED).map((e) => ({
-      uid: e.uid,
-      url: e.url,
-      name: e.name,
-      failureReason: e.reason || "\u672A\u77E5\u539F\u56E0",
-      failedAt: new Date(e.ts).toISOString()
-    })), "getFailed"),
-    stats: /* @__PURE__ */ __name(() => {
-      const counts = { total: EventLog._latest.size };
-      Object.values(EVENT_STATE).forEach((s) => {
-        counts[s] = 0;
-      });
-      EventLog._latest.forEach((e) => {
-        counts[e.state] += 1;
-      });
-      return counts;
-    }, "stats"),
-    /**
-     * 控制存储体积。只保留最近 maxEvents 条，但保证每个 uid 的最新事件绝不丢失
-     * （丢失会让该 uid 在派生视图里凭空消失，等于数据损坏）。
-     */
-    prune: /* @__PURE__ */ __name((maxEvents) => {
-      if (!Number.isFinite(maxEvents) || maxEvents <= 0) return 0;
-      if (EventLog.events.length <= maxEvents) return 0;
-      const before = EventLog.events.length;
-      const kept = EventLog.events.slice(-maxEvents);
-      const previousLatest = new Map(EventLog._latest);
-      EventLog.events = kept;
-      EventLog._rebuildIndex();
-      const recovered = [];
-      previousLatest.forEach((event, uid) => {
-        if (!EventLog._latest.has(uid)) recovered.push(event);
-      });
-      if (recovered.length > 0) {
-        EventLog.events = recovered.concat(EventLog.events);
-        EventLog._rebuildIndex();
-      }
-      return before - EventLog.events.length;
-    }, "prune"),
-    /**
-     * 一次性导入旧的三份并行数组，用于从旧版本迁移。
-     * ts 递增保证 discovered 早于其后续结果事件，派生视图才正确。
-     */
-    importLegacy: /* @__PURE__ */ __name(({ todo = [], done = [], failed = [] }) => {
-      let ts = Date.now() - (todo.length + done.length + failed.length + 1) * 1e3;
-      const nextTs = /* @__PURE__ */ __name(() => ts += 1e3, "nextTs");
-      todo.forEach((task) => {
-        EventLog.append(task.uid || task.url, EVENT_STATE.DISCOVERED, {
-          ts: nextTs(),
-          name: task.name,
-          url: task.url
-        });
-      });
-      done.forEach((entry) => {
-        const url = typeof entry === "string" ? entry : entry.url;
-        EventLog.append(url, EVENT_STATE.CLAIMED, { ts: nextTs() });
-      });
-      failed.forEach((task) => {
-        EventLog.append(task.uid || task.url, EVENT_STATE.FAILED, {
-          ts: nextTs(),
-          name: task.name,
-          url: task.url,
-          reason: task.failureReason
-        });
-      });
-      return EventLog.events.length;
-    }, "importLegacy"),
-    /** 反向导出为旧格式，用于灰度期间回退到旧数据层。 */
-    exportLegacy: /* @__PURE__ */ __name(() => ({
-      todo: EventLog.getTodo(),
-      done: EventLog.getDone().map((e) => e.url),
-      failed: EventLog.getFailed()
-    }), "exportLegacy")
-  };
-
   // src/modules/rate-limiter.js
   var RateLimiter = {
     // 基准速率（次/分钟），突发上限，降速下限
@@ -6368,6 +6375,18 @@
       TaskStateMachine.enteredAt = now;
       TaskStateMachine.history = [];
     }, "reset"),
+    /**
+     * 把「进入当前状态的时刻」推到 now，仅动时钟、不动状态。
+     *
+     * 用于外部长时间没有推进状态机之后恢复（用户暂停执行、标签页被冻结/休眠）：
+     * 不重置时钟的话，暂停时长会被算进超时判定，恢复瞬间就直接触发超时转移 ——
+     * 最典型的后果是 SCANNING 暂停几分钟后一恢复就超时，被当成「列表已到底」
+     * 而提前结束整轮枚举。
+     */
+    refreshClock: /* @__PURE__ */ __name((now = Date.now()) => {
+      TaskStateMachine.enteredAt = now;
+      return TaskStateMachine.enteredAt;
+    }, "refreshClock"),
     canTransition: /* @__PURE__ */ __name((to) => {
       const from = TaskStateMachine.state;
       if (from === to) return false;
@@ -6640,17 +6659,37 @@
     // RATE_LIMITED 时都被重置，因此兜不住这种反复限速。
     maxConsecutiveRateLimits: 5,
     consecutiveRateLimits: 0,
-    reset: /* @__PURE__ */ __name((now = 0) => {
+    /** 清空「一程运行态」：游标、到底标记、限速、状态机、领取指标。不含事件历史。 */
+    _resetRun: /* @__PURE__ */ __name((now = 0) => {
       Pipeline.cursor = null;
       Pipeline.isEndOfList = false;
       Pipeline.pendingVerify = null;
       Pipeline.pagesFetched = 0;
       Pipeline.consecutiveRateLimits = 0;
-      EventLog.reset();
       RateLimiter.reset(now);
       TaskStateMachine.reset(now);
       ClaimExecutor.resetMetrics();
+    }, "_resetRun"),
+    /**
+     * 彻底重来：连事件历史一起清空。
+     * 只在「换号重跑 / 测试数据清零」这类场景才对。
+     */
+    reset: /* @__PURE__ */ __name((now = 0) => {
+      Pipeline._resetRun(now);
+      EventLog.reset();
     }, "reset"),
+    /**
+     * 重新起一程枚举，但保留事件历史。
+     *
+     * 保留历史是「不重复领取」的唯一保证：_stepScan 会用 EventLog.isKnown 拦下
+     * 已 CLAIMED / FAILED / SKIPPED 的 uid，它们不会再次进入待领队列。
+     * 这里若误用 reset()，每重扫一次历史就归零，已入库的商品会被反复领取 ——
+     * 而重扫恰恰是执行开关保持开启时的默认行为，因此这个区别是致命的。
+     */
+    restart: /* @__PURE__ */ __name((now = Date.now()) => {
+      Pipeline._resetRun(now);
+      return Pipeline.start(now);
+    }, "restart"),
     start: /* @__PURE__ */ __name((now = Date.now()) => {
       Pipeline.fsm.start(now);
       return Pipeline.fsm.state;
@@ -6698,7 +6737,21 @@
       if (typeof Pipeline.deps.fetchPage !== "function") {
         return { action: "error", reason: "\u672A\u914D\u7F6E fetchPage" };
       }
-      const page = await Pipeline.deps.fetchPage(Pipeline.cursor);
+      let page;
+      try {
+        page = await Pipeline.deps.fetchPage(Pipeline.cursor);
+      } catch (e) {
+        const retryAfterMs = e && Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null;
+        const pause = Pipeline.limiter.penalize(retryAfterMs, now);
+        Pipeline.fsm.hitRateLimit(now, pause.pauseMs);
+        return {
+          action: "scan_error",
+          error: e && e.message || String(e),
+          status: e && e.status || 0,
+          pauseMs: pause.pauseMs,
+          state: Pipeline.fsm.state
+        };
+      }
       Pipeline.pagesFetched += 1;
       let discovered = 0;
       let skipped = 0;
@@ -6848,6 +6901,133 @@
       claims: ClaimExecutor.stats()
     }), "status")
   };
+
+  // src/modules/pipeline-scheduler.js
+  var IDLE_POLL_MS = 2e3;
+  var DONE_POLL_MS = 1e4;
+  var PERSIST_INTERVAL_MS = 15e3;
+  var RUNNING_STATES = [
+    STATE.SCANNING,
+    STATE.CLAIMING,
+    STATE.VERIFYING,
+    STATE.RATE_LIMITED
+  ];
+  var createPipelineScheduler = /* @__PURE__ */ __name((options = {}) => {
+    const {
+      pipeline = Pipeline,
+      limiter = RateLimiter,
+      isExecuting = /* @__PURE__ */ __name(() => false, "isExecuting"),
+      persist = /* @__PURE__ */ __name(() => {
+      }, "persist"),
+      log: log2 = /* @__PURE__ */ __name(() => {
+      }, "log"),
+      setTimeoutFn = /* @__PURE__ */ __name((fn, ms) => setTimeout(fn, ms), "setTimeoutFn"),
+      clearTimeoutFn = /* @__PURE__ */ __name((id) => clearTimeout(id), "clearTimeoutFn"),
+      nowFn = /* @__PURE__ */ __name(() => Date.now(), "nowFn")
+    } = options;
+    let rescanIntervalMs = Math.max(0, Number(options.rescanIntervalMs) || 0);
+    let running = false;
+    let timer = null;
+    let prevExecuting = false;
+    let restartRequested = true;
+    let passActive = false;
+    let lastPassAt = 0;
+    let lastPersistAt = 0;
+    const isRescanDue = /* @__PURE__ */ __name((now) => rescanIntervalMs > 0 && lastPassAt > 0 && now - lastPassAt >= rescanIntervalMs, "isRescanDue");
+    const beginPass = /* @__PURE__ */ __name((now) => {
+      pipeline.restart(now);
+      passActive = true;
+      restartRequested = false;
+      lastPassAt = now;
+      log2("info", "[Pipeline] \u5F00\u59CB\u65B0\u4E00\u7A0B\u679A\u4E3E\uFF08\u4FDD\u7559\u5386\u53F2\uFF0C\u5DF2\u5904\u7406\u5546\u54C1\u4E0D\u4F1A\u91CD\u590D\u9886\u53D6\uFF09\u3002");
+    }, "beginPass");
+    const tick = /* @__PURE__ */ __name(async () => {
+      const now = nowFn();
+      const executing = isExecuting() === true;
+      if (executing && !prevExecuting) {
+        restartRequested = true;
+        pipeline.fsm.refreshClock(now);
+      }
+      prevExecuting = executing;
+      if (!executing) return IDLE_POLL_MS;
+      try {
+        if (pipeline.fsm.is(STATE.IDLE)) {
+          if (passActive) {
+            pipeline.fsm.refreshClock(now);
+            pipeline.start(now);
+          } else if (restartRequested || isRescanDue(now)) {
+            beginPass(now);
+          }
+        } else if (pipeline.fsm.is(STATE.DONE)) {
+          if (passActive) {
+            passActive = false;
+            lastPassAt = now;
+            log2("info", `[Pipeline] \u672C\u7A0B\u7ED3\u675F\uFF1A${JSON.stringify(pipeline.log.stats())}\u3002`);
+            persist(now);
+          }
+          if (restartRequested || isRescanDue(now)) beginPass(now);
+        }
+        if (pipeline.fsm.is(...RUNNING_STATES)) {
+          await pipeline.tick(now);
+          if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
+            lastPersistAt = now;
+            persist(now);
+          }
+        }
+        const delay = pipeline.nextDelayMs(nowFn());
+        return Number.isFinite(delay) ? Math.max(0, delay) : DONE_POLL_MS;
+      } catch (e) {
+        const retryAfterMs = e && Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null;
+        const pause = limiter.penalize(retryAfterMs, now);
+        log2(
+          "error",
+          `[Pipeline] tick \u51FA\u9519: ${e && e.message}\uFF0C\u9000\u907F ${Math.round(pause.pauseMs / 1e3)}s\uFF08\u901F\u7387\u964D\u81F3 ${pause.ratePerMin}/min\uFF09`
+        );
+        return Math.max(0, pause.pauseMs);
+      }
+    }, "tick");
+    const loop = /* @__PURE__ */ __name(async () => {
+      if (!running) return;
+      let delay = DONE_POLL_MS;
+      try {
+        delay = await tick();
+      } catch (e) {
+        log2("error", `[Pipeline] \u8C03\u5EA6\u5FAA\u73AF\u5F02\u5E38: ${e && e.message}`);
+      }
+      if (!running) return;
+      timer = setTimeoutFn(loop, Math.max(0, delay));
+    }, "loop");
+    return {
+      tick,
+      start: /* @__PURE__ */ __name(() => {
+        if (running) return false;
+        running = true;
+        loop();
+        return true;
+      }, "start"),
+      stop: /* @__PURE__ */ __name(() => {
+        running = false;
+        prevExecuting = false;
+        if (timer != null) {
+          clearTimeoutFn(timer);
+          timer = null;
+        }
+        return true;
+      }, "stop"),
+      configure: /* @__PURE__ */ __name(({ rescanIntervalMs: interval } = {}) => {
+        if (Number.isFinite(interval)) rescanIntervalMs = Math.max(0, Number(interval));
+        return rescanIntervalMs;
+      }, "configure"),
+      status: /* @__PURE__ */ __name(() => ({
+        running,
+        passActive,
+        restartRequested,
+        lastPassAt,
+        rescanIntervalMs,
+        state: pipeline.fsm.state
+      }), "status")
+    };
+  }, "createPipelineScheduler");
 
   // src/modules/listing-source.js
   var SEARCH_PATH = "/i/listings/search";
@@ -7072,6 +7252,7 @@
   };
 
   // src/modules/pipeline-adapter.js
+  var EVENT_LOG_MAX = 3e3;
   var log = /* @__PURE__ */ __name((level, msg) => {
     try {
       Utils.logger(level, msg);
@@ -7108,11 +7289,18 @@
     setDomClaim(async (task) => normalizeClaimOutcome(await acquireFn(task)));
     return true;
   }, "createDomClaim");
-  var defaultScanFilter = /* @__PURE__ */ __name((item) => {
+  var hasClaimBackend = /* @__PURE__ */ __name(() => Boolean(
+    typeof ApiClaim.isAvailable === "function" && ApiClaim.isAvailable() || typeof DomClaim.isAvailable === "function" && DomClaim.isAvailable()
+  ), "hasClaimBackend");
+  var createScanFilter = /* @__PURE__ */ __name((database = Database) => (item) => {
     if (!item || !item.uid) return "invalid_item";
+    if (database && typeof database.isDone === "function" && database.isDone(`https://www.fab.com/listings/${item.uid}`)) {
+      return "already_owned";
+    }
     if (!ListingSource.isClaimable(item)) return "not_free";
     return null;
-  }, "defaultScanFilter");
+  }, "createScanFilter");
+  var defaultScanFilter = createScanFilter(Database);
   var bootstrapPipeline = /* @__PURE__ */ __name((options = {}) => {
     const {
       fetchImpl,
@@ -7136,7 +7324,7 @@
     Pipeline.configure({
       fetchPage: createFetchPage(fetchImpl),
       verifyOwned: createVerifyOwned(database),
-      filter: defaultScanFilter,
+      filter: createScanFilter(database),
       ...Number.isFinite(ratePerMin) ? { ratePerMin } : {},
       ...Number.isFinite(burst) ? { burst } : {}
     });
@@ -7144,12 +7332,43 @@
     const apiOk = ApiClaim.isAvailable();
     if (!domOk && !apiOk) {
       log(
-        "warn",
-        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u672A\u542F\u7528\uFF09\uFF1B\u679A\u4E3E\u53EF\u8FD0\u884C\u4F46\u9886\u53D6\u4F1A\u5931\u8D25\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint \u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
+        "error",
+        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u672A\u542F\u7528\uFF09\u3002\u6B64\u65F6\u4E0D\u5F97\u542F\u52A8\u6D41\u6C34\u7EBF\uFF1A\u6574\u9875\u5546\u54C1\u4F1A\u88AB\u9010\u6761\u6807\u8BB0\u4E3A\u300C\u9886\u53D6\u5931\u8D25\u300D\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint \u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
       );
     }
     return Pipeline;
   }, "bootstrapPipeline");
+  var loadEventLog = /* @__PURE__ */ __name(async () => {
+    let loaded = 0;
+    try {
+      loaded = await EventLog.load();
+    } catch (e) {
+      log("error", `[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u672C\u6B21\u4F1A\u8BDD\u4ECE\u7A7A\u5386\u53F2\u5F00\u59CB: ${e.message}`);
+      return { loaded: 0, total: 0 };
+    }
+    EventLog.prune(EVENT_LOG_MAX);
+    log("info", `[Pipeline] \u5DF2\u8F7D\u5165\u4E8B\u4EF6\u5386\u53F2 ${loaded} \u6761\uFF08\u53BB\u91CD\u540E ${EventLog.stats().total} \u4E2A\u5546\u54C1\uFF09\u3002`);
+    return { loaded, total: EventLog.stats().total };
+  }, "loadEventLog");
+  var persistEventLog = /* @__PURE__ */ __name(({ database = Database } = {}) => {
+    EventLog.prune(EVENT_LOG_MAX);
+    EventLog.save();
+    let synced = 0;
+    try {
+      if (database && typeof database.addDoneUrl === "function") {
+        EventLog.getDone().forEach((entry) => {
+          const url = EventLog.canonicalUrl(entry.uid);
+          if (database.isDone && database.isDone(url)) return;
+          database.addDoneUrl(url);
+          synced += 1;
+        });
+        if (synced > 0 && typeof database.saveDone === "function") database.saveDone();
+      }
+    } catch (e) {
+      log("error", `[Pipeline] \u56DE\u5199\u5DF2\u9886\u53D6\u5546\u54C1\u5230\u65E7\u6570\u636E\u5C42\u5931\u8D25: ${e.message}`);
+    }
+    return { synced, total: EventLog.stats().total };
+  }, "persistEventLog");
 
   // src/index.js
   (function() {
@@ -7947,7 +8166,7 @@
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
     if (Config.USE_API_PIPELINE) {
-      startApiPipeline();
+      startApiPipeline().catch((e) => Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25: ${e.message}`));
     }
     if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
       setTimeout(() => {
@@ -8312,41 +8531,27 @@
   window.addEventListener("load", () => {
     setTimeout(ensureUILoaded, 2e3);
   });
-  var _apiPipelineTimer = null;
+  var _apiPipelineScheduler = null;
   async function startApiPipeline() {
     if (State.isWorkerTab) return;
     bootstrapPipeline({ fetchImpl: gmFetchImpl });
-    const tick = /* @__PURE__ */ __name(async () => {
-      if (!Config.USE_API_PIPELINE) {
-        _apiPipelineTimer = null;
-        return;
-      }
-      const now = Date.now();
-      try {
-        if (State.isExecuting) {
-          if (Pipeline.fsm.is(STATE.IDLE) || Pipeline.fsm.is(STATE.DONE)) {
-            Pipeline.reset(now);
-            Pipeline.start(now);
-          }
-          await Pipeline.tick(now);
-        }
-      } catch (e) {
-        Utils.logger("error", `[Pipeline] tick \u51FA\u9519: ${e.message}`);
-      }
-      if (!State.isExecuting) {
-        _apiPipelineTimer = setTimeout(tick, 2e3);
-        return;
-      }
-      const delay = Pipeline.nextDelayMs(Date.now());
-      if (!Number.isFinite(delay)) {
-        Utils.logger("info", "[Pipeline] \u5DF2\u5230\u8FBE\u5217\u8868\u672B\u5C3E\uFF0C\u6682\u505C\u8C03\u5EA6\uFF08\u518D\u6B21\u5F00\u542F\u6267\u884C\u5C06\u91CD\u65B0\u679A\u4E3E\uFF09\u3002");
-        _apiPipelineTimer = setTimeout(tick, 5e3);
-        return;
-      }
-      _apiPipelineTimer = setTimeout(tick, Math.max(0, delay));
-    }, "tick");
+    if (!hasClaimBackend()) {
+      Utils.logger(
+        "error",
+        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint\uFF1B\u5728\u6B64\u4E4B\u524D\u8BF7\u628A USE_API_PIPELINE \u7F6E\u56DE false \u4EE5\u4F7F\u7528\u65E7\u8DEF\u5F84\u3002"
+      );
+      return;
+    }
+    await loadEventLog();
+    _apiPipelineScheduler = createPipelineScheduler({
+      pipeline: Pipeline,
+      isExecuting: /* @__PURE__ */ __name(() => State.isExecuting, "isExecuting"),
+      persist: /* @__PURE__ */ __name(() => persistEventLog(), "persist"),
+      rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
+      log: /* @__PURE__ */ __name((level, msg) => Utils.logger(level, msg), "log")
+    });
+    _apiPipelineScheduler.start();
     Utils.logger("info", "[Pipeline] API \u4F18\u5148\u6D41\u6C34\u7EBF\u5DF2\u542F\u52A8\uFF08\u53D6\u4EE3\u65E7\u6EDA\u52A8\u679A\u4E3E + worker \u9886\u53D6\uFF09\u3002");
-    tick();
   }
   __name(startApiPipeline, "startApiPipeline");
   async function handleWakeRecovery() {
