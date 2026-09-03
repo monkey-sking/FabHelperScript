@@ -130,6 +130,11 @@ import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.j
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
 
+// API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下两行仅引入，不执行任何逻辑。
+import { Pipeline } from './modules/pipeline.js';
+import { STATE as PIPELINE_STATE } from './modules/state-machine.js';
+import { bootstrapPipeline, gmFetchImpl } from './modules/pipeline-adapter.js';
+
 // Global countdown variables
 let currentCountdownInterval = null;
 let currentRefreshTimeout = null;
@@ -926,7 +931,7 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if (State.autoAddOnScroll || State.autoScroll) {
+                    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -945,8 +950,13 @@ async function runDomDependentPart() {
     // Initial hide/show
     TaskRunner.runHideOrShow();
 
+    // API 优先流水线：开关开启时取代旧的滚动枚举 + worker 领取路径
+    if (Config.USE_API_PIPELINE) {
+        startApiPipeline();
+    }
+
     // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
-    if (State.autoAddOnScroll || State.autoScroll) {
+    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1053,7 +1063,7 @@ async function runDomDependentPart() {
                         Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
                 }
             } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
-                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling) {
+                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !Config.USE_API_PIPELINE) {
                 // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
                 // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
                 // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
@@ -1074,6 +1084,7 @@ async function runDomDependentPart() {
 
     // Ensure tasks are executed
     State.domIntervals.push(setInterval(() => {
+        if (Config.USE_API_PIPELINE) return; // 新流水线自管调度，不走旧 worker 派发
         if (State.db.todo.length === 0) return;
         TaskRunner.ensureTasksAreExecuted();
     }, 5000));
@@ -1419,6 +1430,53 @@ window.addEventListener('beforeunload', () => {
 window.addEventListener('load', () => {
     setTimeout(ensureUILoaded, 2000);
 });
+
+// ─── API 优先流水线控制器 ────────────────────────────────────────────────
+// 仅在 Config.USE_API_PIPELINE 开启时由 runDomDependentPart 调用。
+// 取代旧的「滚动触发加载 + 开 worker 标签页领取」：枚举走 cursor 分页，
+// 领取走 ApiClaim（已确认端点时）或注入的 DomClaim，全程单标签页、按速率推进。
+let _apiPipelineTimer = null;
+async function startApiPipeline() {
+    if (State.isWorkerTab) return;
+
+    bootstrapPipeline({ fetchImpl: gmFetchImpl });
+
+    const tick = async () => {
+        if (!Config.USE_API_PIPELINE) { _apiPipelineTimer = null; return; }
+
+        const now = Date.now();
+        try {
+            if (State.isExecuting) {
+                // 执行开关刚打开或上一轮已到底时，重新起一程枚举
+                if (Pipeline.fsm.is(PIPELINE_STATE.IDLE) || Pipeline.fsm.is(PIPELINE_STATE.DONE)) {
+                    Pipeline.reset(now);
+                    Pipeline.start(now);
+                }
+                await Pipeline.tick(now);
+            }
+        } catch (e) {
+            Utils.logger('error', `[Pipeline] tick 出错: ${e.message}`);
+        }
+
+        if (!State.isExecuting) {
+            // 未在执行：低频空转，等待用户开启执行
+            _apiPipelineTimer = setTimeout(tick, 2000);
+            return;
+        }
+
+        const delay = Pipeline.nextDelayMs(Date.now());
+        if (!Number.isFinite(delay)) {
+            // 已到列表末尾：周期性复查，待下次开启执行时重新枚举
+            Utils.logger('info', '[Pipeline] 已到达列表末尾，暂停调度（再次开启执行将重新枚举）。');
+            _apiPipelineTimer = setTimeout(tick, 5000);
+            return;
+        }
+        _apiPipelineTimer = setTimeout(tick, Math.max(0, delay));
+    };
+
+    Utils.logger('info', '[Pipeline] API 优先流水线已启动（取代旧滚动枚举 + worker 领取）。');
+    tick();
+}
 
 // ─── 锁屏 / 后台冻结恢复 ───────────────────────────────────────────────────
 // 浏览器在标签页不可见（锁屏、切换到其他应用）时会暂停或大幅节流

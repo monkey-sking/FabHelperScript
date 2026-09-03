@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260903-0831
+// @version      3.5.21-20260903-0855
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -761,6 +761,10 @@
     // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true,
     // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
+    // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
+    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
+    // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
+    USE_API_PIPELINE: false,
     UI_CONTAINER_ID: "fab-helper-container",
     UI_LOG_ID: "fab-helper-log",
     DB_KEYS: {
@@ -2211,8 +2215,8 @@
       }
       if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
         Utils.logger("warn", `   - \u5DE5\u4F5C\u7EBF\u7A0B\u65E5\u5FD7 (${failedTask.workerLogs.length} \u6761):`);
-        failedTask.workerLogs.slice(-5).forEach((log, i) => {
-          Utils.logger("warn", `     ${i + 1}. ${log}`);
+        failedTask.workerLogs.slice(-5).forEach((log2, i) => {
+          Utils.logger("warn", `     ${i + 1}. ${log2}`);
         });
       }
       const existingIndex = State.db.failed.findIndex((f) => f.uid === task.uid);
@@ -6021,6 +6025,1132 @@
     }, "updateDebugTab")
   };
 
+  // src/modules/event-log.js
+  var EVENT_STATE = {
+    DISCOVERED: "discovered",
+    // 在列表中发现，等待领取
+    CLAIMED: "claimed",
+    // 领取成功（已入库）
+    FAILED: "failed",
+    // 领取最终失败（含归因）
+    SKIPPED: "skipped"
+    // 主动跳过（付费 / 外部站 / 不可购买）
+  };
+  var EventLog = {
+    events: [],
+    // uid -> 该 uid 的最新事件，派生视图的唯一依据
+    _latest: /* @__PURE__ */ new Map(),
+    /**
+     * 从 URL 或裸 uid 提取规范 uid。
+     * 与 Database.getListingUid 行为一致（有测试守护两者不漂移），
+     * 此处独立实现是为了让本模块不依赖 Database，保持可单独测试。
+     */
+    uidOf: /* @__PURE__ */ __name((urlOrUid) => {
+      if (!urlOrUid) return "";
+      const match = String(urlOrUid).split("?")[0].match(/\/listings\/([^/?#]+)/i);
+      if (match && match[1]) return match[1].toLowerCase();
+      const bare = String(urlOrUid).trim().toLowerCase();
+      return /^[a-z0-9_-]+$/.test(bare) ? bare : "";
+    }, "uidOf"),
+    canonicalUrl: /* @__PURE__ */ __name((uid) => `https://www.fab.com/listings/${uid}`, "canonicalUrl"),
+    reset: /* @__PURE__ */ __name(() => {
+      EventLog.events = [];
+      EventLog._latest = /* @__PURE__ */ new Map();
+    }, "reset"),
+    _rebuildIndex: /* @__PURE__ */ __name(() => {
+      EventLog._latest = /* @__PURE__ */ new Map();
+      EventLog.events.forEach((e) => EventLog._latest.set(e.uid, e));
+    }, "_rebuildIndex"),
+    load: /* @__PURE__ */ __name(async () => {
+      let raw = [];
+      try {
+        raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
+      } catch (e) {
+        Utils.logger("error", `\u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
+        raw = [];
+      }
+      if (!Array.isArray(raw)) raw = [];
+      EventLog.events = raw.filter(
+        (e) => e && typeof e.uid === "string" && e.uid && Object.values(EVENT_STATE).includes(e.state)
+      );
+      EventLog._rebuildIndex();
+      return EventLog.events.length;
+    }, "load"),
+    save: /* @__PURE__ */ __name(() => {
+      try {
+        GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+      } catch (e) {
+        Utils.logger("error", `\u5199\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
+      }
+    }, "save"),
+    /**
+     * 追加一条事件。name / url 若本次未提供，则继承该 uid 上一次已知的值，
+     * 这样任何时刻的派生视图都能还原出完整任务对象，而不必回头翻历史事件。
+     */
+    append: /* @__PURE__ */ __name((uid, state, meta = {}) => {
+      const id = EventLog.uidOf(uid);
+      if (!id) return null;
+      if (!Object.values(EVENT_STATE).includes(state)) return null;
+      const prev = EventLog._latest.get(id);
+      const event = {
+        uid: id,
+        state,
+        ts: meta.ts != null ? meta.ts : Date.now(),
+        name: meta.name || prev && prev.name || "",
+        url: meta.url || prev && prev.url || EventLog.canonicalUrl(id),
+        reason: meta.reason || ""
+      };
+      EventLog.events.push(event);
+      EventLog._latest.set(id, event);
+      return event;
+    }, "append"),
+    appendMany: /* @__PURE__ */ __name((entries) => entries.map((e) => EventLog.append(e.uid, e.state, e)).filter(Boolean), "appendMany"),
+    latestOf: /* @__PURE__ */ __name((uid) => {
+      const id = EventLog.uidOf(uid);
+      return id ? EventLog._latest.get(id) || null : null;
+    }, "latestOf"),
+    stateOf: /* @__PURE__ */ __name((uid) => {
+      const latest = EventLog.latestOf(uid);
+      return latest ? latest.state : null;
+    }, "stateOf"),
+    isDone: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.CLAIMED, "isDone"),
+    isFailed: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.FAILED, "isFailed"),
+    isSkipped: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.SKIPPED, "isSkipped"),
+    isPending: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.DISCOVERED, "isPending"),
+    isKnown: /* @__PURE__ */ __name((uid) => EventLog.latestOf(uid) !== null, "isKnown"),
+    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getTodo"),
+    getDone: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.CLAIMED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getDone"),
+    getFailed: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.FAILED).map((e) => ({
+      uid: e.uid,
+      url: e.url,
+      name: e.name,
+      failureReason: e.reason || "\u672A\u77E5\u539F\u56E0",
+      failedAt: new Date(e.ts).toISOString()
+    })), "getFailed"),
+    stats: /* @__PURE__ */ __name(() => {
+      const counts = { total: EventLog._latest.size };
+      Object.values(EVENT_STATE).forEach((s) => {
+        counts[s] = 0;
+      });
+      EventLog._latest.forEach((e) => {
+        counts[e.state] += 1;
+      });
+      return counts;
+    }, "stats"),
+    /**
+     * 控制存储体积。只保留最近 maxEvents 条，但保证每个 uid 的最新事件绝不丢失
+     * （丢失会让该 uid 在派生视图里凭空消失，等于数据损坏）。
+     */
+    prune: /* @__PURE__ */ __name((maxEvents) => {
+      if (!Number.isFinite(maxEvents) || maxEvents <= 0) return 0;
+      if (EventLog.events.length <= maxEvents) return 0;
+      const before = EventLog.events.length;
+      const kept = EventLog.events.slice(-maxEvents);
+      const previousLatest = new Map(EventLog._latest);
+      EventLog.events = kept;
+      EventLog._rebuildIndex();
+      const recovered = [];
+      previousLatest.forEach((event, uid) => {
+        if (!EventLog._latest.has(uid)) recovered.push(event);
+      });
+      if (recovered.length > 0) {
+        EventLog.events = recovered.concat(EventLog.events);
+        EventLog._rebuildIndex();
+      }
+      return before - EventLog.events.length;
+    }, "prune"),
+    /**
+     * 一次性导入旧的三份并行数组，用于从旧版本迁移。
+     * ts 递增保证 discovered 早于其后续结果事件，派生视图才正确。
+     */
+    importLegacy: /* @__PURE__ */ __name(({ todo = [], done = [], failed = [] }) => {
+      let ts = Date.now() - (todo.length + done.length + failed.length + 1) * 1e3;
+      const nextTs = /* @__PURE__ */ __name(() => ts += 1e3, "nextTs");
+      todo.forEach((task) => {
+        EventLog.append(task.uid || task.url, EVENT_STATE.DISCOVERED, {
+          ts: nextTs(),
+          name: task.name,
+          url: task.url
+        });
+      });
+      done.forEach((entry) => {
+        const url = typeof entry === "string" ? entry : entry.url;
+        EventLog.append(url, EVENT_STATE.CLAIMED, { ts: nextTs() });
+      });
+      failed.forEach((task) => {
+        EventLog.append(task.uid || task.url, EVENT_STATE.FAILED, {
+          ts: nextTs(),
+          name: task.name,
+          url: task.url,
+          reason: task.failureReason
+        });
+      });
+      return EventLog.events.length;
+    }, "importLegacy"),
+    /** 反向导出为旧格式，用于灰度期间回退到旧数据层。 */
+    exportLegacy: /* @__PURE__ */ __name(() => ({
+      todo: EventLog.getTodo(),
+      done: EventLog.getDone().map((e) => e.url),
+      failed: EventLog.getFailed()
+    }), "exportLegacy")
+  };
+
+  // src/modules/rate-limiter.js
+  var RateLimiter = {
+    // 基准速率（次/分钟），突发上限，降速下限
+    baseRatePerMin: 40,
+    minRatePerMin: 4,
+    currentRatePerMin: 40,
+    capacity: 5,
+    tokens: 5,
+    lastRefill: 0,
+    pauseUntil: 0,
+    // 连续成功计数，用于和性增
+    _successStreak: 0,
+    _penaltyCount: 0,
+    configure: /* @__PURE__ */ __name(({ ratePerMin, burst, minRatePerMin } = {}) => {
+      if (Number.isFinite(ratePerMin) && ratePerMin > 0) {
+        RateLimiter.baseRatePerMin = ratePerMin;
+        RateLimiter.currentRatePerMin = ratePerMin;
+      }
+      if (Number.isFinite(minRatePerMin) && minRatePerMin > 0) {
+        RateLimiter.minRatePerMin = Math.min(minRatePerMin, RateLimiter.baseRatePerMin);
+      }
+      if (Number.isFinite(burst) && burst > 0) {
+        RateLimiter.capacity = burst;
+      }
+      RateLimiter.reset();
+    }, "configure"),
+    reset: /* @__PURE__ */ __name((now = 0) => {
+      RateLimiter.currentRatePerMin = RateLimiter.baseRatePerMin;
+      RateLimiter.capacity = Math.max(1, RateLimiter.capacity);
+      RateLimiter.tokens = RateLimiter.capacity;
+      RateLimiter.lastRefill = now;
+      RateLimiter.pauseUntil = 0;
+      RateLimiter._successStreak = 0;
+      RateLimiter._penaltyCount = 0;
+    }, "reset"),
+    get refillPerMs() {
+      return RateLimiter.currentRatePerMin / 6e4;
+    },
+    isPaused: /* @__PURE__ */ __name((now) => now < RateLimiter.pauseUntil, "isPaused"),
+    /**
+     * 补充令牌。暂停期间冻结补充（不推进 lastRefill），
+     * 避免解除限速的瞬间攒满一桶、立刻再次撞上限速。
+     */
+    _refill: /* @__PURE__ */ __name((now) => {
+      if (RateLimiter.isPaused(now)) {
+        RateLimiter.lastRefill = now;
+        return;
+      }
+      if (RateLimiter.pauseUntil > RateLimiter.lastRefill) {
+        RateLimiter.lastRefill = Math.max(RateLimiter.lastRefill, RateLimiter.pauseUntil);
+      }
+      const elapsed = Math.max(0, now - RateLimiter.lastRefill);
+      if (elapsed <= 0) return;
+      RateLimiter.tokens = Math.min(
+        RateLimiter.capacity,
+        RateLimiter.tokens + elapsed * RateLimiter.refillPerMs
+      );
+      RateLimiter.lastRefill = now;
+    }, "_refill"),
+    /** 尝试取 n 个令牌。取到返回 true，否则 false（调用方应等待 nextAvailableMs）。 */
+    tryAcquire: /* @__PURE__ */ __name((count = 1, now = Date.now()) => {
+      if (RateLimiter.isPaused(now)) {
+        RateLimiter.lastRefill = now;
+        return false;
+      }
+      RateLimiter._refill(now);
+      if (RateLimiter.tokens >= count) {
+        RateLimiter.tokens -= count;
+        RateLimiter._successStreak = 0;
+        return true;
+      }
+      return false;
+    }, "tryAcquire"),
+    /** 距离可以取到 n 个令牌还需等待多少毫秒（暂停中会一并计入）。 */
+    nextAvailableMs: /* @__PURE__ */ __name((count = 1, now = Date.now()) => {
+      const pauseLeft = Math.max(0, RateLimiter.pauseUntil - now);
+      if (pauseLeft > 0) return pauseLeft;
+      const tokens = Math.min(
+        RateLimiter.capacity,
+        RateLimiter.tokens + Math.max(0, now - RateLimiter.lastRefill) * RateLimiter.refillPerMs
+      );
+      const missing = count - tokens;
+      if (missing <= 0) return 0;
+      return Math.ceil(missing / RateLimiter.refillPerMs);
+    }, "nextAvailableMs"),
+    /**
+     * 收到 429：暂停到 retryAfterMs 之后，并把速率折半（乘性减）。
+     * retryAfterMs 缺省时按已连续被惩罚的次数指数退避，上限 10 分钟。
+     */
+    penalize: /* @__PURE__ */ __name((retryAfterMs, now = Date.now()) => {
+      RateLimiter._penaltyCount += 1;
+      const backoff = retryAfterMs != null && retryAfterMs >= 0 ? retryAfterMs : Math.min(6e5, 3e4 * Math.pow(2, RateLimiter._penaltyCount - 1));
+      RateLimiter.pauseUntil = now + backoff;
+      RateLimiter.currentRatePerMin = Math.max(
+        RateLimiter.minRatePerMin,
+        Math.floor(RateLimiter.currentRatePerMin / 2)
+      );
+      RateLimiter.tokens = 0;
+      RateLimiter.lastRefill = now;
+      RateLimiter._successStreak = 0;
+      return { pauseMs: backoff, ratePerMin: RateLimiter.currentRatePerMin };
+    }, "penalize"),
+    /**
+     * 领取成功后调用，连续成功则和性增，缓慢回到基准速率。
+     * 每 8 次连续成功上调基准的 25%，但绝不超过基准。
+     */
+    reward: /* @__PURE__ */ __name(() => {
+      RateLimiter._penaltyCount = 0;
+      RateLimiter._successStreak += 1;
+      if (RateLimiter._successStreak >= 8) {
+        RateLimiter._successStreak = 0;
+        const step = Math.max(1, Math.floor(RateLimiter.baseRatePerMin * 0.25));
+        RateLimiter.currentRatePerMin = Math.min(
+          RateLimiter.baseRatePerMin,
+          RateLimiter.currentRatePerMin + step
+        );
+      }
+      return RateLimiter.currentRatePerMin;
+    }, "reward"),
+    status: /* @__PURE__ */ __name((now = Date.now()) => {
+      RateLimiter._refill(now);
+      return {
+        ratePerMin: RateLimiter.currentRatePerMin,
+        baseRatePerMin: RateLimiter.baseRatePerMin,
+        tokens: Number(RateLimiter.tokens.toFixed(2)),
+        capacity: RateLimiter.capacity,
+        paused: RateLimiter.isPaused(now),
+        pauseLeftMs: Math.max(0, RateLimiter.pauseUntil - now),
+        penaltyCount: RateLimiter._penaltyCount
+      };
+    }, "status")
+  };
+
+  // src/modules/state-machine.js
+  var STATE = {
+    IDLE: "IDLE",
+    SCANNING: "SCANNING",
+    CLAIMING: "CLAIMING",
+    VERIFYING: "VERIFYING",
+    RATE_LIMITED: "RATE_LIMITED",
+    DONE: "DONE"
+  };
+  var TRANSITIONS = {
+    IDLE: ["SCANNING"],
+    SCANNING: ["CLAIMING", "DONE"],
+    // 队列排空但列表未到底时，要从领取退回扫描继续翻页
+    CLAIMING: ["VERIFYING", "SCANNING", "DONE"],
+    VERIFYING: ["CLAIMING", "SCANNING", "DONE"],
+    RATE_LIMITED: ["CLAIMING", "IDLE"],
+    DONE: ["IDLE"]
+  };
+  var TIMEOUTS = {
+    SCANNING: { ms: 15e3, to: STATE.DONE, reason: "\u5206\u9875\u62C9\u53D6\u8D85\u65F6\uFF0C\u6309\u5217\u8868\u7ED3\u675F\u5904\u7406" },
+    CLAIMING: { ms: 2e4, to: STATE.RATE_LIMITED, reason: "\u5355\u4EFB\u52A1\u9886\u53D6\u8D85\u65F6\uFF0C\u8F6C\u5165\u9000\u907F" },
+    VERIFYING: { ms: 8e3, to: STATE.CLAIMING, reason: "\u590D\u67E5\u8D85\u65F6\uFF0C\u56DE\u5230\u9886\u53D6\u91CD\u8BD5\u4E00\u6B21" },
+    RATE_LIMITED: { ms: 6e5, to: STATE.IDLE, reason: "\u9000\u907F\u8D85\u8FC7\u4E0A\u9650\uFF0C\u4EA4\u56DE\u7528\u6237" }
+  };
+  var TaskStateMachine = {
+    state: STATE.IDLE,
+    enteredAt: 0,
+    history: [],
+    _listeners: [],
+    onChange: /* @__PURE__ */ __name((fn) => {
+      TaskStateMachine._listeners.push(fn);
+      return () => {
+        TaskStateMachine._listeners = TaskStateMachine._listeners.filter((f) => f !== fn);
+      };
+    }, "onChange"),
+    reset: /* @__PURE__ */ __name((now = 0) => {
+      TaskStateMachine.state = STATE.IDLE;
+      TaskStateMachine.enteredAt = now;
+      TaskStateMachine.history = [];
+    }, "reset"),
+    canTransition: /* @__PURE__ */ __name((to) => {
+      const from = TaskStateMachine.state;
+      if (from === to) return false;
+      if (to === STATE.IDLE || to === STATE.RATE_LIMITED) return true;
+      return (TRANSITIONS[from] || []).includes(to);
+    }, "canTransition"),
+    transition: /* @__PURE__ */ __name((to, { now = Date.now(), reason = "" } = {}) => {
+      const from = TaskStateMachine.state;
+      if (!TaskStateMachine.canTransition(to)) return false;
+      TaskStateMachine.state = to;
+      TaskStateMachine.enteredAt = now;
+      TaskStateMachine.history.push({ from, to, at: now, reason });
+      if (TaskStateMachine.history.length > 50) TaskStateMachine.history.shift();
+      TaskStateMachine._listeners.forEach((fn) => {
+        try {
+          fn({ from, to, at: now, reason });
+        } catch (e) {
+        }
+      });
+      return true;
+    }, "transition"),
+    is: /* @__PURE__ */ __name((...states) => states.includes(TaskStateMachine.state), "is"),
+    elapsed: /* @__PURE__ */ __name((now = Date.now()) => Math.max(0, now - TaskStateMachine.enteredAt), "elapsed"),
+    remainingMs: /* @__PURE__ */ __name((now = Date.now()) => {
+      const rule = TIMEOUTS[TaskStateMachine.state];
+      if (!rule) return Infinity;
+      return Math.max(0, rule.ms - TaskStateMachine.elapsed(now));
+    }, "remainingMs"),
+    /**
+     * 推进状态机：若当前状态已超时，按 TIMEOUTS 表执行既定转移。
+     * 返回本次是否发生了超时转移，便于调用方记录日志。
+     */
+    tick: /* @__PURE__ */ __name((now = Date.now()) => {
+      const rule = TIMEOUTS[TaskStateMachine.state];
+      if (!rule) return null;
+      if (TaskStateMachine.elapsed(now) < rule.ms) return null;
+      const from = TaskStateMachine.state;
+      TaskStateMachine.transition(rule.to, { now, reason: rule.reason });
+      return { from, to: rule.to, reason: rule.reason, timedOut: true };
+    }, "tick"),
+    // --- 面向调用方的语义化入口，避免各处硬编码状态名 ---
+    start: /* @__PURE__ */ __name((now) => TaskStateMachine.transition(STATE.SCANNING, { now, reason: "\u7528\u6237\u5F00\u59CB" }), "start"),
+    stop: /* @__PURE__ */ __name((now) => TaskStateMachine.transition(STATE.IDLE, { now, reason: "\u7528\u6237\u505C\u6B62" }), "stop"),
+    /** 429 / 风控：任何状态都可进入退避 */
+    hitRateLimit: /* @__PURE__ */ __name((now, retryAfterMs) => {
+      const ok = TaskStateMachine.transition(STATE.RATE_LIMITED, {
+        now,
+        reason: retryAfterMs != null ? `429 \u9000\u907F ${retryAfterMs}ms` : "429 \u9650\u901F"
+      });
+      return ok;
+    }, "hitRateLimit"),
+    status: /* @__PURE__ */ __name((now = Date.now()) => ({
+      state: TaskStateMachine.state,
+      elapsedMs: TaskStateMachine.elapsed(now),
+      remainingMs: TaskStateMachine.remainingMs(now),
+      lastTransition: TaskStateMachine.history[TaskStateMachine.history.length - 1] || null
+    }), "status")
+  };
+
+  // src/modules/claim-strategy.js
+  var CLAIM_RESULT = {
+    SUCCESS: "success",
+    FAILURE: "failure",
+    SKIPPED: "skipped",
+    // 主动跳过：付费 / 外部站 / 不可购买
+    RATE_LIMITED: "rate_limited",
+    // 撞上 429，需退避
+    UNAVAILABLE: "unavailable"
+    // 该策略不可用，应由 Executor 尝试下一个
+  };
+  var ApiClaim = {
+    name: "api",
+    endpoint: null,
+    method: "POST",
+    buildBody: null,
+    fetchImpl: null,
+    // 可注入，便于测试与替换传输层
+    configure: /* @__PURE__ */ __name(({ endpoint, method, buildBody, fetchImpl } = {}) => {
+      if (endpoint) ApiClaim.endpoint = endpoint;
+      if (method) ApiClaim.method = method;
+      if (typeof buildBody === "function") ApiClaim.buildBody = buildBody;
+      if (typeof fetchImpl === "function") ApiClaim.fetchImpl = fetchImpl;
+    }, "configure"),
+    isAvailable: /* @__PURE__ */ __name(() => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === "function", "isAvailable"),
+    claim: /* @__PURE__ */ __name(async (task) => {
+      if (!ApiClaim.isAvailable()) {
+        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "\u9886\u53D6\u7AEF\u70B9\u672A\u914D\u7F6E" };
+      }
+      const csrfToken = Utils.getCookie("fab_csrftoken");
+      if (!csrfToken) {
+        return {
+          result: CLAIM_RESULT.FAILURE,
+          reason: "\u7F3A\u5C11 CSRF token\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548",
+          retryable: false
+        };
+      }
+      let response;
+      try {
+        response = await ApiClaim.fetchImpl({
+          method: ApiClaim.method,
+          url: ApiClaim.endpoint,
+          headers: {
+            "content-type": "application/json",
+            "x-csrftoken": csrfToken,
+            "x-requested-with": "XMLHttpRequest"
+          },
+          data: JSON.stringify(
+            ApiClaim.buildBody ? ApiClaim.buildBody(task) : { listing_uid: task.uid }
+          )
+        });
+      } catch (e) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u8BF7\u6C42\u5F02\u5E38: ${e.message}`, retryable: true };
+      }
+      const status = response && response.status;
+      if (status === 429) {
+        const raw = response.getResponseHeader ? response.getResponseHeader("retry-after") : null;
+        const retryAfterMs = raw ? Number(raw) * 1e3 : null;
+        return {
+          result: CLAIM_RESULT.RATE_LIMITED,
+          reason: "\u63A5\u53E3\u8FD4\u56DE 429",
+          retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : null
+        };
+      }
+      if (status >= 200 && status < 300) return { result: CLAIM_RESULT.SUCCESS, reason: "" };
+      if (status === 403 || status === 404) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: false };
+      }
+      if (status >= 500) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true };
+      }
+      return {
+        result: CLAIM_RESULT.FAILURE,
+        reason: `\u63A5\u53E3\u8FD4\u56DE ${status || "\u672A\u77E5\u72B6\u6001"}`,
+        retryable: false
+      };
+    }, "claim")
+  };
+  var domClaimImpl = null;
+  var setDomClaim = /* @__PURE__ */ __name((fn) => {
+    domClaimImpl = fn;
+  }, "setDomClaim");
+  var normalizeClaimOutcome = /* @__PURE__ */ __name((raw) => {
+    if (typeof raw === "boolean") {
+      return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: "" };
+    }
+    if (raw && typeof raw === "object") {
+      if (raw.result) return raw;
+      if (typeof raw.success === "boolean") {
+        return {
+          result: raw.success ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE,
+          reason: typeof raw.reason === "string" ? raw.reason : "",
+          retryable: raw.retryable === true
+        };
+      }
+    }
+    return {
+      result: CLAIM_RESULT.FAILURE,
+      reason: "\u9886\u53D6\u8FD4\u56DE\u503C\u65E0\u6CD5\u8BC6\u522B",
+      retryable: false
+    };
+  }, "normalizeClaimOutcome");
+  var DomClaim = {
+    name: "dom",
+    isAvailable: /* @__PURE__ */ __name(() => typeof domClaimImpl === "function", "isAvailable"),
+    claim: /* @__PURE__ */ __name(async (task) => {
+      if (!DomClaim.isAvailable()) {
+        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "DOM \u9886\u53D6\u672A\u6CE8\u5165" };
+      }
+      return normalizeClaimOutcome(await domClaimImpl(task));
+    }, "claim")
+  };
+  var ClaimExecutor = {
+    preferApi: true,
+    metrics: {
+      api: { attempts: 0, success: 0 },
+      dom: { attempts: 0, success: 0 },
+      unavailable: 0
+    },
+    resetMetrics: /* @__PURE__ */ __name(() => {
+      ClaimExecutor.metrics = {
+        api: { attempts: 0, success: 0 },
+        dom: { attempts: 0, success: 0 },
+        unavailable: 0
+      };
+    }, "resetMetrics"),
+    /**
+     * 依次尝试策略，返回首个非 UNAVAILABLE 的结果。
+     * 策略抛异常或不可用都会回落到下一个，绝不向上冒泡。
+     */
+    claim: /* @__PURE__ */ __name(async (task, { preferApi = ClaimExecutor.preferApi } = {}) => {
+      const order = preferApi ? [ApiClaim, DomClaim] : [DomClaim, ApiClaim];
+      for (const strategy of order) {
+        if (!strategy.isAvailable()) {
+          ClaimExecutor.metrics.unavailable += 1;
+          continue;
+        }
+        let outcome;
+        try {
+          ClaimExecutor.metrics[strategy.name].attempts += 1;
+          outcome = await strategy.claim(task);
+        } catch (e) {
+          outcome = { result: CLAIM_RESULT.FAILURE, reason: `\u7B56\u7565\u5F02\u5E38: ${e.message}`, retryable: true };
+        }
+        if (!outcome || outcome.result === CLAIM_RESULT.UNAVAILABLE) continue;
+        if (outcome.result === CLAIM_RESULT.FAILURE && !outcome.retryable) {
+          return { ...outcome, strategy: strategy.name };
+        }
+        if (outcome.result === CLAIM_RESULT.FAILURE && outcome.retryable) continue;
+        if (outcome.result === CLAIM_RESULT.SUCCESS) {
+          ClaimExecutor.metrics[strategy.name].success += 1;
+        }
+        return { ...outcome, strategy: strategy.name };
+      }
+      return { result: CLAIM_RESULT.FAILURE, reason: "\u6CA1\u6709\u53EF\u7528\u7684\u9886\u53D6\u7B56\u7565", strategy: null };
+    }, "claim"),
+    /**
+     * 回落率：DOM 尝试数占总尝试数的比例。
+     * API 通路健康时应趋近 0；若长期为 1，说明接口路径没生效。
+     */
+    fallbackRate: /* @__PURE__ */ __name(() => {
+      const { api, dom } = ClaimExecutor.metrics;
+      const total = api.attempts + dom.attempts;
+      return total === 0 ? 0 : dom.attempts / total;
+    }, "fallbackRate"),
+    stats: /* @__PURE__ */ __name(() => {
+      const { api, dom, unavailable } = ClaimExecutor.metrics;
+      return {
+        api,
+        dom,
+        unavailable,
+        fallbackRate: ClaimExecutor.fallbackRate()
+      };
+    }, "stats")
+  };
+
+  // src/modules/pipeline.js
+  var Pipeline = {
+    fsm: TaskStateMachine,
+    limiter: RateLimiter,
+    log: EventLog,
+    executor: ClaimExecutor,
+    cursor: null,
+    isEndOfList: false,
+    pendingVerify: null,
+    pagesFetched: 0,
+    deps: {
+      // 拉取一页列表，返回 { items: [{uid,url,name}], nextCursor }
+      fetchPage: null,
+      // 复查某 uid 是否确实已入库，返回 boolean
+      verifyOwned: null,
+      // 扫描阶段过滤商品：返回 null 表示纳入待领，返回字符串表示跳过原因。
+      // 入参是 fetchPage 给出的完整商品对象（含价格、许可证），
+      // 不是事件日志条目 —— 后者在领取阶段只剩 uid / name / url。
+      filter: null
+    },
+    /**
+     * 注入副作用适配器。显式传 null 可清除对应项——若只允许覆盖而不允许清除，
+     * 上一次注入的过滤器会静默残留并影响后续流程。
+     */
+    configure: /* @__PURE__ */ __name(({ fetchPage, verifyOwned, filter, ratePerMin, burst } = {}) => {
+      if (typeof fetchPage === "function" || fetchPage === null) Pipeline.deps.fetchPage = fetchPage;
+      if (typeof verifyOwned === "function" || verifyOwned === null) Pipeline.deps.verifyOwned = verifyOwned;
+      if (typeof filter === "function" || filter === null) Pipeline.deps.filter = filter;
+      if (Number.isFinite(ratePerMin) || Number.isFinite(burst)) {
+        RateLimiter.configure({ ratePerMin, burst });
+      }
+    }, "configure"),
+    // 连续撞 429 的重试上限。超过后放弃当前商品并记为失败，否则
+    // 「退避 → 恢复 → 再撞」会无限循环：状态机的退避上限每次重新进入
+    // RATE_LIMITED 时都被重置，因此兜不住这种反复限速。
+    maxConsecutiveRateLimits: 5,
+    consecutiveRateLimits: 0,
+    reset: /* @__PURE__ */ __name((now = 0) => {
+      Pipeline.cursor = null;
+      Pipeline.isEndOfList = false;
+      Pipeline.pendingVerify = null;
+      Pipeline.pagesFetched = 0;
+      Pipeline.consecutiveRateLimits = 0;
+      EventLog.reset();
+      RateLimiter.reset(now);
+      TaskStateMachine.reset(now);
+      ClaimExecutor.resetMetrics();
+    }, "reset"),
+    start: /* @__PURE__ */ __name((now = Date.now()) => {
+      Pipeline.fsm.start(now);
+      return Pipeline.fsm.state;
+    }, "start"),
+    stop: /* @__PURE__ */ __name((now = Date.now()) => {
+      Pipeline.fsm.stop(now);
+      Pipeline.pendingVerify = null;
+      return Pipeline.fsm.state;
+    }, "stop"),
+    /**
+     * 推进一步。返回本步的动作摘要，调用方据此决定下一步等待多久。
+     * 不持有定时器、不自己 sleep —— 调度节奏完全由调用方掌握。
+     *
+     * 注意：当由 run() 驱动时，等待发生在 nextDelayMs 之后、下一次 tick 之前，
+     * 因此 _stepClaim 内部的 'wait' 分支通常不会命中——它服务于直接调用
+     * tick() 的调度方（此时调用方尚未按 nextDelayMs 等待）。
+     */
+    tick: /* @__PURE__ */ __name(async (now = Date.now()) => {
+      const timeout = Pipeline.fsm.tick(now);
+      if (timeout) return { action: "timeout", ...timeout };
+      switch (Pipeline.fsm.state) {
+        case STATE.SCANNING:
+          return Pipeline._stepScan(now);
+        case STATE.CLAIMING:
+          return Pipeline._stepClaim(now);
+        case STATE.VERIFYING:
+          return Pipeline._stepVerify(now);
+        case STATE.RATE_LIMITED:
+          return Pipeline._stepRecover(now);
+        default:
+          return { action: "idle", state: Pipeline.fsm.state };
+      }
+    }, "tick"),
+    /** 调用方应在再次 tick 前等待的毫秒数 */
+    nextDelayMs: /* @__PURE__ */ __name((now = Date.now()) => {
+      if (Pipeline.fsm.is(STATE.IDLE, STATE.DONE)) return Infinity;
+      if (Pipeline.limiter.isPaused(now)) return Pipeline.limiter.status(now).pauseLeftMs || 1e3;
+      if (Pipeline.fsm.is(STATE.CLAIMING)) {
+        const wait = Pipeline.limiter.nextAvailableMs(1, now);
+        return wait > 0 ? wait : 0;
+      }
+      return 0;
+    }, "nextDelayMs"),
+    _stepScan: /* @__PURE__ */ __name(async (now) => {
+      if (typeof Pipeline.deps.fetchPage !== "function") {
+        return { action: "error", reason: "\u672A\u914D\u7F6E fetchPage" };
+      }
+      const page = await Pipeline.deps.fetchPage(Pipeline.cursor);
+      Pipeline.pagesFetched += 1;
+      let discovered = 0;
+      let skipped = 0;
+      (page.items || []).forEach((item) => {
+        if (EventLog.isKnown(item.uid)) return;
+        const skipReason = Pipeline.deps.filter ? Pipeline.deps.filter(item) : null;
+        if (skipReason) {
+          EventLog.append(item.uid, EVENT_STATE.SKIPPED, {
+            name: item.name,
+            url: item.url,
+            reason: skipReason,
+            ts: now
+          });
+          skipped += 1;
+        } else {
+          EventLog.append(item.uid, EVENT_STATE.DISCOVERED, {
+            name: item.name,
+            url: item.url,
+            ts: now
+          });
+          discovered += 1;
+        }
+      });
+      Pipeline.cursor = page.nextCursor;
+      if (page.nextCursor == null) Pipeline.isEndOfList = true;
+      const todo = EventLog.getTodo();
+      if (todo.length > 0) {
+        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u672C\u9875\u6709\u5F85\u9886\u5546\u54C1" });
+      } else if (Pipeline.isEndOfList) {
+        Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u670D\u52A1\u5668\u786E\u8BA4\u65E0\u66F4\u591A\u5546\u54C1" });
+      }
+      return {
+        action: "scan",
+        pageItems: (page.items || []).length,
+        discovered,
+        skipped,
+        cursor: Pipeline.cursor,
+        endOfList: Pipeline.isEndOfList,
+        state: Pipeline.fsm.state
+      };
+    }, "_stepScan"),
+    _stepClaim: /* @__PURE__ */ __name(async (now) => {
+      if (Pipeline.limiter.isPaused(now)) {
+        return { action: "wait", ms: Pipeline.limiter.status(now).pauseLeftMs, reason: "\u9000\u907F\u4E2D" };
+      }
+      if (!Pipeline.limiter.tryAcquire(1, now)) {
+        return { action: "wait", ms: Pipeline.limiter.nextAvailableMs(1, now), reason: "\u7B49\u5F85\u4EE4\u724C" };
+      }
+      const todo = EventLog.getTodo();
+      if (todo.length === 0) {
+        if (Pipeline.isEndOfList) {
+          Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u961F\u5217\u6E05\u7A7A\u4E14\u5DF2\u5230\u5217\u8868\u672B\u5C3E" });
+        } else {
+          Pipeline.fsm.transition(STATE.SCANNING, { now, reason: "\u961F\u5217\u6E05\u7A7A\uFF0C\u62C9\u53D6\u4E0B\u4E00\u9875" });
+        }
+        return { action: "drain", state: Pipeline.fsm.state };
+      }
+      const task = todo[0];
+      const outcome = await Pipeline.executor.claim(task);
+      if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
+        Pipeline.consecutiveRateLimits += 1;
+        Pipeline.limiter.penalize(outcome.retryAfterMs, now);
+        Pipeline.fsm.hitRateLimit(now, outcome.retryAfterMs);
+        if (Pipeline.consecutiveRateLimits >= Pipeline.maxConsecutiveRateLimits) {
+          EventLog.append(task.uid, EVENT_STATE.FAILED, {
+            reason: `\u8FDE\u7EED\u9650\u901F ${Pipeline.consecutiveRateLimits} \u6B21\uFF0C\u653E\u5F03\u8BE5\u5546\u54C1`,
+            ts: now
+          });
+          Pipeline.consecutiveRateLimits = 0;
+          return { action: "rate_limit_abandoned", uid: task.uid };
+        }
+        return { action: "rate_limited", uid: task.uid, strategy: outcome.strategy };
+      }
+      if (outcome.result === CLAIM_RESULT.SUCCESS) {
+        Pipeline.pendingVerify = task;
+        Pipeline.fsm.transition(STATE.VERIFYING, { now, reason: `\u5DF2\u901A\u8FC7 ${outcome.strategy} \u9886\u53D6` });
+        return { action: "claimed", uid: task.uid, strategy: outcome.strategy };
+      }
+      EventLog.append(task.uid, EVENT_STATE.FAILED, {
+        reason: outcome.reason || "\u9886\u53D6\u5931\u8D25",
+        ts: now
+      });
+      return { action: "failed", uid: task.uid, reason: outcome.reason, strategy: outcome.strategy };
+    }, "_stepClaim"),
+    _stepVerify: /* @__PURE__ */ __name(async (now) => {
+      const task = Pipeline.pendingVerify;
+      Pipeline.pendingVerify = null;
+      if (!task) {
+        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u65E0\u5F85\u590D\u67E5\u4EFB\u52A1" });
+        return { action: "verify_skipped" };
+      }
+      let owned = false;
+      if (typeof Pipeline.deps.verifyOwned === "function") {
+        owned = await Pipeline.deps.verifyOwned(task.uid);
+      }
+      if (owned) {
+        EventLog.append(task.uid, EVENT_STATE.CLAIMED, { ts: now });
+        Pipeline.limiter.reward();
+        Pipeline.consecutiveRateLimits = 0;
+      } else {
+        EventLog.append(task.uid, EVENT_STATE.FAILED, {
+          reason: "\u590D\u67E5\u672A\u786E\u8BA4\u5165\u5E93",
+          ts: now
+        });
+      }
+      Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: owned ? "\u590D\u67E5\u901A\u8FC7" : "\u590D\u67E5\u672A\u901A\u8FC7" });
+      return { action: owned ? "verified" : "verify_failed", uid: task.uid };
+    }, "_stepVerify"),
+    _stepRecover: /* @__PURE__ */ __name((now) => {
+      if (!Pipeline.limiter.isPaused(now)) {
+        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u9000\u907F\u7ED3\u675F" });
+        return { action: "recovered", state: Pipeline.fsm.state };
+      }
+      return { action: "wait", ms: Pipeline.limiter.status(now).pauseLeftMs, reason: "\u9000\u907F\u4E2D" };
+    }, "_stepRecover"),
+    /**
+     * 连续推进，直到停止条件满足。测试与脚本调度共用同一条路径，
+     * 保证「单步正确」与「循环正确」不会被两套代码验证。
+     */
+    run: /* @__PURE__ */ __name(async ({ maxSteps = 1e3, sleep = /* @__PURE__ */ __name(async () => {
+    }, "sleep"), now: startNow = Date.now(), advance = 0 } = {}) => {
+      const steps = [];
+      let clock = startNow;
+      for (let i = 0; i < maxSteps; i++) {
+        if (Pipeline.fsm.is(STATE.IDLE, STATE.DONE)) break;
+        const step = await Pipeline.tick(clock);
+        steps.push({ at: clock, ...step });
+        const delay = Pipeline.nextDelayMs(clock);
+        if (!Number.isFinite(delay)) break;
+        if (delay > 0) {
+          await sleep(delay);
+          clock += delay;
+        } else {
+          clock += advance;
+        }
+      }
+      return steps;
+    }, "run"),
+    status: /* @__PURE__ */ __name((now = Date.now()) => ({
+      state: Pipeline.fsm.state,
+      cursor: Pipeline.cursor,
+      endOfList: Pipeline.isEndOfList,
+      pagesFetched: Pipeline.pagesFetched,
+      pendingVerify: Pipeline.pendingVerify ? Pipeline.pendingVerify.uid : null,
+      limiter: Pipeline.limiter.status(now),
+      log: EventLog.stats(),
+      claims: ClaimExecutor.stats()
+    }), "status")
+  };
+
+  // src/modules/listing-source.js
+  var SEARCH_PATH = "/i/listings/search";
+  var _SearchError = class _SearchError extends Error {
+    constructor(message, { status = 0, retryAfterMs = null, url = "" } = {}) {
+      super(message);
+      this.name = "SearchError";
+      this.status = status;
+      this.retryAfterMs = retryAfterMs;
+      this.url = url;
+    }
+  };
+  __name(_SearchError, "SearchError");
+  var SearchError = _SearchError;
+  var FREE_POLICY = {
+    // 只认服务端 isFree 标记。会漏掉 Personal/Professional 的 $0 商品。
+    FLAG_ONLY: "flag_only",
+    // 只认有效价格为 0。
+    PRICE_ONLY: "price_only",
+    // 并集：两者任一命中即视为可领取。与现行 DOM 判据行为最接近，默认采用。
+    FLAG_OR_PRICE: "flag_or_price"
+  };
+  var ListingSource = {
+    deps: {
+      // (url, { headers }) => Promise<{ status, responseText } | Response>
+      fetchImpl: null,
+      // 覆盖 URL 构造（测试或特殊页面用）
+      buildUrl: null,
+      // 覆盖基础查询参数，默认取下方 baseParams
+      getBaseParams: null,
+      // 覆盖请求头（默认带 cookie + csrf）
+      getHeaders: null
+    },
+    // 与抓包原文一致。若用户改了页面筛选条件，上层应覆盖 getBaseParams。
+    baseParams: { is_free: "1", sort_by: "title" },
+    freePolicy: FREE_POLICY.FLAG_OR_PRICE,
+    // 观测计数
+    stats: { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 },
+    configure: /* @__PURE__ */ __name(({ fetchImpl, buildUrl, getBaseParams, getHeaders, baseParams, freePolicy } = {}) => {
+      if (typeof fetchImpl === "function" || fetchImpl === null) ListingSource.deps.fetchImpl = fetchImpl;
+      if (typeof buildUrl === "function" || buildUrl === null) ListingSource.deps.buildUrl = buildUrl;
+      if (typeof getBaseParams === "function" || getBaseParams === null) ListingSource.deps.getBaseParams = getBaseParams;
+      if (typeof getHeaders === "function" || getHeaders === null) ListingSource.deps.getHeaders = getHeaders;
+      if (baseParams && typeof baseParams === "object") ListingSource.baseParams = { ...baseParams };
+      if (freePolicy) ListingSource.freePolicy = freePolicy;
+    }, "configure"),
+    reset: /* @__PURE__ */ __name(() => {
+      ListingSource.stats = { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 };
+    }, "reset"),
+    /**
+     * 折算实际应付价格：有折扣价时以折扣价为准。
+     * 返回 null 表示「价格未知」——未知绝不等于免费。
+     */
+    effectivePrice: /* @__PURE__ */ __name((item) => {
+      if (!item) return null;
+      if (Number.isFinite(item.discountedPrice)) return item.discountedPrice;
+      if (Number.isFinite(item.price)) return item.price;
+      return null;
+    }, "effectivePrice"),
+    /**
+     * 是否可领取（免费）。判据随策略而变，见 FREE_POLICY 注释。
+     * 注意：本方法只回答「是否免费」，不回答「是否已入库」——后者由事件日志负责。
+     */
+    isClaimable: /* @__PURE__ */ __name((item) => {
+      if (!item || !item.uid) return false;
+      const price = ListingSource.effectivePrice(item);
+      switch (ListingSource.freePolicy) {
+        case FREE_POLICY.FLAG_ONLY:
+          return item.isFreeFlag === true;
+        case FREE_POLICY.PRICE_ONLY:
+          return price === 0;
+        case FREE_POLICY.FLAG_OR_PRICE:
+        default:
+          return item.isFreeFlag === true || price === 0 || item.effectiveDiscountPercentage === 100;
+      }
+    }, "isClaimable"),
+    /**
+     * 单个商品 JSON → 规范化任务对象。
+     * 字段缺失一律降级为空值而不是抛错：Fab 的响应允许大量字段为 null，
+     * 一条脏数据不该让整页作废。
+     */
+    normalize: /* @__PURE__ */ __name((raw) => {
+      if (!raw || typeof raw !== "object" || !raw.uid) return null;
+      const uid = String(raw.uid).trim().toLowerCase();
+      if (!uid) return null;
+      const sp = raw.startingPrice && typeof raw.startingPrice === "object" ? raw.startingPrice : {};
+      const numOrNull = /* @__PURE__ */ __name((v) => typeof v === "number" && Number.isFinite(v) ? v : null, "numOrNull");
+      const licenses = Array.isArray(raw.licenses) ? raw.licenses : [];
+      const offerIds = [];
+      const pushOffer = /* @__PURE__ */ __name((v) => {
+        if (typeof v === "string" && v && !offerIds.includes(v)) offerIds.push(v);
+      }, "pushOffer");
+      pushOffer(sp.offerId);
+      pushOffer(raw.offerId);
+      licenses.forEach((l) => pushOffer(l && l.uid));
+      return {
+        uid,
+        url: `https://www.fab.com/listings/${uid}`,
+        name: typeof raw.title === "string" ? raw.title : "",
+        offerId: offerIds[0] || "",
+        offerIds,
+        price: numOrNull(sp.price),
+        discountedPrice: numOrNull(sp.discountedPrice),
+        effectiveDiscountPercentage: numOrNull(sp.effectiveDiscountPercentage),
+        currency: typeof sp.currencyCode === "string" ? sp.currencyCode : "",
+        isFreeFlag: raw.isFree === true,
+        isDiscounted: raw.isDiscounted === true,
+        licenses: licenses.map((l) => ({
+          name: l && typeof l.name === "string" ? l.name : "",
+          isCc0: !!(l && l.isCc0),
+          uid: l && l.uid ? String(l.uid) : ""
+        })),
+        listingType: typeof raw.listingType === "string" ? raw.listingType : "",
+        seller: raw.user && typeof raw.user.sellerName === "string" ? raw.user.sellerName : ""
+      };
+    }, "normalize"),
+    /**
+     * 从完整 URL 中抠出 cursor 参数。
+     * 响应里 cursors.next 与顶层 next 同时存在，优先用前者；
+     * 但当 cursors 缺失时，这是唯一的翻页依据。
+     */
+    _cursorFromUrl: /* @__PURE__ */ __name((url) => {
+      try {
+        const u = new URL(String(url), "https://www.fab.com");
+        return u.searchParams.get("cursor");
+      } catch (e) {
+        return null;
+      }
+    }, "_cursorFromUrl"),
+    /**
+     * 解析一页响应。
+     * 「是否到底」的唯一权威信号是 cursors.next === null —— 与 index.js 中
+     * State.isEndOfSearchList 的判定口径保持一致，不靠本地猜。
+     */
+    parsePage: /* @__PURE__ */ __name((payload) => {
+      if (!payload || typeof payload !== "object") {
+        ListingSource.stats.malformedPages += 1;
+        return { items: [], nextCursor: null, isEnd: true, malformed: true };
+      }
+      const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload.results) ? payload.results : [];
+      const items = rawItems.map(ListingSource.normalize).filter(Boolean);
+      ListingSource.stats.itemsSeen += items.length;
+      let nextCursor = null;
+      if (payload.cursors && payload.cursors.next != null) {
+        nextCursor = String(payload.cursors.next);
+      } else if (payload.next != null) {
+        nextCursor = ListingSource._cursorFromUrl(payload.next);
+      }
+      return {
+        items,
+        nextCursor: nextCursor || null,
+        isEnd: !nextCursor,
+        malformed: false
+      };
+    }, "parsePage"),
+    /** 构造搜索 URL。cursor 为 null 时即为首页。 */
+    buildUrl: /* @__PURE__ */ __name((cursor = null) => {
+      const getBase = ListingSource.deps.getBaseParams;
+      const base = typeof getBase === "function" ? getBase() || {} : ListingSource.baseParams || {};
+      const params = new URLSearchParams();
+      Object.keys(base).forEach((k) => {
+        const v = base[k];
+        if (v !== null && v !== void 0 && v !== "") params.set(k, String(v));
+      });
+      if (cursor) params.set("cursor", cursor);
+      return `https://www.fab.com${SEARCH_PATH}?${params.toString()}`;
+    }, "buildUrl"),
+    _defaultHeaders: /* @__PURE__ */ __name(() => {
+      const headers = { "x-requested-with": "XMLHttpRequest", "accept": "application/json" };
+      try {
+        const token = Utils.getCookie("fab_csrftoken");
+        if (token) headers["x-csrftoken"] = token;
+      } catch (e) {
+      }
+      return headers;
+    }, "_defaultHeaders"),
+    /** Retry-After 优先取调用方给的毫秒数，其次解析响应头（秒 → 毫秒）。 */
+    _parseRetryAfter: /* @__PURE__ */ __name((res) => {
+      if (!res) return null;
+      if (Number.isFinite(res.retryAfterMs)) return res.retryAfterMs;
+      const match = String(res.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
+      return match ? Number(match[1]) * 1e3 : null;
+    }, "_parseRetryAfter"),
+    /**
+     * 拉取一页。失败抛 SearchError，由上层决定退避还是终止。
+     * 这里刻意不做重试 —— 重试节奏属于流水线与限速器的职责，
+     * 在每一层都加退避会导致实际等待时间成倍叠加。
+     */
+    fetchPage: /* @__PURE__ */ __name(async (cursor = null) => {
+      const fetchImpl = ListingSource.deps.fetchImpl;
+      if (typeof fetchImpl !== "function") {
+        throw new SearchError("\u672A\u914D\u7F6E fetchImpl", { status: 0 });
+      }
+      const buildUrl = ListingSource.deps.buildUrl || ListingSource.buildUrl;
+      const url = buildUrl(cursor);
+      const getHeaders = ListingSource.deps.getHeaders || ListingSource._defaultHeaders;
+      const res = await fetchImpl(url, { headers: getHeaders() });
+      if (!res) throw new SearchError("\u641C\u7D22\u63A5\u53E3\u65E0\u54CD\u5E94", { status: 0, url });
+      const status = Number(res.status) || 0;
+      if (status === 429) {
+        throw new SearchError("\u641C\u7D22\u63A5\u53E3\u9650\u901F", {
+          status,
+          retryAfterMs: ListingSource._parseRetryAfter(res),
+          url
+        });
+      }
+      if (status < 200 || status >= 300) {
+        throw new SearchError(`\u641C\u7D22\u63A5\u53E3\u8FD4\u56DE ${status}`, { status, url });
+      }
+      let text = res.responseText;
+      if (text === void 0 && typeof res.text === "function") text = await res.text();
+      let payload = null;
+      try {
+        payload = JSON.parse(text == null ? "" : text);
+      } catch (e) {
+        throw new SearchError("\u641C\u7D22\u54CD\u5E94\u4E0D\u662F\u5408\u6CD5 JSON", { status, url });
+      }
+      const page = ListingSource.parsePage(payload);
+      ListingSource.stats.pagesFetched += 1;
+      return { ...page, url };
+    }, "fetchPage")
+  };
+
+  // src/modules/pipeline-adapter.js
+  var log = /* @__PURE__ */ __name((level, msg) => {
+    try {
+      Utils.logger(level, msg);
+    } catch (e) {
+    }
+  }, "log");
+  var gmFetchImpl = /* @__PURE__ */ __name((url, { headers } = {}) => new Promise((resolve, reject) => {
+    API.gmFetch({
+      method: "GET",
+      url,
+      headers: { accept: "application/json", ...headers || {} },
+      onload: /* @__PURE__ */ __name((res) => resolve({
+        status: res.status,
+        responseText: res.responseText,
+        responseHeaders: res.responseHeaders
+      }), "onload"),
+      onerror: /* @__PURE__ */ __name((err) => reject(err), "onerror"),
+      ontimeout: /* @__PURE__ */ __name(() => reject(new Error("search request timeout")), "ontimeout")
+    });
+  }), "gmFetchImpl");
+  var createFetchPage = /* @__PURE__ */ __name((fetchImpl = gmFetchImpl) => {
+    ListingSource.configure({ fetchImpl });
+    return async (cursor = null) => {
+      const page = await ListingSource.fetchPage(cursor);
+      return { items: page.items, nextCursor: page.nextCursor, isEnd: page.isEnd };
+    };
+  }, "createFetchPage");
+  var createVerifyOwned = /* @__PURE__ */ __name((database = Database) => async (uid) => {
+    if (!uid) return false;
+    return database.isDone(`https://www.fab.com/listings/${uid}`);
+  }, "createVerifyOwned");
+  var createDomClaim = /* @__PURE__ */ __name((acquireFn) => {
+    if (typeof acquireFn !== "function") return false;
+    setDomClaim(async (task) => normalizeClaimOutcome(await acquireFn(task)));
+    return true;
+  }, "createDomClaim");
+  var defaultScanFilter = /* @__PURE__ */ __name((item) => {
+    if (!item || !item.uid) return "invalid_item";
+    if (!ListingSource.isClaimable(item)) return "not_free";
+    return null;
+  }, "defaultScanFilter");
+  var bootstrapPipeline = /* @__PURE__ */ __name((options = {}) => {
+    const {
+      fetchImpl,
+      database = Database,
+      acquireFn,
+      apiEndpoint,
+      apiFetchImpl,
+      apiBuildBody,
+      ratePerMin,
+      burst,
+      freePolicy
+    } = options;
+    if (freePolicy) ListingSource.configure({ freePolicy });
+    if (apiEndpoint) {
+      ApiClaim.configure({
+        endpoint: apiEndpoint,
+        fetchImpl: apiFetchImpl || gmFetchImpl,
+        buildBody: apiBuildBody
+      });
+    }
+    Pipeline.configure({
+      fetchPage: createFetchPage(fetchImpl),
+      verifyOwned: createVerifyOwned(database),
+      filter: defaultScanFilter,
+      ...Number.isFinite(ratePerMin) ? { ratePerMin } : {},
+      ...Number.isFinite(burst) ? { burst } : {}
+    });
+    const domOk = createDomClaim(acquireFn);
+    const apiOk = ApiClaim.isAvailable();
+    if (!domOk && !apiOk) {
+      log(
+        "warn",
+        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u672A\u542F\u7528\uFF09\uFF1B\u679A\u4E3E\u53EF\u8FD0\u884C\u4F46\u9886\u53D6\u4F1A\u5931\u8D25\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint \u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
+      );
+    }
+    return Pipeline;
+  }, "bootstrapPipeline");
+
   // src/index.js
   (function() {
     try {
@@ -6802,7 +7932,7 @@
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if (State.autoAddOnScroll || State.autoScroll) {
+            if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -6816,7 +7946,10 @@
     observer.observe(targetNode, { childList: true, subtree: true });
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
-    if (State.autoAddOnScroll || State.autoScroll) {
+    if (Config.USE_API_PIPELINE) {
+      startApiPipeline();
+    }
+    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -6892,7 +8025,7 @@
           if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
             RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
           }
-        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling) {
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !Config.USE_API_PIPELINE) {
           const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
           if (actualHidden > 0) {
             Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
@@ -6908,6 +8041,7 @@
       }
     }, 1e4));
     State.domIntervals.push(setInterval(() => {
+      if (Config.USE_API_PIPELINE) return;
       if (State.db.todo.length === 0) return;
       TaskRunner2.ensureTasksAreExecuted();
     }, 5e3));
@@ -7106,8 +8240,8 @@
           State.activeWorkers--;
         }
         if (logs && logs.length) {
-          logs.forEach((log) => {
-            Utils.logger("debug", log);
+          logs.forEach((log2) => {
+            Utils.logger("debug", log2);
           });
         }
         const isZh = State.lang === "zh";
@@ -7119,7 +8253,7 @@
           State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
         } else {
-          const errorLog = logs && logs.length ? logs.find((log) => log.includes(Utils.getText("worker_captcha"))) || logs.find((log) => log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);
@@ -7178,6 +8312,43 @@
   window.addEventListener("load", () => {
     setTimeout(ensureUILoaded, 2e3);
   });
+  var _apiPipelineTimer = null;
+  async function startApiPipeline() {
+    if (State.isWorkerTab) return;
+    bootstrapPipeline({ fetchImpl: gmFetchImpl });
+    const tick = /* @__PURE__ */ __name(async () => {
+      if (!Config.USE_API_PIPELINE) {
+        _apiPipelineTimer = null;
+        return;
+      }
+      const now = Date.now();
+      try {
+        if (State.isExecuting) {
+          if (Pipeline.fsm.is(STATE.IDLE) || Pipeline.fsm.is(STATE.DONE)) {
+            Pipeline.reset(now);
+            Pipeline.start(now);
+          }
+          await Pipeline.tick(now);
+        }
+      } catch (e) {
+        Utils.logger("error", `[Pipeline] tick \u51FA\u9519: ${e.message}`);
+      }
+      if (!State.isExecuting) {
+        _apiPipelineTimer = setTimeout(tick, 2e3);
+        return;
+      }
+      const delay = Pipeline.nextDelayMs(Date.now());
+      if (!Number.isFinite(delay)) {
+        Utils.logger("info", "[Pipeline] \u5DF2\u5230\u8FBE\u5217\u8868\u672B\u5C3E\uFF0C\u6682\u505C\u8C03\u5EA6\uFF08\u518D\u6B21\u5F00\u542F\u6267\u884C\u5C06\u91CD\u65B0\u679A\u4E3E\uFF09\u3002");
+        _apiPipelineTimer = setTimeout(tick, 5e3);
+        return;
+      }
+      _apiPipelineTimer = setTimeout(tick, Math.max(0, delay));
+    }, "tick");
+    Utils.logger("info", "[Pipeline] API \u4F18\u5148\u6D41\u6C34\u7EBF\u5DF2\u542F\u52A8\uFF08\u53D6\u4EE3\u65E7\u6EDA\u52A8\u679A\u4E3E + worker \u9886\u53D6\uFF09\u3002");
+    tick();
+  }
+  __name(startApiPipeline, "startApiPipeline");
   async function handleWakeRecovery() {
     if (State.isWorkerTab) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;

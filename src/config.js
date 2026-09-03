@@ -12,6 +12,10 @@ export const Config = {
     WORKER_TIMEOUT: 90000, // 工作标签页超时时间(watchdog 判定卡死)。领取一般 <1min，留足余量避免误杀慢任务
     KEEPALIVE_TICK_MS: 2000, // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true, // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
+    // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
+    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
+    // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
+    USE_API_PIPELINE: false,
     UI_CONTAINER_ID: 'fab-helper-container',
     UI_LOG_ID: 'fab-helper-log',
     DB_KEYS: {
