@@ -137,6 +137,7 @@ import {
     bootstrapPipeline,
     gmFetchImpl,
     hasClaimBackend,
+    isApiPipelineActive,
     loadEventLog,
     persistEventLog
 } from './modules/pipeline-adapter.js';
@@ -937,7 +938,7 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
+                    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -964,7 +965,7 @@ async function runDomDependentPart() {
     }
 
     // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
-    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
+    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1071,7 +1072,7 @@ async function runDomDependentPart() {
                         Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
                 }
             } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
-                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !Config.USE_API_PIPELINE) {
+                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive()) {
                 // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
                 // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
                 // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
@@ -1092,7 +1093,9 @@ async function runDomDependentPart() {
 
     // Ensure tasks are executed
     State.domIntervals.push(setInterval(() => {
-        if (Config.USE_API_PIPELINE) return; // 新流水线自管调度，不走旧 worker 派发
+        // 只有「新流水线真的跑起来了」才让位；开关开着但没有领取后端时
+        // 它拒绝启动，旧路径必须继续干活，否则脚本整体停摆。
+        if (isApiPipelineActive()) return;
         if (State.db.todo.length === 0) return;
         TaskRunner.ensureTasksAreExecuted();
     }, 5000));
@@ -1454,12 +1457,14 @@ async function startApiPipeline() {
     bootstrapPipeline({ fetchImpl: gmFetchImpl });
 
     // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
-    // 事件日志被污染，用户还看不出原因。（旧路径已被同一个开关关掉，
-    // 因此这里必须把回退方法说清楚。）
+    // 事件日志被污染，用户还看不出原因。
+    // 好在这里拒绝不会让脚本停摆：旧路径的护栏问的是 isApiPipelineActive()
+    // （开关 && 有后端），本函数返回后旧路径照常运行，只是日志里会留下这一条。
     if (!hasClaimBackend()) {
         Utils.logger('error',
             '[Pipeline] 未配置任何领取后端（DomClaim 未注入、ApiClaim 端点未确认），流水线不启动。' +
-            '请注入 acquireFn 或配置 apiEndpoint；在此之前请把 USE_API_PIPELINE 置回 false 以使用旧路径。');
+            '已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。' +
+            '如需启用新流水线，请注入 acquireFn 或配置 apiEndpoint。');
         return;
     }
 

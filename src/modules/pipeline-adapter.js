@@ -13,6 +13,7 @@
  * 整条链路由 Config.USE_API_PIPELINE 控制，关闭时完全不被触碰（默认关闭），
  * 开启后取代旧的「滚动 DOM + 7 worker 标签页」枚举/领取路径。
  */
+import { Config } from '../config.js';
 import { Utils } from './utils.js';
 import { API } from './api.js';
 import { Database } from './database.js';
@@ -85,6 +86,19 @@ export const hasClaimBackend = () => Boolean(
     (typeof ApiClaim.isAvailable === 'function' && ApiClaim.isAvailable()) ||
     (typeof DomClaim.isAvailable === 'function' && DomClaim.isAvailable())
 );
+
+/**
+ * 「新流水线是否真的在干活」的唯一判定。
+ *
+ * 为什么不能直接读 Config.USE_API_PIPELINE：开关打开但没有领取后端时
+ * startApiPipeline() 会拒绝启动，而旧路径（滚动枚举 + worker 领取）的各处
+ * 护栏若只认开关，就会被一起关掉 —— 结果是脚本整体什么都不做，除了日志里
+ * 一行字之外没有任何现象，用户只会以为脚本坏了。
+ *
+ * 凡是「新流水线接管了，旧路径要让位」的判断都必须调这个函数，
+ * 而不是直接读 Config.USE_API_PIPELINE。
+ */
+export const isApiPipelineActive = () => Boolean(Config.USE_API_PIPELINE && hasClaimBackend());
 
 /**
  * 扫描阶段过滤器，返回 null 表示纳入待领，返回字符串表示跳过原因。

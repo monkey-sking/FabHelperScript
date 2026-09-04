@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260903-1446
+// @version      3.5.21-20260904-1111
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1618,10 +1618,10 @@
       console.group("=== Fab Helper \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
       console.log(`\u9875\u9762: ${report.url}`);
       console.log(`\u6807\u9898: ${report.pageTitle}`);
-      const visibleButtons = report.buttons.filter((b) => b.isVisible);
-      if (visibleButtons.length > 0) {
-        console.log(`--- \u53EF\u89C1\u6309\u94AE (${visibleButtons.length}) ---`);
-        visibleButtons.forEach((btn) => {
+      const visibleButtons2 = report.buttons.filter((b) => b.isVisible);
+      if (visibleButtons2.length > 0) {
+        console.log(`--- \u53EF\u89C1\u6309\u94AE (${visibleButtons2.length}) ---`);
+        visibleButtons2.forEach((btn) => {
           console.log(`  [${btn.index}] "${btn.text}" (\u7981\u7528: ${btn.isDisabled}, \u7C7B: ${btn.classes.split(" ").slice(0, 2).join(" ")}...)`);
         });
       }
@@ -3440,6 +3440,402 @@
     }
   };
 
+  // src/modules/detail-claim.js
+  var KEY_ELEMENT_SELECTOR = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
+  var ACTION_BUTTON_SELECTOR = 'button, .fabkit-Button-root, [role="button"], [class*="Button"], [class*="button"], a[href]';
+  var OWNED_BADGE_TEXTS = [
+    "\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D",
+    "Saved in My Library",
+    "Saved in library",
+    "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D"
+  ];
+  var CHECKOUT_KEYWORDS = [
+    "place order",
+    "\u4E0B\u5355",
+    "checkout",
+    "\u7ED3\u8D26",
+    "complete order",
+    "\u5B8C\u6210\u8BA2\u5355",
+    "confirm",
+    "\u786E\u8BA4",
+    "claim",
+    "\u9886\u53D6",
+    "get",
+    "\u83B7\u53D6",
+    "pay",
+    "\u652F\u4ED8"
+  ];
+  var DEFAULT_SLEEP = /* @__PURE__ */ __name((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "DEFAULT_SLEEP");
+  var noop = /* @__PURE__ */ __name(() => {
+  }, "noop");
+  var normalizeContext = /* @__PURE__ */ __name((options = {}) => ({
+    doc: options.doc ?? (typeof document !== "undefined" ? document : null),
+    win: options.win ?? (typeof window !== "undefined" ? window : null),
+    utils: options.utils || Utils,
+    api: options.api || API,
+    diagnostics: options.diagnostics || PageDiagnostics,
+    // TaskRunner 必须显式传入：task-runner 会 import 本模块，反向 import 会成环
+    taskRunner: options.taskRunner || null,
+    MutationObserver: options.MutationObserver || (typeof globalThis !== "undefined" ? globalThis.MutationObserver : null),
+    sleep: options.sleep || DEFAULT_SLEEP,
+    setTimeoutFn: options.setTimeoutFn || ((fn, ms) => setTimeout(fn, ms)),
+    clearTimeoutFn: options.clearTimeoutFn || ((id) => clearTimeout(id)),
+    setIntervalFn: options.setIntervalFn || ((fn, ms) => setInterval(fn, ms)),
+    clearIntervalFn: options.clearIntervalFn || ((id) => clearInterval(id)),
+    now: options.now || (() => Date.now())
+  }), "normalizeContext");
+  var waitForPageReady = /* @__PURE__ */ __name(async (ctx) => {
+    const { doc, sleep, now } = ctx;
+    const maxWait = 15e3;
+    const startAt = now();
+    let lastState = "";
+    while (now() - startAt < maxWait) {
+      const currentState = doc?.readyState;
+      const hasMainContent = doc?.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
+      const hasButtons = (doc?.querySelectorAll(KEY_ELEMENT_SELECTOR)?.length || 0) > 0;
+      const hasTitle = doc?.querySelector("h1, .fabkit-Heading--xl");
+      if (currentState !== lastState) {
+        ctx.log(`\u9875\u9762\u72B6\u6001: ${currentState}`);
+        lastState = currentState;
+      }
+      const isReadyState = currentState === "interactive" || currentState === "complete";
+      if (isReadyState && hasMainContent && (hasButtons || hasTitle)) {
+        ctx.log(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u901A\u8FC7: readyState=${currentState}, hasContent=true`);
+        return true;
+      }
+      await sleep(100);
+    }
+    ctx.log(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u8D85\u65F6 (${maxWait}ms)\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u64CD\u4F5C`);
+    return false;
+  }, "waitForPageReady");
+  var waitForKeyElement = /* @__PURE__ */ __name(async (ctx, maxWait = 2e3) => {
+    const matchKey = /* @__PURE__ */ __name(() => {
+      const buttons = ctx.doc?.querySelectorAll(KEY_ELEMENT_SELECTOR) || [];
+      for (const btn of buttons) {
+        const text = ctx.utils.normalizeWhitespace(btn.textContent || "");
+        if (!text) continue;
+        const lower = text.toLowerCase();
+        if ([...Config.ACQUISITION_TEXT_SET].some((k) => lower.includes(k.toLowerCase()))) return true;
+        if ([...Config.SAVED_TEXT_SET].some((k) => lower.includes(k.toLowerCase()))) return true;
+        if ([...Config.EXTERNAL_CTA_TEXT_SET].some((k) => lower.includes(k.toLowerCase()))) return true;
+      }
+      const bodyText = ctx.doc?.body && ctx.doc.body.textContent;
+      if (bodyText) {
+        for (const phrase of Config.SAVED_TEXT_SET) {
+          if (bodyText.includes(phrase)) return true;
+        }
+      }
+      return false;
+    }, "matchKey");
+    if (matchKey()) return;
+    if (!ctx.MutationObserver || !ctx.doc?.body) {
+      await ctx.sleep(maxWait);
+      return;
+    }
+    await new Promise((resolve) => {
+      let done = false;
+      const finish = /* @__PURE__ */ __name(() => {
+        if (done) return;
+        done = true;
+        try {
+          observer.disconnect();
+        } catch (e) {
+        }
+        clearTimeout(timer);
+        resolve();
+      }, "finish");
+      const observer = new ctx.MutationObserver(() => {
+        if (matchKey()) finish();
+      });
+      observer.observe(ctx.doc.body, { childList: true, subtree: true });
+      const timer = ctx.setTimeoutFn(finish, maxWait);
+    });
+  }, "waitForKeyElement");
+  var dismissAdultWarning = /* @__PURE__ */ __name(async (ctx) => {
+    const heading = ctx.doc?.querySelector(".fabkit-Heading--xl");
+    if (!heading) return;
+    const text = heading.textContent || "";
+    if (!text.includes("\u6210\u4EBA\u5185\u5BB9") && !text.includes("Adult Content") && !text.includes("Mature Content")) return;
+    ctx.log('\u68C0\u6D4B\u5230\u6210\u4EBA\u5185\u5BB9\u8B66\u544A\u5BF9\u8BDD\u6846\uFF0C\u81EA\u52A8\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE...');
+    const continueButton = [...ctx.doc.querySelectorAll("button.fabkit-Button--primary") || []].find((btn) => (btn.textContent || "").includes("\u7EE7\u7EED") || (btn.textContent || "").includes("Continue"));
+    if (!continueButton) return;
+    ctx.utils.deepClick(continueButton);
+    ctx.log('\u5DF2\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE\uFF0C\u7B49\u5F85\u9875\u9762\u52A0\u8F7D...');
+    await ctx.sleep(2e3);
+  }, "dismissAdultWarning");
+  var checkOwnedViaApi = /* @__PURE__ */ __name(async (ctx, task, push) => {
+    try {
+      const csrfToken = ctx.utils.getCookie("fab_csrftoken");
+      if (!csrfToken) throw new Error("CSRF token not found for API check.");
+      const statesUrl = new URL("https://www.fab.com/i/users/me/listings-states");
+      statesUrl.searchParams.append("listing_ids", task.uid);
+      const response = await ctx.api.gmFetch({
+        method: "GET",
+        url: statesUrl.href,
+        headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
+      });
+      let statesData;
+      try {
+        statesData = JSON.parse(response.responseText);
+        if (!Array.isArray(statesData)) {
+          statesData = ctx.api.extractStateData(statesData, "SingleItemCheck");
+        }
+      } catch (e) {
+        push(`\u89E3\u6790API\u54CD\u5E94\u5931\u8D25: ${e.message}`);
+        statesData = [];
+      }
+      const isOwned = Array.isArray(statesData) && statesData.some((s) => s && s.uid === task.uid && s.acquired);
+      if (isOwned) {
+        push("API check confirms item is already owned.");
+        return true;
+      }
+      push("API check confirms item is not owned. Proceeding to UI interaction.");
+    } catch (apiError) {
+      push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
+    }
+    return false;
+  }, "checkOwnedViaApi");
+  var detectOwnedOnPage = /* @__PURE__ */ __name((ctx) => {
+    const { doc, utils } = ctx;
+    const criteria = Config.OWNED_SUCCESS_CRITERIA;
+    const snackbar = doc?.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
+    if (snackbar && criteria.snackbarText.some((t) => snackbar.textContent.includes(t))) {
+      return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
+    }
+    const allButtons = [...doc?.querySelectorAll(KEY_ELEMENT_SELECTOR) || []];
+    const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((k) => btn.textContent.includes(k)));
+    if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
+    const ownedBadge = allButtons.find((btn) => {
+      const text = utils.normalizeWhitespace(btn.textContent || "");
+      return OWNED_BADGE_TEXTS.includes(text);
+    });
+    if (ownedBadge) return { owned: true, reason: `Badge text "${ownedBadge.textContent}"` };
+    return { owned: false };
+  }, "detectOwnedOnPage");
+  var visibleButtons = /* @__PURE__ */ __name((ctx) => {
+    const { doc, win } = ctx;
+    return [...doc?.querySelectorAll(ACTION_BUTTON_SELECTOR) || []].filter((btn) => {
+      const text = (btn.textContent || "").trim();
+      const style = win && win.getComputedStyle ? win.getComputedStyle(btn) : null;
+      const isHidden = style && (style.display === "none" || style.visibility === "hidden");
+      return text.length > 0 && !isHidden;
+    });
+  }, "visibleButtons");
+  var logButtonDiagnostics = /* @__PURE__ */ __name((ctx, push) => {
+    const allVisibleButtons = visibleButtons(ctx);
+    const criticalKeywords = [
+      ...Config.ACQUISITION_TEXT_SET,
+      ...Config.FREE_TEXT_SET,
+      "\u8BB8\u53EF",
+      "License",
+      "Select",
+      "\u9009\u62E9",
+      "Add",
+      "\u6DFB\u52A0",
+      "Library",
+      "\u5E93"
+    ];
+    const criticalButtons = allVisibleButtons.filter((btn) => criticalKeywords.some((key) => (btn.textContent || "").includes(key)));
+    push(`=== \u6309\u94AE\u68C0\u6D4B: \u53EF\u89C1=${allVisibleButtons.length}, \u5173\u952E=${criticalButtons.length} ===`);
+    if (criticalButtons.length > 0) {
+      criticalButtons.slice(0, 5).forEach((btn, i) => {
+        push(`  \u5173\u952E\u6309\u94AE${i + 1}: "${(btn.textContent || "").trim().substring(0, 40)}"`);
+      });
+    } else if (allVisibleButtons.length > 0) {
+      allVisibleButtons.slice(0, 3).forEach((btn, i) => {
+        push(`  \u6309\u94AE${i + 1}: "${(btn.textContent || "").trim().substring(0, 40)}"`);
+      });
+    }
+  }, "logButtonDiagnostics");
+  var selectFreeLicense = /* @__PURE__ */ __name(async (ctx, push, isItemOwned) => {
+    const licenseButton = visibleButtons(ctx).find((btn) => {
+      const text = ctx.utils.normalizeWhitespace(btn.textContent || "");
+      return text.includes("\u9009\u62E9\u8BB8\u53EF") || text.includes("Select license") || btn.getAttribute("aria-haspopup") === "true" && ctx.taskRunner?.isFreeCard?.(btn);
+    });
+    if (!licenseButton) return false;
+    push("Multi-license item detected. Setting up observer for dropdown.");
+    try {
+      await new Promise((resolve, reject) => {
+        const observer = new ctx.MutationObserver((mutationsList) => {
+          for (const mutation of mutationsList) {
+            for (const node of mutation.addedNodes || []) {
+              if (node.nodeType !== 1) continue;
+              const clickableParent = ctx.taskRunner?.findFreeLicenseOption?.(node);
+              if (clickableParent) {
+                push("Found explicit free license option, clicking it.");
+                ctx.utils.deepClick(clickableParent);
+                observer.disconnect();
+                resolve();
+                return;
+              }
+            }
+          }
+        });
+        observer.observe(ctx.doc.body, { childList: true, subtree: true });
+        push("Clicking license button to open dropdown.");
+        ctx.utils.deepClick(licenseButton);
+        const retryTimer = ctx.setTimeoutFn(() => {
+          push("Second attempt to click license button.");
+          ctx.utils.deepClick(licenseButton);
+        }, 1500);
+        ctx.setTimeoutFn(() => {
+          ctx.clearTimeoutFn(retryTimer);
+          observer.disconnect();
+          reject(new Error("Timeout (5s): The free/personal option did not appear."));
+        }, 5e3);
+      });
+      push("License selected, waiting for UI update.");
+      await ctx.sleep(2e3);
+      if (isItemOwned().owned) {
+        push("Item became owned after license selection.");
+        return true;
+      }
+    } catch (licenseError) {
+      push(`License selection failed: ${licenseError.message}`);
+    }
+    return false;
+  }, "selectFreeLicense");
+  var findActionButton = /* @__PURE__ */ __name(async (ctx) => {
+    const startAt = ctx.now();
+    const maxWait = 8e3;
+    while (ctx.now() - startAt < maxWait) {
+      const freshButtons = visibleButtons(ctx);
+      let actionButton = freshButtons.find((btn) => {
+        const text = ctx.utils.normalizeWhitespace(btn.textContent || "").toLowerCase();
+        return [...Config.ACQUISITION_TEXT_SET].some((keyword) => text.includes(keyword.toLowerCase()));
+      });
+      if (!actionButton) {
+        actionButton = freshButtons.find((btn) => {
+          const text = ctx.utils.normalizeWhitespace(btn.textContent || "");
+          const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
+          const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
+          const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
+          return hasFreeText && hasDiscount && hasPersonal;
+        });
+      }
+      if (!actionButton) {
+        actionButton = freshButtons.find((btn) => {
+          const text = (btn.textContent || "").toLowerCase();
+          return text.includes("add") && text.includes("library") || text.includes("\u6DFB\u52A0") && text.includes("\u5E93");
+        });
+      }
+      if (actionButton) return actionButton;
+      await ctx.sleep(400);
+    }
+    return null;
+  }, "findActionButton");
+  var findCheckoutButton = /* @__PURE__ */ __name((ctx) => {
+    const { doc, win, utils } = ctx;
+    const allButtonsWithShadow = utils.findAllButtonsWithShadow(doc);
+    const byClass = allButtonsWithShadow.find((btn) => btn.classList?.contains("payment-order-confirm__btn"));
+    if (byClass) return byClass;
+    return allButtonsWithShadow.find((btn) => {
+      const text = utils.normalizeWhitespace(btn.textContent || "").toLowerCase();
+      if (text.includes("buy now") || text.includes("\u7ACB\u5373\u8D2D\u4E70")) return false;
+      const isCheckoutContext = btn.ownerDocument !== doc || Boolean(win?.location?.pathname?.includes("/payment/"));
+      if (isCheckoutContext) {
+        return text.includes("add to library") || text.includes("\u6DFB\u52A0\u5230\u5E93") || text.includes("add to account") || text.includes("\u6DFB\u52A0\u5230\u8D26\u6237");
+      }
+      return CHECKOUT_KEYWORDS.some((kw) => text.includes(kw));
+    });
+  }, "findCheckoutButton");
+  var waitForOwnedAfterClick = /* @__PURE__ */ __name(async (ctx, push, isItemOwned) => {
+    const timeout = 6e4;
+    const startAt = ctx.now();
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = /* @__PURE__ */ __name((ok) => {
+        if (settled) return;
+        settled = true;
+        ctx.clearIntervalFn(interval);
+        resolve(ok);
+      }, "finish");
+      const interval = ctx.setIntervalFn(() => {
+        const currentState = isItemOwned();
+        if (currentState.owned) {
+          push(`Successfully owned (UI Match: ${currentState.reason})`);
+          finish(true);
+          return;
+        }
+        const checkoutBtn = findCheckoutButton(ctx);
+        if (checkoutBtn && !checkoutBtn.disabled) {
+          const lastClickTime = parseInt(checkoutBtn.dataset?.lastClickTime || "0", 10);
+          const nowMs = ctx.now();
+          if (nowMs - lastClickTime > 2e3) {
+            push(`Found checkout/place order button [${(checkoutBtn.textContent || "").trim()}], clicking it.`);
+            checkoutBtn.dataset.lastClickTime = nowMs.toString();
+            ctx.utils.deepClick(checkoutBtn);
+          }
+        }
+        if (ctx.now() - startAt > timeout) {
+          push(`Timeout waiting for ownership: Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`);
+          finish(false);
+        }
+      }, 500);
+    });
+  }, "waitForOwnedAfterClick");
+  var acquireOnDetailPage = /* @__PURE__ */ __name(async (task, options = {}) => {
+    const ctx = normalizeContext(options);
+    const pushFn = options.log || noop;
+    const logs = [];
+    const push = /* @__PURE__ */ __name((msg) => {
+      logs.push(msg);
+      try {
+        pushFn(msg);
+      } catch (e) {
+      }
+    }, "push");
+    ctx.log = push;
+    let success = false;
+    try {
+      const pageReady = await waitForPageReady(ctx);
+      if (!pageReady) {
+        push("\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25");
+      }
+      await waitForKeyElement(ctx);
+      await dismissAdultWarning(ctx);
+      push("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u5F00\u59CB ===");
+      try {
+        const report = ctx.diagnostics.diagnoseDetailPage();
+        push(`\u9875\u9762\u6807\u9898: ${report.pageTitle}`);
+        push(`\u53EF\u89C1\u6309\u94AE\u6570\u91CF: ${report.buttons.filter((btn) => btn.isVisible).length}`);
+      } catch (e) {
+        push(`\u9875\u9762\u8BCA\u65AD\u5931\u8D25: ${e.message}`);
+      }
+      push("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u7ED3\u675F ===");
+      success = await checkOwnedViaApi(ctx, task, push);
+      if (!success) success = await claimViaUi(ctx, push);
+    } catch (error) {
+      push(`A critical error occurred: ${error.message}`);
+      success = false;
+    }
+    return { success, logs };
+  }, "acquireOnDetailPage");
+  async function claimViaUi(ctx, push) {
+    const isItemOwned = /* @__PURE__ */ __name(() => detectOwnedOnPage(ctx), "isItemOwned");
+    const initialState = isItemOwned();
+    if (initialState.owned) {
+      push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
+      return true;
+    }
+    const externalState = ctx.taskRunner?.getExternalProductState?.(ctx.doc) || { handled: false };
+    if (externalState.handled) {
+      push(`Detected non-purchasable external listing (${externalState.reason}). Marking task as handled.`);
+      return true;
+    }
+    logButtonDiagnostics(ctx, push);
+    if (await selectFreeLicense(ctx, push, isItemOwned)) return true;
+    const actionButton = await findActionButton(ctx);
+    if (!actionButton) {
+      push("Could not find an add button.");
+      return false;
+    }
+    push(`Found add button [${(actionButton.textContent || "").trim().substring(0, 30)}], clicking it.`);
+    ctx.utils.deepClick(actionButton);
+    return await waitForOwnedAfterClick(ctx, push, isItemOwned);
+  }
+  __name(claimViaUi, "claimViaUi");
+
   // src/modules/task-runner.js
   var _realSetTimeout = typeof setTimeout === "function" ? setTimeout : (cb) => {
     try {
@@ -4210,325 +4606,11 @@
         const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
         let success = false;
         try {
-          const waitForPageReady = /* @__PURE__ */ __name(async () => {
-            const maxWait = 15e3;
-            const startTime2 = Date.now();
-            let lastState = "";
-            while (Date.now() - startTime2 < maxWait) {
-              const currentState = document.readyState;
-              const hasMainContent = document.querySelector('main, .product-detail, [class*="listing"], [class*="detail"]');
-              const hasButtons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]').length > 0;
-              const hasTitle = document.querySelector("h1, .fabkit-Heading--xl");
-              if (currentState !== lastState) {
-                logBuffer.push(`\u9875\u9762\u72B6\u6001: ${currentState}`);
-                lastState = currentState;
-              }
-              const isReadyState = currentState === "interactive" || currentState === "complete";
-              if (isReadyState && hasMainContent && (hasButtons || hasTitle)) {
-                logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u901A\u8FC7: readyState=${currentState}, hasContent=true`);
-                return true;
-              }
-              await new Promise((r) => setTimeout(r, 100));
-            }
-            logBuffer.push(`\u9875\u9762\u5C31\u7EEA\u68C0\u6D4B\u8D85\u65F6 (${maxWait}ms)\uFF0C\u7EE7\u7EED\u5C1D\u8BD5\u64CD\u4F5C`);
-            return false;
-          }, "waitForPageReady");
-          const pageReady = await waitForPageReady();
-          if (!pageReady) {
-            logBuffer.push(`\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25`);
-          }
-          await (/* @__PURE__ */ __name(function waitForKeyElement(maxWait = 2e3) {
-            const matchKey = /* @__PURE__ */ __name(() => {
-              const buttons = document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]');
-              for (const btn of buttons) {
-                const t = Utils.normalizeWhitespace(btn.textContent || "");
-                if (!t) continue;
-                const lowerT = t.toLowerCase();
-                if ([...Config.ACQUISITION_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
-                if ([...Config.SAVED_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
-                if ([...Config.EXTERNAL_CTA_TEXT_SET].some((k) => lowerT.includes(k.toLowerCase()))) return true;
-              }
-              const bodyText = document.body && document.body.textContent;
-              if (bodyText) {
-                for (const phrase of Config.SAVED_TEXT_SET) {
-                  if (bodyText.includes(phrase)) return true;
-                }
-              }
-              return false;
-            }, "matchKey");
-            if (matchKey()) return Promise.resolve();
-            return new Promise((resolve) => {
-              let done = false;
-              const finish = /* @__PURE__ */ __name(() => {
-                if (done) return;
-                done = true;
-                try {
-                  observer.disconnect();
-                } catch (e) {
-                }
-                clearTimeout(timer);
-                resolve();
-              }, "finish");
-              const observer = new MutationObserver(() => {
-                if (matchKey()) finish();
-              });
-              observer.observe(document.body, { childList: true, subtree: true });
-              const timer = setTimeout(finish, maxWait);
-            });
-          }, "waitForKeyElement"))();
-          const adultContentWarning = document.querySelector(".fabkit-Heading--xl");
-          if (adultContentWarning && (adultContentWarning.textContent.includes("\u6210\u4EBA\u5185\u5BB9") || adultContentWarning.textContent.includes("Adult Content") || adultContentWarning.textContent.includes("Mature Content"))) {
-            logBuffer.push(`\u68C0\u6D4B\u5230\u6210\u4EBA\u5185\u5BB9\u8B66\u544A\u5BF9\u8BDD\u6846\uFF0C\u81EA\u52A8\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE...`);
-            const continueButton = [...document.querySelectorAll("button.fabkit-Button--primary")].find(
-              (btn) => btn.textContent.includes("\u7EE7\u7EED") || btn.textContent.includes("Continue")
-            );
-            if (continueButton) {
-              Utils.deepClick(continueButton);
-              logBuffer.push(`\u5DF2\u70B9\u51FB"\u7EE7\u7EED"\u6309\u94AE\uFF0C\u7B49\u5F85\u9875\u9762\u52A0\u8F7D...`);
-              await new Promise((resolve) => setTimeout(resolve, 2e3));
-            }
-          }
-          logBuffer.push(`=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u5F00\u59CB ===`);
-          const diagnosticReport = PageDiagnostics.diagnoseDetailPage();
-          logBuffer.push(`\u9875\u9762\u6807\u9898: ${diagnosticReport.pageTitle}`);
-          logBuffer.push(`\u53EF\u89C1\u6309\u94AE\u6570\u91CF: ${diagnosticReport.buttons.filter((btn) => btn.isVisible).length}`);
-          logBuffer.push(`=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u7ED3\u675F ===`);
-          try {
-            const csrfToken = Utils.getCookie("fab_csrftoken");
-            if (!csrfToken) throw new Error("CSRF token not found for API check.");
-            const statesUrl = new URL("https://www.fab.com/i/users/me/listings-states");
-            statesUrl.searchParams.append("listing_ids", currentTask.uid);
-            const response = await API.gmFetch({
-              method: "GET",
-              url: statesUrl.href,
-              headers: { "x-csrftoken": csrfToken, "x-requested-with": "XMLHttpRequest" }
-            });
-            let statesData;
-            try {
-              statesData = JSON.parse(response.responseText);
-              if (!Array.isArray(statesData)) {
-                statesData = API.extractStateData(statesData, "SingleItemCheck");
-              }
-            } catch (e) {
-              logBuffer.push(`\u89E3\u6790API\u54CD\u5E94\u5931\u8D25: ${e.message}`);
-              statesData = [];
-            }
-            const isOwned = Array.isArray(statesData) && statesData.some((s) => s && s.uid === currentTask.uid && s.acquired);
-            if (isOwned) {
-              logBuffer.push(`API check confirms item is already owned.`);
-              success = true;
-            } else {
-              logBuffer.push(`API check confirms item is not owned. Proceeding to UI interaction.`);
-            }
-          } catch (apiError) {
-            logBuffer.push(`API ownership check failed: ${apiError.message}. Falling back to UI-based check.`);
-          }
-          if (!success) {
-            const isItemOwned = /* @__PURE__ */ __name(() => {
-              const criteria = Config.OWNED_SUCCESS_CRITERIA;
-              const snackbar = document.querySelector('.fabkit-Snackbar-root, div[class*="Toast-root"]');
-              if (snackbar && criteria.snackbarText.some((text) => snackbar.textContent.includes(text))) {
-                return { owned: true, reason: `Snackbar text "${snackbar.textContent}"` };
-              }
-              const allButtons = [...document.querySelectorAll('button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]')];
-              const ownedButton = allButtons.find((btn) => criteria.buttonTexts.some((keyword) => btn.textContent.includes(keyword)));
-              if (ownedButton) return { owned: true, reason: `Button text "${ownedButton.textContent}"` };
-              const ownedBadge = allButtons.find((btn) => {
-                const text = Utils.normalizeWhitespace(btn.textContent || "");
-                return text === "\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D" || text === "Saved in My Library" || text === "Saved in library" || text === "\u5DF2\u4FDD\u5B58\u5728\u5E93\u4E2D";
-              });
-              if (ownedBadge) return { owned: true, reason: `Badge text "${ownedBadge.textContent}"` };
-              return { owned: false };
-            }, "isItemOwned");
-            const initialState = isItemOwned();
-            if (initialState.owned) {
-              logBuffer.push(`Item already owned on page load (UI Fallback PASS: ${initialState.reason}).`);
-              success = true;
-            } else {
-              const externalState = TaskRunner2.getExternalProductState(document);
-              if (externalState.handled) {
-                logBuffer.push(`Detected non-purchasable external listing (${externalState.reason}). Marking task as handled.`);
-                success = true;
-              }
-            }
-            if (!success) {
-              const buttonSelector = 'button, .fabkit-Button-root, [role="button"], [class*="Button"], [class*="button"], a[href]';
-              const allVisibleButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
-                const text = btn.textContent.trim();
-                const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
-                const isHidden = style && (style.display === "none" || style.visibility === "hidden");
-                return text.length > 0 && !isHidden;
-              });
-              const criticalKeywords = [...Config.ACQUISITION_TEXT_SET, ...Config.FREE_TEXT_SET, "\u8BB8\u53EF", "License", "Select", "\u9009\u62E9", "Add", "\u6DFB\u52A0", "Library", "\u5E93"];
-              const criticalButtons = allVisibleButtons.filter((btn) => {
-                const text = btn.textContent;
-                return criticalKeywords.some((key) => text.includes(key));
-              });
-              logBuffer.push(`=== \u6309\u94AE\u68C0\u6D4B: \u53EF\u89C1=${allVisibleButtons.length}, \u5173\u952E=${criticalButtons.length} ===`);
-              if (criticalButtons.length > 0) {
-                criticalButtons.slice(0, 5).forEach((btn, i) => {
-                  logBuffer.push(`  \u5173\u952E\u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
-                });
-              } else if (allVisibleButtons.length > 0) {
-                allVisibleButtons.slice(0, 3).forEach((btn, i) => {
-                  logBuffer.push(`  \u6309\u94AE${i + 1}: "${btn.textContent.trim().substring(0, 40)}"`);
-                });
-              }
-              const licenseButton = allVisibleButtons.find((btn) => {
-                const text = Utils.normalizeWhitespace(btn.textContent);
-                return text.includes("\u9009\u62E9\u8BB8\u53EF") || text.includes("Select license") || btn.getAttribute("aria-haspopup") === "true" && TaskRunner2.isFreeCard(btn);
-              });
-              if (licenseButton) {
-                logBuffer.push(`Multi-license item detected. Setting up observer for dropdown.`);
-                try {
-                  await new Promise((resolve, reject) => {
-                    const observer = new MutationObserver((mutationsList) => {
-                      for (const mutation of mutationsList) {
-                        if (mutation.addedNodes.length > 0) {
-                          for (const node of mutation.addedNodes) {
-                            if (node.nodeType !== 1) continue;
-                            const clickableParent = TaskRunner2.findFreeLicenseOption(node);
-                            if (clickableParent) {
-                              logBuffer.push(`Found explicit free license option, clicking it.`);
-                              Utils.deepClick(clickableParent);
-                              observer.disconnect();
-                              resolve();
-                              return;
-                            }
-                          }
-                        }
-                      }
-                    });
-                    observer.observe(document.body, { childList: true, subtree: true });
-                    logBuffer.push(`Clicking license button to open dropdown.`);
-                    Utils.deepClick(licenseButton);
-                    setTimeout(() => {
-                      logBuffer.push(`Second attempt to click license button.`);
-                      Utils.deepClick(licenseButton);
-                    }, 1500);
-                    setTimeout(() => {
-                      observer.disconnect();
-                      reject(new Error("Timeout (5s): The free/personal option did not appear."));
-                    }, 5e3);
-                  });
-                  logBuffer.push(`License selected, waiting for UI update.`);
-                  await new Promise((r) => setTimeout(r, 2e3));
-                  if (isItemOwned().owned) {
-                    logBuffer.push(`Item became owned after license selection.`);
-                    success = true;
-                  }
-                } catch (licenseError) {
-                  logBuffer.push(`License selection failed: ${licenseError.message}`);
-                }
-              }
-              if (!success) {
-                let actionButton = null;
-                const findActionBtnStart = Date.now();
-                const findActionBtnMaxWait = 8e3;
-                while (!actionButton && Date.now() - findActionBtnStart < findActionBtnMaxWait) {
-                  const freshButtons = [...document.querySelectorAll(buttonSelector)].filter((btn) => {
-                    const text = btn.textContent.trim();
-                    const style = window.getComputedStyle ? window.getComputedStyle(btn) : null;
-                    const isHidden = style && (style.display === "none" || style.visibility === "hidden");
-                    return text.length > 0 && !isHidden;
-                  });
-                  actionButton = freshButtons.find((btn) => {
-                    const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                    return [...Config.ACQUISITION_TEXT_SET].some(
-                      (keyword) => text.includes(keyword.toLowerCase())
-                    );
-                  });
-                  if (!actionButton) {
-                    actionButton = freshButtons.find((btn) => {
-                      const text = Utils.normalizeWhitespace(btn.textContent);
-                      const hasFreeText = [...Config.FREE_TEXT_SET].some((freeWord) => text.includes(freeWord));
-                      const hasDiscount = /-\s*100\s*%\s*(?:OFF|折扣)?/i.test(text);
-                      const hasPersonal = text.includes("\u4E2A\u4EBA") || text.includes("Personal");
-                      return hasFreeText && hasDiscount && hasPersonal;
-                    });
-                  }
-                  if (!actionButton) {
-                    actionButton = freshButtons.find((btn) => {
-                      const text = btn.textContent.toLowerCase();
-                      return text.includes("add") && text.includes("library") || text.includes("\u6DFB\u52A0") && text.includes("\u5E93");
-                    });
-                  }
-                  if (actionButton) break;
-                  await new Promise((r) => setTimeout(r, 400));
-                }
-                if (actionButton) {
-                  logBuffer.push(`Found add button [${actionButton.textContent.trim().substring(0, 30)}], clicking it.`);
-                  Utils.deepClick(actionButton);
-                  try {
-                    await new Promise((resolve, reject) => {
-                      const timeout = 6e4;
-                      const startTime2 = Date.now();
-                      const interval = setInterval(() => {
-                        const currentState = isItemOwned();
-                        if (currentState.owned) {
-                          logBuffer.push(`Successfully owned (UI Match: ${currentState.reason})`);
-                          success = true;
-                          clearInterval(interval);
-                          resolve();
-                          return;
-                        }
-                        const allButtonsWithShadow = Utils.findAllButtonsWithShadow();
-                        let checkoutBtn = allButtonsWithShadow.find(
-                          (btn) => btn.classList.contains("payment-order-confirm__btn")
-                        );
-                        if (!checkoutBtn) {
-                          checkoutBtn = allButtonsWithShadow.find((btn) => {
-                            const text = Utils.normalizeWhitespace(btn.textContent).toLowerCase();
-                            if (text.includes("buy now") || text.includes("\u7ACB\u5373\u8D2D\u4E70")) return false;
-                            const isCheckoutContext = btn.ownerDocument !== document || window.location.pathname.includes("/payment/");
-                            if (isCheckoutContext) {
-                              if (text.includes("add to library") || text.includes("\u6DFB\u52A0\u5230\u5E93") || text.includes("add to account") || text.includes("\u6DFB\u52A0\u5230\u8D26\u6237")) {
-                                return true;
-                              }
-                            }
-                            const checkoutKeywords = [
-                              "place order",
-                              "\u4E0B\u5355",
-                              "checkout",
-                              "\u7ED3\u8D26",
-                              "complete order",
-                              "\u5B8C\u6210\u8BA2\u5355",
-                              "confirm",
-                              "\u786E\u8BA4",
-                              "claim",
-                              "\u9886\u53D6",
-                              "get",
-                              "\u83B7\u53D6",
-                              "pay",
-                              "\u652F\u4ED8"
-                            ];
-                            return checkoutKeywords.some((kw) => text.includes(kw));
-                          });
-                        }
-                        if (checkoutBtn && !checkoutBtn.disabled) {
-                          const lastClickTime = parseInt(checkoutBtn.dataset.lastClickTime || "0");
-                          const now = Date.now();
-                          if (now - lastClickTime > 2e3) {
-                            logBuffer.push(`Found checkout/place order button [${checkoutBtn.textContent.trim()}], clicking it.`);
-                            checkoutBtn.dataset.lastClickTime = now.toString();
-                            Utils.deepClick(checkoutBtn);
-                          }
-                        }
-                        if (Date.now() - startTime2 > timeout) {
-                          clearInterval(interval);
-                          reject(new Error(`Timeout waiting for page to enter an 'owned' state. (UI might be stuck)`));
-                        }
-                      }, 500);
-                    });
-                  } catch (timeoutError) {
-                    logBuffer.push(`Timeout waiting for ownership: ${timeoutError.message}`);
-                  }
-                } else {
-                  logBuffer.push(`Could not find an add button.`);
-                }
-              }
-            }
-          }
+          const claimResult = await acquireOnDetailPage(currentTask, {
+            taskRunner: TaskRunner2,
+            log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
+          });
+          success = claimResult.success;
         } catch (error) {
           logBuffer.push(`A critical error occurred: ${error.message}`);
           success = false;
@@ -7292,6 +7374,7 @@
   var hasClaimBackend = /* @__PURE__ */ __name(() => Boolean(
     typeof ApiClaim.isAvailable === "function" && ApiClaim.isAvailable() || typeof DomClaim.isAvailable === "function" && DomClaim.isAvailable()
   ), "hasClaimBackend");
+  var isApiPipelineActive = /* @__PURE__ */ __name(() => Boolean(Config.USE_API_PIPELINE && hasClaimBackend()), "isApiPipelineActive");
   var createScanFilter = /* @__PURE__ */ __name((database = Database) => (item) => {
     if (!item || !item.uid) return "invalid_item";
     if (database && typeof database.isDone === "function" && database.isDone(`https://www.fab.com/listings/${item.uid}`)) {
@@ -8151,7 +8234,7 @@
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
+            if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -8168,7 +8251,7 @@
     if (Config.USE_API_PIPELINE) {
       startApiPipeline().catch((e) => Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25: ${e.message}`));
     }
-    if ((State.autoAddOnScroll || State.autoScroll) && !Config.USE_API_PIPELINE) {
+    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -8244,7 +8327,7 @@
           if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
             RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
           }
-        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !Config.USE_API_PIPELINE) {
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive()) {
           const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
           if (actualHidden > 0) {
             Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
@@ -8260,7 +8343,7 @@
       }
     }, 1e4));
     State.domIntervals.push(setInterval(() => {
-      if (Config.USE_API_PIPELINE) return;
+      if (isApiPipelineActive()) return;
       if (State.db.todo.length === 0) return;
       TaskRunner2.ensureTasksAreExecuted();
     }, 5e3));
@@ -8538,7 +8621,7 @@
     if (!hasClaimBackend()) {
       Utils.logger(
         "error",
-        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint\uFF1B\u5728\u6B64\u4E4B\u524D\u8BF7\u628A USE_API_PIPELINE \u7F6E\u56DE false \u4EE5\u4F7F\u7528\u65E7\u8DEF\u5F84\u3002"
+        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002\u5982\u9700\u542F\u7528\u65B0\u6D41\u6C34\u7EBF\uFF0C\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint\u3002"
       );
       return;
     }

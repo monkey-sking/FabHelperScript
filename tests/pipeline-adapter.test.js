@@ -20,10 +20,12 @@ import { EventLog, EVENT_STATE } from '../src/modules/event-log.js';
 import { STATE } from '../src/modules/state-machine.js';
 import { ClaimExecutor } from '../src/modules/claim-strategy.js';
 import { ListingSource, FREE_POLICY } from '../src/modules/listing-source.js';
+import { Config } from '../src/config.js';
 import {
     bootstrapPipeline,
     resetPipelineAdapters,
-    hasClaimBackend
+    hasClaimBackend,
+    isApiPipelineActive
 } from '../src/modules/pipeline-adapter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -233,6 +235,31 @@ test('已入库商品在扫描阶段即被跳过，不会进入待领队列', as
     const skipped = [...EventLog._latest.values()].filter(e => e.state === EVENT_STATE.SKIPPED);
     assert.equal(skipped.length, 2);
     assert.ok(skipped.every(e => e.reason === 'already_owned'));
+});
+
+test('isApiPipelineActive：开关开着但无领取后端时必须为 false，否则旧路径会被一起关掉', async () => {
+    const orig = Config.USE_API_PIPELINE;
+    try {
+        resetPipelineAdapters();
+        Config.USE_API_PIPELINE = true;
+        assert.equal(hasClaimBackend(), false);
+        // 这是这条判定的全部意义：新流水线拒绝启动时，旧路径的护栏必须放行
+        assert.equal(isApiPipelineActive(), false, '无领取后端 → 旧路径必须继续运行');
+
+        bootstrapPipeline({ fetchImpl: fixtureFetch(), acquireFn: async () => ({ success: true }) });
+        assert.equal(isApiPipelineActive(), true, '注入后端后新流水线才真正接管');
+
+        Config.USE_API_PIPELINE = false;
+        assert.equal(isApiPipelineActive(), false, '开关关闭时无论有没有后端都不接管');
+
+        // 后端被清掉后判定必须跟着回落，不能停留在「已接管」
+        resetPipelineAdapters();
+        Config.USE_API_PIPELINE = true;
+        assert.equal(isApiPipelineActive(), false, 'reset 清掉后端后判定必须回落到 false');
+    } finally {
+        Config.USE_API_PIPELINE = orig;
+        resetPipelineAdapters();
+    }
 });
 
 test('resetPipelineAdapters 清除注入，避免用例间泄漏', async () => {
