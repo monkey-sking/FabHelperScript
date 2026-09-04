@@ -33,7 +33,8 @@ src/
         ├── listing-source.js   # /i/listings/search 分页枚举
         ├── pipeline.js         # 单标签页流水线编排
         ├── pipeline-adapter.js # 与真实页面/GM 存储对接
-        └── pipeline-scheduler.js # 调度策略（可脱离定时器测试）
+        ├── pipeline-scheduler.js # 调度策略（可脱离定时器测试）
+        └── detail-claim.js   # 详情页领取核心（新旧路径共用）
 ```
 
 ## 核心模块架构
@@ -96,6 +97,12 @@ graph TD
   `Database.isDone` 入库复查、事件日志的持久化与旧数据层回写。
 - **pipeline-scheduler.js** —— 决定「多快做、做完了要不要再来一遍」。
   定时器与时钟全部注入，调度策略因此可测。
+- **detail-claim.js** —— 详情页领取核心：在一个**已经停在商品详情页**的文档上
+  完成单条领取（等就绪 → 接口复查 → 已拥有判定 → 选许可 → 点添加 → 等入库，
+  期间积极寻找并点击结算按钮）。`document` / `window` / `Utils` / `API` /
+  `TaskRunner` / 定时器全部可注入，因此这段原本只能靠线上观察的逻辑可以在 Node
+  里用假 DOM 完整驱动。它只负责「把商品领到手」，**不负责**把页面送到详情页 ——
+  那是调用方的事（worker 标签页 / iframe / 直接导航）。
 
 调度器的三条硬约束（每条都对应旧实现的一个具体故障）：
 
@@ -111,13 +118,29 @@ graph TD
 
 - `Config.USE_API_PIPELINE`（默认 `false`）：打开后新流水线取代旧的滚动枚举与
   worker 领取路径。**当前尚未具备生产可用性**：领取后端一个都没接上
-  （`ApiClaim` 端点待抓包确认，`DomClaim` 的 `acquireFn` 尚未从 `task-runner`
-  抽出单商品入口），因此调度器会检测到「无领取后端」并拒绝启动，
+  （`ApiClaim` 端点待抓包确认；`DomClaim` 缺少「把页面送到详情页」的传输层），
+  因此调度器会检测到「无领取后端」并拒绝启动，
   避免整页商品被逐条标记为领取失败。
 - `Config.PIPELINE_RESCAN_INTERVAL_MS`（默认 `0`）：一轮到底后的自动重扫间隔，
   0 表示不自动重扫。
 - `hasClaimBackend()` 是启动前的安全闸门；接好任一路领取后端后，
   打开 `USE_API_PIPELINE` 即可切换，无需改动流程代码。
+- 旧路径的护栏判的是 `isApiPipelineActive()`（开关**且**有领取后端），
+  不是 `Config.USE_API_PIPELINE`。新流水线拒绝启动时旧路径必须继续干活，
+  否则脚本整体停摆 —— 详见下节。
+
+### 领取传输层：还差哪一步
+
+`detail-claim.js` 只解决「页面已经在详情页时怎么领」，没解决「怎么把页面送到详情页」。
+这正是 `DomClaim` 还缺的一环，两条候选路线：
+
+| 路线 | 现状 | 代价 |
+| --- | --- | --- |
+| `ApiClaim`（接口领取） | **端点未确认**：历史抓包里只有 GET 端点（`/i/listings/search`、 `/i/users/context`、`/i/users/me/wallet`、`/i/cart`、`/i/listings/prices-infos`、`/i/users/me/listings-states`），没有领取类 POST | 需要用户在 devtools 里抓一次真实的「免费领取」请求；一旦确认，`ApiClaim.configure({endpoint})` 即可接管，无需改流程 |
+| `DomClaim`（DOM 领取） | 核心逻辑已抽出可直接复用；缺传输层 | 同源 iframe 可行（`www.fab.com` 返回 `x-frame-options: SAMEORIGIN`），但需给 iframe URL 打标记并让脚本在该帧里提前退出，否则脚本会在 iframe 内二次初始化 |
+
+`isApiPipelineActive()` 的存在让「开关开着但后端没接好」不再等于「脚本停摆」，
+所以上面两条路线可以慢慢选，不必为了不打断功能而赶工。
 
 ## 模块说明
 
