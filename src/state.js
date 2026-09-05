@@ -24,6 +24,9 @@ export const State = {
     isExecuting: false, // 是否正在执行任务
     isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false, // 是否是工作标签页
+    // 本帧是不是流水线挂的隐藏领取 iframe。为 true 时脚本主体（实例/UI/派发/保活）
+    // 一律不初始化，只留下 document-start 的资源拦截，由主标签页跨文档驱动。
+    isClaimFrame: false,
     totalTasks: 0, // API扫描的总任务数
     completedTasks: 0, // API扫描的已完成任务数
     isDispatchingTasks: false, // 新增：标记是否正在派发任务

@@ -21,6 +21,20 @@ export const Config = {
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
+    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」。
+    //   'none'   —— 不启用任何领取后端（默认）。流水线会因无后端拒绝启动，
+    //               旧路径照常工作。这是默认值，因为下面那条路还没有经过线上验证。
+    //   'iframe' —— 在主标签页里挂一个同源隐藏 iframe 加载详情页，由主标签页
+    //               直接驱动其 DOM 完成领取（www.fab.com 返回
+    //               x-frame-options: SAMEORIGIN，同源 iframe 是允许的）。
+    // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
+    // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
+    // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
+    CLAIM_TRANSPORT: 'none',
+    // 领取 iframe 的标记参数。带这个参数的详情页是流水线自己塞进隐藏 iframe 的，
+    // 脚本在该帧里必须立刻退出，否则会二次初始化（实例抢占 / UI 重复 / 任务派发），
+    // 与主标签页互相打架。
+    CLAIM_FRAME_PARAM: 'fab_claim_frame',
     UI_CONTAINER_ID: 'fab-helper-container',
     UI_LOG_ID: 'fab-helper-log',
     DB_KEYS: {

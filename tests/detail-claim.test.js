@@ -11,78 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { acquireOnDetailPage } from '../src/modules/detail-claim.js';
-
-/** 极简假节点：只实现领取逻辑真正会碰到的那几个属性 */
-function makeNode(spec = {}) {
-    const node = {
-        tag: spec.tag || 'button',
-        textContent: spec.text || '',
-        classes: spec.classes || [],
-        attrs: spec.attrs || {},
-        dataset: {},
-        disabled: Boolean(spec.disabled),
-        ownerDocument: null,   // 由 makeDoc 补上
-        onClick: spec.onClick, // 可在建好之后再覆盖（模拟「点击后页面才变化」）
-        // hidden 的节点不参与任何查询，用来模拟「点击之后才渲染出来」的元素。
-        // 不要用「点击后再 push 进数组」来模拟：那样新节点的 ownerDocument 会是 null，
-        // 而真实 DOM 里任何节点都有 ownerDocument，假节点一缺失就会被误判成结算上下文。
-        hidden: Boolean(spec.hidden),
-        clicks: 0,
-        classList: {
-            contains: (cls) => (spec.classes || []).includes(cls)
-        },
-        getAttribute: (name) => (spec.attrs && spec.attrs[name] !== undefined ? spec.attrs[name] : null),
-        focus: () => {},
-        click() {
-            node.clicks += 1;
-            if (typeof node.onClick === 'function') node.onClick(node);
-        },
-        matches: (selector) => matchSelector(node, selector)
-    };
-    return node;
-}
-
-/** 只覆盖本模块实际用到的选择器形态，够用即可 */
-function matchSelector(node, selector) {
-    return String(selector).split(',').map(s => s.trim().toLowerCase()).some(part => {
-        if (!part) return false;
-        if (part === 'button') return node.tag === 'button';
-        if (part === 'a[href]') return node.tag === 'a' && Boolean(node.attrs.href);
-        if (part === '[role="button"]') return node.attrs.role === 'button';
-        if (part === 'main') return node.tag === 'main';
-        if (part === 'h1') return node.tag === 'h1';
-        if (part.includes('[class*=')) {
-            const token = part.split('[class*=')[1].replace(/["'\]]/g, '');
-            return node.classes.some(c => c.toLowerCase().includes(token));
-        }
-        if (part.startsWith('.')) {
-            const cls = part.slice(1);
-            return node.classes.some(c => c.toLowerCase() === cls);
-        }
-        if (part.includes('.')) {
-            const [tag, ...rest] = part.split('.');
-            return node.tag === tag && rest.every(r => node.classes.some(c => c.toLowerCase() === r));
-        }
-        return false;
-    });
-}
-
-function makeDoc(nodes) {
-    const doc = {
-        readyState: 'complete',
-        title: 'Fake Listing',
-        nodes,
-        body: { textContent: '' },
-        querySelectorAll(selector) {
-            return doc.nodes.filter(n => !n.hidden && n.matches(selector));
-        },
-        querySelector(selector) {
-            return doc.querySelectorAll(selector)[0] || null;
-        }
-    };
-    nodes.forEach(n => { n.ownerDocument = doc; });
-    return doc;
-}
+import { makeNode, makeDoc, makeFakeUtils } from './helpers/fake-dom.js';
 
 /**
  * 造一套可注入的运行环境。
@@ -103,12 +32,7 @@ function makeHarness({ nodes = [], api = {}, taskRunner = {} } = {}) {
             getComputedStyle: () => null,
             location: { pathname: '/listings/fake-uid', href: 'https://www.fab.com/listings/fake-uid' }
         },
-        utils: {
-            normalizeWhitespace: (s) => String(s == null ? '' : s).replace(/\s+/g, ' ').trim(),
-            deepClick: (el) => { if (el && typeof el.click === 'function') el.click(); },
-            getCookie: (name) => (name === 'fab_csrftoken' ? 'test-csrf' : null),
-            findAllButtonsWithShadow: (root) => (root && root.querySelectorAll ? root.querySelectorAll('button') : [])
-        },
+        utils: makeFakeUtils(),
         api: {
             gmFetch: async () => ({ responseText: '[]' }),
             extractStateData: () => [],

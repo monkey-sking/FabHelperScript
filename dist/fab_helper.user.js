@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260904-1111
+// @version      3.5.21-20260905-0938
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -770,6 +770,20 @@
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
+    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」。
+    //   'none'   —— 不启用任何领取后端（默认）。流水线会因无后端拒绝启动，
+    //               旧路径照常工作。这是默认值，因为下面那条路还没有经过线上验证。
+    //   'iframe' —— 在主标签页里挂一个同源隐藏 iframe 加载详情页，由主标签页
+    //               直接驱动其 DOM 完成领取（www.fab.com 返回
+    //               x-frame-options: SAMEORIGIN，同源 iframe 是允许的）。
+    // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
+    // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
+    // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
+    CLAIM_TRANSPORT: "none",
+    // 领取 iframe 的标记参数。带这个参数的详情页是流水线自己塞进隐藏 iframe 的，
+    // 脚本在该帧里必须立刻退出，否则会二次初始化（实例抢占 / UI 重复 / 任务派发），
+    // 与主标签页互相打架。
+    CLAIM_FRAME_PARAM: "fab_claim_frame",
     UI_CONTAINER_ID: "fab-helper-container",
     UI_LOG_ID: "fab-helper-log",
     DB_KEYS: {
@@ -952,6 +966,9 @@
     // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false,
     // 是否是工作标签页
+    // 本帧是不是流水线挂的隐藏领取 iframe。为 true 时脚本主体（实例/UI/派发/保活）
+    // 一律不初始化，只留下 document-start 的资源拦截，由主标签页跨文档驱动。
+    isClaimFrame: false,
     totalTasks: 0,
     // API扫描的总任务数
     completedTasks: 0,
@@ -1240,7 +1257,8 @@
         element.focus();
       } catch (e) {
       }
-      const pageWindow = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+      const ownWindow = element.ownerDocument && element.ownerDocument.defaultView || null;
+      const pageWindow = ownWindow || (typeof unsafeWindow !== "undefined" ? unsafeWindow : window);
       const PointerEvt = pageWindow.PointerEvent || PointerEvent;
       const MouseEvt = pageWindow.MouseEvent || MouseEvent;
       const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true, buttons: 1, button: 0 };
@@ -3744,13 +3762,14 @@
     const startAt = ctx.now();
     return new Promise((resolve) => {
       let settled = false;
+      let interval = null;
       const finish = /* @__PURE__ */ __name((ok) => {
         if (settled) return;
         settled = true;
-        ctx.clearIntervalFn(interval);
+        if (interval !== null) ctx.clearIntervalFn(interval);
         resolve(ok);
       }, "finish");
-      const interval = ctx.setIntervalFn(() => {
+      interval = ctx.setIntervalFn(() => {
         const currentState = isItemOwned();
         if (currentState.owned) {
           push(`Successfully owned (UI Match: ${currentState.reason})`);
@@ -6284,6 +6303,120 @@
     }, "updateDebugTab")
   };
 
+  // src/modules/iframe-claim.js
+  var noop2 = /* @__PURE__ */ __name(() => {
+  }, "noop");
+  var defaultBuildUrl = /* @__PURE__ */ __name((task) => {
+    const base = `https://www.fab.com/listings/${encodeURIComponent(task && task.uid)}`;
+    return `${base}?${Config.CLAIM_FRAME_PARAM}=1`;
+  }, "defaultBuildUrl");
+  var CLAIM_FRAME_STYLE = "position:fixed;left:-10000px;top:0;width:1200px;height:800px;border:0;";
+  var isRealDocument = /* @__PURE__ */ __name((doc) => {
+    if (!doc || doc.readyState !== "interactive" && doc.readyState !== "complete") return false;
+    let href = "";
+    try {
+      href = doc.location && doc.location.href || "";
+    } catch (e) {
+      return false;
+    }
+    return /^https?:/.test(href);
+  }, "isRealDocument");
+  var waitForFrameReady = /* @__PURE__ */ __name(async (iframe, { timeoutMs, sleep, now }) => {
+    const startAt = now();
+    while (now() - startAt < timeoutMs) {
+      let doc = null;
+      try {
+        doc = iframe.contentDocument;
+      } catch (e) {
+        return { ok: false, reason: `\u8BFB\u4E0D\u5230 iframe \u6587\u6863\uFF08\u8DE8\u57DF\u6216\u88AB CSP \u62E6\u622A\uFF09: ${e.message}` };
+      }
+      if (isRealDocument(doc)) return { ok: true };
+      await sleep(200);
+    }
+    return { ok: false, reason: `iframe \u5728 ${timeoutMs}ms \u5185\u6CA1\u6709\u52A0\u8F7D\u5B8C\u6210` };
+  }, "waitForFrameReady");
+  var createRealFrameOpener = /* @__PURE__ */ __name((options = {}) => {
+    const {
+      parentDoc = typeof document !== "undefined" ? document : null,
+      container = null,
+      timeoutMs = 3e4,
+      sleep = /* @__PURE__ */ __name((ms) => new Promise((r) => setTimeout(r, ms)), "sleep"),
+      now = /* @__PURE__ */ __name(() => Date.now(), "now"),
+      log: log2 = noop2
+    } = options;
+    return async (url) => {
+      if (!parentDoc || typeof parentDoc.createElement !== "function") {
+        throw new Error("\u6CA1\u6709\u53EF\u7528\u7684\u7236\u6587\u6863\uFF0C\u65E0\u6CD5\u521B\u5EFA\u9886\u53D6 iframe");
+      }
+      const host = container || parentDoc.body || parentDoc.documentElement;
+      const iframe = parentDoc.createElement("iframe");
+      iframe.setAttribute("data-fab-claim-frame", "1");
+      iframe.setAttribute("aria-hidden", "true");
+      iframe.style.cssText = CLAIM_FRAME_STYLE;
+      iframe.src = url;
+      host.appendChild(iframe);
+      let closed = false;
+      const close = /* @__PURE__ */ __name(() => {
+        if (closed) return;
+        closed = true;
+        try {
+          iframe.remove();
+        } catch (e) {
+        }
+      }, "close");
+      const ready = await waitForFrameReady(iframe, { timeoutMs, sleep, now });
+      if (!ready.ok) {
+        close();
+        const err = new Error(ready.reason);
+        err.retryable = true;
+        throw err;
+      }
+      log2(`[IframeClaim] \u8BE6\u60C5\u9875\u5DF2\u5728\u9886\u53D6\u5E27\u5185\u5C31\u7EEA: ${url}`);
+      return { iframe, doc: iframe.contentDocument, win: iframe.contentWindow, close };
+    };
+  }, "createRealFrameOpener");
+  var createIframeAcquire = /* @__PURE__ */ __name((options = {}) => {
+    const {
+      taskRunner = null,
+      openFrame = createRealFrameOpener(options),
+      buildUrl = defaultBuildUrl,
+      log: log2 = noop2,
+      claimOptions = {}
+    } = options;
+    return /* @__PURE__ */ __name(async function acquireViaIframe(task) {
+      if (!task || !task.uid) {
+        return { success: false, reason: "\u4EFB\u52A1\u7F3A\u5C11 uid", retryable: false };
+      }
+      let frame = null;
+      try {
+        frame = await openFrame(buildUrl(task));
+        if (!frame || !frame.doc) {
+          return { success: false, reason: "\u9886\u53D6\u5E27\u6CA1\u6709\u53EF\u7528\u6587\u6863", retryable: true };
+        }
+        const result = await acquireOnDetailPage(task, {
+          doc: frame.doc,
+          win: frame.win,
+          taskRunner,
+          log: log2,
+          ...claimOptions
+        });
+        return {
+          success: Boolean(result && result.success),
+          reason: result && result.logs && result.logs.slice(-1)[0] || "",
+          retryable: false
+        };
+      } catch (e) {
+        return {
+          success: false,
+          reason: e && e.message || String(e),
+          retryable: (e && e.retryable) !== false
+        };
+      } finally {
+        if (frame && typeof frame.close === "function") frame.close();
+      }
+    }, "acquireViaIframe");
+  }, "createIframeAcquire");
+
   // src/modules/rate-limiter.js
   var RateLimiter = {
     // 基准速率（次/分钟），突发上限，降速下限
@@ -7482,7 +7615,7 @@
         }
         const style = document.createElement("style");
         style.textContent = `
-                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]), [style*="background-image"] {
+                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]):not([data-fab-claim-frame]), [style*="background-image"] {
                     display: none !important;
                     background-image: none !important;
                 }
@@ -8424,6 +8557,11 @@
       await TaskRunner2.processDetailPage();
       return;
     }
+    if (urlParams.get(Config.CLAIM_FRAME_PARAM)) {
+      State.isClaimFrame = true;
+      Utils.logger("debug", "[Pipeline] \u9886\u53D6\u5E27\u5185\u4E0D\u521D\u59CB\u5316\u811A\u672C\u4E3B\u4F53\uFF0C\u7B49\u5F85\u4E3B\u6807\u7B7E\u9875\u9A71\u52A8\u3002");
+      return;
+    }
     await InstanceManager.init();
     await Database.load();
     KeepAlive.setTick(async () => {
@@ -8617,11 +8755,19 @@
   var _apiPipelineScheduler = null;
   async function startApiPipeline() {
     if (State.isWorkerTab) return;
-    bootstrapPipeline({ fetchImpl: gmFetchImpl });
+    let acquireFn = null;
+    if (Config.CLAIM_TRANSPORT === "iframe") {
+      acquireFn = createIframeAcquire({
+        taskRunner: TaskRunner2,
+        log: /* @__PURE__ */ __name((msg) => Utils.logger("debug", msg), "log")
+      });
+      Utils.logger("info", "[Pipeline] \u9886\u53D6\u4F20\u8F93\u5C42\uFF1A\u540C\u6E90 iframe\uFF08\u5355\u6807\u7B7E\u9875\uFF0C\u4E0D\u5F00 worker \u6807\u7B7E\u9875\uFF09\u3002");
+    }
+    bootstrapPipeline({ fetchImpl: gmFetchImpl, acquireFn });
     if (!hasClaimBackend()) {
       Utils.logger(
         "error",
-        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002\u5982\u9700\u542F\u7528\u65B0\u6D41\u6C34\u7EBF\uFF0C\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint\u3002"
+        `[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002\u5982\u9700\u542F\u7528\u65B0\u6D41\u6C34\u7EBF\uFF0C\u8BF7\u628A CLAIM_TRANSPORT \u914D\u6210 iframe\uFF0C\u6216\u914D\u7F6E apiEndpoint\u3002`
       );
       return;
     }

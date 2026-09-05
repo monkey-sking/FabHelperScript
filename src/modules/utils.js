@@ -208,7 +208,12 @@ export const Utils = {
         // Ensure element is focused if possible
         try { element.focus(); } catch (e) { }
 
-        const pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        // 优先用元素自己所属文档的 window：领取 iframe 里的元素如果拿父页面的
+        // PointerEvent/MouseEvent 构造器去派发，框架的事件处理可能不认。
+        // 常规场景（元素就在本页）ownerDocument.defaultView === window，行为不变。
+        const ownWindow = (element.ownerDocument && element.ownerDocument.defaultView) || null;
+        const pageWindow = ownWindow
+            || (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window);
         const PointerEvt = pageWindow.PointerEvent || PointerEvent;
         const MouseEvt = pageWindow.MouseEvent || MouseEvent;
         const eventOptions = { view: pageWindow, bubbles: true, cancelable: true, composed: true, buttons: 1, button: 0 };

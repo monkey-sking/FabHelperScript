@@ -34,7 +34,8 @@ src/
         ├── pipeline.js         # 单标签页流水线编排
         ├── pipeline-adapter.js # 与真实页面/GM 存储对接
         ├── pipeline-scheduler.js # 调度策略（可脱离定时器测试）
-        └── detail-claim.js   # 详情页领取核心（新旧路径共用）
+        ├── detail-claim.js   # 详情页领取核心（新旧路径共用）
+        └── iframe-claim.js   # 领取传输层：同源隐藏 iframe
 ```
 
 ## 核心模块架构
@@ -117,30 +118,43 @@ graph TD
 ### 开关与现状
 
 - `Config.USE_API_PIPELINE`（默认 `false`）：打开后新流水线取代旧的滚动枚举与
-  worker 领取路径。**当前尚未具备生产可用性**：领取后端一个都没接上
-  （`ApiClaim` 端点待抓包确认；`DomClaim` 缺少「把页面送到详情页」的传输层），
-  因此调度器会检测到「无领取后端」并拒绝启动，
-  避免整页商品被逐条标记为领取失败。
+  worker 领取路径。
+- `Config.CLAIM_TRANSPORT`（默认 `'none'`）：用哪种传输层把详情页送到眼前。
+  默认 `'none'` 时没有任何领取后端，流水线会拒绝启动并自动回退旧路径。
+  配成 `'iframe'` 才启用同源 iframe 领取 —— **该路径尚未经过线上验证**，
+  所以刻意不跟着总开关一起开：它一旦不工作，整份免费列表会被逐条标记成
+  「领取失败」并在事件日志里定型，之后再修好也不会重试。
 - `Config.PIPELINE_RESCAN_INTERVAL_MS`（默认 `0`）：一轮到底后的自动重扫间隔，
   0 表示不自动重扫。
 - `hasClaimBackend()` 是启动前的安全闸门；接好任一路领取后端后，
   打开 `USE_API_PIPELINE` 即可切换，无需改动流程代码。
 - 旧路径的护栏判的是 `isApiPipelineActive()`（开关**且**有领取后端），
   不是 `Config.USE_API_PIPELINE`。新流水线拒绝启动时旧路径必须继续干活，
-  否则脚本整体停摆 —— 详见下节。
+  否则脚本整体停摆。
 
-### 领取传输层：还差哪一步
+### 领取传输层
 
-`detail-claim.js` 只解决「页面已经在详情页时怎么领」，没解决「怎么把页面送到详情页」。
-这正是 `DomClaim` 还缺的一环，两条候选路线：
+`detail-claim.js` 解决「页面已经在详情页时怎么领」，`iframe-claim.js` 解决
+「怎么把页面送到详情页」。两条候选路线：
 
 | 路线 | 现状 | 代价 |
 | --- | --- | --- |
 | `ApiClaim`（接口领取） | **端点未确认**：历史抓包里只有 GET 端点（`/i/listings/search`、 `/i/users/context`、`/i/users/me/wallet`、`/i/cart`、`/i/listings/prices-infos`、`/i/users/me/listings-states`），没有领取类 POST | 需要用户在 devtools 里抓一次真实的「免费领取」请求；一旦确认，`ApiClaim.configure({endpoint})` 即可接管，无需改流程 |
-| `DomClaim`（DOM 领取） | 核心逻辑已抽出可直接复用；缺传输层 | 同源 iframe 可行（`www.fab.com` 返回 `x-frame-options: SAMEORIGIN`），但需给 iframe URL 打标记并让脚本在该帧里提前退出，否则脚本会在 iframe 内二次初始化 |
+| `DomClaim`（DOM 领取） | **已实现**，默认关闭 | 同源 iframe：`www.fab.com` 返回 `x-frame-options: SAMEORIGIN`，父页面可读写 `contentDocument`。主标签页挂隐藏帧 → 跨文档驱动 → 领完摘帧，全程不开新标签页 |
 
-`isApiPipelineActive()` 的存在让「开关开着但后端没接好」不再等于「脚本停摆」，
-所以上面两条路线可以慢慢选，不必为了不打断功能而赶工。
+iframe 路线有两个非显然的坑，都已处理：
+
+1. **脚本会在帧内二次初始化**。userscript 默认注入所有同源帧，若不拦，实例管理 /
+   UI / 任务派发 / 保活都会在帧里跑第二份，与主标签页抢占 active instance。
+   解决：帧的 URL 带 `Config.CLAIM_FRAME_PARAM`，`main()` 在 `InstanceManager.init()`
+   之前就识别并退出，连实例都不注册。
+2. **帧不能 `display:none`**。部分前端框架对隐藏元素跳过渲染与懒加载，按钮长不出来。
+   解决：帧移到视口外参与布局，同时给 document-start 注入的全局 CSS 加
+   `[data-fab-claim-frame]` 豁免（那条规则原本会把所有非支付/非验证码 iframe 隐藏）。
+
+失败归类同样关键：帧没起来 / 跨域读不到文档 → `retryable: true`；
+帧内明确领不到（找不到按钮、超时未入库）→ 终态失败。
+前者若误判成终态，整份列表会一次性在事件日志里定型。
 
 ## 模块说明
 

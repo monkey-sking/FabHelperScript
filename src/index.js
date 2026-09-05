@@ -37,9 +37,11 @@
 
             // 2. Inject CSS to hide images and background images visually
             // Exempt the purchase iframe and captcha-related iframes from display: none.
+            // 也豁免带 data-fab-claim-frame 的 iframe：那是新流水线的领取帧，
+            // 一旦 display:none，部分前端框架会跳过渲染和懒加载，按钮根本长不出来。
             const style = document.createElement('style');
             style.textContent = `
-                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]), [style*="background-image"] {
+                img, source, picture, video, iframe:not([src*="/payment/web/purchase"]):not([src*="hcaptcha"]):not([src*="recaptcha"]):not([src*="captcha"]):not([src*="turnstile"]):not([src*="challenges.cloudflare.com"]):not([src*="arkoselabs"]):not([data-fab-claim-frame]), [style*="background-image"] {
                     display: none !important;
                     background-image: none !important;
                 }
@@ -129,6 +131,7 @@ import { TaskRunner, setUIReference as setTaskRunnerUIRef, setDependencies as se
 import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.js';
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
+import { createIframeAcquire } from './modules/iframe-claim.js';
 
 // API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下仅引入，不执行任何逻辑。
 import { Pipeline } from './modules/pipeline.js';
@@ -1195,6 +1198,17 @@ async function main() {
         return;
     }
 
+    // 领取帧：这个详情页是流水线自己塞进隐藏 iframe 的，由主标签页跨文档驱动。
+    // 脚本在这里必须立刻退出，只留下 document-start 那段资源拦截 —— 一旦继续往下
+    // 走，实例管理 / UI / 任务派发 / 保活都会在帧里跑第二份，与主标签页抢占
+    // active instance 并互相干扰。放在 InstanceManager.init 之前退出，
+    // 连实例都不注册，最干净。
+    if (urlParams.get(Config.CLAIM_FRAME_PARAM)) {
+        State.isClaimFrame = true;
+        Utils.logger('debug', '[Pipeline] 领取帧内不初始化脚本主体，等待主标签页驱动。');
+        return;
+    }
+
     await InstanceManager.init();
     await Database.load();
 
@@ -1454,7 +1468,19 @@ let _apiPipelineScheduler = null;
 async function startApiPipeline() {
     if (State.isWorkerTab) return;
 
-    bootstrapPipeline({ fetchImpl: gmFetchImpl });
+    // 领取传输层：Config.CLAIM_TRANSPORT 决定用哪种方式把详情页送到眼前。
+    //   'iframe' —— 同源隐藏 iframe，由主标签页跨文档驱动（未经线上验证，需显式开启）
+    //   'none'   —— 不启用，流水线随后会因无领取后端拒绝启动并回退旧路径
+    let acquireFn = null;
+    if (Config.CLAIM_TRANSPORT === 'iframe') {
+        acquireFn = createIframeAcquire({
+            taskRunner: TaskRunner,
+            log: (msg) => Utils.logger('debug', msg)
+        });
+        Utils.logger('info', '[Pipeline] 领取传输层：同源 iframe（单标签页，不开 worker 标签页）。');
+    }
+
+    bootstrapPipeline({ fetchImpl: gmFetchImpl, acquireFn });
 
     // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
     // 事件日志被污染，用户还看不出原因。
@@ -1462,9 +1488,9 @@ async function startApiPipeline() {
     // （开关 && 有后端），本函数返回后旧路径照常运行，只是日志里会留下这一条。
     if (!hasClaimBackend()) {
         Utils.logger('error',
-            '[Pipeline] 未配置任何领取后端（DomClaim 未注入、ApiClaim 端点未确认），流水线不启动。' +
-            '已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。' +
-            '如需启用新流水线，请注入 acquireFn 或配置 apiEndpoint。');
+            `[Pipeline] 未配置任何领取后端（CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}、ApiClaim 端点未确认），` +
+            '流水线不启动。已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。' +
+            '如需启用新流水线，请把 CLAIM_TRANSPORT 配成 iframe，或配置 apiEndpoint。');
         return;
     }
 

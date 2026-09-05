@@ -413,14 +413,19 @@ const waitForOwnedAfterClick = async (ctx, push, isItemOwned) => {
 
     return new Promise((resolve) => {
         let settled = false;
+        // interval 必须先声明后赋值：回调有可能在 setIntervalFn 返回之前就被同步调用
+        // （注入的定时器替身就会这么干），此时 const interval 还在 TDZ，
+        // finish 里一引用就抛「Cannot access 'interval' before initialization」，
+        // 把一次本该成功的领取打成失败。
+        let interval = null;
         const finish = (ok) => {
             if (settled) return;
             settled = true;
-            ctx.clearIntervalFn(interval);
+            if (interval !== null) ctx.clearIntervalFn(interval);
             resolve(ok);
         };
 
-        const interval = ctx.setIntervalFn(() => {
+        interval = ctx.setIntervalFn(() => {
             const currentState = isItemOwned();
             if (currentState.owned) {
                 push(`Successfully owned (UI Match: ${currentState.reason})`);
