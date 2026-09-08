@@ -118,6 +118,8 @@ test('端到端：枚举（真实夹具）→ iframe 领取 → 复查入库 →
         fetchImpl: fixtureFetch(),
         database: fakeDb,
         acquireFn,
+        // 测试环境没有页面信号，显式声明已登录，否则会被未登录闸门拦下
+        isLoggedIn: () => true,
         ratePerMin: 100000,
         burst: 100
     });
@@ -161,6 +163,8 @@ test('领取失败时流水线把它记为 failed，而不是默默当成成功'
         fetchImpl: fixtureFetch(),
         database: fakeDb,
         acquireFn,
+        // 测试环境没有页面信号，显式声明已登录，否则会被未登录闸门拦下
+        isLoggedIn: () => true,
         ratePerMin: 100000,
         burst: 100
     });

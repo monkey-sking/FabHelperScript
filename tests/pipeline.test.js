@@ -33,7 +33,9 @@ function setup({ ratePerMin = 600, burst = 5, claimResult = CLAIM_RESULT.SUCCESS
         burst,
         verifyOwned: async () => verify,
         filter: null,
-        fetchPage: fakeSearch(0, 10)
+        fetchPage: fakeSearch(0, 10),
+        // 显式清空，避免上一条用例注入的登录判据漏到这里
+        isLoggedIn: null
     });
     return Pipeline;
 }
@@ -381,4 +383,79 @@ test('整个流程可在同一 uid 上先失败后成功（事件日志天然支
     assert.equal(EventLog.isFailed('uid-0'), true);
     assert.equal(EventLog.stats().total, 1);
     assert.equal(ClaimExecutor.stats().dom.attempts, 1);
+});
+
+/**
+ * 未登录闸门
+ *
+ * 未登录的详情页上根本没有领取按钮（实测只有「立即购买 / 添加至购物车」），
+ * 领取必然失败；而失败写进事件日志就被标成终态，整份免费列表一次性定型 ——
+ * 之后就算登录了，这些 uid 也不会再回到待领队列。
+ * 所以闸门必须拦在「动手领取」之前，而不是等失败发生后再处理。
+ */
+test('未登录：停在领取之前，商品留在待领而不是被定型为失败', async () => {
+    setup();
+    Pipeline.configure({ fetchPage: fakeSearch(4, 4), isLoggedIn: () => false });
+
+    Pipeline.start(0);
+    const steps = await Pipeline.run({ maxSteps: 50, now: 0, advance: 1 });
+
+    assert.ok(
+        steps.some(s => s.action === 'login_required'),
+        '必须给出明确的未登录动作，而不是静默什么都不做'
+    );
+    assert.equal(Pipeline.fsm.state, STATE.DONE, '未登录应当停在本轮结束');
+
+    const stats = EventLog.stats();
+    assert.equal(stats.failed, 0, '绝不能把商品标记成失败 —— 一旦定型，登录了也不会重试');
+    assert.equal(stats.claimed, 0);
+    assert.equal(
+        EventLog.getTodo().length, 4,
+        '商品必须还留在待领队列里，登录后可以直接接着领'
+    );
+    // 领取后端一次都没被调用
+    assert.equal(ClaimExecutor.stats().dom.attempts, 0);
+});
+
+test('已登录：同一条流程正常领取完毕', async () => {
+    setup();
+    Pipeline.configure({ fetchPage: fakeSearch(4, 4), isLoggedIn: () => true });
+
+    Pipeline.start(0);
+    await Pipeline.run({ maxSteps: 50, now: 0, advance: 1 });
+
+    assert.equal(EventLog.stats().claimed, 4);
+    assert.equal(EventLog.getTodo().length, 0);
+});
+
+test('未注入登录判据时不拦截，保持既有行为（测试与离线驱动不受影响）', async () => {
+    setup();
+    Pipeline.configure({ fetchPage: fakeSearch(4, 4), isLoggedIn: null });
+
+    Pipeline.start(0);
+    await Pipeline.run({ maxSteps: 50, now: 0, advance: 1 });
+
+    assert.equal(EventLog.stats().claimed, 4, '未注入时不应引入新的拦截');
+});
+
+test('登录态在流程中途失效时，兜底闸门同样拦住后续领取', async () => {
+    setup();
+    let loggedIn = true;
+    // 领完第一批后登录态失效
+    setDomClaim(async () => {
+        loggedIn = false;
+        return { result: CLAIM_RESULT.SUCCESS };
+    });
+    Pipeline.configure({
+        fetchPage: fakeSearch(4, 4),
+        isLoggedIn: () => loggedIn
+    });
+
+    Pipeline.start(0);
+    await Pipeline.run({ maxSteps: 50, now: 0, advance: 1 });
+
+    const stats = EventLog.stats();
+    assert.equal(stats.claimed, 1, '第一条在登录态失效前领成功');
+    assert.equal(stats.failed, 0, '其余商品不能被定型为失败');
+    assert.equal(EventLog.getTodo().length, 3, '剩余商品留在待领队列');
 });

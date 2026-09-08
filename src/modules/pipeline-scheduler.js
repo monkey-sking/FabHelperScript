@@ -121,7 +121,17 @@ export const createPipelineScheduler = (options = {}) => {
             }
 
             if (pipeline.fsm.is(...RUNNING_STATES)) {
-                await pipeline.tick(now);
+                const step = await pipeline.tick(now);
+
+                // 未登录被拦下时必须说清楚，否则用户只看到「本程结束」，
+                // 却不知道是没登录，更不知道商品还好好留在队列里。
+                if (step && step.action === 'login_required') {
+                    log('error',
+                        `[Pipeline] 未登录，已停在领取之前（未登录的详情页没有领取按钮，` +
+                        `硬领只会把整份列表标记成失败）。${step.todo} 个商品留在待领队列，` +
+                        `登录后可继续，不会重复领取已处理的商品。`);
+                    persist(now);
+                }
 
                 // 按节奏落盘：中途关页面也不丢已领取记录
                 if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {

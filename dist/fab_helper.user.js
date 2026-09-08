@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260908-1043
+// @version      3.5.21-20260908-1053
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -6865,16 +6865,21 @@
       // 扫描阶段过滤商品：返回 null 表示纳入待领，返回字符串表示跳过原因。
       // 入参是 fetchPage 给出的完整商品对象（含价格、许可证），
       // 不是事件日志条目 —— 后者在领取阶段只剩 uid / name / url。
-      filter: null
+      filter: null,
+      // 判断是否已登录，返回 boolean。只在它是函数且返回 false 时拦截领取，
+      // 未注入（null）时不拦 —— 保持测试与离线驱动下行为不变。
+      // 为什么必须有这道闸门，见 _claimBlockedByLogin 的说明。
+      isLoggedIn: null
     },
     /**
      * 注入副作用适配器。显式传 null 可清除对应项——若只允许覆盖而不允许清除，
      * 上一次注入的过滤器会静默残留并影响后续流程。
      */
-    configure: /* @__PURE__ */ __name(({ fetchPage, verifyOwned, filter, ratePerMin, burst } = {}) => {
+    configure: /* @__PURE__ */ __name(({ fetchPage, verifyOwned, filter, isLoggedIn, ratePerMin, burst } = {}) => {
       if (typeof fetchPage === "function" || fetchPage === null) Pipeline.deps.fetchPage = fetchPage;
       if (typeof verifyOwned === "function" || verifyOwned === null) Pipeline.deps.verifyOwned = verifyOwned;
       if (typeof filter === "function" || filter === null) Pipeline.deps.filter = filter;
+      if (typeof isLoggedIn === "function" || isLoggedIn === null) Pipeline.deps.isLoggedIn = isLoggedIn;
       if (Number.isFinite(ratePerMin) || Number.isFinite(burst)) {
         RateLimiter.configure({ ratePerMin, burst });
       }
@@ -6958,6 +6963,30 @@
       }
       return 0;
     }, "nextDelayMs"),
+    /**
+     * 未登录闸门：返回非 null 表示本步到此为止，不许进领取。
+     *
+     * 这是整条流水线最要紧的一道保护。未登录的详情页上根本没有「添加到我的库」
+     * 按钮（实测未登录时只有「立即购买 / 添加至购物车」），领取必然失败；
+     * 而失败一旦写进事件日志就被标成终态，整份免费列表一次性定型 ——
+     * 之后就算登录了，这些 uid 也不会再回到待领队列。
+     *
+     * 相比之下枚举是只读的（/i/listings/search 匿名也返回 200），无害，
+     * 所以允许它照常跑完，只是停在动手领取之前。
+     *
+     * 只在明确注入了 isLoggedIn 且它返回 false 时拦截；未注入（null）时不拦，
+     * 以免改变测试与离线驱动下的既有行为。
+     */
+    _claimBlockedByLogin: /* @__PURE__ */ __name((now, todoCount) => {
+      if (typeof Pipeline.deps.isLoggedIn !== "function") return null;
+      if (Pipeline.deps.isLoggedIn() !== false) return null;
+      Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u672A\u767B\u5F55\uFF0C\u505C\u5728\u9886\u53D6\u4E4B\u524D" });
+      return {
+        action: "login_required",
+        todo: todoCount,
+        state: Pipeline.fsm.state
+      };
+    }, "_claimBlockedByLogin"),
     _stepScan: /* @__PURE__ */ __name(async (now) => {
       if (typeof Pipeline.deps.fetchPage !== "function") {
         return { action: "error", reason: "\u672A\u914D\u7F6E fetchPage" };
@@ -7004,6 +7033,8 @@
       if (page.nextCursor == null) Pipeline.isEndOfList = true;
       const todo = EventLog.getTodo();
       if (todo.length > 0) {
+        const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
+        if (blocked) return blocked;
         Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u672C\u9875\u6709\u5F85\u9886\u5546\u54C1" });
       } else if (Pipeline.isEndOfList) {
         Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u670D\u52A1\u5668\u786E\u8BA4\u65E0\u66F4\u591A\u5546\u54C1" });
@@ -7034,6 +7065,8 @@
         }
         return { action: "drain", state: Pipeline.fsm.state };
       }
+      const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
+      if (blocked) return blocked;
       const task = todo[0];
       const outcome = await Pipeline.executor.claim(task);
       if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
@@ -7193,7 +7226,14 @@
           if (restartRequested || isRescanDue(now)) beginPass(now);
         }
         if (pipeline.fsm.is(...RUNNING_STATES)) {
-          await pipeline.tick(now);
+          const step = await pipeline.tick(now);
+          if (step && step.action === "login_required") {
+            log2(
+              "error",
+              `[Pipeline] \u672A\u767B\u5F55\uFF0C\u5DF2\u505C\u5728\u9886\u53D6\u4E4B\u524D\uFF08\u672A\u767B\u5F55\u7684\u8BE6\u60C5\u9875\u6CA1\u6709\u9886\u53D6\u6309\u94AE\uFF0C\u786C\u9886\u53EA\u4F1A\u628A\u6574\u4EFD\u5217\u8868\u6807\u8BB0\u6210\u5931\u8D25\uFF09\u3002${step.todo} \u4E2A\u5546\u54C1\u7559\u5728\u5F85\u9886\u961F\u5217\uFF0C\u767B\u5F55\u540E\u53EF\u7EE7\u7EED\uFF0C\u4E0D\u4F1A\u91CD\u590D\u9886\u53D6\u5DF2\u5904\u7406\u7684\u5546\u54C1\u3002`
+            );
+            persist(now);
+          }
           if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
             lastPersistAt = now;
             persist(now);
@@ -7537,7 +7577,10 @@
       apiBuildBody,
       ratePerMin,
       burst,
-      freePolicy
+      freePolicy,
+      // 可覆盖的登录判据。默认接真实的 checkAuthentication；测试环境里没有
+      // 页面信号，会一律判成未登录而被闸门拦下，所以需要能显式注入。
+      isLoggedIn
     } = options;
     if (freePolicy) ListingSource.configure({ freePolicy });
     if (apiEndpoint) {
@@ -7551,6 +7594,10 @@
       fetchPage: createFetchPage(fetchImpl),
       verifyOwned: createVerifyOwned(database),
       filter: createScanFilter(database),
+      // 未登录时拦在领取之前。未登录的详情页只有「立即购买 / 添加至购物车」，
+      // 没有领取按钮，领取必然失败；而失败写进事件日志就被定型，
+      // 整份免费列表之后再也不会重试。用 silent 模式，避免在这里弹 alert。
+      isLoggedIn: typeof isLoggedIn === "function" ? isLoggedIn : () => Utils.checkAuthentication(true),
       ...Number.isFinite(ratePerMin) ? { ratePerMin } : {},
       ...Number.isFinite(burst) ? { burst } : {}
     });

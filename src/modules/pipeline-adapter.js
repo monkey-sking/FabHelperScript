@@ -144,7 +144,10 @@ export const bootstrapPipeline = (options = {}) => {
         apiBuildBody,
         ratePerMin,
         burst,
-        freePolicy
+        freePolicy,
+        // 可覆盖的登录判据。默认接真实的 checkAuthentication；测试环境里没有
+        // 页面信号，会一律判成未登录而被闸门拦下，所以需要能显式注入。
+        isLoggedIn
     } = options;
 
     if (freePolicy) ListingSource.configure({ freePolicy });
@@ -161,6 +164,12 @@ export const bootstrapPipeline = (options = {}) => {
         fetchPage: createFetchPage(fetchImpl),
         verifyOwned: createVerifyOwned(database),
         filter: createScanFilter(database),
+        // 未登录时拦在领取之前。未登录的详情页只有「立即购买 / 添加至购物车」，
+        // 没有领取按钮，领取必然失败；而失败写进事件日志就被定型，
+        // 整份免费列表之后再也不会重试。用 silent 模式，避免在这里弹 alert。
+        isLoggedIn: typeof isLoggedIn === 'function'
+            ? isLoggedIn
+            : () => Utils.checkAuthentication(true),
         ...(Number.isFinite(ratePerMin) ? { ratePerMin } : {}),
         ...(Number.isFinite(burst) ? { burst } : {})
     });
@@ -229,6 +238,9 @@ export const persistEventLog = ({ database = Database } = {}) => {
 /** 测试/复用之间清理适配器注入状态，避免用例互相泄漏 */
 export const resetPipelineAdapters = () => {
     setDomClaim(null);              // 清 DomClaim 注入
+    // isLoggedIn 是全局单例上的注入，不清会漏到下一个用例：
+    // 上一条把登录态设成 false，后面所有用例都会被拦在领取之前。
+    Pipeline.configure({ isLoggedIn: null });
     ApiClaim.endpoint = null;       // 清 ApiClaim
     ApiClaim.fetchImpl = null;
     ApiClaim.buildBody = null;

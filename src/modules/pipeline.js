@@ -38,17 +38,22 @@ export const Pipeline = {
         // 扫描阶段过滤商品：返回 null 表示纳入待领，返回字符串表示跳过原因。
         // 入参是 fetchPage 给出的完整商品对象（含价格、许可证），
         // 不是事件日志条目 —— 后者在领取阶段只剩 uid / name / url。
-        filter: null
+        filter: null,
+        // 判断是否已登录，返回 boolean。只在它是函数且返回 false 时拦截领取，
+        // 未注入（null）时不拦 —— 保持测试与离线驱动下行为不变。
+        // 为什么必须有这道闸门，见 _claimBlockedByLogin 的说明。
+        isLoggedIn: null
     },
 
     /**
      * 注入副作用适配器。显式传 null 可清除对应项——若只允许覆盖而不允许清除，
      * 上一次注入的过滤器会静默残留并影响后续流程。
      */
-    configure: ({ fetchPage, verifyOwned, filter, ratePerMin, burst } = {}) => {
+    configure: ({ fetchPage, verifyOwned, filter, isLoggedIn, ratePerMin, burst } = {}) => {
         if (typeof fetchPage === 'function' || fetchPage === null) Pipeline.deps.fetchPage = fetchPage;
         if (typeof verifyOwned === 'function' || verifyOwned === null) Pipeline.deps.verifyOwned = verifyOwned;
         if (typeof filter === 'function' || filter === null) Pipeline.deps.filter = filter;
+        if (typeof isLoggedIn === 'function' || isLoggedIn === null) Pipeline.deps.isLoggedIn = isLoggedIn;
         if (Number.isFinite(ratePerMin) || Number.isFinite(burst)) {
             RateLimiter.configure({ ratePerMin, burst });
         }
@@ -138,6 +143,32 @@ export const Pipeline = {
         return 0;
     },
 
+    /**
+     * 未登录闸门：返回非 null 表示本步到此为止，不许进领取。
+     *
+     * 这是整条流水线最要紧的一道保护。未登录的详情页上根本没有「添加到我的库」
+     * 按钮（实测未登录时只有「立即购买 / 添加至购物车」），领取必然失败；
+     * 而失败一旦写进事件日志就被标成终态，整份免费列表一次性定型 ——
+     * 之后就算登录了，这些 uid 也不会再回到待领队列。
+     *
+     * 相比之下枚举是只读的（/i/listings/search 匿名也返回 200），无害，
+     * 所以允许它照常跑完，只是停在动手领取之前。
+     *
+     * 只在明确注入了 isLoggedIn 且它返回 false 时拦截；未注入（null）时不拦，
+     * 以免改变测试与离线驱动下的既有行为。
+     */
+    _claimBlockedByLogin: (now, todoCount) => {
+        if (typeof Pipeline.deps.isLoggedIn !== 'function') return null;
+        if (Pipeline.deps.isLoggedIn() !== false) return null;
+
+        Pipeline.fsm.transition(STATE.DONE, { now, reason: '未登录，停在领取之前' });
+        return {
+            action: 'login_required',
+            todo: todoCount,
+            state: Pipeline.fsm.state
+        };
+    },
+
     _stepScan: async (now) => {
         if (typeof Pipeline.deps.fetchPage !== 'function') {
             return { action: 'error', reason: '未配置 fetchPage' };
@@ -194,6 +225,8 @@ export const Pipeline = {
 
         const todo = EventLog.getTodo();
         if (todo.length > 0) {
+            const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
+            if (blocked) return blocked;
             Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: '本页有待领商品' });
         } else if (Pipeline.isEndOfList) {
             Pipeline.fsm.transition(STATE.DONE, { now, reason: '服务器确认无更多商品' });
@@ -228,6 +261,10 @@ export const Pipeline = {
             }
             return { action: 'drain', state: Pipeline.fsm.state };
         }
+
+        // 兜底：即便因为别的原因已经进了 CLAIMING，未登录也不能真的下手
+        const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
+        if (blocked) return blocked;
 
         // 过滤已在扫描阶段完成（见 _stepScan），这里不重复执行：
         // 领取阶段拿不到商品详情，且重复过滤会让「跳过原因」出现两条互相矛盾的归因。
