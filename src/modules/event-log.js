@@ -100,6 +100,9 @@ export const EventLog = {
             url: meta.url || (prev && prev.url) || EventLog.canonicalUrl(id),
             reason: meta.reason || ''
         };
+        // 只存非空 offerId，避免污染旧 persisted 数据（向后兼容）
+        const offerId = meta.offerId || (prev && prev.offerId);
+        if (offerId) event.offerId = offerId;
 
         EventLog.events.push(event);
         EventLog._latest.set(id, event);
@@ -126,7 +129,11 @@ export const EventLog = {
 
     getTodo: () => [...EventLog._latest.values()]
         .filter(e => e.state === EVENT_STATE.DISCOVERED)
-        .map(e => ({ uid: e.uid, url: e.url, name: e.name })),
+        .map(e => {
+            const task = { uid: e.uid, url: e.url, name: e.name };
+            if (e.offerId) task.offerId = e.offerId;
+            return task;
+        }),
 
     getDone: () => [...EventLog._latest.values()]
         .filter(e => e.state === EVENT_STATE.CLAIMED)

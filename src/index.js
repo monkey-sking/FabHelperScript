@@ -139,11 +139,13 @@ import { createPipelineScheduler } from './modules/pipeline-scheduler.js';
 import {
     bootstrapPipeline,
     gmFetchImpl,
+    gmPostImpl,
     hasClaimBackend,
     isApiPipelineActive,
     loadEventLog,
     persistEventLog
 } from './modules/pipeline-adapter.js';
+import { FAB_CLAIM_ENDPOINT } from './modules/claim-strategy.js';
 
 // Global countdown variables
 let currentCountdownInterval = null;
@@ -1470,9 +1472,9 @@ let _apiPipelineScheduler = null;
 async function startApiPipeline() {
     if (State.isWorkerTab) return;
 
-    // 领取传输层：Config.CLAIM_TRANSPORT 决定用哪种方式把详情页送到眼前。
+    // 领取传输层：CLAIM_TRANSPORT 只在 ApiClaim 不可用时才生效（回落到 DOM）。
     //   'iframe' —— 同源隐藏 iframe，由主标签页跨文档驱动（未经线上验证，需显式开启）
-    //   'none'   —— 不启用，流水线随后会因无领取后端拒绝启动并回退旧路径
+    //   'none'   —— 不注入 DOM 领取，ApiClaim 已确认端点时仍可正常启动
     let acquireFn = null;
     if (Config.CLAIM_TRANSPORT === 'iframe') {
         acquireFn = createIframeAcquire({
@@ -1482,7 +1484,12 @@ async function startApiPipeline() {
         Utils.logger('info', '[Pipeline] 领取传输层：同源 iframe（单标签页，不开 worker 标签页）。');
     }
 
-    bootstrapPipeline({ fetchImpl: gmFetchImpl, acquireFn });
+    bootstrapPipeline({
+        fetchImpl: gmFetchImpl,
+        acquireFn,
+        apiEndpoint: FAB_CLAIM_ENDPOINT,
+        apiFetchImpl: gmPostImpl
+    });
 
     // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
     // 事件日志被污染，用户还看不出原因。
@@ -1490,9 +1497,8 @@ async function startApiPipeline() {
     // （开关 && 有后端），本函数返回后旧路径照常运行，只是日志里会留下这一条。
     if (!hasClaimBackend()) {
         Utils.logger('error',
-            `[Pipeline] 未配置任何领取后端（CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}、ApiClaim 端点未确认），` +
-            '流水线不启动。已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。' +
-            '如需启用新流水线，请把 CLAIM_TRANSPORT 配成 iframe，或配置 apiEndpoint。');
+            `[Pipeline] 未配置任何领取后端（CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}、ApiClaim 不可用）。` +
+            '流水线不启动。已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。');
         return;
     }
 

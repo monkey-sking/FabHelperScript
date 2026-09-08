@@ -23,8 +23,12 @@
  *   - 429 → 不回落。限速时叠加请求只会让情况更糟，应交给令牌桶退避。
  * 每个 outcome 用 retryable 标记这一判断，Executor 据此决定是否继续尝试。
  *
- * 端点状态：Fab 的领取端点尚未抓包确认，因此 ApiClaim 默认不可用
- * （isAvailable() 为 false）。管道已铺好，确认端点后配置即可生效。
+ * 端点状态：领取端点已于 2026-09 抓包确认（见下方 FAB_CLAIM_ENDPOINT 的
+ * 证据链），并且成功响应 204 已于 2026-09-08 在登录态下实测确认——用真实免费
+ * 商品的 startingPrice.offerId 与详情页 licenses[].offerId（price===0）两种
+ * offer_id 来源均成功入库。此前本仓库从没有过领取接口——全量扫描 884 个历史
+ * blob 只出现过 search / listings-states / prices-infos 三个只读端点，领取
+ * 一直是 DOM 点击。端点确认后 USE_API_PIPELINE 已默认开启。
  */
 import { Utils } from './utils.js';
 
@@ -37,26 +41,115 @@ export const CLAIM_RESULT = {
 };
 
 /**
+ * 领取端点 —— 2026-09 抓包确认，勿再凭猜测改动。
+ *
+ * 证据链（在未登录的 www.fab.com 页面内实测）：
+ *   POST /i/listings/{uid}/add-to-library  → 401 {"detail":"身份认证信息未提供。"}
+ *   POST /i/listings/{uid}/add-to-libary   → 404 Page not found（故意拼错）
+ *   POST /i/listings/claim                 → 404 Page not found（早期误猜的端点）
+ *   POST /i/listings/{uid}/zzz-bogus       → 404 Page not found
+ * 鉴权中间件先于路由匹配报错 → 只有真实存在的路由才会到 401。
+ *
+ * 登录态实测（2026-09-08，账号 Game7caifei）：
+ *   请求  POST，Content-Type: multipart/form-data; boundary=----FabHelperFormBoundary，
+ *         字段 offer_id，header 带 x-csrftoken（取自 fab_csrftoken cookie）与
+ *         x-requested-with: XMLHttpRequest。
+ *   成功  204，无响应体。
+ *   失败  400 {"detail":{"offerId":["该字段不能为空。"]}}（offer_id 缺失/为空）；
+ *         401（未登录）；429（限速）；5xx（服务端故障，可重试回落）。
+ *   offer_id 来源：快路径用搜索结果 startingPrice.offerId；慢路径用详情页
+ *   licenses[] 中 priceTier.price===0 的 offerId（优先 professional 档）。
+ */
+export const FAB_CLAIM_ENDPOINT = 'https://www.fab.com/i/listings/{uid}/add-to-library';
+export const FAB_LISTING_ENDPOINT = 'https://www.fab.com/i/listings/{uid}';
+
+/**
+ * multipart/form-data 请求体。
+ *
+ * 必须自己拼 boundary：GM_xmlhttpRequest 不会像浏览器那样替我们生成，
+ * 手动设 Content-Type 又极易漏掉 boundary 而被服务端判 400。
+ */
+export const multipartBody = (fields, boundary = '----FabHelperFormBoundary') => {
+    const lines = [];
+    Object.keys(fields || {}).forEach((key) => {
+        lines.push(`--${boundary}`);
+        lines.push(`Content-Disposition: form-data; name="${key}"`);
+        lines.push('');
+        lines.push(String(fields[key]));
+    });
+    lines.push(`--${boundary}--`);
+    lines.push('');
+    return lines.join('\r\n');
+};
+
+/**
+ * 从详情页 JSON 里挑出「免费许可」的 offerId。
+ *
+ * 判据来自竞品实测：priceTier.price === 0 的许可才是可白拿的；同一商品
+ * 若 professional 档也免费则优先取它，否则取第一个免费档。
+ * 注意价格单位是分（实测 6920 = $69.20），所以只与 0 比较是安全的。
+ */
+export const pickFreeOfferId = (listing) => {
+    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
+    const free = list.filter(
+        (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
+    );
+    if (!free.length) return null;
+    const pro = free.find((l) => l.slug === 'professional');
+    return (pro || free[0]).offerId;
+};
+
+/**
  * ApiClaim：接口领取。
  *
- * 领取端点待抓包确认（手动领取一件免费商品，观察 Network 面板中的 POST）。
- * 确认后调用 ApiClaim.configure({ endpoint }) 即可启用，无需改动流程代码。
+ * 默认即走已确认的 Fab 端点：POST multipart/form-data，字段 offer_id。
+ * offer_id 不能凭空构造，必须来自商品的许可信息，因此领取前需要先解析它。
  */
 export const ApiClaim = {
     name: 'api',
-    endpoint: null,
+    endpoint: FAB_CLAIM_ENDPOINT,
     method: 'POST',
+    boundary: '----FabHelperFormBoundary',
     buildBody: null,
+    resolveOfferId: null, // 可注入：(task) => offerId | null
     fetchImpl: null, // 可注入，便于测试与替换传输层
 
-    configure: ({ endpoint, method, buildBody, fetchImpl } = {}) => {
+    configure: ({ endpoint, method, buildBody, resolveOfferId, fetchImpl, boundary } = {}) => {
         if (endpoint) ApiClaim.endpoint = endpoint;
         if (method) ApiClaim.method = method;
-        if (typeof buildBody === 'function') ApiClaim.buildBody = buildBody;
-        if (typeof fetchImpl === 'function') ApiClaim.fetchImpl = fetchImpl;
+        if (boundary) ApiClaim.boundary = boundary;
+        if (typeof buildBody === 'function' || buildBody === null) ApiClaim.buildBody = buildBody;
+        if (typeof resolveOfferId === 'function' || resolveOfferId === null) ApiClaim.resolveOfferId = resolveOfferId;
+        if (typeof fetchImpl === 'function' || fetchImpl === null) ApiClaim.fetchImpl = fetchImpl;
     },
 
     isAvailable: () => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === 'function',
+
+    /** 端点模板里的 {uid} 换成真实 uid。 */
+    _url: (task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+
+    /**
+     * 解析 offer_id。
+     * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
+     * 免费档，可以直接用，省掉每件商品一次详情请求。
+     * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
+     */
+    _resolveOfferId: async (task) => {
+        if (typeof ApiClaim.resolveOfferId === 'function') return ApiClaim.resolveOfferId(task);
+        if (task && task.offerId) return task.offerId;
+
+        const res = await ApiClaim.fetchImpl({
+            method: 'GET',
+            url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+            headers: { accept: 'application/json' }
+        });
+        if (!res || res.status !== 200) return null;
+        try {
+            return pickFreeOfferId(JSON.parse(res.responseText));
+        } catch (e) {
+            return null;
+        }
+    },
 
     claim: async (task) => {
         if (!ApiClaim.isAvailable()) {
@@ -73,19 +166,44 @@ export const ApiClaim = {
             };
         }
 
+        // offer_id 是必填项，缺失时发请求只会拿到 400，别浪费一次调用
+        let offerId = null;
+        try {
+            offerId = await ApiClaim._resolveOfferId(task);
+        } catch (e) {
+            return { result: CLAIM_RESULT.FAILURE, reason: `解析 offer_id 失败: ${e.message}`, retryable: true };
+        }
+        if (!offerId) {
+            return {
+                result: CLAIM_RESULT.FAILURE,
+                reason: '未找到免费许可的 offer_id',
+                retryable: false
+            };
+        }
+
+        // buildBody 可返回字符串、裸对象，或 { body, contentType }
+        const built = typeof ApiClaim.buildBody === 'function'
+            ? ApiClaim.buildBody({ ...task, offerId })
+            : { offer_id: offerId };
+        const isString = typeof built === 'string';
+        const body = isString
+            ? built
+            : (built && typeof built.body === 'string' ? built.body : multipartBody(built, ApiClaim.boundary));
+        const contentType = (!isString && built && built.contentType)
+            ? built.contentType
+            : `multipart/form-data; boundary=${ApiClaim.boundary}`;
+
         let response;
         try {
             response = await ApiClaim.fetchImpl({
                 method: ApiClaim.method,
-                url: ApiClaim.endpoint,
+                url: ApiClaim._url(task),
                 headers: {
-                    'content-type': 'application/json',
+                    'content-type': contentType,
                     'x-csrftoken': csrfToken,
                     'x-requested-with': 'XMLHttpRequest'
                 },
-                data: JSON.stringify(
-                    ApiClaim.buildBody ? ApiClaim.buildBody(task) : { listing_uid: task.uid }
-                )
+                data: body
             });
         } catch (e) {
             // 网络层异常通常是暂时性的，值得回落重试
@@ -107,9 +225,20 @@ export const ApiClaim = {
 
         if (status >= 200 && status < 300) return { result: CLAIM_RESULT.SUCCESS, reason: '' };
 
+        // 401 是未登录：实测返回 {"detail":"身份认证信息未提供。"}。
+        // 回落 DOM 同样没有领取按钮，属终态。
+        if (status === 401) {
+            return { result: CLAIM_RESULT.FAILURE, reason: '接口返回 401，未登录或会话已失效', retryable: false };
+        }
+
         // 403/404 属于终态失败，重试与回落都无意义
         if (status === 403 || status === 404) {
             return { result: CLAIM_RESULT.FAILURE, reason: `接口返回 ${status}`, retryable: false };
+        }
+
+        // 400 多为请求体不合法（例如漏了 boundary），重试只会重复同一个错误
+        if (status === 400) {
+            return { result: CLAIM_RESULT.FAILURE, reason: '接口返回 400，请求体可能被拒绝', retryable: false };
         }
 
         // 5xx 是服务端临时故障，值得回落到 DOM 再试一次

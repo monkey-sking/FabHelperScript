@@ -10,7 +10,7 @@
  *   - DomClaim     → 注入真实 DOM 领取实现（复用现有领取逻辑，见 createDomClaim）
  *   - ApiClaim     → 一旦确认领取 POST 端点，ApiClaim.configure({endpoint}) 即可接管，无需改流程
  *
- * 整条链路由 Config.USE_API_PIPELINE 控制，关闭时完全不被触碰（默认关闭），
+ * 整条链路由 Config.USE_API_PIPELINE 控制，关闭时完全不被触碰（当前默认开启），
  * 开启后取代旧的「滚动 DOM + 7 worker 标签页」枚举/领取路径。
  */
 import { Config } from '../config.js';
@@ -46,6 +46,44 @@ export const gmFetchImpl = (url, { headers } = {}) => new Promise((resolve, reje
         }),
         onerror: (err) => reject(err),
         ontimeout: () => reject(new Error('search request timeout'))
+    });
+});
+
+/**
+ * 从 GM_xmlhttpRequest 的 responseHeaders 字符串里读单条头。
+ * 格式："Header-Name: value\r\nHeader-Name2: value2"
+ */
+const parseResponseHeader = (headersText, name) => {
+    if (!headersText) return null;
+    const key = String(name).toLowerCase();
+    for (const line of String(headersText).split(/\r?\n/)) {
+        const idx = line.indexOf(':');
+        if (idx === -1) continue;
+        if (line.slice(0, idx).trim().toLowerCase() === key) {
+            return line.slice(idx + 1).trim();
+        }
+    }
+    return null;
+};
+
+/**
+ * 领取 POST 的网络层：适配 ApiClaim.fetchImpl 的形状
+ *   ({ method, url, headers, data }) => Promise<{ status, responseText, getResponseHeader }>
+ * 走 GM_xmlhttpRequest，自动带 cookie（anonymous:false）。
+ */
+export const gmPostImpl = ({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    API.gmFetch({
+        method: method || 'POST',
+        url,
+        headers,
+        data,
+        onload: (res) => resolve({
+            status: res.status,
+            responseText: res.responseText,
+            getResponseHeader: (h) => parseResponseHeader(res.responseHeaders, h)
+        }),
+        onerror: (err) => reject(err),
+        ontimeout: () => reject(new Error('claim request timeout'))
     });
 });
 
@@ -155,7 +193,7 @@ export const bootstrapPipeline = (options = {}) => {
     if (apiEndpoint) {
         ApiClaim.configure({
             endpoint: apiEndpoint,
-            fetchImpl: apiFetchImpl || gmFetchImpl,
+            fetchImpl: apiFetchImpl || gmPostImpl,
             buildBody: apiBuildBody
         });
     }
@@ -181,9 +219,9 @@ export const bootstrapPipeline = (options = {}) => {
         // 把整页商品逐条标记成领取失败」。bootstrap 自己不拒绝（它也可以在
         // 只枚举的模式下被调用，例如测试），真正把住这道闸的是 hasClaimBackend()。
         log('error',
-            '[Pipeline] 未配置任何领取后端（DomClaim 未注入且 ApiClaim 未启用）。' +
+            '[Pipeline] 未配置任何领取后端（DomClaim 未注入且 ApiClaim 不可用）。' +
             '此时不得启动流水线：整页商品会被逐条标记为「领取失败」。' +
-            '请注入 acquireFn 或配置 apiEndpoint 后再开启 USE_API_PIPELINE。');
+            '请注入 acquireFn 或确认 ApiClaim 端点后再开启 USE_API_PIPELINE。');
     }
 
     return Pipeline;
@@ -244,6 +282,7 @@ export const resetPipelineAdapters = () => {
     ApiClaim.endpoint = null;       // 清 ApiClaim
     ApiClaim.fetchImpl = null;
     ApiClaim.buildBody = null;
+    ApiClaim.resolveOfferId = null;
     // ListingSource.reset 只清 stats，这里把 freePolicy 与注入的 fetch 层一并复位到默认，
     // 否则上一个用例设过的 FLAG_ONLY 会泄漏到下一个不传 freePolicy 的用例。
     ListingSource.freePolicy = FREE_POLICY.FLAG_OR_PRICE;

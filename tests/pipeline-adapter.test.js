@@ -169,7 +169,7 @@ test('ApiClaim 主路径：配置领取端点后 claims 经 api 策略，回落�
     bootstrapPipeline({
         fetchImpl: fixtureFetch(),
         database: fakeDb,
-        apiEndpoint: 'https://www.fab.com/i/listings/claim',
+        apiEndpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
         apiFetchImpl: makeApiFetchImpl(fakeDb),
         ratePerMin: 100000,
         burst: 100
@@ -199,7 +199,7 @@ test('hasClaimBackend：没有领取后端时为 false，注入后为 true', asy
     resetPipelineAdapters();
     bootstrapPipeline({
         fetchImpl: fixtureFetch(),
-        apiEndpoint: 'https://www.fab.com/i/listings/claim',
+        apiEndpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
         apiFetchImpl: async () => ({ status: 200, responseText: '{}' })
     });
     assert.equal(hasClaimBackend(), true);

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260908-1053
+// @version      3.5.21-20260908-1244
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -762,20 +762,24 @@
     ENABLE_FREEZE_GUARD: true,
     // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
     // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
-    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
-    // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
-    USE_API_PIPELINE: false,
+    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。领取端点
+    // POST /i/listings/{uid}/add-to-library 已于 2026-09-08 在登录态下实测确认
+    // 返回 204（startingPrice.offerId 与 licenses[].offerId 两种来源均成功入库），
+    // 故默认开启。DomClaim（iframe）回落仍由 CLAIM_TRANSPORT 单独控制，未配置时
+    // 不注入；ApiClaim 单独即可作为领取后端，hasClaimBackend() 据此放行启动。
+    USE_API_PIPELINE: true,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
-    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」。
-    //   'none'   —— 不启用任何领取后端（默认）。流水线会因无后端拒绝启动，
-    //               旧路径照常工作。这是默认值，因为下面那条路还没有经过线上验证。
-    //   'iframe' —— 在主标签页里挂一个同源隐藏 iframe 加载详情页，由主标签页
-    //               直接驱动其 DOM 完成领取（www.fab.com 返回
-    //               x-frame-options: SAMEORIGIN，同源 iframe 是允许的）。
+    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
+    //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
+    //               仍作为领取后端，流水线照常启动、走接口领取。
+    //   'iframe' —— 额外启用同源隐藏 iframe 的 DOM 领取作为回落。该路径尚未经过线上验证，
+    //               所以刻意保持默认关闭：它一旦不工作会把整份列表标成「领取失败」并定型。
+    //   （在主标签页里挂同源隐藏 iframe 加载详情页，由主标签页直接驱动其 DOM 完成领取；
+    //    www.fab.com 返回 x-frame-options: SAMEORIGIN，同源 iframe 是允许的。）
     // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
     // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
     // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
@@ -919,9 +923,7 @@
       "View on external website"
     ]),
     // 添加一个实例ID，用于防止多实例运行
-    INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15),
-    STATUS_CHECK_INTERVAL: 3e3
-    // Status check interval in ms (throttled to reduce log spam)
+    INSTANCE_ID: "fab_instance_id_" + Math.random().toString(36).substring(2, 15)
   };
 
   // src/state.js
@@ -2080,6 +2082,8 @@
         url: meta.url || prev && prev.url || EventLog.canonicalUrl(id),
         reason: meta.reason || ""
       };
+      const offerId = meta.offerId || prev && prev.offerId;
+      if (offerId) event.offerId = offerId;
       EventLog.events.push(event);
       EventLog._latest.set(id, event);
       return event;
@@ -2098,7 +2102,11 @@
     isSkipped: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.SKIPPED, "isSkipped"),
     isPending: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.DISCOVERED, "isPending"),
     isKnown: /* @__PURE__ */ __name((uid) => EventLog.latestOf(uid) !== null, "isKnown"),
-    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getTodo"),
+    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => {
+      const task = { uid: e.uid, url: e.url, name: e.name };
+      if (e.offerId) task.offerId = e.offerId;
+      return task;
+    }), "getTodo"),
     getDone: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.CLAIMED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getDone"),
     getFailed: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.FAILED).map((e) => ({
       uid: e.uid,
@@ -6682,20 +6690,71 @@
     UNAVAILABLE: "unavailable"
     // 该策略不可用，应由 Executor 尝试下一个
   };
+  var FAB_CLAIM_ENDPOINT = "https://www.fab.com/i/listings/{uid}/add-to-library";
+  var FAB_LISTING_ENDPOINT = "https://www.fab.com/i/listings/{uid}";
+  var multipartBody = /* @__PURE__ */ __name((fields, boundary = "----FabHelperFormBoundary") => {
+    const lines = [];
+    Object.keys(fields || {}).forEach((key) => {
+      lines.push(`--${boundary}`);
+      lines.push(`Content-Disposition: form-data; name="${key}"`);
+      lines.push("");
+      lines.push(String(fields[key]));
+    });
+    lines.push(`--${boundary}--`);
+    lines.push("");
+    return lines.join("\r\n");
+  }, "multipartBody");
+  var pickFreeOfferId = /* @__PURE__ */ __name((listing) => {
+    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
+    const free = list.filter(
+      (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
+    );
+    if (!free.length) return null;
+    const pro = free.find((l) => l.slug === "professional");
+    return (pro || free[0]).offerId;
+  }, "pickFreeOfferId");
   var ApiClaim = {
     name: "api",
-    endpoint: null,
+    endpoint: FAB_CLAIM_ENDPOINT,
     method: "POST",
+    boundary: "----FabHelperFormBoundary",
     buildBody: null,
+    resolveOfferId: null,
+    // 可注入：(task) => offerId | null
     fetchImpl: null,
     // 可注入，便于测试与替换传输层
-    configure: /* @__PURE__ */ __name(({ endpoint, method, buildBody, fetchImpl } = {}) => {
+    configure: /* @__PURE__ */ __name(({ endpoint, method, buildBody, resolveOfferId, fetchImpl, boundary } = {}) => {
       if (endpoint) ApiClaim.endpoint = endpoint;
       if (method) ApiClaim.method = method;
-      if (typeof buildBody === "function") ApiClaim.buildBody = buildBody;
-      if (typeof fetchImpl === "function") ApiClaim.fetchImpl = fetchImpl;
+      if (boundary) ApiClaim.boundary = boundary;
+      if (typeof buildBody === "function" || buildBody === null) ApiClaim.buildBody = buildBody;
+      if (typeof resolveOfferId === "function" || resolveOfferId === null) ApiClaim.resolveOfferId = resolveOfferId;
+      if (typeof fetchImpl === "function" || fetchImpl === null) ApiClaim.fetchImpl = fetchImpl;
     }, "configure"),
     isAvailable: /* @__PURE__ */ __name(() => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === "function", "isAvailable"),
+    /** 端点模板里的 {uid} 换成真实 uid。 */
+    _url: /* @__PURE__ */ __name((task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)), "_url"),
+    /**
+     * 解析 offer_id。
+     * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
+     * 免费档，可以直接用，省掉每件商品一次详情请求。
+     * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
+     */
+    _resolveOfferId: /* @__PURE__ */ __name(async (task) => {
+      if (typeof ApiClaim.resolveOfferId === "function") return ApiClaim.resolveOfferId(task);
+      if (task && task.offerId) return task.offerId;
+      const res = await ApiClaim.fetchImpl({
+        method: "GET",
+        url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+        headers: { accept: "application/json" }
+      });
+      if (!res || res.status !== 200) return null;
+      try {
+        return pickFreeOfferId(JSON.parse(res.responseText));
+      } catch (e) {
+        return null;
+      }
+    }, "_resolveOfferId"),
     claim: /* @__PURE__ */ __name(async (task) => {
       if (!ApiClaim.isAvailable()) {
         return { result: CLAIM_RESULT.UNAVAILABLE, reason: "\u9886\u53D6\u7AEF\u70B9\u672A\u914D\u7F6E" };
@@ -6708,19 +6767,34 @@
           retryable: false
         };
       }
+      let offerId = null;
+      try {
+        offerId = await ApiClaim._resolveOfferId(task);
+      } catch (e) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`, retryable: true };
+      }
+      if (!offerId) {
+        return {
+          result: CLAIM_RESULT.FAILURE,
+          reason: "\u672A\u627E\u5230\u514D\u8D39\u8BB8\u53EF\u7684 offer_id",
+          retryable: false
+        };
+      }
+      const built = typeof ApiClaim.buildBody === "function" ? ApiClaim.buildBody({ ...task, offerId }) : { offer_id: offerId };
+      const isString = typeof built === "string";
+      const body = isString ? built : built && typeof built.body === "string" ? built.body : multipartBody(built, ApiClaim.boundary);
+      const contentType = !isString && built && built.contentType ? built.contentType : `multipart/form-data; boundary=${ApiClaim.boundary}`;
       let response;
       try {
         response = await ApiClaim.fetchImpl({
           method: ApiClaim.method,
-          url: ApiClaim.endpoint,
+          url: ApiClaim._url(task),
           headers: {
-            "content-type": "application/json",
+            "content-type": contentType,
             "x-csrftoken": csrfToken,
             "x-requested-with": "XMLHttpRequest"
           },
-          data: JSON.stringify(
-            ApiClaim.buildBody ? ApiClaim.buildBody(task) : { listing_uid: task.uid }
-          )
+          data: body
         });
       } catch (e) {
         return { result: CLAIM_RESULT.FAILURE, reason: `\u8BF7\u6C42\u5F02\u5E38: ${e.message}`, retryable: true };
@@ -6736,8 +6810,14 @@
         };
       }
       if (status >= 200 && status < 300) return { result: CLAIM_RESULT.SUCCESS, reason: "" };
+      if (status === 401) {
+        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 401\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548", retryable: false };
+      }
       if (status === 403 || status === 404) {
         return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: false };
+      }
+      if (status === 400) {
+        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 400\uFF0C\u8BF7\u6C42\u4F53\u53EF\u80FD\u88AB\u62D2\u7EDD", retryable: false };
       }
       if (status >= 500) {
         return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true };
@@ -7024,6 +7104,7 @@
           EventLog.append(item.uid, EVENT_STATE.DISCOVERED, {
             name: item.name,
             url: item.url,
+            offerId: item.offerId || "",
             ts: now
           });
           discovered += 1;
@@ -7327,7 +7408,9 @@
       getHeaders: null
     },
     // 与抓包原文一致。若用户改了页面筛选条件，上层应覆盖 getBaseParams。
-    baseParams: { is_free: "1", sort_by: "title" },
+    // 默认按首次发布时间倒序（-firstPublishedAt），与用户在页面上的实际筛选一致：
+    // 新发布的免费商品排在最前，便于增量领取（连续遇到已拥有即可停止）。
+    baseParams: { is_free: "1", sort_by: "-firstPublishedAt" },
     freePolicy: FREE_POLICY.FLAG_OR_PRICE,
     // 观测计数
     stats: { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 },
@@ -7538,6 +7621,33 @@
       ontimeout: /* @__PURE__ */ __name(() => reject(new Error("search request timeout")), "ontimeout")
     });
   }), "gmFetchImpl");
+  var parseResponseHeader = /* @__PURE__ */ __name((headersText, name) => {
+    if (!headersText) return null;
+    const key = String(name).toLowerCase();
+    for (const line of String(headersText).split(/\r?\n/)) {
+      const idx = line.indexOf(":");
+      if (idx === -1) continue;
+      if (line.slice(0, idx).trim().toLowerCase() === key) {
+        return line.slice(idx + 1).trim();
+      }
+    }
+    return null;
+  }, "parseResponseHeader");
+  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    API.gmFetch({
+      method: method || "POST",
+      url,
+      headers,
+      data,
+      onload: /* @__PURE__ */ __name((res) => resolve({
+        status: res.status,
+        responseText: res.responseText,
+        getResponseHeader: /* @__PURE__ */ __name((h) => parseResponseHeader(res.responseHeaders, h), "getResponseHeader")
+      }), "onload"),
+      onerror: /* @__PURE__ */ __name((err) => reject(err), "onerror"),
+      ontimeout: /* @__PURE__ */ __name(() => reject(new Error("claim request timeout")), "ontimeout")
+    });
+  }), "gmPostImpl");
   var createFetchPage = /* @__PURE__ */ __name((fetchImpl = gmFetchImpl) => {
     ListingSource.configure({ fetchImpl });
     return async (cursor = null) => {
@@ -7586,7 +7696,7 @@
     if (apiEndpoint) {
       ApiClaim.configure({
         endpoint: apiEndpoint,
-        fetchImpl: apiFetchImpl || gmFetchImpl,
+        fetchImpl: apiFetchImpl || gmPostImpl,
         buildBody: apiBuildBody
       });
     }
@@ -7606,7 +7716,7 @@
     if (!domOk && !apiOk) {
       log(
         "error",
-        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u672A\u542F\u7528\uFF09\u3002\u6B64\u65F6\u4E0D\u5F97\u542F\u52A8\u6D41\u6C34\u7EBF\uFF1A\u6574\u9875\u5546\u54C1\u4F1A\u88AB\u9010\u6761\u6807\u8BB0\u4E3A\u300C\u9886\u53D6\u5931\u8D25\u300D\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u914D\u7F6E apiEndpoint \u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
+        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u4E0D\u53EF\u7528\uFF09\u3002\u6B64\u65F6\u4E0D\u5F97\u542F\u52A8\u6D41\u6C34\u7EBF\uFF1A\u6574\u9875\u5546\u54C1\u4F1A\u88AB\u9010\u6761\u6807\u8BB0\u4E3A\u300C\u9886\u53D6\u5931\u8D25\u300D\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u786E\u8BA4 ApiClaim \u7AEF\u70B9\u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
       );
     }
     return Pipeline;
@@ -8820,11 +8930,16 @@
       });
       Utils.logger("info", "[Pipeline] \u9886\u53D6\u4F20\u8F93\u5C42\uFF1A\u540C\u6E90 iframe\uFF08\u5355\u6807\u7B7E\u9875\uFF0C\u4E0D\u5F00 worker \u6807\u7B7E\u9875\uFF09\u3002");
     }
-    bootstrapPipeline({ fetchImpl: gmFetchImpl, acquireFn });
+    bootstrapPipeline({
+      fetchImpl: gmFetchImpl,
+      acquireFn,
+      apiEndpoint: FAB_CLAIM_ENDPOINT,
+      apiFetchImpl: gmPostImpl
+    });
     if (!hasClaimBackend()) {
       Utils.logger(
         "error",
-        `[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}\u3001ApiClaim \u7AEF\u70B9\u672A\u786E\u8BA4\uFF09\uFF0C\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002\u5982\u9700\u542F\u7528\u65B0\u6D41\u6C34\u7EBF\uFF0C\u8BF7\u628A CLAIM_TRANSPORT \u914D\u6210 iframe\uFF0C\u6216\u914D\u7F6E apiEndpoint\u3002`
+        `[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}\u3001ApiClaim \u4E0D\u53EF\u7528\uFF09\u3002\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002`
       );
       return;
     }

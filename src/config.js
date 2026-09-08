@@ -13,20 +13,24 @@ export const Config = {
     KEEPALIVE_TICK_MS: 2000, // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true, // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
     // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
-    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。默认关闭以保证
-    // 现有行为（及 e2e 回归）不变；待领取后端（DomClaim 注入或 ApiClaim 端点）接好后开启。
-    USE_API_PIPELINE: false,
+    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。领取端点
+    // POST /i/listings/{uid}/add-to-library 已于 2026-09-08 在登录态下实测确认
+    // 返回 204（startingPrice.offerId 与 licenses[].offerId 两种来源均成功入库），
+    // 故默认开启。DomClaim（iframe）回落仍由 CLAIM_TRANSPORT 单独控制，未配置时
+    // 不注入；ApiClaim 单独即可作为领取后端，hasClaimBackend() 据此放行启动。
+    USE_API_PIPELINE: true,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
-    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」。
-    //   'none'   —— 不启用任何领取后端（默认）。流水线会因无后端拒绝启动，
-    //               旧路径照常工作。这是默认值，因为下面那条路还没有经过线上验证。
-    //   'iframe' —— 在主标签页里挂一个同源隐藏 iframe 加载详情页，由主标签页
-    //               直接驱动其 DOM 完成领取（www.fab.com 返回
-    //               x-frame-options: SAMEORIGIN，同源 iframe 是允许的）。
+    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
+    //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
+    //               仍作为领取后端，流水线照常启动、走接口领取。
+    //   'iframe' —— 额外启用同源隐藏 iframe 的 DOM 领取作为回落。该路径尚未经过线上验证，
+    //               所以刻意保持默认关闭：它一旦不工作会把整份列表标成「领取失败」并定型。
+    //   （在主标签页里挂同源隐藏 iframe 加载详情页，由主标签页直接驱动其 DOM 完成领取；
+    //    www.fab.com 返回 x-frame-options: SAMEORIGIN，同源 iframe 是允许的。）
     // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
     // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
     // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
@@ -117,5 +121,4 @@ export const Config = {
     ]),
     // 添加一个实例ID，用于防止多实例运行
     INSTANCE_ID: 'fab_instance_id_' + Math.random().toString(36).substring(2, 15),
-    STATUS_CHECK_INTERVAL: 3000, // Status check interval in ms (throttled to reduce log spam)
 };

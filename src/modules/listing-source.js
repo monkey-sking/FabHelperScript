@@ -69,7 +69,9 @@ export const ListingSource = {
     },
 
     // 与抓包原文一致。若用户改了页面筛选条件，上层应覆盖 getBaseParams。
-    baseParams: { is_free: '1', sort_by: 'title' },
+    // 默认按首次发布时间倒序（-firstPublishedAt），与用户在页面上的实际筛选一致：
+    // 新发布的免费商品排在最前，便于增量领取（连续遇到已拥有即可停止）。
+    baseParams: { is_free: '1', sort_by: '-firstPublishedAt' },
 
     freePolicy: FREE_POLICY.FLAG_OR_PRICE,
 

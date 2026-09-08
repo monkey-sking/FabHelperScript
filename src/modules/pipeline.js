@@ -214,7 +214,7 @@ export const Pipeline = {
                 skipped += 1;
             } else {
                 EventLog.append(item.uid, EVENT_STATE.DISCOVERED, {
-                    name: item.name, url: item.url, ts: now
+                    name: item.name, url: item.url, offerId: item.offerId || '', ts: now
                 });
                 discovered += 1;
             }

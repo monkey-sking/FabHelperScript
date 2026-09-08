@@ -59,7 +59,7 @@ graph TD
     API --> DataCache
 ```
 
-## 新一代流水线（API 优先架构，默认关闭）
+## 新一代流水线（API 优先架构，默认开启）
 
 旧链路是「滚动 DOM 骗页面发搜索请求 → 从卡片 DOM 里抠 uid → 开 7 个 worker 标签页
 → 每个标签加载完整详情页 → DOM 点击」。它把「并发」这个抽象安在了「开几个标签页」上，
@@ -86,7 +86,7 @@ graph TD
   避免把暂停时长算进超时判定。
 - **rate-limiter.js** —— 令牌桶 + AIMD。收到 429 就按 `Retry-After` 暂停并把速率折半，
   连续成功则缓慢回到基准。
-- **claim-strategy.js** —— `ApiClaim`（接口领取，端点待抓包确认）与
+- **claim-strategy.js** —— `ApiClaim`（接口领取，端点已确认）与
   `DomClaim`（回落，实现由外部注入）。`ClaimExecutor` 统计回落率，
   回落率长期为 1 即说明接口路径没接好。
 - **listing-source.js** —— 分页枚举。**注意**：抓包样本里 4 个商品全部
@@ -144,13 +144,14 @@ DONE，商品原样留在待领队列。
 
 ### 开关与现状
 
-- `Config.USE_API_PIPELINE`（默认 `false`）：打开后新流水线取代旧的滚动枚举与
-  worker 领取路径。
-- `Config.CLAIM_TRANSPORT`（默认 `'none'`）：用哪种传输层把详情页送到眼前。
-  默认 `'none'` 时没有任何领取后端，流水线会拒绝启动并自动回退旧路径。
-  配成 `'iframe'` 才启用同源 iframe 领取 —— **该路径尚未经过线上验证**，
-  所以刻意不跟着总开关一起开：它一旦不工作，整份免费列表会被逐条标记成
-  「领取失败」并在事件日志里定型，之后再修好也不会重试。
+- `Config.USE_API_PIPELINE`（默认 `true`）：打开后新流水线取代旧的滚动枚举与
+  worker 领取路径。领取端点 `POST /i/listings/{uid}/add-to-library` 已于
+  2026-09-08 在登录态下实测确认返回 204，故默认开启。
+- `Config.CLAIM_TRANSPORT`（默认 `'none'`）：是否启用 DOM 领取回落传输层（同源
+  iframe）。默认 `'none'` 时不注入 `DomClaim`，但 `ApiClaim`（基于已确认端点）仍
+  作为领取后端，流水线照常启动、走接口领取。配成 `'iframe'` 才启用同源 iframe
+  领取 —— **该路径尚未经过线上验证**，所以刻意保持默认关闭：它一旦不工作，整份
+  免费列表会被逐条标记成「领取失败」并在事件日志里定型，之后再修好也不会重试。
 - `Config.PIPELINE_RESCAN_INTERVAL_MS`（默认 `0`）：一轮到底后的自动重扫间隔，
   0 表示不自动重扫。
 - `hasClaimBackend()` 是启动前的安全闸门；接好任一路领取后端后，
@@ -166,7 +167,7 @@ DONE，商品原样留在待领队列。
 
 | 路线 | 现状 | 代价 |
 | --- | --- | --- |
-| `ApiClaim`（接口领取） | **端点未确认**：历史抓包里只有 GET 端点（`/i/listings/search`、 `/i/users/context`、`/i/users/me/wallet`、`/i/cart`、`/i/listings/prices-infos`、`/i/users/me/listings-states`），没有领取类 POST | 需要用户在 devtools 里抓一次真实的「免费领取」请求；一旦确认，`ApiClaim.configure({endpoint})` 即可接管，无需改流程 |
+| `ApiClaim`（接口领取） | **端点已确认且登录态实测通过**（2026-09-08，账号 Game7caifei）：`POST /i/listings/{uid}/add-to-library`，body 为 `multipart/form-data` 字段 `offer_id`。未登录态验证路由存在（401 vs 404 对照）；登录态下返回 **204**（无响应体），`startingPrice.offerId` 与详情页 `licenses[].offerId`（price===0，优先 professional）两种来源均成功入库 | 代码已接入，默认随 `USE_API_PIPELINE` 启用。`offer_id` 优先取搜索结果的 `startingPrice.offerId`，缺失时回源详情页按免费 + 优先 professional 挑 |
 | `DomClaim`（DOM 领取） | **已实现**，默认关闭 | 同源 iframe：`www.fab.com` 返回 `x-frame-options: SAMEORIGIN`，父页面可读写 `contentDocument`。主标签页挂隐藏帧 → 跨文档驱动 → 领完摘帧，全程不开新标签页 |
 
 iframe 路线有两个非显然的坑，都已处理：
