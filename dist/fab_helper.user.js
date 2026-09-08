@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260905-0938
+// @version      3.5.21-20260908-1043
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1344,9 +1344,17 @@
       return null;
     }, "getCursorItemName"),
     // 账号验证函数 - silent模式用于初始化时的检查，不弹出警告
-    checkAuthentication: /* @__PURE__ */ __name((silent = false) => {
-      const csrfToken = Utils.getCookie("fab_csrftoken");
-      if (!csrfToken) {
+    //
+    // 判定顺序是刻意的：先看页面信号，拿不到才退回 cookie。
+    // 实测（真实未登录会话）：fab_csrftoken 依然存在、/i/csrf 也照常返回 200，
+    // 只有页面内嵌数据（_epicAccountId === ''、/i/users/me.isAnonymous === true）
+    // 和 /i/users/me 的 401 能正确反映未登录。也就是说 cookie 单独不构成
+    // 「已登录」的证据 —— 只看 cookie 会把未登录判成已登录，于是 task-runner
+    // 那几道执行闸门全部放行，脚本逐条领取失败，事件日志里整份列表被一次性定型。
+    checkAuthentication: /* @__PURE__ */ __name((silent = false, ctx = {}) => {
+      const fromPage = Utils.detectLoginFromPage(ctx);
+      const signedIn = fromPage !== null ? fromPage : Boolean(Utils.getCookie("fab_csrftoken"));
+      if (!signedIn) {
         if (!silent) {
           Utils.logger("error", Utils.getText("auth_error"));
           if (State.isExecuting) {
@@ -1371,11 +1379,13 @@
     //   3. 同一块 JSON 里的 result UUID — 全零（00000000-...）也代表匿名
     // 三者任一明确指向匿名 → 返回 false；任一明确指向已登录 → 返回 true；
     // 都拿不到 → 返回 null，留给调用方决定要不要走 API 兜底。
-    detectLoginFromPage: /* @__PURE__ */ __name(() => {
+    detectLoginFromPage: /* @__PURE__ */ __name((ctx = {}) => {
       const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+      const win = ctx.window || (typeof window !== "undefined" ? window : null);
+      const doc = ctx.document || (typeof document !== "undefined" ? document : null);
       try {
-        if (typeof window !== "undefined" && Object.prototype.hasOwnProperty.call(window, "_epicAccountId")) {
-          const id = window._epicAccountId;
+        if (win && Object.prototype.hasOwnProperty.call(win, "_epicAccountId")) {
+          const id = win._epicAccountId;
           if (typeof id === "string") {
             if (id === "" || id === ZERO_UUID) return false;
             if (/^[0-9a-f-]{32,36}$/i.test(id)) return true;
@@ -1384,7 +1394,7 @@
       } catch (e) {
       }
       try {
-        const tag = document && document.getElementById && document.getElementById("js-json-data-prefetched-data");
+        const tag = doc && doc.getElementById && doc.getElementById("js-json-data-prefetched-data");
         if (tag && tag.textContent) {
           const data = JSON.parse(tag.textContent);
           const userInfo = data && data["/i/users/me"];
@@ -8536,8 +8546,8 @@
     };
     Utils.logger("info", Utils.getText("log_script_starting"));
     Utils.detectLanguage();
-    const hasCookie = Utils.checkAuthentication(true);
-    if (!hasCookie) {
+    const signedIn = Utils.checkAuthentication(true);
+    if (!signedIn) {
       Utils.logger("warn", "\u8D26\u53F7\u672A\u767B\u5F55\uFF0C\u90E8\u5206\u529F\u80FD\u53EF\u80FD\u53D7\u9650");
       State.isAuthenticated = false;
     } else {
@@ -8548,7 +8558,7 @@
     if (workerId) {
       State.isWorkerTab = true;
       State.workerTaskId = workerId;
-      if (!hasCookie) {
+      if (!signedIn) {
         Utils.logger("error", Utils.getText("auth_worker_aborted"));
         return;
       }

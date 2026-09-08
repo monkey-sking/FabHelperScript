@@ -1170,9 +1170,9 @@ async function main() {
     Utils.logger('info', Utils.getText('log_script_starting'));
     Utils.detectLanguage();
 
-    // Cookie 级别快速判断
-    const hasCookie = Utils.checkAuthentication(true); // silent mode
-    if (!hasCookie) {
+    // 快速登录态判断（先看页面内嵌信号，拿不到才退回 cookie）
+    const signedIn = Utils.checkAuthentication(true); // silent mode
+    if (!signedIn) {
         Utils.logger('warn', '账号未登录，部分功能可能受限');
         State.isAuthenticated = false;
     } else {
@@ -1186,8 +1186,10 @@ async function main() {
         State.isWorkerTab = true;
         State.workerTaskId = workerId;
 
-        // worker tab: 快速 cookie 校验，避免在未登录页里空跑（不阻塞异步 API 校验，交由 processDetailPage 内部处理）
-        if (!hasCookie) {
+        // worker tab: 快速登录态校验，避免在未登录页里空跑
+        // （未登录时 fab_csrftoken 依然存在，所以这里必须靠页面信号判定，
+        //  只看 cookie 会让 worker 在未登录态照常跑完整条流程）
+        if (!signedIn) {
             Utils.logger('error', Utils.getText('auth_worker_aborted'));
             return;
         }

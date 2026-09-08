@@ -309,9 +309,19 @@ export const Utils = {
         return null;
     },
     // 账号验证函数 - silent模式用于初始化时的检查，不弹出警告
-    checkAuthentication: (silent = false) => {
-        const csrfToken = Utils.getCookie('fab_csrftoken');
-        if (!csrfToken) {
+    //
+    // 判定顺序是刻意的：先看页面信号，拿不到才退回 cookie。
+    // 实测（真实未登录会话）：fab_csrftoken 依然存在、/i/csrf 也照常返回 200，
+    // 只有页面内嵌数据（_epicAccountId === ''、/i/users/me.isAnonymous === true）
+    // 和 /i/users/me 的 401 能正确反映未登录。也就是说 cookie 单独不构成
+    // 「已登录」的证据 —— 只看 cookie 会把未登录判成已登录，于是 task-runner
+    // 那几道执行闸门全部放行，脚本逐条领取失败，事件日志里整份列表被一次性定型。
+    checkAuthentication: (silent = false, ctx = {}) => {
+        const fromPage = Utils.detectLoginFromPage(ctx);
+        // 页面明确说已登录 → 放行；明确说未登录 → 拦下。
+        // 拿不到页面信号（不在 fab 页面上 / 测试注入环境）→ 退回 cookie 判定。
+        const signedIn = fromPage !== null ? fromPage : Boolean(Utils.getCookie('fab_csrftoken'));
+        if (!signedIn) {
             if (!silent) {
                 Utils.logger('error', Utils.getText('auth_error'));
                 // 停止执行状态
@@ -340,11 +350,15 @@ export const Utils = {
     //   3. 同一块 JSON 里的 result UUID — 全零（00000000-...）也代表匿名
     // 三者任一明确指向匿名 → 返回 false；任一明确指向已登录 → 返回 true；
     // 都拿不到 → 返回 null，留给调用方决定要不要走 API 兜底。
-    detectLoginFromPage: () => {
+    detectLoginFromPage: (ctx = {}) => {
         const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+        // window / document 可注入：测试里能造出真实的未登录页面信号，
+        // 跨文档（领取 iframe）场景也能指定看哪一份文档。
+        const win = ctx.window || (typeof window !== 'undefined' ? window : null);
+        const doc = ctx.document || (typeof document !== 'undefined' ? document : null);
         try {
-            if (typeof window !== 'undefined' && Object.prototype.hasOwnProperty.call(window, '_epicAccountId')) {
-                const id = window._epicAccountId;
+            if (win && Object.prototype.hasOwnProperty.call(win, '_epicAccountId')) {
+                const id = win._epicAccountId;
                 if (typeof id === 'string') {
                     if (id === '' || id === ZERO_UUID) return false;
                     if (/^[0-9a-f-]{32,36}$/i.test(id)) return true;
@@ -353,7 +367,7 @@ export const Utils = {
         } catch (e) { /* swallow */ }
 
         try {
-            const tag = document && document.getElementById && document.getElementById('js-json-data-prefetched-data');
+            const tag = doc && doc.getElementById && doc.getElementById('js-json-data-prefetched-data');
             if (tag && tag.textContent) {
                 const data = JSON.parse(tag.textContent);
                 const userInfo = data && data['/i/users/me'];
