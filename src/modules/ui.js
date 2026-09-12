@@ -15,6 +15,7 @@ import { PageDiagnostics } from './page-diagnostics.js';
 import { Database } from './database.js';
 import { RateLimitManager } from './rate-limit-manager.js';
 import { KeepAlive } from './keepalive.js';
+import { EventLog } from './event-log.js';
 
 // Forward declaration for TaskRunner (will be set via dependency injection)
 let TaskRunner = null;
@@ -24,6 +25,11 @@ export function setTaskRunnerReference(taskRunnerModule) {
 }
 
 export const UI = {
+    getApiPositionText: () => {
+        if (!State.apiCursorSavedAt) return Utils.getText('no_saved_position');
+        const date = new Date(State.apiCursorSavedAt);
+        return `${Utils.getText('position_label')}: "${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour12: false })}"`;
+    },
     init: () => {
         return UI.create();
     },
@@ -521,7 +527,9 @@ export const UI = {
         positionIcon.style.marginRight = '4px';
 
         const positionInfo = document.createElement('span');
-        positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+        positionInfo.textContent = Config.USE_API_PIPELINE
+            ? UI.getApiPositionText()
+            : Utils.decodeCursor(State.savedCursor);
         // Fix overflow: allow text to shrink and show ellipsis so the reset button stays visible
         positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
         State.UI.savedPositionDisplay = positionInfo;
@@ -537,7 +545,7 @@ export const UI = {
         clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
         clearPositionBtn.onclick = async () => {
             const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
-            if (State.savedCursor || (typeof PagePatcher !== 'undefined' && PagePatcher._lastSeenCursor) || hasRecoveryCursor) {
+            if (State.savedCursor || State.apiCursor || (typeof PagePatcher !== 'undefined' && PagePatcher._lastSeenCursor) || hasRecoveryCursor) {
                 if (typeof PagePatcher !== 'undefined' && PagePatcher.lockCursorSaving) {
                     PagePatcher.lockCursorSaving();
                 }
@@ -546,7 +554,9 @@ export const UI = {
                         await PagePatcher.clearSavedPosition('User UI Reset');
                     } else {
                         State.savedCursor = null;
+                        State.apiCursor = null;
                         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+                        await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
                         if (typeof sessionStorage !== 'undefined') {
                             try {
                                 sessionStorage.removeItem('fab_helper_recovery_cursor');
@@ -821,9 +831,14 @@ export const UI = {
         }
 
         // Update Status Numbers
-        const todoCount = State.db.todo.length;
-        const doneCount = State.db.done.length;
-        const failedCount = State.db.failed.length;
+        const apiMode = Config.USE_API_PIPELINE;
+        const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
+        const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
+        const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
+
+        if (apiMode && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = UI.getApiPositionText();
+        }
 
         const cardCounts = TaskRunner?.getCardCounts
             ? TaskRunner.getCardCounts()

@@ -1573,7 +1573,6 @@ test('attemptAutoScroll scrolls stepwise (not a single jump) to trigger the infi
         innerHeight: 800,
         scrollBy: (x, y) => { scrollMoves.push({ type: 'by', y }); },
         scrollTo: (x, y) => { scrollMoves.push({ type: 'to', y }); },
-        dispatchEvent: () => {}
     };
     globalThis.document = {
         documentElement: { scrollHeight: 5000 },
@@ -1605,4 +1604,3 @@ test('attemptAutoScroll scrolls stepwise (not a single jump) to trigger the infi
         State.autoAddOnScroll = false;
     }
 });
-

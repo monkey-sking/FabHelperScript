@@ -34,6 +34,7 @@ export const en = {
     current_rate_limited: 'Current: Rate Limited',
     no_history: 'No history records to display.',
     no_saved_position: 'No saved position',
+    api_pipeline_position: 'No saved position',
 
     // 状态历史详细信息
     time_label: 'Time',

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.21-20260908-1244
+// @version      3.5.23-20260911-1943
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -73,6 +73,7 @@
     current_rate_limited: "Current: Rate Limited",
     no_history: "No history records to display.",
     no_saved_position: "No saved position",
+    api_pipeline_position: "No saved position",
     // 状态历史详细信息
     time_label: "Time",
     info_label: "Info",
@@ -435,6 +436,7 @@
     current_rate_limited: "\u5F53\u524D: \u9650\u901F\u4E2D",
     no_history: "\u6CA1\u6709\u53EF\u663E\u793A\u7684\u5386\u53F2\u8BB0\u5F55\u3002",
     no_saved_position: "\u65E0\u4FDD\u5B58\u4F4D\u7F6E",
+    api_pipeline_position: "\u65E0\u4FDD\u5B58\u4F4D\u7F6E",
     // 状态历史详细信息
     time_label: "\u65F6\u95F4",
     info_label: "\u4FE1\u606F",
@@ -761,13 +763,14 @@
     // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true,
     // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
-    // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
-    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。领取端点
-    // POST /i/listings/{uid}/add-to-library 已于 2026-09-08 在登录态下实测确认
-    // 返回 204（startingPrice.offerId 与 licenses[].offerId 两种来源均成功入库），
-    // 故默认开启。DomClaim（iframe）回落仍由 CLAIM_TRANSPORT 单独控制，未配置时
-    // 不注入；ApiClaim 单独即可作为领取后端，hasClaimBackend() 据此放行启动。
-    USE_API_PIPELINE: true,
+    // 保持原来的页面枚举逻辑：DOM 滚动负责加载商品、保存页面时间位置，
+    // 不用 cursor API 取代旧 worker 流程。只有实际“加入我的库”动作走 API。
+    USE_API_PIPELINE: false,
+    // 旧 DOM 枚举仍会开 worker 标签页；API 领取在该路径下必须串行并留出间隔，
+    // 否则 7 个 worker 同时 POST 极易触发 429。完整 API 流水线另有自己的令牌桶。
+    USE_API_CLAIM: true,
+    API_CLAIM_MAX_CONCURRENT_WORKERS: 1,
+    API_CLAIM_MIN_INTERVAL_MS: 1200,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
@@ -803,6 +806,10 @@
       REMEMBER_POS: "fab_rememberPos_v8",
       LAST_CURSOR: "fab_lastCursor_v8",
       // Store only the cursor string
+      API_CURSOR: "fab_api_cursor_v1",
+      // API 流水线分页游标，独立于旧 DOM 滚动游标
+      API_CURSOR_SAVED_AT: "fab_api_cursor_saved_at_v1",
+      // API 分页位置最后保存时间
       // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
       // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
       WORKER_DONE_PREFIX: "fab_worker_done_v8_",
@@ -964,6 +971,11 @@
     // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false,
     // 是否正在执行任务
+    // 新 API 流水线已完成后端校验并接管旧 worker 派发
+    apiPipelineActive: false,
+    // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。
+    apiClaimNextDispatchAt: 0,
+    apiClaimDispatchTimer: null,
     isRefreshScheduled: false,
     // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false,
@@ -986,6 +998,10 @@
     // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
     savedCursor: null,
     // Holds the loaded cursor for hijacking
+    apiCursor: null,
+    // API 流水线独立保存的分页游标，仅用于显示/恢复 API 分页
+    apiCursorSavedAt: null,
+    // API 分页位置最后保存时间
     isEndOfSearchList: false,
     // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
     hasReachedBottomToastShown: false,
@@ -2049,7 +2065,7 @@
         raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
       } catch (e) {
         Utils.logger("error", `\u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
-        raw = [];
+        return null;
       }
       if (!Array.isArray(raw)) raw = [];
       EventLog.events = raw.filter(
@@ -2058,11 +2074,13 @@
       EventLog._rebuildIndex();
       return EventLog.events.length;
     }, "load"),
-    save: /* @__PURE__ */ __name(() => {
+    save: /* @__PURE__ */ __name(async () => {
       try {
-        GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+        await GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+        return true;
       } catch (e) {
         Utils.logger("error", `\u5199\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
+        return false;
       }
     }, "save"),
     /**
@@ -2807,6 +2825,11 @@
     unlockCursorSaving() {
       this._isCursorSaveLocked = false;
     },
+    // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
+    // 自动滚动/自动加任务运行期间也必须保存当前游标，否则 UI 永远显示无位置。
+    isPositionTrackingEnabled() {
+      return Boolean(State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll || State.isExecuting);
+    },
     async init() {
       this._isCursorSaveLocked = false;
       try {
@@ -2917,6 +2940,8 @@
       State.isRecoveryMode = false;
       try {
         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+        await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
+        await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
       } catch (e) {
         Utils.logger("warn", "[Cursor] Failed to delete stored cursor:", e);
       }
@@ -2928,6 +2953,7 @@
         }
       }
       if (State.UI && State.UI.savedPositionDisplay) {
+        State.apiCursor = null;
         State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
       }
       Utils.logger("info", `${Utils.getText("log_sort_changed_position_cleared")} (${reason})`);
@@ -2967,7 +2993,7 @@
       if (State.isRecoveryMode && State.savedCursor) {
         return true;
       }
-      if (!State.rememberScrollPosition || !State.savedCursor) return false;
+      if (!this.isPositionTrackingEnabled() || !State.savedCursor) return false;
       Utils.logger("debug", Utils.getText("page_patcher_match") + ` URL: ${url}`);
       return true;
     },
@@ -3007,7 +3033,7 @@
     },
     saveLatestCursorFromUrl(url) {
       try {
-        if (!State.rememberScrollPosition || this._isCursorSaveLocked) return;
+        if (!this.isPositionTrackingEnabled() || this._isCursorSaveLocked) return;
         if (typeof url !== "string" || !url.includes("/i/listings/search") || !url.includes("cursor=")) return;
         const urlObj = new URL(url, window.location.origin);
         const newCursor = urlObj.searchParams.get("cursor");
@@ -3025,6 +3051,20 @@
       } catch (e) {
         Utils.logger("warn", Utils.getText("log_cursor_save_error"), e);
       }
+    },
+    // Fab 的无限滚动有时只在响应体的 cursors.next 返回下一页游标，
+    // 不会立刻拼进下一次请求 URL。直接从响应保存，避免页面持续加载但位置始终为空。
+    saveCursorFromSearchPayload(payload) {
+      if (!payload || typeof payload !== "object") return;
+      const next = payload.cursors && payload.cursors.next != null ? payload.cursors.next : typeof payload.next === "string" ? payload.next : null;
+      if (next == null || next === "") return;
+      if (typeof next === "string" && next.includes("cursor=")) {
+        this.saveLatestCursorFromUrl(next);
+        return;
+      }
+      this.saveLatestCursorFromUrl(
+        `${window.location.origin}/i/listings/search?cursor=${encodeURIComponent(String(next))}`
+      );
     },
     applyPatches() {
       const self = this;
@@ -3060,6 +3100,9 @@
                 }
                 try {
                   const data = JSON.parse(responseText);
+                  if (request._url && request._url.includes("/i/listings/search")) {
+                    self.saveCursorFromSearchPayload(data);
+                  }
                   if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                     Utils.logger("warn", Utils.getText("detected_rate_limit_error", JSON.stringify(data)));
                     RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u9650\u901F\u9519\u8BEF");
@@ -3206,6 +3249,9 @@
               }
               try {
                 const data = JSON.parse(text);
+                if (url.includes("/i/listings/search")) {
+                  self.saveCursorFromSearchPayload(data);
+                }
                 if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                   Utils.logger("warn", Utils.getText("detected_rate_limit_error", "API\u9650\u901F\u54CD\u5E94"));
                   RateLimitManager.enterRateLimitedState("API\u9650\u901F\u54CD\u5E94").catch(
@@ -3873,6 +3919,254 @@
   }
   __name(claimViaUi, "claimViaUi");
 
+  // src/modules/claim-strategy.js
+  var CLAIM_RESULT = {
+    SUCCESS: "success",
+    FAILURE: "failure",
+    SKIPPED: "skipped",
+    // 主动跳过：付费 / 外部站 / 不可购买
+    RATE_LIMITED: "rate_limited",
+    // 撞上 429，需退避
+    UNAVAILABLE: "unavailable"
+    // 该策略不可用，应由 Executor 尝试下一个
+  };
+  var FAB_CLAIM_ENDPOINT = "https://www.fab.com/i/listings/{uid}/add-to-library";
+  var FAB_LISTING_ENDPOINT = "https://www.fab.com/i/listings/{uid}";
+  var multipartBody = /* @__PURE__ */ __name((fields, boundary = "----FabHelperFormBoundary") => {
+    const lines = [];
+    Object.keys(fields || {}).forEach((key) => {
+      lines.push(`--${boundary}`);
+      lines.push(`Content-Disposition: form-data; name="${key}"`);
+      lines.push("");
+      lines.push(String(fields[key]));
+    });
+    lines.push(`--${boundary}--`);
+    lines.push("");
+    return lines.join("\r\n");
+  }, "multipartBody");
+  var pickFreeOfferId = /* @__PURE__ */ __name((listing) => {
+    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
+    const free = list.filter(
+      (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
+    );
+    if (!free.length) return null;
+    const pro = free.find((l) => l.slug === "professional");
+    return (pro || free[0]).offerId;
+  }, "pickFreeOfferId");
+  var ApiClaim = {
+    name: "api",
+    endpoint: FAB_CLAIM_ENDPOINT,
+    method: "POST",
+    boundary: "----FabHelperFormBoundary",
+    buildBody: null,
+    resolveOfferId: null,
+    // 可注入：(task) => offerId | null
+    fetchImpl: null,
+    // 可注入，便于测试与替换传输层
+    configure: /* @__PURE__ */ __name(({ endpoint, method, buildBody, resolveOfferId, fetchImpl, boundary } = {}) => {
+      if (endpoint) ApiClaim.endpoint = endpoint;
+      if (method) ApiClaim.method = method;
+      if (boundary) ApiClaim.boundary = boundary;
+      if (typeof buildBody === "function" || buildBody === null) ApiClaim.buildBody = buildBody;
+      if (typeof resolveOfferId === "function" || resolveOfferId === null) ApiClaim.resolveOfferId = resolveOfferId;
+      if (typeof fetchImpl === "function" || fetchImpl === null) ApiClaim.fetchImpl = fetchImpl;
+    }, "configure"),
+    isAvailable: /* @__PURE__ */ __name(() => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === "function", "isAvailable"),
+    /** 端点模板里的 {uid} 换成真实 uid。 */
+    _url: /* @__PURE__ */ __name((task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)), "_url"),
+    /**
+     * 解析 offer_id。
+     * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
+     * 免费档，可以直接用，省掉每件商品一次详情请求。
+     * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
+     */
+    _resolveOfferId: /* @__PURE__ */ __name(async (task) => {
+      if (typeof ApiClaim.resolveOfferId === "function") return ApiClaim.resolveOfferId(task);
+      if (task && task.offerId) return task.offerId;
+      const res = await ApiClaim.fetchImpl({
+        method: "GET",
+        url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+        headers: { accept: "application/json" }
+      });
+      if (!res || res.status !== 200) return null;
+      try {
+        return pickFreeOfferId(JSON.parse(res.responseText));
+      } catch (e) {
+        return null;
+      }
+    }, "_resolveOfferId"),
+    claim: /* @__PURE__ */ __name(async (task) => {
+      if (!ApiClaim.isAvailable()) {
+        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "\u9886\u53D6\u7AEF\u70B9\u672A\u914D\u7F6E" };
+      }
+      const csrfToken = Utils.getCookie("fab_csrftoken");
+      if (!csrfToken) {
+        return {
+          result: CLAIM_RESULT.FAILURE,
+          reason: "\u7F3A\u5C11 CSRF token\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548",
+          retryable: false
+        };
+      }
+      let offerId = null;
+      try {
+        offerId = await ApiClaim._resolveOfferId(task);
+      } catch (e) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`, retryable: true };
+      }
+      if (!offerId) {
+        return {
+          result: CLAIM_RESULT.FAILURE,
+          reason: "\u672A\u627E\u5230\u514D\u8D39\u8BB8\u53EF\u7684 offer_id",
+          retryable: false
+        };
+      }
+      const built = typeof ApiClaim.buildBody === "function" ? ApiClaim.buildBody({ ...task, offerId }) : { offer_id: offerId };
+      const isString = typeof built === "string";
+      const body = isString ? built : built && typeof built.body === "string" ? built.body : multipartBody(built, ApiClaim.boundary);
+      const contentType = !isString && built && built.contentType ? built.contentType : `multipart/form-data; boundary=${ApiClaim.boundary}`;
+      let response;
+      try {
+        response = await ApiClaim.fetchImpl({
+          method: ApiClaim.method,
+          url: ApiClaim._url(task),
+          headers: {
+            "content-type": contentType,
+            "x-csrftoken": csrfToken,
+            "x-requested-with": "XMLHttpRequest"
+          },
+          data: body
+        });
+      } catch (e) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u8BF7\u6C42\u5F02\u5E38: ${e.message}`, retryable: true };
+      }
+      const status = response && response.status;
+      if (status === 429) {
+        const raw = response.getResponseHeader ? response.getResponseHeader("retry-after") : null;
+        const retryAfterMs = raw ? Number(raw) * 1e3 : null;
+        return {
+          result: CLAIM_RESULT.RATE_LIMITED,
+          reason: "\u63A5\u53E3\u8FD4\u56DE 429",
+          retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : null
+        };
+      }
+      if (status >= 200 && status < 300) return { result: CLAIM_RESULT.SUCCESS, reason: "" };
+      if (status === 401) {
+        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 401\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548", retryable: false };
+      }
+      if (status === 403 || status === 404) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: false };
+      }
+      if (status === 400) {
+        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 400\uFF0C\u8BF7\u6C42\u4F53\u53EF\u80FD\u88AB\u62D2\u7EDD", retryable: false };
+      }
+      if (status >= 500) {
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true };
+      }
+      return {
+        result: CLAIM_RESULT.FAILURE,
+        reason: `\u63A5\u53E3\u8FD4\u56DE ${status || "\u672A\u77E5\u72B6\u6001"}`,
+        retryable: false
+      };
+    }, "claim")
+  };
+  var domClaimImpl = null;
+  var setDomClaim = /* @__PURE__ */ __name((fn) => {
+    domClaimImpl = fn;
+  }, "setDomClaim");
+  var normalizeClaimOutcome = /* @__PURE__ */ __name((raw) => {
+    if (typeof raw === "boolean") {
+      return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: "" };
+    }
+    if (raw && typeof raw === "object") {
+      if (raw.result) return raw;
+      if (typeof raw.success === "boolean") {
+        return {
+          result: raw.success ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE,
+          reason: typeof raw.reason === "string" ? raw.reason : "",
+          retryable: raw.retryable === true
+        };
+      }
+    }
+    return {
+      result: CLAIM_RESULT.FAILURE,
+      reason: "\u9886\u53D6\u8FD4\u56DE\u503C\u65E0\u6CD5\u8BC6\u522B",
+      retryable: false
+    };
+  }, "normalizeClaimOutcome");
+  var DomClaim = {
+    name: "dom",
+    isAvailable: /* @__PURE__ */ __name(() => typeof domClaimImpl === "function", "isAvailable"),
+    claim: /* @__PURE__ */ __name(async (task) => {
+      if (!DomClaim.isAvailable()) {
+        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "DOM \u9886\u53D6\u672A\u6CE8\u5165" };
+      }
+      return normalizeClaimOutcome(await domClaimImpl(task));
+    }, "claim")
+  };
+  var ClaimExecutor = {
+    preferApi: true,
+    metrics: {
+      api: { attempts: 0, success: 0 },
+      dom: { attempts: 0, success: 0 },
+      unavailable: 0
+    },
+    resetMetrics: /* @__PURE__ */ __name(() => {
+      ClaimExecutor.metrics = {
+        api: { attempts: 0, success: 0 },
+        dom: { attempts: 0, success: 0 },
+        unavailable: 0
+      };
+    }, "resetMetrics"),
+    /**
+     * 依次尝试策略，返回首个非 UNAVAILABLE 的结果。
+     * 策略抛异常或不可用都会回落到下一个，绝不向上冒泡。
+     */
+    claim: /* @__PURE__ */ __name(async (task, { preferApi = ClaimExecutor.preferApi } = {}) => {
+      const order = preferApi ? [ApiClaim, DomClaim] : [DomClaim, ApiClaim];
+      for (const strategy of order) {
+        if (!strategy.isAvailable()) {
+          ClaimExecutor.metrics.unavailable += 1;
+          continue;
+        }
+        let outcome;
+        try {
+          ClaimExecutor.metrics[strategy.name].attempts += 1;
+          outcome = await strategy.claim(task);
+        } catch (e) {
+          outcome = { result: CLAIM_RESULT.FAILURE, reason: `\u7B56\u7565\u5F02\u5E38: ${e.message}`, retryable: true };
+        }
+        if (!outcome || outcome.result === CLAIM_RESULT.UNAVAILABLE) continue;
+        if (outcome.result === CLAIM_RESULT.FAILURE && !outcome.retryable) {
+          return { ...outcome, strategy: strategy.name };
+        }
+        if (outcome.result === CLAIM_RESULT.FAILURE && outcome.retryable) continue;
+        if (outcome.result === CLAIM_RESULT.SUCCESS) {
+          ClaimExecutor.metrics[strategy.name].success += 1;
+        }
+        return { ...outcome, strategy: strategy.name };
+      }
+      return { result: CLAIM_RESULT.FAILURE, reason: "\u6CA1\u6709\u53EF\u7528\u7684\u9886\u53D6\u7B56\u7565", strategy: null };
+    }, "claim"),
+    /**
+     * 回落率：DOM 尝试数占总尝试数的比例。
+     * API 通路健康时应趋近 0；若长期为 1，说明接口路径没生效。
+     */
+    fallbackRate: /* @__PURE__ */ __name(() => {
+      const { api, dom } = ClaimExecutor.metrics;
+      const total = api.attempts + dom.attempts;
+      return total === 0 ? 0 : dom.attempts / total;
+    }, "fallbackRate"),
+    stats: /* @__PURE__ */ __name(() => {
+      const { api, dom, unavailable } = ClaimExecutor.metrics;
+      return {
+        api,
+        dom,
+        unavailable,
+        fallbackRate: ClaimExecutor.fallbackRate()
+      };
+    }, "stats")
+  };
+
   // src/modules/task-runner.js
   var _realSetTimeout = typeof setTimeout === "function" ? setTimeout : (cb) => {
     try {
@@ -4056,6 +4350,13 @@
     // Toggle execution state
     toggleExecution: /* @__PURE__ */ __name(async () => {
       if (!Utils.checkAuthentication()) return;
+      if (State.apiPipelineActive) {
+        State.isExecuting = !State.isExecuting;
+        Database.saveExecutingState();
+        Utils.logger("info", State.isExecuting ? "[Pipeline] \u5DF2\u6062\u590D API \u6D41\u6C34\u7EBF\u3002" : "[Pipeline] \u5DF2\u6682\u505C API \u6D41\u6C34\u7EBF\u3002");
+        if (UI4) UI4.update();
+        return;
+      }
       if (State.isExecuting) {
         State.isExecuting = false;
         Database.saveExecutingState();
@@ -4140,6 +4441,10 @@
     }, "toggleExecution"),
     // Start execution without scanning
     startExecution: /* @__PURE__ */ __name(() => {
+      if (State.apiPipelineActive) {
+        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7 worker \u6267\u884C\u8BF7\u6C42\u3002");
+        return;
+      }
       if (State.isExecuting) {
         const newTotal = State.db.todo.length;
         if (newTotal > State.executionTotalTasks) {
@@ -4488,12 +4793,31 @@
       }, 5e3);
     }, "runWatchdog"),
     executeBatch: /* @__PURE__ */ __name(async () => {
+      if (State.apiPipelineActive) {
+        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u963B\u6B62\u65E7 worker \u6D3E\u53D1\u3002");
+        return;
+      }
       if (!Utils.checkAuthentication()) return;
       if (!State.isWorkerTab && !InstanceManager.isActive) {
         Utils.logger("warn", Utils.getText("log_not_active_instance"));
         return;
       }
       if (!State.isExecuting) return;
+      if (State.appStatus === "RATE_LIMITED") {
+        Utils.logger("info", Utils.getText("log_rate_limited_continue"));
+        return;
+      }
+      const apiClaimMode = Config.USE_API_CLAIM && ApiClaim.isAvailable();
+      if (apiClaimMode && Date.now() < State.apiClaimNextDispatchAt) {
+        const waitMs = Math.max(0, State.apiClaimNextDispatchAt - Date.now());
+        if (!State.apiClaimDispatchTimer) {
+          State.apiClaimDispatchTimer = setTimeout(() => {
+            State.apiClaimDispatchTimer = null;
+            TaskRunner2.executeBatch();
+          }, waitMs);
+        }
+        return;
+      }
       if (State.isDispatchingTasks) {
         Utils.logger("debug", "Task dispatching already in progress, skipping executeBatch.");
         return;
@@ -4510,11 +4834,9 @@
           State.isDispatchingTasks = false;
           return;
         }
-        if (State.appStatus === "RATE_LIMITED") {
-          Utils.logger("info", Utils.getText("log_rate_limited_continue"));
-        }
-        if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
-          Utils.logger("info", Utils.getText("log_max_workers_reached", Config.MAX_CONCURRENT_WORKERS));
+        const maxConcurrentWorkers = apiClaimMode ? Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1) : Config.MAX_CONCURRENT_WORKERS;
+        if (State.activeWorkers >= maxConcurrentWorkers) {
+          Utils.logger("info", Utils.getText("log_max_workers_reached", maxConcurrentWorkers));
           State.isDispatchingTasks = false;
           return;
         }
@@ -4522,7 +4844,7 @@
         const todoList = [...State.db.todo];
         let dispatchedCount = 0;
         const dispatchedUIDs = /* @__PURE__ */ new Set();
-        const slotsAvailable = Config.MAX_CONCURRENT_WORKERS - State.activeWorkers;
+        const slotsAvailable = maxConcurrentWorkers - State.activeWorkers;
         const tasksToDispatch = [];
         for (const task of todoList) {
           if (tasksToDispatch.length >= slotsAvailable) break;
@@ -4558,6 +4880,12 @@
           if (typeof registerWorkerDoneListener === "function") {
             registerWorkerDoneListener(workerId);
           }
+          if (apiClaimMode) {
+            State.apiClaimNextDispatchAt = Date.now() + Math.max(
+              0,
+              Number(Config.API_CLAIM_MIN_INTERVAL_MS) || 0
+            );
+          }
           GM_openInTab(workerUrl.href, { active: false, insert: true });
         }
         if (dispatchedCount > 0) {
@@ -4572,6 +4900,11 @@
       }
     }, "executeBatch"),
     closeAllWorkerTabs: /* @__PURE__ */ __name(() => {
+      if (State.apiClaimDispatchTimer) {
+        clearTimeout(State.apiClaimDispatchTimer);
+        State.apiClaimDispatchTimer = null;
+      }
+      State.apiClaimNextDispatchAt = 0;
       const workerIds = Object.keys(State.runningWorkers);
       if (workerIds.length > 0) {
         Utils.logger("debug", Utils.getText("log_cleaning_workers_state", workerIds.length));
@@ -4642,12 +4975,32 @@
         const currentTask = payload.task;
         const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
         let success = false;
+        let rateLimited = false;
+        let retryAfterMs = null;
         try {
-          const claimResult = await acquireOnDetailPage(currentTask, {
-            taskRunner: TaskRunner2,
-            log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
-          });
-          success = claimResult.success;
+          if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+            const apiResult = await ApiClaim.claim(currentTask);
+            success = apiResult.result === CLAIM_RESULT.SUCCESS;
+            if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
+              rateLimited = true;
+              retryAfterMs = apiResult.retryAfterMs || null;
+            } else if (!success && apiResult.retryable) {
+              logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason || "\u6682\u6001\u5931\u8D25"}\uFF0C\u56DE\u843D DOM \u9886\u53D6\u3002`);
+              const claimResult = await acquireOnDetailPage(currentTask, {
+                taskRunner: TaskRunner2,
+                log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
+              });
+              success = claimResult.success;
+            } else if (!success && apiResult.reason) {
+              logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason}`);
+            }
+          } else {
+            const claimResult = await acquireOnDetailPage(currentTask, {
+              taskRunner: TaskRunner2,
+              log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
+            });
+            success = claimResult.success;
+          }
         } catch (error) {
           logBuffer.push(`A critical error occurred: ${error.message}`);
           success = false;
@@ -4668,6 +5021,8 @@
             await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
               workerId,
               success,
+              rateLimited,
+              retryAfterMs,
               logs: logBuffer,
               task: currentTask,
               instanceId: payload.instanceId,
@@ -5252,6 +5607,10 @@
       }
     }, "stopExecutionAndSettle"),
     attemptAutoScroll: /* @__PURE__ */ __name(async () => {
+      if (State.apiPipelineActive) {
+        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7\u81EA\u52A8\u6EDA\u52A8\u8BF7\u6C42\u3002");
+        return;
+      }
       if (State.isAutoScrolling) return;
       State.isAutoScrolling = true;
       if (typeof State.autoScrollAttempts === "undefined") {
@@ -5304,16 +5663,10 @@
           } else if (typeof window.scrollTo === "function") {
             window.scrollTo(0, (window.scrollY || 0) + stepSize);
           }
-          if (typeof window.dispatchEvent === "function") {
-            window.dispatchEvent(new Event("scroll"));
-          }
           await new Promise((r) => _realSetTimeout(r, 350));
         }
         if (typeof window.scrollTo === "function" && doc) {
           window.scrollTo(0, doc.scrollHeight);
-          if (typeof window.dispatchEvent === "function") {
-            window.dispatchEvent(new Event("scroll"));
-          }
           await new Promise((r) => _realSetTimeout(r, 350));
         }
         if (doc) {
@@ -5322,14 +5675,8 @@
           if (atBottom) {
             const upBy = Math.round(innerH * 1.2);
             window.scrollTo(0, Math.max(0, (window.scrollY || 0) - upBy));
-            if (typeof window.dispatchEvent === "function") {
-              window.dispatchEvent(new Event("scroll"));
-            }
             await new Promise((r) => _realSetTimeout(r, 500));
             window.scrollTo(0, doc.scrollHeight);
-            if (typeof window.dispatchEvent === "function") {
-              window.dispatchEvent(new Event("scroll"));
-            }
             await new Promise((r) => _realSetTimeout(r, 500));
           }
         }
@@ -5410,6 +5757,11 @@
   }
   __name(setTaskRunnerReference, "setTaskRunnerReference");
   var UI5 = {
+    getApiPositionText: /* @__PURE__ */ __name(() => {
+      if (!State.apiCursorSavedAt) return Utils.getText("no_saved_position");
+      const date = new Date(State.apiCursorSavedAt);
+      return `${Utils.getText("position_label")}: "${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour12: false })}"`;
+    }, "getApiPositionText"),
     init: /* @__PURE__ */ __name(() => {
       return UI5.create();
     }, "init"),
@@ -5872,7 +6224,7 @@
       positionIcon.textContent = Utils.getText("position_indicator");
       positionIcon.style.marginRight = "4px";
       const positionInfo = document.createElement("span");
-      positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      positionInfo.textContent = Config.USE_API_PIPELINE ? UI5.getApiPositionText() : Utils.decodeCursor(State.savedCursor);
       positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
       State.UI.savedPositionDisplay = positionInfo;
       positionContainer.appendChild(positionIcon);
@@ -5889,7 +6241,7 @@
       };
       clearPositionBtn.onclick = async () => {
         const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
-        if (State.savedCursor || typeof PagePatcher !== "undefined" && PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+        if (State.savedCursor || State.apiCursor || typeof PagePatcher !== "undefined" && PagePatcher._lastSeenCursor || hasRecoveryCursor) {
           if (typeof PagePatcher !== "undefined" && PagePatcher.lockCursorSaving) {
             PagePatcher.lockCursorSaving();
           }
@@ -5898,7 +6250,9 @@
               await PagePatcher.clearSavedPosition("User UI Reset");
             } else {
               State.savedCursor = null;
+              State.apiCursor = null;
               await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+              await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
               if (typeof sessionStorage !== "undefined") {
                 try {
                   sessionStorage.removeItem("fab_helper_recovery_cursor");
@@ -6127,9 +6481,13 @@
       if (State.UI.syncBtn) {
         State.UI.syncBtn.textContent = "\u{1F504} " + Utils.getText("sync");
       }
-      const todoCount = State.db.todo.length;
-      const doneCount = State.db.done.length;
-      const failedCount = State.db.failed.length;
+      const apiMode = Config.USE_API_PIPELINE;
+      const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
+      const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
+      const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
+      if (apiMode && State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = UI5.getApiPositionText();
+      }
       const cardCounts = TaskRunner3?.getCardCounts ? TaskRunner3.getCardCounts() : {
         total: document.querySelectorAll(Config.SELECTORS.card).length,
         hidden: State.hiddenThisPageCount,
@@ -6679,254 +7037,6 @@
     }), "status")
   };
 
-  // src/modules/claim-strategy.js
-  var CLAIM_RESULT = {
-    SUCCESS: "success",
-    FAILURE: "failure",
-    SKIPPED: "skipped",
-    // 主动跳过：付费 / 外部站 / 不可购买
-    RATE_LIMITED: "rate_limited",
-    // 撞上 429，需退避
-    UNAVAILABLE: "unavailable"
-    // 该策略不可用，应由 Executor 尝试下一个
-  };
-  var FAB_CLAIM_ENDPOINT = "https://www.fab.com/i/listings/{uid}/add-to-library";
-  var FAB_LISTING_ENDPOINT = "https://www.fab.com/i/listings/{uid}";
-  var multipartBody = /* @__PURE__ */ __name((fields, boundary = "----FabHelperFormBoundary") => {
-    const lines = [];
-    Object.keys(fields || {}).forEach((key) => {
-      lines.push(`--${boundary}`);
-      lines.push(`Content-Disposition: form-data; name="${key}"`);
-      lines.push("");
-      lines.push(String(fields[key]));
-    });
-    lines.push(`--${boundary}--`);
-    lines.push("");
-    return lines.join("\r\n");
-  }, "multipartBody");
-  var pickFreeOfferId = /* @__PURE__ */ __name((listing) => {
-    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
-    const free = list.filter(
-      (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
-    );
-    if (!free.length) return null;
-    const pro = free.find((l) => l.slug === "professional");
-    return (pro || free[0]).offerId;
-  }, "pickFreeOfferId");
-  var ApiClaim = {
-    name: "api",
-    endpoint: FAB_CLAIM_ENDPOINT,
-    method: "POST",
-    boundary: "----FabHelperFormBoundary",
-    buildBody: null,
-    resolveOfferId: null,
-    // 可注入：(task) => offerId | null
-    fetchImpl: null,
-    // 可注入，便于测试与替换传输层
-    configure: /* @__PURE__ */ __name(({ endpoint, method, buildBody, resolveOfferId, fetchImpl, boundary } = {}) => {
-      if (endpoint) ApiClaim.endpoint = endpoint;
-      if (method) ApiClaim.method = method;
-      if (boundary) ApiClaim.boundary = boundary;
-      if (typeof buildBody === "function" || buildBody === null) ApiClaim.buildBody = buildBody;
-      if (typeof resolveOfferId === "function" || resolveOfferId === null) ApiClaim.resolveOfferId = resolveOfferId;
-      if (typeof fetchImpl === "function" || fetchImpl === null) ApiClaim.fetchImpl = fetchImpl;
-    }, "configure"),
-    isAvailable: /* @__PURE__ */ __name(() => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === "function", "isAvailable"),
-    /** 端点模板里的 {uid} 换成真实 uid。 */
-    _url: /* @__PURE__ */ __name((task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)), "_url"),
-    /**
-     * 解析 offer_id。
-     * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
-     * 免费档，可以直接用，省掉每件商品一次详情请求。
-     * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
-     */
-    _resolveOfferId: /* @__PURE__ */ __name(async (task) => {
-      if (typeof ApiClaim.resolveOfferId === "function") return ApiClaim.resolveOfferId(task);
-      if (task && task.offerId) return task.offerId;
-      const res = await ApiClaim.fetchImpl({
-        method: "GET",
-        url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
-        headers: { accept: "application/json" }
-      });
-      if (!res || res.status !== 200) return null;
-      try {
-        return pickFreeOfferId(JSON.parse(res.responseText));
-      } catch (e) {
-        return null;
-      }
-    }, "_resolveOfferId"),
-    claim: /* @__PURE__ */ __name(async (task) => {
-      if (!ApiClaim.isAvailable()) {
-        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "\u9886\u53D6\u7AEF\u70B9\u672A\u914D\u7F6E" };
-      }
-      const csrfToken = Utils.getCookie("fab_csrftoken");
-      if (!csrfToken) {
-        return {
-          result: CLAIM_RESULT.FAILURE,
-          reason: "\u7F3A\u5C11 CSRF token\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548",
-          retryable: false
-        };
-      }
-      let offerId = null;
-      try {
-        offerId = await ApiClaim._resolveOfferId(task);
-      } catch (e) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`, retryable: true };
-      }
-      if (!offerId) {
-        return {
-          result: CLAIM_RESULT.FAILURE,
-          reason: "\u672A\u627E\u5230\u514D\u8D39\u8BB8\u53EF\u7684 offer_id",
-          retryable: false
-        };
-      }
-      const built = typeof ApiClaim.buildBody === "function" ? ApiClaim.buildBody({ ...task, offerId }) : { offer_id: offerId };
-      const isString = typeof built === "string";
-      const body = isString ? built : built && typeof built.body === "string" ? built.body : multipartBody(built, ApiClaim.boundary);
-      const contentType = !isString && built && built.contentType ? built.contentType : `multipart/form-data; boundary=${ApiClaim.boundary}`;
-      let response;
-      try {
-        response = await ApiClaim.fetchImpl({
-          method: ApiClaim.method,
-          url: ApiClaim._url(task),
-          headers: {
-            "content-type": contentType,
-            "x-csrftoken": csrfToken,
-            "x-requested-with": "XMLHttpRequest"
-          },
-          data: body
-        });
-      } catch (e) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u8BF7\u6C42\u5F02\u5E38: ${e.message}`, retryable: true };
-      }
-      const status = response && response.status;
-      if (status === 429) {
-        const raw = response.getResponseHeader ? response.getResponseHeader("retry-after") : null;
-        const retryAfterMs = raw ? Number(raw) * 1e3 : null;
-        return {
-          result: CLAIM_RESULT.RATE_LIMITED,
-          reason: "\u63A5\u53E3\u8FD4\u56DE 429",
-          retryAfterMs: Number.isFinite(retryAfterMs) ? retryAfterMs : null
-        };
-      }
-      if (status >= 200 && status < 300) return { result: CLAIM_RESULT.SUCCESS, reason: "" };
-      if (status === 401) {
-        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 401\uFF0C\u672A\u767B\u5F55\u6216\u4F1A\u8BDD\u5DF2\u5931\u6548", retryable: false };
-      }
-      if (status === 403 || status === 404) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: false };
-      }
-      if (status === 400) {
-        return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 400\uFF0C\u8BF7\u6C42\u4F53\u53EF\u80FD\u88AB\u62D2\u7EDD", retryable: false };
-      }
-      if (status >= 500) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true };
-      }
-      return {
-        result: CLAIM_RESULT.FAILURE,
-        reason: `\u63A5\u53E3\u8FD4\u56DE ${status || "\u672A\u77E5\u72B6\u6001"}`,
-        retryable: false
-      };
-    }, "claim")
-  };
-  var domClaimImpl = null;
-  var setDomClaim = /* @__PURE__ */ __name((fn) => {
-    domClaimImpl = fn;
-  }, "setDomClaim");
-  var normalizeClaimOutcome = /* @__PURE__ */ __name((raw) => {
-    if (typeof raw === "boolean") {
-      return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: "" };
-    }
-    if (raw && typeof raw === "object") {
-      if (raw.result) return raw;
-      if (typeof raw.success === "boolean") {
-        return {
-          result: raw.success ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE,
-          reason: typeof raw.reason === "string" ? raw.reason : "",
-          retryable: raw.retryable === true
-        };
-      }
-    }
-    return {
-      result: CLAIM_RESULT.FAILURE,
-      reason: "\u9886\u53D6\u8FD4\u56DE\u503C\u65E0\u6CD5\u8BC6\u522B",
-      retryable: false
-    };
-  }, "normalizeClaimOutcome");
-  var DomClaim = {
-    name: "dom",
-    isAvailable: /* @__PURE__ */ __name(() => typeof domClaimImpl === "function", "isAvailable"),
-    claim: /* @__PURE__ */ __name(async (task) => {
-      if (!DomClaim.isAvailable()) {
-        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "DOM \u9886\u53D6\u672A\u6CE8\u5165" };
-      }
-      return normalizeClaimOutcome(await domClaimImpl(task));
-    }, "claim")
-  };
-  var ClaimExecutor = {
-    preferApi: true,
-    metrics: {
-      api: { attempts: 0, success: 0 },
-      dom: { attempts: 0, success: 0 },
-      unavailable: 0
-    },
-    resetMetrics: /* @__PURE__ */ __name(() => {
-      ClaimExecutor.metrics = {
-        api: { attempts: 0, success: 0 },
-        dom: { attempts: 0, success: 0 },
-        unavailable: 0
-      };
-    }, "resetMetrics"),
-    /**
-     * 依次尝试策略，返回首个非 UNAVAILABLE 的结果。
-     * 策略抛异常或不可用都会回落到下一个，绝不向上冒泡。
-     */
-    claim: /* @__PURE__ */ __name(async (task, { preferApi = ClaimExecutor.preferApi } = {}) => {
-      const order = preferApi ? [ApiClaim, DomClaim] : [DomClaim, ApiClaim];
-      for (const strategy of order) {
-        if (!strategy.isAvailable()) {
-          ClaimExecutor.metrics.unavailable += 1;
-          continue;
-        }
-        let outcome;
-        try {
-          ClaimExecutor.metrics[strategy.name].attempts += 1;
-          outcome = await strategy.claim(task);
-        } catch (e) {
-          outcome = { result: CLAIM_RESULT.FAILURE, reason: `\u7B56\u7565\u5F02\u5E38: ${e.message}`, retryable: true };
-        }
-        if (!outcome || outcome.result === CLAIM_RESULT.UNAVAILABLE) continue;
-        if (outcome.result === CLAIM_RESULT.FAILURE && !outcome.retryable) {
-          return { ...outcome, strategy: strategy.name };
-        }
-        if (outcome.result === CLAIM_RESULT.FAILURE && outcome.retryable) continue;
-        if (outcome.result === CLAIM_RESULT.SUCCESS) {
-          ClaimExecutor.metrics[strategy.name].success += 1;
-        }
-        return { ...outcome, strategy: strategy.name };
-      }
-      return { result: CLAIM_RESULT.FAILURE, reason: "\u6CA1\u6709\u53EF\u7528\u7684\u9886\u53D6\u7B56\u7565", strategy: null };
-    }, "claim"),
-    /**
-     * 回落率：DOM 尝试数占总尝试数的比例。
-     * API 通路健康时应趋近 0；若长期为 1，说明接口路径没生效。
-     */
-    fallbackRate: /* @__PURE__ */ __name(() => {
-      const { api, dom } = ClaimExecutor.metrics;
-      const total = api.attempts + dom.attempts;
-      return total === 0 ? 0 : dom.attempts / total;
-    }, "fallbackRate"),
-    stats: /* @__PURE__ */ __name(() => {
-      const { api, dom, unavailable } = ClaimExecutor.metrics;
-      return {
-        api,
-        dom,
-        unavailable,
-        fallbackRate: ClaimExecutor.fallbackRate()
-      };
-    }, "stats")
-  };
-
   // src/modules/pipeline.js
   var Pipeline = {
     fsm: TaskStateMachine,
@@ -7265,6 +7375,7 @@
       nowFn = /* @__PURE__ */ __name(() => Date.now(), "nowFn")
     } = options;
     let rescanIntervalMs = Math.max(0, Number(options.rescanIntervalMs) || 0);
+    let resumeCursor = options.resumeCursor || null;
     let running = false;
     let timer = null;
     let prevExecuting = false;
@@ -7275,6 +7386,10 @@
     const isRescanDue = /* @__PURE__ */ __name((now) => rescanIntervalMs > 0 && lastPassAt > 0 && now - lastPassAt >= rescanIntervalMs, "isRescanDue");
     const beginPass = /* @__PURE__ */ __name((now) => {
       pipeline.restart(now);
+      if (resumeCursor) {
+        pipeline.cursor = resumeCursor;
+        resumeCursor = null;
+      }
       passActive = true;
       restartRequested = false;
       lastPassAt = now;
@@ -7302,22 +7417,26 @@
             passActive = false;
             lastPassAt = now;
             log2("info", `[Pipeline] \u672C\u7A0B\u7ED3\u675F\uFF1A${JSON.stringify(pipeline.log.stats())}\u3002`);
-            persist(now);
+            await persist(now);
           }
           if (restartRequested || isRescanDue(now)) beginPass(now);
         }
         if (pipeline.fsm.is(...RUNNING_STATES)) {
           const step = await pipeline.tick(now);
+          if (step && step.action === "scan") await persist(now);
+          if (step && step.action === "scan") {
+            log2("info", `[Pipeline] API \u5DF2\u626B\u63CF\u7B2C ${pipeline.pagesFetched} \u9875\uFF0C\u672C\u9875 ${step.pageItems} \u4E2A\u5546\u54C1\uFF0C\u4E0B\u4E00\u9875\u6E38\u6807${step.cursor ? "\u5DF2\u4FDD\u5B58" : "\u4E3A\u7A7A\uFF08\u5DF2\u5230\u672B\u9875\uFF09"}\u3002`);
+          }
           if (step && step.action === "login_required") {
             log2(
               "error",
               `[Pipeline] \u672A\u767B\u5F55\uFF0C\u5DF2\u505C\u5728\u9886\u53D6\u4E4B\u524D\uFF08\u672A\u767B\u5F55\u7684\u8BE6\u60C5\u9875\u6CA1\u6709\u9886\u53D6\u6309\u94AE\uFF0C\u786C\u9886\u53EA\u4F1A\u628A\u6574\u4EFD\u5217\u8868\u6807\u8BB0\u6210\u5931\u8D25\uFF09\u3002${step.todo} \u4E2A\u5546\u54C1\u7559\u5728\u5F85\u9886\u961F\u5217\uFF0C\u767B\u5F55\u540E\u53EF\u7EE7\u7EED\uFF0C\u4E0D\u4F1A\u91CD\u590D\u9886\u53D6\u5DF2\u5904\u7406\u7684\u5546\u54C1\u3002`
             );
-            persist(now);
+            await persist(now);
           }
           if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
             lastPersistAt = now;
-            persist(now);
+            await persist(now);
           }
         }
         const delay = pipeline.nextDelayMs(nowFn());
@@ -7608,9 +7727,32 @@
     }
   }, "log");
   var gmFetchImpl = /* @__PURE__ */ __name((url, { headers } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+    if (nativeFetch) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = setTimeout(() => controller && controller.abort(), 3e4);
+      nativeFetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers: { accept: "application/json", ...headers || {} },
+        ...controller ? { signal: controller.signal } : {}
+      }).then(async (response) => {
+        clearTimeout(timer);
+        resolve({
+          status: response.status,
+          responseText: await response.text(),
+          responseHeaders: [...response.headers.entries()].map(([k, v]) => `${k}: ${v}`).join("\r\n")
+        });
+      }).catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      return;
+    }
     API.gmFetch({
       method: "GET",
       url,
+      timeout: 3e4,
       headers: { accept: "application/json", ...headers || {} },
       onload: /* @__PURE__ */ __name((res) => resolve({
         status: res.status,
@@ -7634,6 +7776,29 @@
     return null;
   }, "parseResponseHeader");
   var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+    if (nativeFetch) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = setTimeout(() => controller && controller.abort(), 3e4);
+      nativeFetch(url, {
+        method: method || "POST",
+        credentials: "include",
+        headers: headers || {},
+        body: data,
+        ...controller ? { signal: controller.signal } : {}
+      }).then(async (response) => {
+        clearTimeout(timer);
+        resolve({
+          status: response.status,
+          responseText: await response.text(),
+          getResponseHeader: /* @__PURE__ */ __name((name) => response.headers.get(name), "getResponseHeader")
+        });
+      }).catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      return;
+    }
     API.gmFetch({
       method: method || "POST",
       url,
@@ -7667,7 +7832,9 @@
   var hasClaimBackend = /* @__PURE__ */ __name(() => Boolean(
     typeof ApiClaim.isAvailable === "function" && ApiClaim.isAvailable() || typeof DomClaim.isAvailable === "function" && DomClaim.isAvailable()
   ), "hasClaimBackend");
-  var isApiPipelineActive = /* @__PURE__ */ __name(() => Boolean(Config.USE_API_PIPELINE && hasClaimBackend()), "isApiPipelineActive");
+  var isApiPipelineActive = /* @__PURE__ */ __name(() => Boolean(
+    Config.USE_API_PIPELINE && State.apiPipelineActive
+  ), "isApiPipelineActive");
   var createScanFilter = /* @__PURE__ */ __name((database = Database) => (item) => {
     if (!item || !item.uid) return "invalid_item";
     if (database && typeof database.isDone === "function" && database.isDone(`https://www.fab.com/listings/${item.uid}`)) {
@@ -7726,16 +7893,83 @@
     try {
       loaded = await EventLog.load();
     } catch (e) {
-      log("error", `[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u672C\u6B21\u4F1A\u8BDD\u4ECE\u7A7A\u5386\u53F2\u5F00\u59CB: ${e.message}`);
-      return { loaded: 0, total: 0 };
+      log("error", `[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u62D2\u7EDD\u542F\u52A8 API \u6D41\u6C34\u7EBF: ${e.message}`);
+      return { ok: false, loaded: 0, total: 0 };
+    }
+    if (loaded === null) {
+      log("error", "[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u62D2\u7EDD\u542F\u52A8 API \u6D41\u6C34\u7EBF\uFF1B\u65E7\u5F85\u529E\u4FDD\u6301\u4E0D\u53D8\u3002");
+      return { ok: false, loaded: 0, total: 0 };
     }
     EventLog.prune(EVENT_LOG_MAX);
     log("info", `[Pipeline] \u5DF2\u8F7D\u5165\u4E8B\u4EF6\u5386\u53F2 ${loaded} \u6761\uFF08\u53BB\u91CD\u540E ${EventLog.stats().total} \u4E2A\u5546\u54C1\uFF09\u3002`);
-    return { loaded, total: EventLog.stats().total };
+    return { ok: true, loaded, total: EventLog.stats().total };
   }, "loadEventLog");
-  var persistEventLog = /* @__PURE__ */ __name(({ database = Database } = {}) => {
+  var loadApiCursor = /* @__PURE__ */ __name(async () => {
+    try {
+      const cursor = await GM_getValue(Config.DB_KEYS.API_CURSOR, null);
+      State.apiCursorSavedAt = await GM_getValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, null);
+      State.apiCursor = typeof cursor === "string" && cursor ? cursor : null;
+      return State.apiCursor;
+    } catch (e) {
+      log("warn", `[Pipeline] API \u5206\u9875\u4F4D\u7F6E\u8BFB\u53D6\u5931\u8D25\uFF0C\u5C06\u4ECE\u9996\u9875\u7EE7\u7EED: ${e.message}`);
+      return null;
+    }
+  }, "loadApiCursor");
+  var saveApiCursor = /* @__PURE__ */ __name(async (cursor) => {
+    try {
+      if (cursor) {
+        await GM_setValue(Config.DB_KEYS.API_CURSOR, cursor);
+        State.apiCursorSavedAt = Date.now();
+        await GM_setValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, State.apiCursorSavedAt);
+      } else {
+        await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
+        await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
+        State.apiCursorSavedAt = null;
+      }
+      State.apiCursor = cursor || null;
+      return true;
+    } catch (e) {
+      log("warn", `[Pipeline] API \u5206\u9875\u4F4D\u7F6E\u4FDD\u5B58\u5931\u8D25: ${e.message}`);
+      return false;
+    }
+  }, "saveApiCursor");
+  var migrateLegacyTodoToEventLog = /* @__PURE__ */ __name(async ({ database = Database } = {}) => {
+    const legacyTodo = Array.isArray(State.db.todo) ? [...State.db.todo] : [];
+    if (legacyTodo.length === 0) return 0;
+    let imported = 0;
+    legacyTodo.forEach((task) => {
+      const uid = EventLog.uidOf(task && (task.uid || task.url));
+      if (!uid) return;
+      const latest = EventLog.latestOf(uid);
+      if (latest && latest.state !== EVENT_STATE.FAILED) return;
+      const url = EventLog.canonicalUrl(uid);
+      const alreadyOwned = database && typeof database.isDone === "function" && database.isDone(url);
+      EventLog.append(uid, alreadyOwned ? EVENT_STATE.CLAIMED : EVENT_STATE.DISCOVERED, {
+        name: task.name,
+        url: task.url || url,
+        offerId: task.offerId || ""
+      });
+      imported += 1;
+    });
+    if (!await EventLog.save()) {
+      log("error", "[Pipeline] \u65E7\u5F85\u529E\u8FC1\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u4FDD\u7559\u539F\u961F\u5217\u5E76\u653E\u5F03 API \u6D41\u6C34\u7EBF\u63A5\u7BA1\u3002");
+      return -1;
+    }
+    State.db.todo = [];
+    if (database && typeof database.saveTodo === "function") await database.saveTodo();
+    log("info", `[Pipeline] \u5DF2\u5C06 ${legacyTodo.length} \u4E2A\u65E7\u7248\u5F85\u529E\u8FC1\u5165 API \u961F\u5217\uFF08\u65B0\u589E ${imported} \u4E2A\uFF09\u3002`);
+    return imported;
+  }, "migrateLegacyTodoToEventLog");
+  var persistEventLog = /* @__PURE__ */ __name(async (options = {}) => {
+    const { database = Database } = options;
     EventLog.prune(EVENT_LOG_MAX);
-    EventLog.save();
+    if (!await EventLog.save()) {
+      log("error", "[Pipeline] \u4E8B\u4EF6\u65E5\u5FD7\u5199\u5165\u5931\u8D25\uFF0C\u672A\u63A8\u8FDB API \u5206\u9875\u4F4D\u7F6E\u3002");
+      return { synced: 0, total: EventLog.stats().total, saved: false };
+    }
+    if (Object.prototype.hasOwnProperty.call(options, "cursor") && !await saveApiCursor(options.cursor)) {
+      log("warn", "[Pipeline] \u4E8B\u4EF6\u65E5\u5FD7\u5DF2\u4FDD\u5B58\uFF0C\u4F46 API \u5206\u9875\u4F4D\u7F6E\u672A\u4FDD\u5B58\uFF1B\u4E0B\u6B21\u4F1A\u4ECE\u65E7\u4F4D\u7F6E\u5B89\u5168\u91CD\u626B\u3002");
+    }
     let synced = 0;
     try {
       if (database && typeof database.addDoneUrl === "function") {
@@ -7745,7 +7979,7 @@
           database.addDoneUrl(url);
           synced += 1;
         });
-        if (synced > 0 && typeof database.saveDone === "function") database.saveDone();
+        if (synced > 0 && typeof database.saveDone === "function") await database.saveDone();
       }
     } catch (e) {
       log("error", `[Pipeline] \u56DE\u5199\u5DF2\u9886\u53D6\u5546\u54C1\u5230\u65E7\u6570\u636E\u5C42\u5931\u8D25: ${e.message}`);
@@ -8549,7 +8783,12 @@
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
     if (Config.USE_API_PIPELINE) {
-      startApiPipeline().catch((e) => Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25: ${e.message}`));
+      try {
+        await startApiPipeline();
+      } catch (e) {
+        State.apiPipelineActive = false;
+        Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25\uFF0C\u5DF2\u56DE\u9000\u65E7\u8DEF\u5F84: ${e.message}`);
+      }
     }
     if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
       setTimeout(() => {
@@ -8710,6 +8949,9 @@
     } else {
       State.isAuthenticated = true;
     }
+    if (Config.USE_API_CLAIM) {
+      ApiClaim.configure({ endpoint: FAB_CLAIM_ENDPOINT, fetchImpl: gmPostImpl });
+    }
     const urlParams = new URLSearchParams(window.location.search);
     const workerId = urlParams.get("workerId");
     if (workerId) {
@@ -8833,7 +9075,7 @@
       try {
         await GM_deleteValue(key);
         State.registeredWorkerDoneKeys.delete(workerId);
-        const { workerId: wid, success, task, logs, instanceId, executionTime } = newValue;
+        const { workerId: wid, success, rateLimited, retryAfterMs, task, logs, instanceId, executionTime } = newValue;
         if (instanceId !== Config.INSTANCE_ID) {
           Utils.logger("info", `\u6536\u5230\u6765\u81EA\u5176\u4ED6\u5B9E\u4F8B [${instanceId}] \u7684\u5DE5\u4F5C\u62A5\u544A\uFF0C\u5F53\u524D\u5B9E\u4F8B [${Config.INSTANCE_ID}] \u5C06\u5FFD\u7565\u3002`);
           return;
@@ -8860,6 +9102,11 @@
           State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
         } else {
+          if (rateLimited) {
+            const retryHint = Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? `\uFF0C\u670D\u52A1\u7AEF\u5EFA\u8BAE\u7B49\u5F85 ${Math.ceil(retryAfterMs / 1e3)} \u79D2` : "";
+            Utils.logger("warn", `[API\u5165\u5E93] \u6536\u5230 429${retryHint}\uFF1B\u6682\u505C\u65B0 worker \u6D3E\u53D1\u5E76\u8FDB\u5165\u6062\u590D\u68C0\u67E5\u3002`);
+            await RateLimitManager.enterRateLimitedState("ApiClaim 429");
+          }
           const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
@@ -8922,6 +9169,7 @@
   var _apiPipelineScheduler = null;
   async function startApiPipeline() {
     if (State.isWorkerTab) return;
+    State.apiPipelineActive = false;
     let acquireFn = null;
     if (Config.CLAIM_TRANSPORT === "iframe") {
       acquireFn = createIframeAcquire({
@@ -8933,21 +9181,31 @@
     bootstrapPipeline({
       fetchImpl: gmFetchImpl,
       acquireFn,
-      apiEndpoint: FAB_CLAIM_ENDPOINT,
-      apiFetchImpl: gmPostImpl
+      // USE_API_CLAIM 是 API 后端的唯一开关；关闭时只允许显式配置的 DOM/iframe 路径。
+      ...Config.USE_API_CLAIM ? {
+        apiEndpoint: FAB_CLAIM_ENDPOINT,
+        apiFetchImpl: gmPostImpl
+      } : {}
     });
     if (!hasClaimBackend()) {
+      State.apiPipelineActive = false;
       Utils.logger(
         "error",
         `[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}\u3001ApiClaim \u4E0D\u53EF\u7528\uFF09\u3002\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002`
       );
       return;
     }
-    await loadEventLog();
+    const eventLogLoad = await loadEventLog();
+    if (!eventLogLoad.ok) return;
+    const migrated = await migrateLegacyTodoToEventLog();
+    if (migrated < 0) return;
+    const apiCursor = await loadApiCursor();
+    State.apiPipelineActive = true;
     _apiPipelineScheduler = createPipelineScheduler({
       pipeline: Pipeline,
       isExecuting: /* @__PURE__ */ __name(() => State.isExecuting, "isExecuting"),
-      persist: /* @__PURE__ */ __name(() => persistEventLog(), "persist"),
+      resumeCursor: apiCursor,
+      persist: /* @__PURE__ */ __name(() => persistEventLog({ cursor: Pipeline.cursor }), "persist"),
       rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
       log: /* @__PURE__ */ __name((level, msg) => Utils.logger(level, msg), "log")
     });
@@ -8957,6 +9215,7 @@
   __name(startApiPipeline, "startApiPipeline");
   async function handleWakeRecovery() {
     if (State.isWorkerTab) return;
+    if (isApiPipelineActive()) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
     Utils.logger("info", Utils.getText("log_wake_recovery"));
     await RateLimitManager.checkInactivity(false);

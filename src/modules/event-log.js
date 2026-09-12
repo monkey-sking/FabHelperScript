@@ -63,7 +63,9 @@ export const EventLog = {
             raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
         } catch (e) {
             Utils.logger('error', `读取事件日志失败: ${e.message}`);
-            raw = [];
+            // 读取失败不能伪装成空历史，否则启动流程会把旧队列迁移后
+            // 覆盖掉原有 CLAIMED/FAILED 记录，下一轮可能重复领取。
+            return null;
         }
         if (!Array.isArray(raw)) raw = [];
         // 清洗：丢弃缺 uid / 状态非法的历史残留，避免一条脏数据污染整个派生视图
@@ -74,11 +76,13 @@ export const EventLog = {
         return EventLog.events.length;
     },
 
-    save: () => {
+    save: async () => {
         try {
-            GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+            await GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
+            return true;
         } catch (e) {
             Utils.logger('error', `写入事件日志失败: ${e.message}`);
+            return false;
         }
     },
 

@@ -21,11 +21,14 @@ import { STATE } from '../src/modules/state-machine.js';
 import { ClaimExecutor } from '../src/modules/claim-strategy.js';
 import { ListingSource, FREE_POLICY } from '../src/modules/listing-source.js';
 import { Config } from '../src/config.js';
+import { State } from '../src/state.js';
 import {
     bootstrapPipeline,
     resetPipelineAdapters,
     hasClaimBackend,
-    isApiPipelineActive
+    isApiPipelineActive,
+    persistEventLog,
+    migrateLegacyTodoToEventLog
 } from '../src/modules/pipeline-adapter.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -237,25 +240,28 @@ test('已入库商品在扫描阶段即被跳过，不会进入待领队列', as
     assert.ok(skipped.every(e => e.reason === 'already_owned'));
 });
 
-test('isApiPipelineActive：开关开着但无领取后端时必须为 false，否则旧路径会被一起关掉', async () => {
+test('isApiPipelineActive：只在实际启动完成后接管，失败或半初始化必须放行旧路径', async () => {
     const orig = Config.USE_API_PIPELINE;
     try {
         resetPipelineAdapters();
         Config.USE_API_PIPELINE = true;
         assert.equal(hasClaimBackend(), false);
-        // 这是这条判定的全部意义：新流水线拒绝启动时，旧路径的护栏必须放行
         assert.equal(isApiPipelineActive(), false, '无领取后端 → 旧路径必须继续运行');
 
+        // 仅有后端不代表启动成功：事件日志读取失败等场景仍应继续旧路径。
         bootstrapPipeline({ fetchImpl: fixtureFetch(), acquireFn: async () => ({ success: true }) });
-        assert.equal(isApiPipelineActive(), true, '注入后端后新流水线才真正接管');
+        assert.equal(hasClaimBackend(), true);
+        assert.equal(isApiPipelineActive(), false, '后端就绪但尚未完成启动时不得提前接管');
+
+        State.apiPipelineActive = true;
+        assert.equal(isApiPipelineActive(), true, '启动完成后新流水线才真正接管');
+
+        State.apiPipelineActive = false;
+        assert.equal(isApiPipelineActive(), false, '启动失败/撤销接管后旧路径必须立即恢复');
 
         Config.USE_API_PIPELINE = false;
-        assert.equal(isApiPipelineActive(), false, '开关关闭时无论有没有后端都不接管');
-
-        // 后端被清掉后判定必须跟着回落，不能停留在「已接管」
-        resetPipelineAdapters();
-        Config.USE_API_PIPELINE = true;
-        assert.equal(isApiPipelineActive(), false, 'reset 清掉后端后判定必须回落到 false');
+        State.apiPipelineActive = true;
+        assert.equal(isApiPipelineActive(), false, '开关关闭时无论状态如何都不接管');
     } finally {
         Config.USE_API_PIPELINE = orig;
         resetPipelineAdapters();
@@ -273,4 +279,49 @@ test('resetPipelineAdapters 清除注入，避免用例间泄漏', async () => {
     // ListingSource 与 Pipeline 回到干净状态
     assert.equal(Pipeline.pagesFetched, 0);
     assert.equal(ListingSource.stats.pagesFetched, 0);
+});
+
+test('事件日志写入失败时不保存更靠后的 API 游标，避免重启漏掉当前页', async () => {
+    const originalSet = globalThis.GM_setValue;
+    const originalDelete = globalThis.GM_deleteValue;
+    const writes = [];
+    try {
+        globalThis.GM_setValue = (key, value) => {
+            writes.push({ key, value });
+            if (key === Config.DB_KEYS.EVENT_LOG) throw new Error('storage full');
+        };
+        globalThis.GM_deleteValue = () => {};
+        EventLog.reset();
+        EventLog.append('uid-persist-failure', EVENT_STATE.DISCOVERED, { name: 'Persist guard' });
+
+        const result = await persistEventLog({ cursor: 'page-2', database: null });
+        assert.equal(result.saved, false);
+        assert.deepEqual(
+            writes.map(entry => entry.key),
+            [Config.DB_KEYS.EVENT_LOG],
+            '事件日志未落盘时不得写入下一页游标'
+        );
+    } finally {
+        globalThis.GM_setValue = originalSet;
+        globalThis.GM_deleteValue = originalDelete;
+        EventLog.reset();
+    }
+});
+
+test('旧待办迁移保存失败时保留原队列，避免切换 API 流水线后静默漏领', async () => {
+    const originalSet = globalThis.GM_setValue;
+    try {
+        globalThis.GM_setValue = () => { throw new Error('storage full'); };
+        EventLog.reset();
+        State.db.todo = [{ uid: 'uid-migration-failure', url: 'https://www.fab.com/listings/uid-migration-failure', name: 'Keep me' }];
+        const imported = await migrateLegacyTodoToEventLog({
+            database: { isDone: () => false, saveTodo: () => assert.fail('不能清空旧队列') }
+        });
+        assert.equal(imported, -1);
+        assert.equal(State.db.todo.length, 1);
+    } finally {
+        globalThis.GM_setValue = originalSet;
+        State.db.todo = [];
+        EventLog.reset();
+    }
 });

@@ -19,6 +19,7 @@ import { PagePatcher } from './page-patcher.js';
 import { InstanceManager } from './instance-manager.js';
 import { KeepAlive } from './keepalive.js';
 import { acquireOnDetailPage } from './detail-claim.js';
+import { ApiClaim, CLAIM_RESULT } from './claim-strategy.js';
 
 // 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
 // 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
@@ -280,6 +281,19 @@ export const TaskRunner = {
     toggleExecution: async () => {
         if (!Utils.checkAuthentication()) return;
 
+        // API 模式不再扫描 DOM，也不走旧版 startExecution（后者会派发 worker）。
+        // 这里只切换共享执行开关，让 pipeline-scheduler 在下一拍启动/暂停；
+        // 重新开启时 scheduler 会识别上升沿并保留 EventLog 去重历史。
+        if (State.apiPipelineActive) {
+            State.isExecuting = !State.isExecuting;
+            Database.saveExecutingState();
+            Utils.logger('info', State.isExecuting
+                ? '[Pipeline] 已恢复 API 流水线。'
+                : '[Pipeline] 已暂停 API 流水线。');
+            if (UI) UI.update();
+            return;
+        }
+
         if (State.isExecuting) {
             State.isExecuting = false;
             Database.saveExecutingState();
@@ -384,6 +398,10 @@ export const TaskRunner = {
 
     // Start execution without scanning
     startExecution: () => {
+        if (State.apiPipelineActive) {
+            Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧 worker 执行请求。');
+            return;
+        }
         if (State.isExecuting) {
             const newTotal = State.db.todo.length;
             if (newTotal > State.executionTotalTasks) {
@@ -801,6 +819,10 @@ export const TaskRunner = {
     },
 
     executeBatch: async () => {
+        if (State.apiPipelineActive) {
+            Utils.logger('debug', '[Legacy] API 流水线已接管，阻止旧 worker 派发。');
+            return;
+        }
         if (!Utils.checkAuthentication()) return;
 
         if (!State.isWorkerTab && !InstanceManager.isActive) {
@@ -809,6 +831,24 @@ export const TaskRunner = {
         }
 
         if (!State.isExecuting) return;
+
+        // API Claim 走旧 worker 枚举时不能沿用 7 并发：每个 worker 都会 POST，
+        // 极易把账号推入 429。限速状态下也不得继续派发，等待现有恢复探测解除状态。
+        if (State.appStatus === 'RATE_LIMITED') {
+            Utils.logger('info', Utils.getText('log_rate_limited_continue'));
+            return;
+        }
+        const apiClaimMode = Config.USE_API_CLAIM && ApiClaim.isAvailable();
+        if (apiClaimMode && Date.now() < State.apiClaimNextDispatchAt) {
+            const waitMs = Math.max(0, State.apiClaimNextDispatchAt - Date.now());
+            if (!State.apiClaimDispatchTimer) {
+                State.apiClaimDispatchTimer = setTimeout(() => {
+                    State.apiClaimDispatchTimer = null;
+                    TaskRunner.executeBatch();
+                }, waitMs);
+            }
+            return;
+        }
 
         if (State.isDispatchingTasks) {
             Utils.logger('debug', 'Task dispatching already in progress, skipping executeBatch.');
@@ -829,12 +869,11 @@ export const TaskRunner = {
                 return;
             }
 
-            if (State.appStatus === 'RATE_LIMITED') {
-                Utils.logger('info', Utils.getText('log_rate_limited_continue'));
-            }
-
-            if (State.activeWorkers >= Config.MAX_CONCURRENT_WORKERS) {
-                Utils.logger('info', Utils.getText('log_max_workers_reached', Config.MAX_CONCURRENT_WORKERS));
+            const maxConcurrentWorkers = apiClaimMode
+                ? Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1)
+                : Config.MAX_CONCURRENT_WORKERS;
+            if (State.activeWorkers >= maxConcurrentWorkers) {
+                Utils.logger('info', Utils.getText('log_max_workers_reached', maxConcurrentWorkers));
                 State.isDispatchingTasks = false;
                 return;
             }
@@ -843,7 +882,7 @@ export const TaskRunner = {
             const todoList = [...State.db.todo];
             let dispatchedCount = 0;
             const dispatchedUIDs = new Set();
-            const slotsAvailable = Config.MAX_CONCURRENT_WORKERS - State.activeWorkers;
+            const slotsAvailable = maxConcurrentWorkers - State.activeWorkers;
 
             const tasksToDispatch = [];
             for (const task of todoList) {
@@ -889,6 +928,11 @@ export const TaskRunner = {
                 if (typeof registerWorkerDoneListener === 'function') {
                     registerWorkerDoneListener(workerId);
                 }
+                if (apiClaimMode) {
+                    State.apiClaimNextDispatchAt = Date.now() + Math.max(
+                        0, Number(Config.API_CLAIM_MIN_INTERVAL_MS) || 0
+                    );
+                }
                 GM_openInTab(workerUrl.href, { active: false, insert: true });
             }
 
@@ -907,6 +951,11 @@ export const TaskRunner = {
     },
 
     closeAllWorkerTabs: () => {
+        if (State.apiClaimDispatchTimer) {
+            clearTimeout(State.apiClaimDispatchTimer);
+            State.apiClaimDispatchTimer = null;
+        }
+        State.apiClaimNextDispatchAt = 0;
         const workerIds = Object.keys(State.runningWorkers);
         if (workerIds.length > 0) {
             Utils.logger('debug', Utils.getText('log_cleaning_workers_state', workerIds.length));
@@ -993,15 +1042,36 @@ export const TaskRunner = {
             const currentTask = payload.task;
             const logBuffer = [`[${workerId.substring(0, 12)}] Started: ${currentTask.name}`];
             let success = false;
+            let rateLimited = false;
+            let retryAfterMs = null;
 
-            // 领取核心已抽到 detail-claim 模块（新流水线回退到 DOM 领取时用同一份实现），
-            // 这里只保留 worker 标签页自己的职责：等页面、装载任务、回传结果、关页。
+            // 页面枚举、滚动和 worker 调度保持旧逻辑；只有真正的入库动作切到已确认的 API。
+            // API 的暂态故障必须回落到当前已打开的详情页 DOM；429 则绝不能叠加 DOM 请求，
+            // 交由主标签页暂停派发并等待恢复。
             try {
-                const claimResult = await acquireOnDetailPage(currentTask, {
-                    taskRunner: TaskRunner,
-                    log: (msg) => logBuffer.push(msg)
-                });
-                success = claimResult.success;
+                if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+                    const apiResult = await ApiClaim.claim(currentTask);
+                    success = apiResult.result === CLAIM_RESULT.SUCCESS;
+                    if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
+                        rateLimited = true;
+                        retryAfterMs = apiResult.retryAfterMs || null;
+                    } else if (!success && apiResult.retryable) {
+                        logBuffer.push(`[API入库] ${apiResult.reason || '暂态失败'}，回落 DOM 领取。`);
+                        const claimResult = await acquireOnDetailPage(currentTask, {
+                            taskRunner: TaskRunner,
+                            log: (msg) => logBuffer.push(msg)
+                        });
+                        success = claimResult.success;
+                    } else if (!success && apiResult.reason) {
+                        logBuffer.push(`[API入库] ${apiResult.reason}`);
+                    }
+                } else {
+                    const claimResult = await acquireOnDetailPage(currentTask, {
+                        taskRunner: TaskRunner,
+                        log: (msg) => logBuffer.push(msg)
+                    });
+                    success = claimResult.success;
+                }
             } catch (error) {
                 logBuffer.push(`A critical error occurred: ${error.message}`);
                 success = false;
@@ -1023,6 +1093,8 @@ export const TaskRunner = {
                     await GM_setValue(Config.DB_KEYS.WORKER_DONE_PREFIX + workerId, {
                         workerId: workerId,
                         success: success,
+                        rateLimited,
+                        retryAfterMs,
                         logs: logBuffer,
                         task: currentTask,
                         instanceId: payload.instanceId,
@@ -1779,6 +1851,10 @@ export const TaskRunner = {
     },
 
     attemptAutoScroll: async () => {
+        if (State.apiPipelineActive) {
+            Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧自动滚动请求。');
+            return;
+        }
         if (State.isAutoScrolling) return;
         State.isAutoScrolling = true;
 
@@ -1871,17 +1947,11 @@ export const TaskRunner = {
                 } else if (typeof window.scrollTo === 'function') {
                     window.scrollTo(0, (window.scrollY || 0) + stepSize);
                 }
-                if (typeof window.dispatchEvent === 'function') {
-                    window.dispatchEvent(new Event('scroll'));
-                }
                 await new Promise(r => _realSetTimeout(r, 350));
             }
             // 末段再贴一次底，兜底触发基于 scroll 位置（scrollY+innerHeight>=scrollHeight-N）的加载器
             if (typeof window.scrollTo === 'function' && doc) {
                 window.scrollTo(0, doc.scrollHeight);
-                if (typeof window.dispatchEvent === 'function') {
-                    window.dispatchEvent(new Event('scroll'));
-                }
                 await new Promise(r => _realSetTimeout(r, 350));
             }
             // 关键修复：若已在页面底部（向下滚动无法再推进滚动位置），Fab 的无限滚动
@@ -1897,14 +1967,8 @@ export const TaskRunner = {
                     // 上滚超过一整屏，确保底部哨兵明确离开可视区；再滚回底部使其重新进入，触发加载器。
                     const upBy = Math.round(innerH * 1.2);
                     window.scrollTo(0, Math.max(0, (window.scrollY || 0) - upBy));
-                    if (typeof window.dispatchEvent === 'function') {
-                        window.dispatchEvent(new Event('scroll'));
-                    }
                     await new Promise(r => _realSetTimeout(r, 500));
                     window.scrollTo(0, doc.scrollHeight);
-                    if (typeof window.dispatchEvent === 'function') {
-                        window.dispatchEvent(new Event('scroll'));
-                    }
                     await new Promise(r => _realSetTimeout(r, 500));
                 }
             }

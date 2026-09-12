@@ -142,10 +142,12 @@ import {
     gmPostImpl,
     hasClaimBackend,
     isApiPipelineActive,
+    loadApiCursor,
     loadEventLog,
+    migrateLegacyTodoToEventLog,
     persistEventLog
 } from './modules/pipeline-adapter.js';
-import { FAB_CLAIM_ENDPOINT } from './modules/claim-strategy.js';
+import { ApiClaim, FAB_CLAIM_ENDPOINT } from './modules/claim-strategy.js';
 
 // Global countdown variables
 let currentCountdownInterval = null;
@@ -962,11 +964,16 @@ async function runDomDependentPart() {
     // Initial hide/show
     TaskRunner.runHideOrShow();
 
-    // API 优先流水线：开关开启时取代旧的滚动枚举 + worker 领取路径
+    // API 优先流水线：必须等启动结果确定后再决定旧路径是否让位。
+    // 若事件日志等关键状态无法载入，startApiPipeline 会返回且保持 inactive，
+    // 随后的 DOM 扫描应正常接手，不能留下一个“开关开着但什么都不做”的空档。
     if (Config.USE_API_PIPELINE) {
-        // 内部会在「没有领取后端」时主动拒绝启动，因此这里必须接住异常，
-        // 否则一个未处理的拒绝会静默吞掉问题。
-        startApiPipeline().catch(e => Utils.logger('error', `[Pipeline] 启动失败: ${e.message}`));
+        try {
+            await startApiPipeline();
+        } catch (e) {
+            State.apiPipelineActive = false;
+            Utils.logger('error', `[Pipeline] 启动失败，已回退旧路径: ${e.message}`);
+        }
     }
 
     // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
@@ -1181,6 +1188,12 @@ async function main() {
         State.isAuthenticated = true;
     }
 
+    // 仅配置 worker 的入库传输层。商品枚举、滚动和位置保存仍走原来的 DOM 路径；
+    // 这里不启动 API 分页流水线。
+    if (Config.USE_API_CLAIM) {
+        ApiClaim.configure({ endpoint: FAB_CLAIM_ENDPOINT, fetchImpl: gmPostImpl });
+    }
+
     // Check if worker tab
     const urlParams = new URLSearchParams(window.location.search);
     const workerId = urlParams.get('workerId');
@@ -1362,7 +1375,7 @@ function registerWorkerDoneListener(workerId) {
             await GM_deleteValue(key);
             State.registeredWorkerDoneKeys.delete(workerId);
 
-            const { workerId: wid, success, task, logs, instanceId, executionTime } = newValue;
+            const { workerId: wid, success, rateLimited, retryAfterMs, task, logs, instanceId, executionTime } = newValue;
 
             if (instanceId !== Config.INSTANCE_ID) {
                 Utils.logger('info', `收到来自其他实例 [${instanceId}] 的工作报告，当前实例 [${Config.INSTANCE_ID}] 将忽略。`);
@@ -1396,6 +1409,12 @@ function registerWorkerDoneListener(workerId) {
                 State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
                 State.executionCompletedTasks++;
             } else {
+                if (rateLimited) {
+                    const retryHint = Number.isFinite(retryAfterMs) && retryAfterMs > 0
+                        ? `，服务端建议等待 ${Math.ceil(retryAfterMs / 1000)} 秒` : '';
+                    Utils.logger('warn', `[API入库] 收到 429${retryHint}；暂停新 worker 派发并进入恢复检查。`);
+                    await RateLimitManager.enterRateLimitedState('ApiClaim 429');
+                }
                 // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
                 const errorLog = logs && logs.length ?
                     (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
@@ -1471,6 +1490,8 @@ let _apiPipelineScheduler = null;
 
 async function startApiPipeline() {
     if (State.isWorkerTab) return;
+    // 接管状态只代表一次完整、可运行的启动，绝不能由配置或半初始化推断。
+    State.apiPipelineActive = false;
 
     // 领取传输层：CLAIM_TRANSPORT 只在 ApiClaim 不可用时才生效（回落到 DOM）。
     //   'iframe' —— 同源隐藏 iframe，由主标签页跨文档驱动（未经线上验证，需显式开启）
@@ -1487,8 +1508,11 @@ async function startApiPipeline() {
     bootstrapPipeline({
         fetchImpl: gmFetchImpl,
         acquireFn,
-        apiEndpoint: FAB_CLAIM_ENDPOINT,
-        apiFetchImpl: gmPostImpl
+        // USE_API_CLAIM 是 API 后端的唯一开关；关闭时只允许显式配置的 DOM/iframe 路径。
+        ...(Config.USE_API_CLAIM ? {
+            apiEndpoint: FAB_CLAIM_ENDPOINT,
+            apiFetchImpl: gmPostImpl
+        } : {})
     });
 
     // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
@@ -1496,19 +1520,28 @@ async function startApiPipeline() {
     // 好在这里拒绝不会让脚本停摆：旧路径的护栏问的是 isApiPipelineActive()
     // （开关 && 有后端），本函数返回后旧路径照常运行，只是日志里会留下这一条。
     if (!hasClaimBackend()) {
+        State.apiPipelineActive = false;
         Utils.logger('error',
             `[Pipeline] 未配置任何领取后端（CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}、ApiClaim 不可用）。` +
             '流水线不启动。已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。');
         return;
     }
 
-    // 事件历史不落盘 = 每次刷新页面都从零开始，已领过的商品会被重新领一遍
-    await loadEventLog();
+    // 事件历史不落盘 = 每次刷新页面都从零开始，已领过的商品会被重新领一遍。
+    // 在此之前不宣布接管：读取失败时 runDomDependentPart 会无缝继续旧路径。
+    const eventLogLoad = await loadEventLog();
+    if (!eventLogLoad.ok) return;
+    const migrated = await migrateLegacyTodoToEventLog();
+    if (migrated < 0) return;
+    const apiCursor = await loadApiCursor();
 
+    // 所有关键状态已就绪后才接管旧 worker 派发。
+    State.apiPipelineActive = true;
     _apiPipelineScheduler = createPipelineScheduler({
         pipeline: Pipeline,
         isExecuting: () => State.isExecuting,
-        persist: () => persistEventLog(),
+        resumeCursor: apiCursor,
+        persist: () => persistEventLog({ cursor: Pipeline.cursor }),
         rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
         log: (level, msg) => Utils.logger(level, msg)
     });
@@ -1527,6 +1560,9 @@ async function startApiPipeline() {
 async function handleWakeRecovery() {
     // 只在主标签页（非 worker tab）执行恢复逻辑
     if (State.isWorkerTab) return;
+    // API 流水线接管后，旧版 todo / worker 恢复逻辑必须完全让位；旧任务已在
+    // startApiPipeline 中迁入 EventLog，继续执行这里会重新打开商品详情页。
+    if (isApiPipelineActive()) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
 
     Utils.logger('info', Utils.getText('log_wake_recovery'));

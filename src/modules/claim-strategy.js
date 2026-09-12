@@ -28,7 +28,7 @@
  * 商品的 startingPrice.offerId 与详情页 licenses[].offerId（price===0）两种
  * offer_id 来源均成功入库。此前本仓库从没有过领取接口——全量扫描 884 个历史
  * blob 只出现过 search / listings-states / prices-infos 三个只读端点，领取
- * 一直是 DOM 点击。端点确认后 USE_API_PIPELINE 已默认开启。
+ * 一直是 DOM 点击。端点确认后，仅入库动作切换为 ApiClaim；列表枚举仍由页面 DOM 负责。
  */
 import { Utils } from './utils.js';
 

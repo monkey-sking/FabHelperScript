@@ -13,13 +13,6 @@
  *     stopExecutionAndSettle（不误杀 worker），worker 完成后再 settle。
  */
 
-// ---- 0. 补浏览器环境垫片（Node 无 Event 全局，而 doScroll 会 new Event('scroll')）----
-if (typeof globalThis.Event === 'undefined') {
-    globalThis.Event = class Event {
-        constructor(type) { this.type = type; }
-    };
-}
-
 // ---- 1. 先装 mock 定时器，再加载真实模块（确保 _realSetTimeout 捕获到 mock）----
 globalThis.__timerQueue = [];
 globalThis.setTimeout = (cb) => {
@@ -52,6 +45,7 @@ const PAGE_SIZE = 24;
 let cardsLoaded = 0;
 let scrollY = 0;
 let nearBottomLoads = 0;
+let syntheticScrollEvents = 0;
 
 const documentElement = {
     get scrollHeight() {
@@ -67,14 +61,18 @@ const windowMock = {
     scrollBy: (x, y) => {
         const maxY = Math.max(0, documentElement.scrollHeight - INNER_HEIGHT);
         scrollY = Math.max(0, Math.min(scrollY + y, maxY));
+        // 浏览器原生 scrollBy 会在滚动位置变化后触发 scroll 监听；模拟该语义。
+        onScroll();
     },
     scrollTo: (x, y) => {
         const maxY = Math.max(0, documentElement.scrollHeight - INNER_HEIGHT);
         scrollY = Math.max(0, Math.min(y, maxY));
+        // 浏览器原生 scrollTo 会在滚动位置变化后触发 scroll 监听；模拟该语义。
+        onScroll();
     },
     dispatchEvent: (ev) => {
         if (ev && ev.type === 'scroll') {
-            onScroll();
+            syntheticScrollEvents++;
         }
     },
     addEventListener: () => {},
@@ -139,6 +137,7 @@ async function runTraversal({ _diag = false } = {}) {
     cardsLoaded = PAGE_SIZE; // 首屏已渲染 24 个（同 Fab 首屏）
     scrollY = 0;
     nearBottomLoads = 0;
+    syntheticScrollEvents = 0;
     stopCalled = false;
     stopCallCount = 0;
     stopAtCardsLoaded = -1;
@@ -190,6 +189,7 @@ async function runTraversal({ _diag = false } = {}) {
         stopAtAttempts,
         finalCardsLoaded: cardsLoaded,
         fullyTraversed: cardsLoaded === TOTAL_CARDS,
+        syntheticScrollEvents,
         hung: !stopCalled && guard >= MAX_GUARD
     };
 }
@@ -203,6 +203,9 @@ function assertRun(label, result) {
     if (!result.fullyTraversed) problems.push(`未完整遍历：停在 ${result.finalCardsLoaded}/${TOTAL_CARDS}`);
     if (result.stopAtCardsLoaded !== TOTAL_CARDS) {
         problems.push(`提前停转：停止时仅 ${result.stopAtCardsLoaded}/${TOTAL_CARDS} 个商品`);
+    }
+    if (result.syntheticScrollEvents !== 0) {
+        problems.push(`不应派发合成 scroll 事件，实际 ${result.syntheticScrollEvents} 次`);
     }
     return problems;
 }

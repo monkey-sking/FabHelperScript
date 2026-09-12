@@ -36,6 +36,7 @@ export const zh = {
     current_rate_limited: '当前: 限速中',
     no_history: '没有可显示的历史记录。',
     no_saved_position: '无保存位置',
+    api_pipeline_position: '无保存位置',
 
     // 状态历史详细信息
     time_label: '时间',

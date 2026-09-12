@@ -10,16 +10,17 @@
  *   - DomClaim     → 注入真实 DOM 领取实现（复用现有领取逻辑，见 createDomClaim）
  *   - ApiClaim     → 一旦确认领取 POST 端点，ApiClaim.configure({endpoint}) 即可接管，无需改流程
  *
- * 整条链路由 Config.USE_API_PIPELINE 控制，关闭时完全不被触碰（当前默认开启），
+ * 整条链路由 Config.USE_API_PIPELINE 控制，关闭时完全不被触碰（默认关闭，保留旧 DOM 枚举），
  * 开启后取代旧的「滚动 DOM + 7 worker 标签页」枚举/领取路径。
  */
 import { Config } from '../config.js';
+import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { API } from './api.js';
 import { Database } from './database.js';
 import { ListingSource, FREE_POLICY } from './listing-source.js';
 import { Pipeline } from './pipeline.js';
-import { EventLog } from './event-log.js';
+import { EventLog, EVENT_STATE } from './event-log.js';
 import { ApiClaim, DomClaim, setDomClaim, normalizeClaimOutcome } from './claim-strategy.js';
 
 /** 事件日志的持久化上限（条）。超出后按 uid 保留最新事件，见 EventLog.prune。 */
@@ -35,9 +36,33 @@ const log = (level, msg) => {
  * 走 GM_xmlhttpRequest，自动带 cookie（anonymous:false）。
  */
 export const gmFetchImpl = (url, { headers } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = typeof window !== 'undefined' && typeof window.fetch === 'function'
+        ? window.fetch.bind(window) : null;
+    if (nativeFetch) {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = setTimeout(() => controller && controller.abort(), 30000);
+        nativeFetch(url, {
+            method: 'GET',
+            credentials: 'include',
+            headers: { accept: 'application/json', ...(headers || {}) },
+            ...(controller ? { signal: controller.signal } : {})
+        }).then(async response => {
+            clearTimeout(timer);
+            resolve({
+                status: response.status,
+                responseText: await response.text(),
+                responseHeaders: [...response.headers.entries()].map(([k, v]) => `${k}: ${v}`).join('\r\n')
+            });
+        }).catch(error => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        return;
+    }
     API.gmFetch({
         method: 'GET',
         url,
+        timeout: 30000,
         headers: { accept: 'application/json', ...(headers || {}) },
         onload: (res) => resolve({
             status: res.status,
@@ -72,6 +97,30 @@ const parseResponseHeader = (headersText, name) => {
  * 走 GM_xmlhttpRequest，自动带 cookie（anonymous:false）。
  */
 export const gmPostImpl = ({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = typeof window !== 'undefined' && typeof window.fetch === 'function'
+        ? window.fetch.bind(window) : null;
+    if (nativeFetch) {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = setTimeout(() => controller && controller.abort(), 30000);
+        nativeFetch(url, {
+            method: method || 'POST',
+            credentials: 'include',
+            headers: headers || {},
+            body: data,
+            ...(controller ? { signal: controller.signal } : {})
+        }).then(async response => {
+            clearTimeout(timer);
+            resolve({
+                status: response.status,
+                responseText: await response.text(),
+                getResponseHeader: (name) => response.headers.get(name)
+            });
+        }).catch(error => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        return;
+    }
     API.gmFetch({
         method: method || 'POST',
         url,
@@ -136,7 +185,9 @@ export const hasClaimBackend = () => Boolean(
  * 凡是「新流水线接管了，旧路径要让位」的判断都必须调这个函数，
  * 而不是直接读 Config.USE_API_PIPELINE。
  */
-export const isApiPipelineActive = () => Boolean(Config.USE_API_PIPELINE && hasClaimBackend());
+export const isApiPipelineActive = () => Boolean(
+    Config.USE_API_PIPELINE && State.apiPipelineActive
+);
 
 /**
  * 扫描阶段过滤器，返回 null 表示纳入待领，返回字符串表示跳过原因。
@@ -238,12 +289,94 @@ export const loadEventLog = async () => {
     try {
         loaded = await EventLog.load();
     } catch (e) {
-        log('error', `[Pipeline] 读取事件日志失败，本次会话从空历史开始: ${e.message}`);
-        return { loaded: 0, total: 0 };
+        log('error', `[Pipeline] 读取事件日志失败，拒绝启动 API 流水线: ${e.message}`);
+        return { ok: false, loaded: 0, total: 0 };
+    }
+    if (loaded === null) {
+        log('error', '[Pipeline] 读取事件日志失败，拒绝启动 API 流水线；旧待办保持不变。');
+        return { ok: false, loaded: 0, total: 0 };
     }
     EventLog.prune(EVENT_LOG_MAX);
     log('info', `[Pipeline] 已载入事件历史 ${loaded} 条（去重后 ${EventLog.stats().total} 个商品）。`);
-    return { loaded, total: EventLog.stats().total };
+    return { ok: true, loaded, total: EventLog.stats().total };
+};
+
+/** API 分页游标独立保存，不能复用旧 DOM 拦截器的滚动游标。 */
+export const loadApiCursor = async () => {
+    try {
+        const cursor = await GM_getValue(Config.DB_KEYS.API_CURSOR, null);
+        State.apiCursorSavedAt = await GM_getValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, null);
+        State.apiCursor = typeof cursor === 'string' && cursor ? cursor : null;
+        return State.apiCursor;
+    } catch (e) {
+        log('warn', `[Pipeline] API 分页位置读取失败，将从首页继续: ${e.message}`);
+        return null;
+    }
+};
+
+export const saveApiCursor = async (cursor) => {
+    try {
+        if (cursor) {
+            await GM_setValue(Config.DB_KEYS.API_CURSOR, cursor);
+            State.apiCursorSavedAt = Date.now();
+            await GM_setValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, State.apiCursorSavedAt);
+        } else {
+            await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
+            await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
+            State.apiCursorSavedAt = null;
+        }
+        State.apiCursor = cursor || null;
+        return true;
+    } catch (e) {
+        log('warn', `[Pipeline] API 分页位置保存失败: ${e.message}`);
+        return false;
+    }
+};
+
+/**
+ * 把旧版 worker 队列迁入新流水线。
+ *
+ * USE_API_PIPELINE 开启后，旧 todo 不能继续留在 State.db.todo：旧版的
+ * watchdog / wake-recovery 会把它们重新派发到详情页，于是又会遇到
+ * 「Select a License」和 worker 标签页关闭。迁移是可重复的，已存在于事件
+ * 日志的 uid 不会重复追加；已经在旧 done 列表里的任务直接记为 CLAIMED。
+ */
+export const migrateLegacyTodoToEventLog = async ({ database = Database } = {}) => {
+    const legacyTodo = Array.isArray(State.db.todo) ? [...State.db.todo] : [];
+    if (legacyTodo.length === 0) return 0;
+
+    let imported = 0;
+    legacyTodo.forEach(task => {
+        const uid = EventLog.uidOf(task && (task.uid || task.url));
+        if (!uid) return;
+
+        const latest = EventLog.latestOf(uid);
+        // 旧队列里的任务代表用户明确要求重试：历史失败态要重新变成待领；
+        // 已成功/主动跳过/仍待领的则保持原状态，避免重复领取。
+        if (latest && latest.state !== EVENT_STATE.FAILED) return;
+
+        const url = EventLog.canonicalUrl(uid);
+        const alreadyOwned = database && typeof database.isDone === 'function'
+            && database.isDone(url);
+        EventLog.append(uid, alreadyOwned ? EVENT_STATE.CLAIMED : EVENT_STATE.DISCOVERED, {
+            name: task.name,
+            url: task.url || url,
+            offerId: task.offerId || ''
+        });
+        imported += 1;
+    });
+
+    // 必须先确保持久化成功，再清旧队列；否则刷新后迁移结果消失而旧任务也被删，
+    // 会造成静默漏领。返回负数让启动方放弃接管并继续旧路径。
+    if (!await EventLog.save()) {
+        log('error', '[Pipeline] 旧待办迁入事件日志失败，保留原队列并放弃 API 流水线接管。');
+        return -1;
+    }
+    // 无论任务是否已存在于事件日志，都清掉旧派发队列，避免兼容路径再次接管。
+    State.db.todo = [];
+    if (database && typeof database.saveTodo === 'function') await database.saveTodo();
+    log('info', `[Pipeline] 已将 ${legacyTodo.length} 个旧版待办迁入 API 队列（新增 ${imported} 个）。`);
+    return imported;
 };
 
 /**
@@ -252,9 +385,18 @@ export const loadEventLog = async () => {
  * 回写不是可选项：UI 计数、隐藏已领取、以及旧路径的 isDone 去重都读
  * State.db.done，新流水线若只写事件日志，用户在界面上会看不到任何进展。
  */
-export const persistEventLog = ({ database = Database } = {}) => {
+export const persistEventLog = async (options = {}) => {
+    const { database = Database } = options;
     EventLog.prune(EVENT_LOG_MAX);
-    EventLog.save();
+    // 游标绝不能领先于事件日志：否则刷新后会跳过刚扫描但未持久化的这一页。
+    // save() 失败时保留旧游标，让下一次从同一页重新扫描（EventLog 会去重）。
+    if (!await EventLog.save()) {
+        log('error', '[Pipeline] 事件日志写入失败，未推进 API 分页位置。');
+        return { synced: 0, total: EventLog.stats().total, saved: false };
+    }
+    if (Object.prototype.hasOwnProperty.call(options, 'cursor') && !await saveApiCursor(options.cursor)) {
+        log('warn', '[Pipeline] 事件日志已保存，但 API 分页位置未保存；下次会从旧位置安全重扫。');
+    }
 
     let synced = 0;
     try {
@@ -265,7 +407,7 @@ export const persistEventLog = ({ database = Database } = {}) => {
                 database.addDoneUrl(url);
                 synced += 1;
             });
-            if (synced > 0 && typeof database.saveDone === 'function') database.saveDone();
+            if (synced > 0 && typeof database.saveDone === 'function') await database.saveDone();
         }
     } catch (e) {
         log('error', `[Pipeline] 回写已领取商品到旧数据层失败: ${e.message}`);
@@ -275,6 +417,7 @@ export const persistEventLog = ({ database = Database } = {}) => {
 
 /** 测试/复用之间清理适配器注入状态，避免用例互相泄漏 */
 export const resetPipelineAdapters = () => {
+    State.apiPipelineActive = false;
     setDomClaim(null);              // 清 DomClaim 注入
     // isLoggedIn 是全局单例上的注入，不清会漏到下一个用例：
     // 上一条把登录态设成 false，后面所有用例都会被拦在领取之前。

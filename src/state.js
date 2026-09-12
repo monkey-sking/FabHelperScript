@@ -22,6 +22,11 @@ export const State = {
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务
+    // 新 API 流水线已完成后端校验并接管旧 worker 派发
+    apiPipelineActive: false,
+    // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。
+    apiClaimNextDispatchAt: 0,
+    apiClaimDispatchTimer: null,
     isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false, // 是否是工作标签页
     // 本帧是不是流水线挂的隐藏领取 iframe。为 true 时脚本主体（实例/UI/派发/保活）
@@ -35,6 +40,8 @@ export const State = {
     totalScannedOwned: 0, // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
                           // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
     savedCursor: null, // Holds the loaded cursor for hijacking
+    apiCursor: null, // API 流水线独立保存的分页游标，仅用于显示/恢复 API 分页
+    apiCursorSavedAt: null, // API 分页位置最后保存时间
     isEndOfSearchList: false, // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
     hasReachedBottomToastShown: false, // 标记是否已展示到底Toast，防止重复弹出
     // --- NEW: State for 429 monitoring ---

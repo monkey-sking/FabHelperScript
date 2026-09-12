@@ -55,6 +55,7 @@ export const createPipelineScheduler = (options = {}) => {
     } = options;
 
     let rescanIntervalMs = Math.max(0, Number(options.rescanIntervalMs) || 0);
+    let resumeCursor = options.resumeCursor || null;
 
     let running = false;
     let timer = null;
@@ -71,6 +72,10 @@ export const createPipelineScheduler = (options = {}) => {
     /** 起一程新的枚举。历史保留，只重置运行态。 */
     const beginPass = (now) => {
         pipeline.restart(now);
+        if (resumeCursor) {
+            pipeline.cursor = resumeCursor;
+            resumeCursor = null;
+        }
         passActive = true;
         restartRequested = false;
         lastPassAt = now;
@@ -115,13 +120,20 @@ export const createPipelineScheduler = (options = {}) => {
                     passActive = false;
                     lastPassAt = now;
                     log('info', `[Pipeline] 本程结束：${JSON.stringify(pipeline.log.stats())}。`);
-                    persist(now);
+                    await persist(now);
                 }
                 if (restartRequested || isRescanDue(now)) beginPass(now);
             }
 
             if (pipeline.fsm.is(...RUNNING_STATES)) {
                 const step = await pipeline.tick(now);
+                // 扫描产生的新事件与游标同拍落盘，避免刷新时游标先前进、事件尚未保存
+                // 导致跳过刚扫描到的商品。
+                if (step && step.action === 'scan') await persist(now);
+                if (step && step.action === 'scan') {
+                    log('info', `[Pipeline] API 已扫描第 ${pipeline.pagesFetched} 页，` +
+                        `本页 ${step.pageItems} 个商品，下一页游标${step.cursor ? '已保存' : '为空（已到末页）'}。`);
+                }
 
                 // 未登录被拦下时必须说清楚，否则用户只看到「本程结束」，
                 // 却不知道是没登录，更不知道商品还好好留在队列里。
@@ -130,13 +142,13 @@ export const createPipelineScheduler = (options = {}) => {
                         `[Pipeline] 未登录，已停在领取之前（未登录的详情页没有领取按钮，` +
                         `硬领只会把整份列表标记成失败）。${step.todo} 个商品留在待领队列，` +
                         `登录后可继续，不会重复领取已处理的商品。`);
-                    persist(now);
+                    await persist(now);
                 }
 
                 // 按节奏落盘：中途关页面也不丢已领取记录
                 if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
                     lastPersistAt = now;
-                    persist(now);
+                    await persist(now);
                 }
             }
 

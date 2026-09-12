@@ -32,6 +32,12 @@ export const PagePatcher = {
         this._isCursorSaveLocked = false;
     },
 
+    // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
+    // 自动滚动/自动加任务运行期间也必须保存当前游标，否则 UI 永远显示无位置。
+    isPositionTrackingEnabled() {
+        return Boolean(State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll || State.isExecuting);
+    },
+
     async init() {
         this._isCursorSaveLocked = false;
         // 初始化时，从存储中加载上次保存的cursor
@@ -184,6 +190,8 @@ export const PagePatcher = {
         State.isRecoveryMode = false;
         try {
             await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
+            await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
+            await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
         } catch (e) {
             Utils.logger('warn', '[Cursor] Failed to delete stored cursor:', e);
         }
@@ -194,6 +202,7 @@ export const PagePatcher = {
             } catch (e) { }
         }
         if (State.UI && State.UI.savedPositionDisplay) {
+            State.apiCursor = null;
             State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
         }
         Utils.logger('info', `${Utils.getText('log_sort_changed_position_cleared')} (${reason})`);
@@ -243,7 +252,7 @@ export const PagePatcher = {
             return true;
         }
 
-        if (!State.rememberScrollPosition || !State.savedCursor) return false;
+        if (!this.isPositionTrackingEnabled() || !State.savedCursor) return false;
         Utils.logger('debug', Utils.getText('page_patcher_match') + ` URL: ${url}`);
         return true;
     },
@@ -289,7 +298,7 @@ export const PagePatcher = {
 
     saveLatestCursorFromUrl(url) {
         try {
-            if (!State.rememberScrollPosition || this._isCursorSaveLocked) return;
+            if (!this.isPositionTrackingEnabled() || this._isCursorSaveLocked) return;
             if (typeof url !== 'string' || !url.includes('/i/listings/search') || !url.includes('cursor=')) return;
             const urlObj = new URL(url, window.location.origin);
             const newCursor = urlObj.searchParams.get('cursor');
@@ -310,6 +319,25 @@ export const PagePatcher = {
         } catch (e) {
             Utils.logger('warn', Utils.getText('log_cursor_save_error'), e);
         }
+    },
+
+    // Fab 的无限滚动有时只在响应体的 cursors.next 返回下一页游标，
+    // 不会立刻拼进下一次请求 URL。直接从响应保存，避免页面持续加载但位置始终为空。
+    saveCursorFromSearchPayload(payload) {
+        if (!payload || typeof payload !== 'object') return;
+        const next = payload.cursors && payload.cursors.next != null
+            ? payload.cursors.next
+            : (typeof payload.next === 'string' ? payload.next : null);
+        if (next == null || next === '') return;
+
+        if (typeof next === 'string' && next.includes('cursor=')) {
+            this.saveLatestCursorFromUrl(next);
+            return;
+        }
+
+        this.saveLatestCursorFromUrl(
+            `${window.location.origin}/i/listings/search?cursor=${encodeURIComponent(String(next))}`
+        );
     },
 
     applyPatches() {
@@ -358,6 +386,9 @@ export const PagePatcher = {
 
                             try {
                                 const data = JSON.parse(responseText);
+                                if (request._url && request._url.includes('/i/listings/search')) {
+                                    self.saveCursorFromSearchPayload(data);
+                                }
 
                                 if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                                     Utils.logger('warn', Utils.getText('detected_rate_limit_error', JSON.stringify(data)));
@@ -536,6 +567,9 @@ export const PagePatcher = {
 
                             try {
                                 const data = JSON.parse(text);
+                                if (url.includes('/i/listings/search')) {
+                                    self.saveCursorFromSearchPayload(data);
+                                }
 
                                 if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
                                     Utils.logger('warn', Utils.getText('detected_rate_limit_error', 'API限速响应'));

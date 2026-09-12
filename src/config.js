@@ -12,13 +12,14 @@ export const Config = {
     WORKER_TIMEOUT: 90000, // 工作标签页超时时间(watchdog 判定卡死)。领取一般 <1min，留足余量避免误杀慢任务
     KEEPALIVE_TICK_MS: 2000, // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true, // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
-    // API 优先流水线总开关：开启后用「cursor 分页 + 单标签页 + 速率令牌桶」取代
-    // 旧的「滚动 DOM 骗请求 + 7 个 worker 标签页」枚举/领取路径。领取端点
-    // POST /i/listings/{uid}/add-to-library 已于 2026-09-08 在登录态下实测确认
-    // 返回 204（startingPrice.offerId 与 licenses[].offerId 两种来源均成功入库），
-    // 故默认开启。DomClaim（iframe）回落仍由 CLAIM_TRANSPORT 单独控制，未配置时
-    // 不注入；ApiClaim 单独即可作为领取后端，hasClaimBackend() 据此放行启动。
-    USE_API_PIPELINE: true,
+    // 保持原来的页面枚举逻辑：DOM 滚动负责加载商品、保存页面时间位置，
+    // 不用 cursor API 取代旧 worker 流程。只有实际“加入我的库”动作走 API。
+    USE_API_PIPELINE: false,
+    // 旧 DOM 枚举仍会开 worker 标签页；API 领取在该路径下必须串行并留出间隔，
+    // 否则 7 个 worker 同时 POST 极易触发 429。完整 API 流水线另有自己的令牌桶。
+    USE_API_CLAIM: true,
+    API_CLAIM_MAX_CONCURRENT_WORKERS: 1,
+    API_CLAIM_MIN_INTERVAL_MS: 1200,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
@@ -50,6 +51,8 @@ export const Config = {
         AUTO_SCROLL: 'fab_autoScroll_v1', // 自动滚动页面（自动扫描全部）开关键
         REMEMBER_POS: 'fab_rememberPos_v8',
         LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
+        API_CURSOR: 'fab_api_cursor_v1', // API 流水线分页游标，独立于旧 DOM 滚动游标
+        API_CURSOR_SAVED_AT: 'fab_api_cursor_saved_at_v1', // API 分页位置最后保存时间
         // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
         // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
         WORKER_DONE_PREFIX: 'fab_worker_done_v8_',
