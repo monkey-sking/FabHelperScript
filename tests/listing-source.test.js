@@ -59,10 +59,32 @@ test('normalize 从真实抓包样本中还原出任务对象', () => {
 test('normalize 汇总 offerId 供后续价格复查使用', () => {
     fresh();
     const item = ListingSource.normalize(PAGE1.results[0]);
-    // startingPrice.offerId 在前，许可证 uid 在后
     assert.equal(item.offerId, '6d30ae93f19647ee8c276d855edcee89');
-    assert.equal(item.offerIds.length, 3);
     assert.ok(item.offerIds.includes('6d30ae93f19647ee8c276d855edcee89'));
+    assert.equal(item.offerIds.includes('eec3bdd5-ba7a-45a8-b15d-67462b9630f6'), false);
+});
+
+test('normalize 不用 license uid 冒充 offerId', () => {
+    fresh();
+    const item = ListingSource.normalize({
+        uid: 'u1',
+        title: 'x',
+        licenses: [{ name: 'Personal', uid: 'license-uid-not-offer' }],
+        startingPrice: { price: 0, currencyCode: 'USD' }
+    });
+    assert.equal(item.offerId, '');
+    assert.deepEqual(item.offerIds, []);
+});
+
+test('normalize 优先 startingPrice.offerId，其次 licenses[].offerId', () => {
+    fresh();
+    const item = ListingSource.normalize({
+        uid: 'u1',
+        startingPrice: { offerId: 'sp-offer', price: 0 },
+        licenses: [{ offerId: 'lic-offer', uid: 'lic-uid' }]
+    });
+    assert.equal(item.offerId, 'sp-offer');
+    assert.deepEqual(item.offerIds, ['sp-offer', 'lic-offer']);
 });
 
 test('真实样本中 isFree 与 price 的矛盾被如实保留（防止有人"修正"夹具掩盖问题）', () => {

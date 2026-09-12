@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
     ApiClaim, DomClaim, ClaimExecutor, CLAIM_RESULT, setDomClaim, normalizeClaimOutcome,
-    pickFreeOfferId, multipartBody
+    pickFreeOfferId, multipartBody, classifyListingGetResponse
 } from '../src/modules/claim-strategy.js';
 import { Utils } from '../src/modules/utils.js';
 
@@ -286,6 +286,101 @@ test('task 自带 offerId 时走快路径，不再回源详情', async () => {
     await ApiClaim.claim({ uid: 'u1', offerId: 'fast-offer' });
     assert.equal(urls.length, 1, '快路径下只该有领取那一次请求');
     assert.match(urls[0], /add-to-library$/);
+});
+
+test('详情 GET 429 记为限速，不伪装成没有免费许可', async () => {
+    resetAll();
+    let postCalled = 0;
+    let domCalled = 0;
+    setDomClaim(async () => { domCalled += 1; return { result: CLAIM_RESULT.SUCCESS }; });
+    ApiClaim.configure({
+        endpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
+        fetchImpl: async (o) => {
+            if (o.method === 'GET') {
+                return { status: 429, getResponseHeader: h => (h === 'retry-after' ? '12' : null) };
+            }
+            postCalled += 1;
+            return { status: 200, getResponseHeader: () => null };
+        }
+    });
+
+    const r = await ClaimExecutor.claim({ uid: 'u1' });
+    assert.equal(r.result, CLAIM_RESULT.RATE_LIMITED);
+    assert.equal(r.retryAfterMs, 12000);
+    assert.equal(postCalled, 0);
+    assert.equal(domCalled, 0);
+    assert.match(r.reason, /429/);
+    assert.equal(r.reason.includes('offer_id'), false);
+});
+
+test('详情 GET 500 可重试，worker 形态（仅 uid）回落 DOM', async () => {
+    resetAll();
+    let domCalled = 0;
+    setDomClaim(async () => { domCalled += 1; return { result: CLAIM_RESULT.SUCCESS }; });
+    ApiClaim.configure({
+        endpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
+        fetchImpl: async (o) => {
+            if (o.method === 'GET') return { status: 500, getResponseHeader: () => null };
+            return { status: 200, getResponseHeader: () => null };
+        }
+    });
+
+    const r = await ClaimExecutor.claim({ uid: 'u1' });
+    assert.equal(r.result, CLAIM_RESULT.SUCCESS);
+    assert.equal(r.strategy, 'dom');
+    assert.equal(domCalled, 1);
+});
+
+test('详情 GET 200 且无免费许可才是终态「没有 offer_id」', async () => {
+    resetAll();
+    let postCalled = 0;
+    let domCalled = 0;
+    setDomClaim(async () => { domCalled += 1; return { result: CLAIM_RESULT.SUCCESS }; });
+    ApiClaim.configure({
+        endpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
+        fetchImpl: async (o) => {
+            if (o.method === 'GET') {
+                return {
+                    status: 200,
+                    responseText: JSON.stringify({
+                        licenses: [{ offerId: 'paid', slug: 'personal', priceTier: { price: 100 } }]
+                    })
+                };
+            }
+            postCalled += 1;
+            return { status: 200, getResponseHeader: () => null };
+        }
+    });
+
+    const r = await ApiClaim.claim({ uid: 'u1' });
+    assert.equal(r.result, CLAIM_RESULT.FAILURE);
+    assert.equal(r.retryable, false);
+    assert.match(r.reason, /offer_id/);
+    assert.equal(postCalled, 0);
+
+    const exec = await ClaimExecutor.claim({ uid: 'u1' });
+    assert.equal(exec.result, CLAIM_RESULT.FAILURE);
+    assert.equal(exec.strategy, 'api');
+    assert.equal(domCalled, 0);
+});
+
+test('详情 GET 无响应可重试', async () => {
+    resetAll();
+    ApiClaim.configure({
+        endpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
+        fetchImpl: async (o) => (o.method === 'GET' ? null : { status: 200, getResponseHeader: () => null })
+    });
+    const r = await ApiClaim.claim({ uid: 'u1' });
+    assert.equal(r.result, CLAIM_RESULT.FAILURE);
+    assert.equal(r.retryable, true);
+    assert.match(r.reason, /无响应/);
+});
+
+test('classifyListingGetResponse 区分 429 / 5xx / 200', () => {
+    assert.equal(classifyListingGetResponse(null).kind, 'retryable');
+    assert.equal(classifyListingGetResponse({ status: 429 }).kind, 'rate_limited');
+    assert.equal(classifyListingGetResponse({ status: 500 }).kind, 'retryable');
+    assert.equal(classifyListingGetResponse({ status: 200 }).kind, 'ok');
 });
 
 test('task 无 offerId 时回源详情页解析', async () => {

@@ -9,6 +9,7 @@ import { API } from '../src/modules/api.js';
 import { Config } from '../src/config.js';
 import { InstanceManager } from '../src/modules/instance-manager.js';
 import { PagePatcher } from '../src/modules/page-patcher.js';
+import { ApiClaim, FAB_CLAIM_ENDPOINT } from '../src/modules/claim-strategy.js';
 
 function createAnchor({ text, href, visible = true }) {
     return {
@@ -929,6 +930,42 @@ test('done records hide cards even when list card status text is missing', () =>
         globalThis.setTimeout = originalSetTimeout;
         Utils.logger = originalLogger;
         State.hideRetryTimer = null;
+    }
+});
+
+test('maxDispatchSlots uses API claim cap when claim transport is live', () => {
+    const originalUse = Config.USE_API_CLAIM;
+    const originalFetch = ApiClaim.fetchImpl;
+    const originalEndpoint = ApiClaim.endpoint;
+    Config.USE_API_CLAIM = true;
+    ApiClaim.configure({
+        endpoint: FAB_CLAIM_ENDPOINT,
+        fetchImpl: async () => ({ status: 200 })
+    });
+    try {
+        assert.equal(TaskRunner.maxDispatchSlots(), 1);
+        State.activeWorkers = 0;
+        assert.equal(TaskRunner.hasDispatchSlot(), true);
+        State.activeWorkers = 1;
+        assert.equal(TaskRunner.hasDispatchSlot(), false);
+    } finally {
+        Config.USE_API_CLAIM = originalUse;
+        ApiClaim.endpoint = originalEndpoint;
+        ApiClaim.fetchImpl = originalFetch;
+        State.activeWorkers = 0;
+    }
+});
+
+test('maxDispatchSlots stays at MAX_CONCURRENT_WORKERS when API claim is off', () => {
+    const originalUse = Config.USE_API_CLAIM;
+    Config.USE_API_CLAIM = false;
+    try {
+        assert.equal(TaskRunner.maxDispatchSlots(), Config.MAX_CONCURRENT_WORKERS);
+        State.activeWorkers = 1;
+        assert.equal(TaskRunner.hasDispatchSlot(), true);
+    } finally {
+        Config.USE_API_CLAIM = originalUse;
+        State.activeWorkers = 0;
     }
 });
 

@@ -99,6 +99,42 @@ export const pickFreeOfferId = (listing) => {
     return (pro || free[0]).offerId;
 };
 
+const parseRetryAfterMs = (res) => {
+    if (!res) return null;
+    let raw = null;
+    if (typeof res.getResponseHeader === 'function') {
+        raw = res.getResponseHeader('retry-after');
+    }
+    if (raw == null || raw === '') {
+        const match = String(res.responseHeaders || '').match(/retry-after:\s*(\d+)/i);
+        raw = match ? match[1] : null;
+    }
+    if (raw == null || raw === '') return null;
+    const ms = Number(raw) * 1000;
+    return Number.isFinite(ms) ? ms : null;
+};
+
+/**
+ * 详情 GET 的失败不能当成「没有免费许可」。
+ * worker 已经打开了详情页：429 应暂停，其它 HTTP/网络失败应允许回落 DOM。
+ */
+export const classifyListingGetResponse = (res) => {
+    if (!res) {
+        return { kind: 'retryable', reason: '详情接口无响应' };
+    }
+    const status = Number(res.status);
+    const statusLabel = Number.isFinite(status) && status > 0 ? String(status) : '未知状态';
+    if (status === 429) {
+        return {
+            kind: 'rate_limited',
+            reason: '详情接口返回 429',
+            retryAfterMs: parseRetryAfterMs(res)
+        };
+    }
+    if (status === 200) return { kind: 'ok' };
+    return { kind: 'retryable', reason: `详情接口返回 ${statusLabel}` };
+};
+
 /**
  * ApiClaim：接口领取。
  *
@@ -138,16 +174,37 @@ export const ApiClaim = {
         if (typeof ApiClaim.resolveOfferId === 'function') return ApiClaim.resolveOfferId(task);
         if (task && task.offerId) return task.offerId;
 
-        const res = await ApiClaim.fetchImpl({
-            method: 'GET',
-            url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
-            headers: { accept: 'application/json' }
-        });
-        if (!res || res.status !== 200) return null;
+        let res;
+        try {
+            res = await ApiClaim.fetchImpl({
+                method: 'GET',
+                url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+                headers: { accept: 'application/json' }
+            });
+        } catch (e) {
+            const err = new Error(`解析 offer_id 失败: ${e.message}`);
+            err.retryable = true;
+            throw err;
+        }
+
+        const classified = classifyListingGetResponse(res);
+        if (classified.kind !== 'ok') {
+            const err = new Error(classified.reason);
+            if (classified.kind === 'rate_limited') {
+                err.rateLimited = true;
+                err.retryAfterMs = classified.retryAfterMs;
+            } else {
+                err.retryable = true;
+            }
+            throw err;
+        }
+
         try {
             return pickFreeOfferId(JSON.parse(res.responseText));
         } catch (e) {
-            return null;
+            const err = new Error(`解析 offer_id 失败: ${e.message}`);
+            err.retryable = true;
+            throw err;
         }
     },
 
@@ -171,7 +228,18 @@ export const ApiClaim = {
         try {
             offerId = await ApiClaim._resolveOfferId(task);
         } catch (e) {
-            return { result: CLAIM_RESULT.FAILURE, reason: `解析 offer_id 失败: ${e.message}`, retryable: true };
+            if (e && e.rateLimited) {
+                return {
+                    result: CLAIM_RESULT.RATE_LIMITED,
+                    reason: e.message || '详情接口返回 429',
+                    retryAfterMs: Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null
+                };
+            }
+            return {
+                result: CLAIM_RESULT.FAILURE,
+                reason: (e && e.message) || '解析 offer_id 失败',
+                retryable: !e || e.retryable !== false
+            };
         }
         if (!offerId) {
             return {

@@ -1148,7 +1148,7 @@ function ensureUILoaded() {
 }
 
 // Main initialization function
-async function main() {
+export async function main() {
     window.pageLoadTime = Date.now();
 
     // Register queue completion callback
@@ -1242,14 +1242,14 @@ async function main() {
         InstanceManager.ping();
         KeepAlive.poke();
         await TaskRunner.checkStalledWorkers();
-        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+        if (State.isExecuting && TaskRunner.hasDispatchSlot() && State.db.todo.length > 0) {
             TaskRunner.executeBatch();
         }
     });
 
     // 在 UI 起来后再异步校验一次 session（cookie 还在但服务端已过期的常见场景）。
     // 不阻塞 UI，结果落到 State.isAuthenticated，后续 toggleExecution 时会再次硬校验。
-    if (hasCookie) {
+    if (signedIn) {
         Utils.verifyServerSession().then(ok => {
             if (!ok) {
                 Utils.logger('warn', Utils.getText('auth_session_invalid'));
@@ -1437,7 +1437,7 @@ function registerWorkerDoneListener(workerId) {
 
             UI.update();
 
-            if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+            if (State.isExecuting && TaskRunner.hasDispatchSlot() && State.db.todo.length > 0) {
                 // 优化：当一个工作线程结束时，仅等待 200ms 就派发下一个，提高插槽利用效率（原为 1000ms）
                 setTimeout(() => TaskRunner.executeBatch(), 200);
             }
@@ -1584,7 +1584,7 @@ async function handleWakeRecovery() {
         if (!State.isExecuting) {
             Utils.logger('info', Utils.getText('log_wake_restarting', State.db.todo.length));
             TaskRunner.startExecution();
-        } else if (State.activeWorkers < Config.MAX_CONCURRENT_WORKERS) {
+        } else if (TaskRunner.hasDispatchSlot()) {
             Utils.logger('info', Utils.getText('log_wake_restarting', State.db.todo.length));
             TaskRunner.executeBatch();
         }
@@ -1611,9 +1611,10 @@ window.addEventListener('focus', () => {
     triggerWakeRecovery();
 });
 
-// Run main function
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', main);
-} else {
-    main();
+if (!globalThis.__FAB_HELPER_SKIP_AUTO_MAIN__ && typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', main);
+    } else {
+        main();
+    }
 }

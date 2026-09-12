@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.23-20260911-1943
+// @version      3.5.24-20260912-1241
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -3953,6 +3953,36 @@
     const pro = free.find((l) => l.slug === "professional");
     return (pro || free[0]).offerId;
   }, "pickFreeOfferId");
+  var parseRetryAfterMs = /* @__PURE__ */ __name((res) => {
+    if (!res) return null;
+    let raw = null;
+    if (typeof res.getResponseHeader === "function") {
+      raw = res.getResponseHeader("retry-after");
+    }
+    if (raw == null || raw === "") {
+      const match = String(res.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
+      raw = match ? match[1] : null;
+    }
+    if (raw == null || raw === "") return null;
+    const ms = Number(raw) * 1e3;
+    return Number.isFinite(ms) ? ms : null;
+  }, "parseRetryAfterMs");
+  var classifyListingGetResponse = /* @__PURE__ */ __name((res) => {
+    if (!res) {
+      return { kind: "retryable", reason: "\u8BE6\u60C5\u63A5\u53E3\u65E0\u54CD\u5E94" };
+    }
+    const status = Number(res.status);
+    const statusLabel = Number.isFinite(status) && status > 0 ? String(status) : "\u672A\u77E5\u72B6\u6001";
+    if (status === 429) {
+      return {
+        kind: "rate_limited",
+        reason: "\u8BE6\u60C5\u63A5\u53E3\u8FD4\u56DE 429",
+        retryAfterMs: parseRetryAfterMs(res)
+      };
+    }
+    if (status === 200) return { kind: "ok" };
+    return { kind: "retryable", reason: `\u8BE6\u60C5\u63A5\u53E3\u8FD4\u56DE ${statusLabel}` };
+  }, "classifyListingGetResponse");
   var ApiClaim = {
     name: "api",
     endpoint: FAB_CLAIM_ENDPOINT,
@@ -3983,16 +4013,35 @@
     _resolveOfferId: /* @__PURE__ */ __name(async (task) => {
       if (typeof ApiClaim.resolveOfferId === "function") return ApiClaim.resolveOfferId(task);
       if (task && task.offerId) return task.offerId;
-      const res = await ApiClaim.fetchImpl({
-        method: "GET",
-        url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
-        headers: { accept: "application/json" }
-      });
-      if (!res || res.status !== 200) return null;
+      let res;
+      try {
+        res = await ApiClaim.fetchImpl({
+          method: "GET",
+          url: String(FAB_LISTING_ENDPOINT).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
+          headers: { accept: "application/json" }
+        });
+      } catch (e) {
+        const err = new Error(`\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`);
+        err.retryable = true;
+        throw err;
+      }
+      const classified = classifyListingGetResponse(res);
+      if (classified.kind !== "ok") {
+        const err = new Error(classified.reason);
+        if (classified.kind === "rate_limited") {
+          err.rateLimited = true;
+          err.retryAfterMs = classified.retryAfterMs;
+        } else {
+          err.retryable = true;
+        }
+        throw err;
+      }
       try {
         return pickFreeOfferId(JSON.parse(res.responseText));
       } catch (e) {
-        return null;
+        const err = new Error(`\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`);
+        err.retryable = true;
+        throw err;
       }
     }, "_resolveOfferId"),
     claim: /* @__PURE__ */ __name(async (task) => {
@@ -4011,7 +4060,18 @@
       try {
         offerId = await ApiClaim._resolveOfferId(task);
       } catch (e) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`, retryable: true };
+        if (e && e.rateLimited) {
+          return {
+            result: CLAIM_RESULT.RATE_LIMITED,
+            reason: e.message || "\u8BE6\u60C5\u63A5\u53E3\u8FD4\u56DE 429",
+            retryAfterMs: Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null
+          };
+        }
+        return {
+          result: CLAIM_RESULT.FAILURE,
+          reason: e && e.message || "\u89E3\u6790 offer_id \u5931\u8D25",
+          retryable: !e || e.retryable !== false
+        };
       }
       if (!offerId) {
         return {
@@ -4785,13 +4845,20 @@
         const cleaned = await TaskRunner2.checkStalledWorkers();
         if (cleaned > 0) {
           setTimeout(() => {
-            if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+            if (State.isExecuting && TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {
               TaskRunner2.executeBatch();
             }
           }, 2e3);
         }
       }, 5e3);
     }, "runWatchdog"),
+    maxDispatchSlots: /* @__PURE__ */ __name(() => {
+      if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+        return Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1);
+      }
+      return Config.MAX_CONCURRENT_WORKERS;
+    }, "maxDispatchSlots"),
+    hasDispatchSlot: /* @__PURE__ */ __name(() => State.activeWorkers < TaskRunner2.maxDispatchSlots(), "hasDispatchSlot"),
     executeBatch: /* @__PURE__ */ __name(async () => {
       if (State.apiPipelineActive) {
         Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u963B\u6B62\u65E7 worker \u6D3E\u53D1\u3002");
@@ -4834,7 +4901,7 @@
           State.isDispatchingTasks = false;
           return;
         }
-        const maxConcurrentWorkers = apiClaimMode ? Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1) : Config.MAX_CONCURRENT_WORKERS;
+        const maxConcurrentWorkers = TaskRunner2.maxDispatchSlots();
         if (State.activeWorkers >= maxConcurrentWorkers) {
           Utils.logger("info", Utils.getText("log_max_workers_reached", maxConcurrentWorkers));
           State.isDispatchingTasks = false;
@@ -7589,7 +7656,7 @@
       }, "pushOffer");
       pushOffer(sp.offerId);
       pushOffer(raw.offerId);
-      licenses.forEach((l) => pushOffer(l && l.uid));
+      licenses.forEach((l) => pushOffer(l && l.offerId));
       return {
         uid,
         url: `https://www.fab.com/listings/${uid}`,
@@ -8981,11 +9048,11 @@
       InstanceManager.ping();
       KeepAlive.poke();
       await TaskRunner2.checkStalledWorkers();
-      if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+      if (State.isExecuting && TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {
         TaskRunner2.executeBatch();
       }
     });
-    if (hasCookie) {
+    if (signedIn) {
       Utils.verifyServerSession().then((ok) => {
         if (!ok) {
           Utils.logger("warn", Utils.getText("auth_session_invalid"));
@@ -9123,7 +9190,7 @@
           if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
         }
         UI5.update();
-        if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+        if (State.isExecuting && TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {
           setTimeout(() => TaskRunner2.executeBatch(), 200);
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
@@ -9227,7 +9294,7 @@
       if (!State.isExecuting) {
         Utils.logger("info", Utils.getText("log_wake_restarting", State.db.todo.length));
         TaskRunner2.startExecution();
-      } else if (State.activeWorkers < Config.MAX_CONCURRENT_WORKERS) {
+      } else if (TaskRunner2.hasDispatchSlot()) {
         Utils.logger("info", Utils.getText("log_wake_restarting", State.db.todo.length));
         TaskRunner2.executeBatch();
       }
@@ -9248,9 +9315,11 @@
   window.addEventListener("focus", () => {
     triggerWakeRecovery();
   });
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", main);
-  } else {
-    main();
+  if (!globalThis.__FAB_HELPER_SKIP_AUTO_MAIN__ && typeof document !== "undefined") {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", main);
+    } else {
+      main();
+    }
   }
 })();

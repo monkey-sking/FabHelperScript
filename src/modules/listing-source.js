@@ -11,7 +11,7 @@
  * 商品对象的关键字段（真实样本，非推测）：
  *   uid, title, isFree, isDiscounted, hasEffectiveDiscounts,
  *   startingPrice: { price, discountedPrice, currencyCode, offerId, effectiveDiscountPercentage },
- *   licenses: [{ name, isCc0, priceTier, uid }], listingType, user.sellerName
+ *   licenses: [{ name, isCc0, priceTier, uid, offerId }], listingType, user.sellerName
  *
  * ── 关于「免费」判定的重要警告 ────────────────────────────────────────
  * 抓包样本里 4 个商品全部 startingPrice.price === 0，但只有 2 个 isFree === true。
@@ -140,7 +140,8 @@ export const ListingSource = {
         const pushOffer = (v) => { if (typeof v === 'string' && v && !offerIds.includes(v)) offerIds.push(v); };
         pushOffer(sp.offerId);
         pushOffer(raw.offerId);
-        licenses.forEach(l => pushOffer(l && l.uid));
+        // license.uid 是许可身份，不是 add-to-library 的 offer_id
+        licenses.forEach(l => pushOffer(l && l.offerId));
 
         return {
             uid,

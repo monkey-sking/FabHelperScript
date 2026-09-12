@@ -810,13 +810,22 @@ export const TaskRunner = {
             const cleaned = await TaskRunner.checkStalledWorkers();
             if (cleaned > 0) {
                 setTimeout(() => {
-                    if (State.isExecuting && State.activeWorkers < Config.MAX_CONCURRENT_WORKERS && State.db.todo.length > 0) {
+                    if (State.isExecuting && TaskRunner.hasDispatchSlot() && State.db.todo.length > 0) {
                         TaskRunner.executeBatch();
                     }
                 }, 2000);
             }
         }, 5000);
     },
+
+    maxDispatchSlots: () => {
+        if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+            return Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1);
+        }
+        return Config.MAX_CONCURRENT_WORKERS;
+    },
+
+    hasDispatchSlot: () => State.activeWorkers < TaskRunner.maxDispatchSlots(),
 
     executeBatch: async () => {
         if (State.apiPipelineActive) {
@@ -869,9 +878,7 @@ export const TaskRunner = {
                 return;
             }
 
-            const maxConcurrentWorkers = apiClaimMode
-                ? Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1)
-                : Config.MAX_CONCURRENT_WORKERS;
+            const maxConcurrentWorkers = TaskRunner.maxDispatchSlots();
             if (State.activeWorkers >= maxConcurrentWorkers) {
                 Utils.logger('info', Utils.getText('log_max_workers_reached', maxConcurrentWorkers));
                 State.isDispatchingTasks = false;
