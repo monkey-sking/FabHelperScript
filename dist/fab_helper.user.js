@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.24-20260912-1241
+// @version      3.5.25-20261016-1218
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -838,7 +838,7 @@
     },
     SELECTORS: {
       card: "div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root",
-      cardLink: 'a[href*="/listings/"]',
+      cardLink: 'a[href*="/listings/"], a[href*="/bundles/"]',
       addButton: 'button[aria-label*="Add to"], button[aria-label*="\u6DFB\u52A0\u81F3"], button[aria-label*="cart"]',
       rootElement: "#root",
       successBanner: 'div[class*="Toast-root"]',
@@ -2045,7 +2045,7 @@
      */
     uidOf: /* @__PURE__ */ __name((urlOrUid) => {
       if (!urlOrUid) return "";
-      const match = String(urlOrUid).split("?")[0].match(/\/listings\/([^/?#]+)/i);
+      const match = String(urlOrUid).split("?")[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
       if (match && match[1]) return match[1].toLowerCase();
       const bare = String(urlOrUid).trim().toLowerCase();
       return /^[a-z0-9_-]+$/.test(bare) ? bare : "";
@@ -2210,7 +2210,7 @@
     normalizeListingUrl: /* @__PURE__ */ __name((url) => {
       if (!url) return "";
       const cleanUrl = String(url).split("?")[0].toLowerCase();
-      const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
+      const uidMatch = cleanUrl.match(/\/(?:listings|bundles)\/([^/?#]+)/i);
       if (uidMatch && uidMatch[1]) {
         return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
       }
@@ -2239,7 +2239,7 @@
     }, "_safeSet"),
     getListingUid: /* @__PURE__ */ __name((url) => {
       if (!url) return "";
-      const uidMatch = String(url).split("?")[0].match(/\/listings\/([^/?#]+)/i);
+      const uidMatch = String(url).split("?")[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
       return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : "";
     }, "getListingUid"),
     seedDoneOwnedStatusCache: /* @__PURE__ */ __name(() => {
@@ -2277,7 +2277,7 @@
     }, "addDoneUrl"),
     load: /* @__PURE__ */ __name(async () => {
       const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
-      State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && t.url && t.url.includes("/listings/")) : [];
+      State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && Database.getListingUid(t.url)) : [];
       State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
       State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
       State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
@@ -2365,13 +2365,13 @@
     }, "isDone"),
     isFailed: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
-      const cleanUrl = url.split("?")[0];
-      return State.db.failed.some((task) => task.url === cleanUrl);
+      const cleanUrl = Database.normalizeListingUrl(url);
+      return State.db.failed.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
     }, "isFailed"),
     isTodo: /* @__PURE__ */ __name((url) => {
       if (!url) return false;
-      const cleanUrl = url.split("?")[0];
-      return State.db.todo.some((task) => task.url === cleanUrl);
+      const cleanUrl = Database.normalizeListingUrl(url);
+      return State.db.todo.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
     }, "isTodo"),
     markAsDone: /* @__PURE__ */ __name(async (task) => {
       if (!task || !task.uid) {
@@ -4359,7 +4359,7 @@
         if (icons.length > 0) return true;
         return hasSavedText;
       }
-      const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
+      const uidMatch = link.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i);
       if (!uidMatch || !uidMatch[1]) return false;
       const uid = uidMatch[1];
       if (DataCache.ownedStatus.has(uid)) {
@@ -4476,7 +4476,7 @@
           return;
         }
         if (!TaskRunner2.isFreeCard(card)) return;
-        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
+        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"]')?.textContent.trim() || card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() || Utils.getText("untitled");
         newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
       });
       if (skippedCount > 0) {
@@ -4723,7 +4723,7 @@
           if (!link) return false;
           const url = link.href.split("?")[0];
           return !Database.isDone(url) && !Database.isTodo(url) && TaskRunner2.isFreeCard(card);
-        }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1]).filter(Boolean));
+        }).map((card) => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1]).filter(Boolean));
         const uidsFromFailedList = new Set(State.db.failed.map((task) => task.uid));
         const allUidsToCheck = Array.from(/* @__PURE__ */ new Set([...uidsFromVisibleCards, ...uidsFromFailedList]));
         if (allUidsToCheck.length === 0) {
@@ -5426,7 +5426,7 @@
         let confirmedOwned = 0;
         visibleCards.forEach((card) => {
           const link = card.querySelector(Config.SELECTORS.cardLink);
-          const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
+          const uidMatch = link?.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i);
           if (uidMatch && uidMatch[1]) {
             const uid = uidMatch[1];
             const url = link.href.split("?")[0];
@@ -5545,10 +5545,10 @@
           const link = card.querySelector(Config.SELECTORS.cardLink);
           const rawHref = link ? link.href : "";
           if (!rawHref) return;
-          const uidMatch = rawHref.match(/listings\/([a-f0-9-]{32,36})/i);
-          if (!uidMatch || !uidMatch[1]) return;
-          const uid = uidMatch[1];
-          const url = `https://www.fab.com/listings/${uid}`;
+          const uidMatch = rawHref.match(/\/(listings|bundles)\/([a-f0-9-]{32,36})(?:[/?#]|$)/i);
+          if (!uidMatch) return;
+          const uid = uidMatch[2].toLowerCase();
+          const url = `https://www.fab.com/${uidMatch[1].toLowerCase()}/${uid}`;
           if (!TaskRunner2.isCardSettled(card)) {
             skippedUnsettled++;
             return;
@@ -5579,7 +5579,7 @@
             }
           }
           if (!TaskRunner2.isFreeCard(card)) return;
-          const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector('a[href*="/listings/"]')?.textContent.trim() || Utils.getText("untitled");
+          const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() || Utils.getText("untitled");
           newlyAddedList.push({ name, url, type: "detail", uid });
         });
         if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
@@ -7659,7 +7659,7 @@
       licenses.forEach((l) => pushOffer(l && l.offerId));
       return {
         uid,
-        url: `https://www.fab.com/listings/${uid}`,
+        url: `https://www.fab.com/${raw.listingType === "bundle" ? "bundles" : "listings"}/${uid}`,
         name: typeof raw.title === "string" ? raw.title : "",
         offerId: offerIds[0] || "",
         offerIds,

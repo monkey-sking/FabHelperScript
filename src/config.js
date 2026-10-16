@@ -73,7 +73,7 @@ export const Config = {
     },
     SELECTORS: {
         card: 'div.fabkit-Stack-root.nTa5u2sc, div.AssetCard-root',
-        cardLink: 'a[href*="/listings/"]',
+        cardLink: 'a[href*="/listings/"], a[href*="/bundles/"]',
         addButton: 'button[aria-label*="Add to"], button[aria-label*="添加至"], button[aria-label*="cart"]',
         rootElement: '#root',
         successBanner: 'div[class*="Toast-root"]',

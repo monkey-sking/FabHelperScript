@@ -15,7 +15,8 @@ export const Database = {
     normalizeListingUrl: (url) => {
         if (!url) return '';
         const cleanUrl = String(url).split('?')[0].toLowerCase();
-        const uidMatch = cleanUrl.match(/\/listings\/([^/?#]+)/i);
+        // Bundle 是 listing 的一种类型：页面路由不同，接口和本地身份仍按同一个 UID 去重。
+        const uidMatch = cleanUrl.match(/\/(?:listings|bundles)\/([^/?#]+)/i);
         if (uidMatch && uidMatch[1]) {
             return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
         }
@@ -43,7 +44,7 @@ export const Database = {
 
     getListingUid: (url) => {
         if (!url) return '';
-        const uidMatch = String(url).split('?')[0].match(/\/listings\/([^/?#]+)/i);
+        const uidMatch = String(url).split('?')[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
         return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : '';
     },
 
@@ -90,9 +91,9 @@ export const Database = {
     },
 
     load: async () => {
-        // 从存储中加载待办列表（清洗过滤掉任何非 /listings/ 的历史残留链接）
+        // 恢复普通商品和 bundle 待办，过滤搜索页等非商品链接。
         const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
-        State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter(t => t && t.url && t.url.includes('/listings/')) : [];
+        State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter(t => t && Database.getListingUid(t.url)) : [];
         State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
         State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
         State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
@@ -184,13 +185,13 @@ export const Database = {
     },
     isFailed: (url) => {
         if (!url) return false;
-        const cleanUrl = url.split('?')[0];
-        return State.db.failed.some(task => task.url === cleanUrl);
+        const cleanUrl = Database.normalizeListingUrl(url);
+        return State.db.failed.some(task => Database.normalizeListingUrl(task.url) === cleanUrl);
     },
     isTodo: (url) => {
         if (!url) return false;
-        const cleanUrl = url.split('?')[0];
-        return State.db.todo.some(task => task.url === cleanUrl);
+        const cleanUrl = Database.normalizeListingUrl(url);
+        return State.db.todo.some(task => Database.normalizeListingUrl(task.url) === cleanUrl);
     },
     markAsDone: async (task) => {
         if (!task || !task.uid) {

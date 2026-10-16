@@ -145,7 +145,7 @@ export const ListingSource = {
 
         return {
             uid,
-            url: `https://www.fab.com/listings/${uid}`,
+            url: `https://www.fab.com/${raw.listingType === 'bundle' ? 'bundles' : 'listings'}/${uid}`,
             name: typeof raw.title === 'string' ? raw.title : '',
             offerId: offerIds[0] || '',
             offerIds,

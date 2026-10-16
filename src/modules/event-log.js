@@ -37,7 +37,7 @@ export const EventLog = {
      */
     uidOf: (urlOrUid) => {
         if (!urlOrUid) return '';
-        const match = String(urlOrUid).split('?')[0].match(/\/listings\/([^/?#]+)/i);
+        const match = String(urlOrUid).split('?')[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
         if (match && match[1]) return match[1].toLowerCase();
         // 传入的已经是裸 uid
         const bare = String(urlOrUid).trim().toLowerCase();

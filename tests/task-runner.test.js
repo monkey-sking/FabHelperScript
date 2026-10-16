@@ -215,7 +215,7 @@ test('treats linked cards with saved library text as ready to hide', () => {
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/0eaac510-c35b-4bbc-96f7-3fb9d1d43684'
                 };
@@ -278,7 +278,7 @@ test('hides paid cards that expose only starting price text', () => {
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/12345678-1234-4234-8234-123456789abc'
                 };
@@ -356,7 +356,7 @@ test('hides paid cards with other currency price formats (e.g. ¥, €, GBP)', (
             textContent: 'Orbitator 3D fbx gltf 起始价格 ¥14.00',
             style: {},
             attributes: {},
-            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/1' } : null,
+            querySelector: (selector) => selector === Config.SELECTORS.cardLink ? { href: 'https://www.fab.com/listings/1' } : null,
             querySelectorAll: () => [],
             getAttribute(name) { return this.attributes[name] ?? null; },
             setAttribute(name, value) { this.attributes[name] = value; },
@@ -366,7 +366,7 @@ test('hides paid cards with other currency price formats (e.g. ¥, €, GBP)', (
             textContent: 'Model with price 19,99 €',
             style: {},
             attributes: {},
-            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/2' } : null,
+            querySelector: (selector) => selector === Config.SELECTORS.cardLink ? { href: 'https://www.fab.com/listings/2' } : null,
             querySelectorAll: () => [],
             getAttribute(name) { return this.attributes[name] ?? null; },
             setAttribute(name, value) { this.attributes[name] = value; },
@@ -376,7 +376,7 @@ test('hides paid cards with other currency price formats (e.g. ¥, €, GBP)', (
             textContent: 'Item costing 50 GBP',
             style: {},
             attributes: {},
-            querySelector: (selector) => selector === 'a[href*="/listings/"]' ? { href: 'https://www.fab.com/listings/3' } : null,
+            querySelector: (selector) => selector === Config.SELECTORS.cardLink ? { href: 'https://www.fab.com/listings/3' } : null,
             querySelectorAll: () => [],
             getAttribute(name) { return this.attributes[name] ?? null; },
             setAttribute(name, value) { this.attributes[name] = value; },
@@ -447,7 +447,7 @@ test('does not block owned cards when another card is still loading', () => {
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]' && href) {
+            if (selector === Config.SELECTORS.cardLink && href) {
                 return { href };
             }
             return null;
@@ -521,7 +521,7 @@ test('refreshing visible ownership state triggers hiding confirmed owned cards',
     let hideRuns = 0;
     const card = {
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/33333333-3333-4333-8333-333333333333'
                 };
@@ -578,7 +578,7 @@ test('auto add schedules a retry when cards are not settled yet', async () => {
     const card = {
         textContent: 'Loading free listing',
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/44444444-4444-4444-8444-444444444444'
                 };
@@ -651,7 +651,7 @@ test('auto add queues mixed-license cards that show a free option', async () => 
     const card = {
         textContent: 'Vintage Chair 选择许可（从 免费 到 $6.99）',
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/55555555-5555-4555-8555-555555555555',
                     textContent: 'Vintage Chair'
@@ -723,7 +723,7 @@ test('hides auto-completed free cards even before the page text changes to saved
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/zh-cn/listings/66666666-6666-4666-8666-666666666666?foo=bar'
                 };
@@ -790,7 +790,7 @@ test('hidden cards are marked and reflected in the card count cache', () => {
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: `https://www.fab.com/listings/${uid}`
                 };
@@ -879,7 +879,7 @@ test('done records hide cards even when list card status text is missing', () =>
         style: {},
         attributes: {},
         querySelector: (selector) => {
-            if (selector === 'a[href*="/listings/"]') {
+            if (selector === Config.SELECTORS.cardLink) {
                 return {
                     href: 'https://www.fab.com/listings/77777777-7777-4777-8777-777777777777'
                 };
@@ -1523,7 +1523,7 @@ test('refreshes card count cache from real DOM after infinite-scroll loads new c
             style: {},
             attributes: {},
             querySelector: (selector) => {
-                if (selector === 'a[href*="/listings/"]') {
+                if (selector === Config.SELECTORS.cardLink) {
                     return { href: `https://www.fab.com/listings/${uid}` };
                 }
                 return null;

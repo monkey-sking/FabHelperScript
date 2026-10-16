@@ -198,7 +198,7 @@ export const TaskRunner = {
             return hasSavedText;
         }
 
-        const uidMatch = link.href.match(/listings\/([a-f0-9-]+)/);
+        const uidMatch = link.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i);
         if (!uidMatch || !uidMatch[1]) return false;
 
         const uid = uidMatch[1];
@@ -368,7 +368,7 @@ export const TaskRunner = {
             if (!TaskRunner.isFreeCard(card)) return;
 
             const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() ||
-                card.querySelector('a[href*="/listings/"]')?.textContent.trim() ||
+                card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() ||
                 Utils.getText('untitled');
             newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
         });
@@ -653,7 +653,7 @@ export const TaskRunner = {
                     // Also skip items that are already in the TODO queue to prevent redundant checks/logs while processing.
                     return !Database.isDone(url) && !Database.isTodo(url) && TaskRunner.isFreeCard(card);
                 })
-                .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/listings\/([a-f0-9-]+)/)?.[1])
+                .map(card => card.querySelector(Config.SELECTORS.cardLink)?.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1])
                 .filter(Boolean));
 
             const uidsFromFailedList = new Set(State.db.failed.map(task => task.uid));
@@ -1542,7 +1542,7 @@ export const TaskRunner = {
                 // Let's process valid links regardless.
 
                 const link = card.querySelector(Config.SELECTORS.cardLink);
-                const uidMatch = link?.href.match(/listings\/([a-f0-9-]+)/);
+                const uidMatch = link?.href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i);
 
                 if (uidMatch && uidMatch[1]) {
                     const uid = uidMatch[1];
@@ -1697,12 +1697,13 @@ export const TaskRunner = {
                 const rawHref = link ? link.href : '';
                 if (!rawHref) return;
 
-                // 强要求：必须提取出合法的 listing UUID。对于任何 /search?tags=... 或非商品页链接一律杀掉，绝不加入待办队列！
-                const uidMatch = rawHref.match(/listings\/([a-f0-9-]{32,36})/i);
-                if (!uidMatch || !uidMatch[1]) return;
+                // 普通商品和 bundle 共用 listing UID；保留页面类型供 worker 导航。
+                // 搜索/标签页等非商品链接仍不进入待办。
+                const uidMatch = rawHref.match(/\/(listings|bundles)\/([a-f0-9-]{32,36})(?:[/?#]|$)/i);
+                if (!uidMatch) return;
 
-                const uid = uidMatch[1];
-                const url = `https://www.fab.com/listings/${uid}`;
+                const uid = uidMatch[2].toLowerCase();
+                const url = `https://www.fab.com/${uidMatch[1].toLowerCase()}/${uid}`;
 
                 if (!TaskRunner.isCardSettled(card)) {
                     skippedUnsettled++;
@@ -1745,7 +1746,7 @@ export const TaskRunner = {
                 if (!TaskRunner.isFreeCard(card)) return;
 
                 const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
-                    card.querySelector('a[href*="/listings/"]')?.textContent.trim() ||
+                    card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() ||
                     Utils.getText('untitled');
                 newlyAddedList.push({ name, url, type: 'detail', uid });
             });
