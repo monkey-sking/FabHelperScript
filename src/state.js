@@ -22,6 +22,7 @@ export const State = {
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务
+    manualVerificationPending: false, // 人工验证期间阻止自动扫描重新启动；只由执行按钮解除
     // 新 API 流水线已完成后端校验并接管旧 worker 派发
     apiPipelineActive: false,
     // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。

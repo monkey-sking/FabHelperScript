@@ -16,6 +16,7 @@ import { Database } from './database.js';
 import { RateLimitManager } from './rate-limit-manager.js';
 import { KeepAlive } from './keepalive.js';
 import { EventLog } from './event-log.js';
+import { VerificationNotifications } from './verification-notifications.js';
 
 // Forward declaration for TaskRunner (will be set via dependency injection)
 let TaskRunner = null;
@@ -669,6 +670,33 @@ export const UI = {
 
         const blockResourcesSetting = createSettingRow(Utils.getText('setting_block_large_resources'), 'blockLargeResources');
         settingsContent.appendChild(blockResourcesSetting);
+
+        const notificationRow = document.createElement('div');
+        notificationRow.className = 'fab-setting-row';
+        const notificationLabel = document.createElement('span');
+        notificationLabel.className = 'fab-setting-label';
+        notificationLabel.textContent = State.lang === 'zh' ? '人机验证通知' : 'Verification notifications';
+        const notificationButton = document.createElement('button');
+        notificationButton.style.cssText = 'padding:6px 8px;cursor:pointer;border-radius:var(--radius-m);';
+        const renderNotificationPermission = (permission = VerificationNotifications.permission()) => {
+            const zh = State.lang === 'zh';
+            const labels = zh
+                ? { granted: '发送测试通知', default: '开启并测试', denied: '已被浏览器阻止', unsupported: '浏览器不支持', unavailable: '暂不可用，点击重试' }
+                : { granted: 'Test notification', default: 'Enable and test', denied: 'Blocked by browser', unsupported: 'Not supported', unavailable: 'Unavailable, retry' };
+            notificationButton.textContent = labels[permission] || labels.unavailable;
+            notificationButton.disabled = permission === 'unsupported';
+            notificationButton.title = zh
+                ? '允许通知后，遇到验证会提醒您。若被阻止，请在地址栏的网站设置中允许通知；系统勿扰也可能隐藏通知。'
+                : 'Allow notifications for verification alerts. If blocked, enable notifications in site settings; system Do Not Disturb may hide alerts.';
+        };
+        renderNotificationPermission();
+        notificationButton.onclick = async () => {
+            const permission = await VerificationNotifications.enableAndTest(State.lang);
+            renderNotificationPermission(permission);
+            if (permission !== 'granted') Utils.logger('warn', notificationButton.title);
+        };
+        notificationRow.append(notificationLabel, notificationButton);
+        settingsContent.appendChild(notificationRow);
 
         const resetButton = document.createElement('button');
         resetButton.textContent = Utils.getText('clear_all_data');

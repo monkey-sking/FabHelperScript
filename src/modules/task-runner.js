@@ -22,6 +22,7 @@ import { acquireOnDetailPage } from './detail-claim.js';
 import { ApiClaim, CLAIM_RESULT } from './claim-strategy.js';
 import { acquireBundle, isBundleTask } from './bundle-claim.js';
 import { isCaptchaPresent } from './captcha-detection.js';
+import { VerificationNotifications } from './verification-notifications.js';
 
 // 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
 // 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
@@ -315,6 +316,9 @@ export const TaskRunner = {
             return;
         }
 
+        // Only the user's execute button may release a manual verification pause.
+        State.manualVerificationPending = false;
+
         // 在启动任务之前再次硬校验服务端 session，避免 cookie 还在但 session 已过期时
         // 把所有商品当作免费空跑（未登录态卡片上拿不到价格信息）。
         const sessionOk = await Utils.verifyServerSession();
@@ -400,6 +404,7 @@ export const TaskRunner = {
 
     // Start execution without scanning
     startExecution: () => {
+        if (State.manualVerificationPending) return;
         if (State.apiPipelineActive) {
             Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧 worker 执行请求。');
             return;
@@ -1139,6 +1144,12 @@ export const TaskRunner = {
 
                 if (manualRequired) {
                     clearTimeout(forceCloseTimer);
+                    // Notify from this worker so clicking can focus the preserved verification tab.
+                    if (!VerificationNotifications.show({ task: currentTask, workerId, lang: State.lang })) {
+                        Utils.logger('warn', State.lang === 'zh'
+                            ? '验证标签页已保留；请在设定中开启浏览器验证通知。'
+                            : 'Verification tab kept open; enable verification notifications in Settings.');
+                    }
                     try {
                         document.title = `⚠️【需验证】${document.title}`;
                         const banner = document.createElement('div');
@@ -1893,6 +1904,7 @@ export const TaskRunner = {
     },
 
     attemptAutoScroll: async () => {
+        if (State.manualVerificationPending) return;
         // 限速恢复期间不继续滚动触发分页；恢复后的定时检查会接续推进。
         if (State.appStatus === 'RATE_LIMITED') return;
         if (State.apiPipelineActive) {

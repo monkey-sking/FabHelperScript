@@ -35,6 +35,52 @@ test('列表页启动不再引用已删除的 hasCookie', () => {
     assert.match(indexSrc, /if \(signedIn\) \{\s*Utils\.verifyServerSession/);
 });
 
+test('manual verification report pauses execution, retains task, updates UI and never dispatches again', async t => {
+    installFakeBrowser();
+    const { registerWorkerDoneListener } = await import('../src/index.js');
+    const { State } = await import('../src/state.js');
+    const { Config } = await import('../src/config.js');
+    const { TaskRunner } = await import('../src/modules/task-runner.js');
+    const { Database } = await import('../src/modules/database.js');
+    const { UI } = await import('../src/modules/ui.js');
+    const { Utils } = await import('../src/modules/utils.js');
+    let callback;
+    globalThis.GM_addValueChangeListener = (_, cb) => { callback = cb; return 1; };
+    let updated = 0;
+    let dispatched = 0;
+    let failed = 0;
+    const errors = [];
+    t.mock.method(UI, 'update', () => updated++);
+    t.mock.method(TaskRunner, 'runHideOrShow', () => {});
+    t.mock.method(TaskRunner, 'executeBatch', () => dispatched++);
+    t.mock.method(Database, 'markAsFailed', () => failed++);
+    t.mock.method(Utils, 'logger', (level, message) => { if (level === 'error') errors.push(message); });
+    const task = { uid: 'manual-asset', name: 'Asset', url: 'https://www.fab.com/listings/manual-asset' };
+    State.registeredWorkerDoneKeys = new Set();
+    State.valueChangeListeners = [];
+    State.runningWorkers = { 'manual-worker': {} };
+    State.activeWorkers = 1;
+    State.isExecuting = true;
+    State.executionFailedTasks = 0;
+    State.db = { todo: [], done: [], failed: [] };
+    registerWorkerDoneListener('manual-worker');
+    await callback('', null, { workerId: 'manual-worker', instanceId: Config.INSTANCE_ID, task,
+        success: false, manualRequired: true, logs: [] });
+    assert.deepEqual(errors, [], 'the report must not throw an undefined-variable error');
+    assert.equal(State.isExecuting, false);
+    assert.equal(State.activeWorkers, 0);
+    assert.deepEqual(State.db.todo, [task]);
+    assert.equal(failed, 0);
+    assert.equal(State.executionFailedTasks, 0);
+    assert.equal(updated, 1);
+    assert.equal(dispatched, 0);
+    assert.equal(State.manualVerificationPending, true);
+    TaskRunner.startExecution();
+    await TaskRunner.attemptAutoScroll();
+    assert.equal(State.isExecuting, false, 'automatic scanning must not undo the manual pause');
+    State.manualVerificationPending = false;
+});
+
 function installFakeBrowser() {
     globalThis.__FAB_HELPER_SKIP_AUTO_MAIN__ = true;
 

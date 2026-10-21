@@ -3,10 +3,10 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.26-20261021-1447
-// @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
-// @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
-// @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
+// @version      3.5.27-20261021-1516
+// @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
+// @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
+// @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
 // @author       RunKing
 // @match        https://www.fab.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=fab.com
@@ -977,6 +977,8 @@
     // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false,
     // 是否正在执行任务
+    manualVerificationPending: false,
+    // 人工验证期间阻止自动扫描重新启动；只由执行按钮解除
     // 新 API 流水线已完成后端校验并接管旧 worker 派发
     apiPipelineActive: false,
     // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。
@@ -1420,8 +1422,8 @@
       try {
         const tag = doc && doc.getElementById && doc.getElementById("js-json-data-prefetched-data");
         if (tag && tag.textContent) {
-          const data2 = JSON.parse(tag.textContent);
-          const userInfo = data2 && data2["/i/users/me"];
+          const data = JSON.parse(tag.textContent);
+          const userInfo = data && data["/i/users/me"];
           if (userInfo) {
             if (userInfo.isAnonymous === true) return false;
             if (userInfo.isAnonymous === false) return true;
@@ -1468,8 +1470,8 @@
               }
               if (response.status >= 200 && response.status < 300) {
                 try {
-                  const data2 = JSON.parse(response.responseText);
-                  if (data2 && (data2.id || data2.uid || data2.email || data2.username || data2.isAnonymous === false)) {
+                  const data = JSON.parse(response.responseText);
+                  if (data && (data.id || data.uid || data.email || data.username || data.isAnonymous === false)) {
                     State.isAuthenticated = true;
                     resolve(true);
                     return;
@@ -3150,8 +3152,8 @@
         try {
           const responseText = request.responseText;
           if (responseText) {
-            const data2 = JSON.parse(responseText);
-            const hasResults = data2 && data2.results && data2.results.length > 0;
+            const data = JSON.parse(responseText);
+            const hasResults = data && data.results && data.results.length > 0;
             await RateLimitManager.recordSuccessfulRequest(Utils.getText("request_source_search_response"), hasResults);
           }
         } catch (e) {
@@ -3283,30 +3285,30 @@
                   return;
                 }
                 try {
-                  const data2 = JSON.parse(responseText);
+                  const data = JSON.parse(responseText);
                   if (request._url && request._url.includes("/i/listings/search")) {
-                    self.saveCursorFromSearchPayload(data2);
+                    self.saveCursorFromSearchPayload(data);
                   }
-                  if (data2.results && data2.results.length === 0 && self.isListingSearch(request._url)) {
-                    const isEndOfList = data2.next === null && data2.previous !== null && data2.cursors && data2.cursors.next === null && data2.cursors.previous !== null;
-                    const isEmptySearch = data2.next === null && data2.previous === null && data2.cursors && data2.cursors.next === null && data2.cursors.previous === null;
+                  if (data.results && data.results.length === 0 && self.isListingSearch(request._url)) {
+                    const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                    const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
                     const urlObj = new URL(request._url, window.location.origin);
                     const params = urlObj.searchParams;
                     const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
                     const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                     if (isEndOfList) {
-                      Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data2).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data).substring(0, 200)));
                       RateLimitManager.recordSuccessfulRequest("XHR\u5217\u8868\u672B\u5C3E", true);
                       return;
                     } else if (isEmptySearch && hasSpecialFilters) {
-                      Utils.logger("info", Utils.getText("log_empty_search_with_filters", JSON.stringify(data2).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_with_filters", JSON.stringify(data).substring(0, 200)));
                       RateLimitManager.recordSuccessfulRequest("XHR\u7A7A\u641C\u7D22\u7ED3\u679C", true);
                       return;
                     } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
-                      Utils.logger("info", Utils.getText("log_empty_search_already_limited", JSON.stringify(data2).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_already_limited", JSON.stringify(data).substring(0, 200)));
                       return;
                     } else if (isEmptySearch && document.readyState !== "complete") {
-                      Utils.logger("info", Utils.getText("log_empty_search_page_loading", JSON.stringify(data2).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_page_loading", JSON.stringify(data).substring(0, 200)));
                       return;
                     } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
                       Utils.logger("info", Utils.getText("empty_search_initial"));
@@ -3418,31 +3420,31 @@
                 return response;
               }
               try {
-                const data2 = JSON.parse(text);
+                const data = JSON.parse(text);
                 if (url.includes("/i/listings/search")) {
-                  self.saveCursorFromSearchPayload(data2);
+                  self.saveCursorFromSearchPayload(data);
                   if (self.isListingSearch(url)) {
-                    RateLimitManager.recordSuccessfulRequest("Fetch\u641C\u7D22\u54CD\u5E94", Array.isArray(data2.results) && data2.results.length > 0);
+                    RateLimitManager.recordSuccessfulRequest("Fetch\u641C\u7D22\u54CD\u5E94", Array.isArray(data.results) && data.results.length > 0);
                   }
                 }
                 const responseUrl = response.url || "";
-                if (data2.results && data2.results.length === 0 && responseUrl.includes("/i/listings/search")) {
-                  const isEndOfList = data2.next === null && data2.previous !== null && data2.cursors && data2.cursors.next === null && data2.cursors.previous !== null;
-                  const isEmptySearch = data2.next === null && data2.previous === null && data2.cursors && data2.cursors.next === null && data2.cursors.previous === null;
+                if (data.results && data.results.length === 0 && responseUrl.includes("/i/listings/search")) {
+                  const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
+                  const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
                   const urlObj = new URL(responseUrl, window.location.origin);
                   const params = urlObj.searchParams;
                   const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
                   const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                   if (isEndOfList) {
-                    Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data2).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data).substring(0, 200)));
                     RateLimitManager.recordSuccessfulRequest("Fetch\u5217\u8868\u672B\u5C3E", true);
                   } else if (isEmptySearch && hasSpecialFilters) {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_with_filters", JSON.stringify(data2).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_with_filters", JSON.stringify(data).substring(0, 200)));
                     RateLimitManager.recordSuccessfulRequest("Fetch\u7A7A\u641C\u7D22\u7ED3\u679C", true);
                   } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_already_limited", JSON.stringify(data2).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_already_limited", JSON.stringify(data).substring(0, 200)));
                   } else if (isEmptySearch && document.readyState !== "complete") {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_page_loading", JSON.stringify(data2).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_page_loading", JSON.stringify(data).substring(0, 200)));
                   } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
                     Utils.logger("info", Utils.getText("empty_search_initial"));
                   } else {
@@ -4502,6 +4504,57 @@
     }, "stats")
   };
 
+  // src/modules/verification-notifications.js
+  var VerificationNotifications = {
+    sent: /* @__PURE__ */ new Set(),
+    permission: /* @__PURE__ */ __name(() => typeof Notification === "undefined" ? "unsupported" : Notification.permission, "permission"),
+    enableAndTest: /* @__PURE__ */ __name(async (lang = "zh") => {
+      if (typeof Notification === "undefined") return "unsupported";
+      try {
+        const permission = Notification.permission === "default" ? await Notification.requestPermission() : Notification.permission;
+        if (permission === "granted") {
+          VerificationNotifications.show({ lang, test: true });
+        }
+        return permission;
+      } catch {
+        return "unavailable";
+      }
+    }, "enableAndTest"),
+    show: /* @__PURE__ */ __name(({ task, workerId, lang = "zh", test = false, win = globalThis.window } = {}) => {
+      if (VerificationNotifications.permission() !== "granted") return false;
+      const key = workerId || task?.uid;
+      if (!test && key && VerificationNotifications.sent.has(key)) return false;
+      const zh2 = lang === "zh";
+      try {
+        const notification = new Notification(
+          test ? zh2 ? "Fab Helper\uFF1A\u901A\u77E5\u5DF2\u5F00\u542F" : "Fab Helper: notifications enabled" : zh2 ? "Fab Helper\uFF1A\u9700\u8981\u624B\u52A8\u9A8C\u8BC1" : "Fab Helper: verification needed",
+          {
+            body: test ? zh2 ? "\u9047\u5230\u4EBA\u673A\u9A8C\u8BC1\u65F6\u4F1A\u5728\u6B64\u63D0\u9192\u60A8\u3002" : "You will be notified when manual verification is needed." : `${task?.name || "Fab"}
+${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u3011\u7684\u6807\u7B7E\u9875\uFF0C\u624B\u52A8\u5B8C\u6210\u9A8C\u8BC1\uFF0C\u518D\u56DE\u4E3B\u9762\u677F\u7EE7\u7EED\u3002" : "The verification tab is kept open. Complete it manually, then resume from the main panel."}`,
+            tag: test ? "fab-helper-notification-test" : `fab-helper-verify-${key || Date.now()}`,
+            requireInteraction: !test
+          }
+        );
+        notification.onclick = () => {
+          try {
+            win?.focus();
+          } catch {
+          }
+          notification.close();
+        };
+        if (!test && key) {
+          VerificationNotifications.sent.add(key);
+          if (VerificationNotifications.sent.size > 100) {
+            VerificationNotifications.sent.delete(VerificationNotifications.sent.values().next().value);
+          }
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    }, "show")
+  };
+
   // src/modules/task-runner.js
   var _realSetTimeout = typeof setTimeout === "function" ? setTimeout : (cb) => {
     try {
@@ -4709,6 +4762,7 @@
         if (UI4) UI4.update();
         return;
       }
+      State.manualVerificationPending = false;
       const sessionOk = await Utils.verifyServerSession();
       if (!sessionOk) {
         Utils.notifyAuthFailure();
@@ -4776,6 +4830,7 @@
     }, "toggleExecution"),
     // Start execution without scanning
     startExecution: /* @__PURE__ */ __name(() => {
+      if (State.manualVerificationPending) return;
       if (State.apiPipelineActive) {
         Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7 worker \u6267\u884C\u8BF7\u6C42\u3002");
         return;
@@ -5020,12 +5075,12 @@
             continue;
           }
           const rawData = await response.json();
-          const data2 = API.extractStateData(rawData, "RefreshStates");
-          if (!data2 || !Array.isArray(data2)) {
+          const data = API.extractStateData(rawData, "RefreshStates");
+          if (!data || !Array.isArray(data)) {
             Utils.logger("warn", Utils.getText("log_unexpected_data_format"));
             continue;
           }
-          data2.filter((item) => item.acquired).forEach((item) => ownedUids.add(item.uid));
+          data.filter((item) => item.acquired).forEach((item) => ownedUids.add(item.uid));
           if (allUidsToCheck.length > i + API_CHUNK_SIZE) {
             await new Promise((r) => setTimeout(r, 250));
           }
@@ -5398,6 +5453,9 @@
           }
           if (manualRequired) {
             clearTimeout(forceCloseTimer);
+            if (!VerificationNotifications.show({ task: currentTask, workerId, lang: State.lang })) {
+              Utils.logger("warn", State.lang === "zh" ? "\u9A8C\u8BC1\u6807\u7B7E\u9875\u5DF2\u4FDD\u7559\uFF1B\u8BF7\u5728\u8BBE\u5B9A\u4E2D\u5F00\u542F\u6D4F\u89C8\u5668\u9A8C\u8BC1\u901A\u77E5\u3002" : "Verification tab kept open; enable verification notifications in Settings.");
+            }
             try {
               document.title = `\u26A0\uFE0F\u3010\u9700\u9A8C\u8BC1\u3011${document.title}`;
               const banner = document.createElement("div");
@@ -5980,6 +6038,7 @@
       }
     }, "stopExecutionAndSettle"),
     attemptAutoScroll: /* @__PURE__ */ __name(async () => {
+      if (State.manualVerificationPending) return;
       if (State.appStatus === "RATE_LIMITED") return;
       if (State.apiPipelineActive) {
         Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7\u81EA\u52A8\u6EDA\u52A8\u8BF7\u6C42\u3002");
@@ -6719,6 +6778,28 @@
       settingsContent.appendChild(hidePaidSetting);
       const blockResourcesSetting = createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources");
       settingsContent.appendChild(blockResourcesSetting);
+      const notificationRow = document.createElement("div");
+      notificationRow.className = "fab-setting-row";
+      const notificationLabel = document.createElement("span");
+      notificationLabel.className = "fab-setting-label";
+      notificationLabel.textContent = State.lang === "zh" ? "\u4EBA\u673A\u9A8C\u8BC1\u901A\u77E5" : "Verification notifications";
+      const notificationButton = document.createElement("button");
+      notificationButton.style.cssText = "padding:6px 8px;cursor:pointer;border-radius:var(--radius-m);";
+      const renderNotificationPermission = /* @__PURE__ */ __name((permission = VerificationNotifications.permission()) => {
+        const zh2 = State.lang === "zh";
+        const labels = zh2 ? { granted: "\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5", default: "\u5F00\u542F\u5E76\u6D4B\u8BD5", denied: "\u5DF2\u88AB\u6D4F\u89C8\u5668\u963B\u6B62", unsupported: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301", unavailable: "\u6682\u4E0D\u53EF\u7528\uFF0C\u70B9\u51FB\u91CD\u8BD5" } : { granted: "Test notification", default: "Enable and test", denied: "Blocked by browser", unsupported: "Not supported", unavailable: "Unavailable, retry" };
+        notificationButton.textContent = labels[permission] || labels.unavailable;
+        notificationButton.disabled = permission === "unsupported";
+        notificationButton.title = zh2 ? "\u5141\u8BB8\u901A\u77E5\u540E\uFF0C\u9047\u5230\u9A8C\u8BC1\u4F1A\u63D0\u9192\u60A8\u3002\u82E5\u88AB\u963B\u6B62\uFF0C\u8BF7\u5728\u5730\u5740\u680F\u7684\u7F51\u7AD9\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u901A\u77E5\uFF1B\u7CFB\u7EDF\u52FF\u6270\u4E5F\u53EF\u80FD\u9690\u85CF\u901A\u77E5\u3002" : "Allow notifications for verification alerts. If blocked, enable notifications in site settings; system Do Not Disturb may hide alerts.";
+      }, "renderNotificationPermission");
+      renderNotificationPermission();
+      notificationButton.onclick = async () => {
+        const permission = await VerificationNotifications.enableAndTest(State.lang);
+        renderNotificationPermission(permission);
+        if (permission !== "granted") Utils.logger("warn", notificationButton.title);
+      };
+      notificationRow.append(notificationLabel, notificationButton);
+      settingsContent.appendChild(notificationRow);
       const resetButton = document.createElement("button");
       resetButton.textContent = Utils.getText("clear_all_data");
       resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";
@@ -8149,7 +8230,7 @@
     }
     return null;
   }, "parseResponseHeader");
-  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data: data2 } = {}) => new Promise((resolve, reject) => {
+  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
     const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
     if (nativeFetch) {
       const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -8158,7 +8239,7 @@
         method: method || "POST",
         credentials: "include",
         headers: headers || {},
-        body: data2,
+        body: data,
         ...controller ? { signal: controller.signal } : {}
       }).then(async (response) => {
         clearTimeout(timer);
@@ -8177,7 +8258,7 @@
       method: method || "POST",
       url,
       headers,
-      data: data2,
+      data,
       onload: /* @__PURE__ */ __name((res) => resolve({
         status: res.status,
         responseText: res.responseText,
@@ -8982,27 +9063,27 @@
           }
           if (response.ok) {
             const clonedResponse = response.clone();
-            clonedResponse.json().then((data2) => {
-              if (url.includes("/i/listings/search") && data2.results && Array.isArray(data2.results)) {
-                DataCache.saveListings(data2.results);
-                if (data2.cursors) {
-                  State.isEndOfSearchList = data2.cursors.next === null;
-                } else if (typeof data2.next !== "undefined") {
-                  State.isEndOfSearchList = data2.next === null;
+            clonedResponse.json().then((data) => {
+              if (url.includes("/i/listings/search") && data.results && Array.isArray(data.results)) {
+                DataCache.saveListings(data.results);
+                if (data.cursors) {
+                  State.isEndOfSearchList = data.cursors.next === null;
+                } else if (typeof data.next !== "undefined") {
+                  State.isEndOfSearchList = data.next === null;
                 }
               } else if (url.includes("/i/users/me/listings-states")) {
-                if (Array.isArray(data2)) {
-                  DataCache.saveOwnedStatus(data2);
+                if (Array.isArray(data)) {
+                  DataCache.saveOwnedStatus(data);
                   triggerOwnedStatusUpdate();
                 } else {
-                  const extractedData = API.extractStateData(data2, "FetchInterceptor");
+                  const extractedData = API.extractStateData(data, "FetchInterceptor");
                   if (Array.isArray(extractedData) && extractedData.length > 0) {
                     DataCache.saveOwnedStatus(extractedData);
                     triggerOwnedStatusUpdate();
                   }
                 }
-              } else if (url.includes("/i/listings/prices-infos") && data2.offers && Array.isArray(data2.offers)) {
-                DataCache.savePrices(data2.offers);
+              } else if (url.includes("/i/listings/prices-infos") && data.offers && Array.isArray(data.offers)) {
+                DataCache.savePrices(data.offers);
               }
             }).catch(() => {
             });
@@ -9466,8 +9547,9 @@
             Utils.logger("warn", `[API\u5165\u5E93] \u6536\u5230 429${retryHint}\uFF1B\u6682\u505C\u65B0 worker \u6D3E\u53D1\u5E76\u8FDB\u5165\u6062\u590D\u68C0\u67E5\u3002`);
             await RateLimitManager.enterRateLimitedState("ApiClaim 429");
           }
-          const isManualRequired = Boolean(data.manualRequired) || logs && logs.some((l) => l.includes(Utils.getText("worker_captcha")) || l.includes("\u4EBA\u673A\u9A8C\u8BC1") || l.includes("CAPTCHA"));
+          const isManualRequired = Boolean(newValue.manualRequired) || logs && logs.some((l) => l.includes(Utils.getText("worker_captcha")) || l.includes("\u4EBA\u673A\u9A8C\u8BC1") || l.includes("CAPTCHA"));
           if (isManualRequired) {
+            State.manualVerificationPending = true;
             Utils.logger("warn", "\u{1F6A8} \u68C0\u6D4B\u5230\u5B89\u5168\u4EBA\u673A\u9A8C\u8BC1\uFF01\u5DF2\u81EA\u52A8\u6682\u505C\u4EFB\u52A1\u6267\u884C\u5E76\u4FDD\u7559\u9A8C\u8BC1\u6807\u7B7E\u9875\uFF0C\u8BF7\u5728\u5DF2\u6253\u5F00\u7684\u6807\u7B7E\u9875\u4E2D\u5B8C\u6210\u9A8C\u8BC1\u540E\u518D\u6B21\u70B9\u51FB\u300C\u4E00\u952E\u5F00\u5237\u300D\u3002");
             if (State.isExecuting) {
               State.isExecuting = false;

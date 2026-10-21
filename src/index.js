@@ -1343,7 +1343,7 @@ export async function main() {
 // 避免旧版单一全局 WORKER_DONE 键在多标签页并发完成时「后者覆盖前者 / 被其他 worker
 // 监听抢删」导致报告丢失或重复加库（P0 并发根因之一）。该函数为模块级声明，setTaskRunnerDeps
 // 在模块求值阶段即引用它，故必须位于模块作用域（函数声明会提升到模块顶部）。
-function registerWorkerDoneListener(workerId) {
+export function registerWorkerDoneListener(workerId) {
     if (!workerId) return;
     if (State.registeredWorkerDoneKeys.has(workerId)) return; // 防重复注册
 
@@ -1399,10 +1399,11 @@ function registerWorkerDoneListener(workerId) {
                     await RateLimitManager.enterRateLimitedState('ApiClaim 429');
                 }
 
-                const isManualRequired = Boolean(data.manualRequired) ||
+                const isManualRequired = Boolean(newValue.manualRequired) ||
                     (logs && logs.some(l => l.includes(Utils.getText('worker_captcha')) || l.includes('人机验证') || l.includes('CAPTCHA')));
 
                 if (isManualRequired) {
+                    State.manualVerificationPending = true;
                     Utils.logger('warn', '🚨 检测到安全人机验证！已自动暂停任务执行并保留验证标签页，请在已打开的标签页中完成验证后再次点击「一键开刷」。');
                     if (State.isExecuting) {
                         State.isExecuting = false;
