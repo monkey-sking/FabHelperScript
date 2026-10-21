@@ -20,6 +20,7 @@ import { InstanceManager } from './instance-manager.js';
 import { KeepAlive } from './keepalive.js';
 import { acquireOnDetailPage } from './detail-claim.js';
 import { ApiClaim, CLAIM_RESULT } from './claim-strategy.js';
+import { acquireBundle, isBundleTask } from './bundle-claim.js';
 
 // 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
 // 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
@@ -1051,26 +1052,38 @@ export const TaskRunner = {
             let success = false;
             let rateLimited = false;
             let retryAfterMs = null;
+            let bundleResult = null;
 
             // 页面枚举、滚动和 worker 调度保持旧逻辑；只有真正的入库动作切到已确认的 API。
             // API 的暂态故障必须回落到当前已打开的详情页 DOM；429 则绝不能叠加 DOM 请求，
             // 交由主标签页暂停派发并等待恢复。
             try {
-                if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+                if (isBundleTask(currentTask)) {
+                    bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
+                    success = bundleResult.success;
+                    rateLimited = Boolean(bundleResult.rateLimited);
+                    retryAfterMs = bundleResult.retryAfterMs || null;
+                } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
                     const apiResult = await ApiClaim.claim(currentTask);
                     success = apiResult.result === CLAIM_RESULT.SUCCESS;
                     if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
                         rateLimited = true;
                         retryAfterMs = apiResult.retryAfterMs || null;
-                    } else if (!success && apiResult.retryable) {
-                        logBuffer.push(`[API入库] ${apiResult.reason || '暂态失败'}，回落 DOM 领取。`);
+                    } else if (apiResult.isBundle) {
+                        logBuffer.push('[API入库] 识别为 Bundle 商品，转入官网零元结算流程。');
+                        currentTask.listingType = 'bundle';
+                        currentTask.isBundle = true;
+                        bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
+                        success = bundleResult.success;
+                        rateLimited = Boolean(bundleResult.rateLimited);
+                        retryAfterMs = bundleResult.retryAfterMs || null;
+                    } else if (!success) {
+                        logBuffer.push(`[API入库] ${apiResult.reason || '未完成'}，尝试回落 DOM 领取。`);
                         const claimResult = await acquireOnDetailPage(currentTask, {
                             taskRunner: TaskRunner,
                             log: (msg) => logBuffer.push(msg)
                         });
                         success = claimResult.success;
-                    } else if (!success && apiResult.reason) {
-                        logBuffer.push(`[API入库] ${apiResult.reason}`);
                     }
                 } else {
                     const claimResult = await acquireOnDetailPage(currentTask, {
@@ -1117,7 +1130,11 @@ export const TaskRunner = {
                     console.error('Error deleting worker value:', error);
                 }
 
-                closeWorkerTab();
+                if (bundleResult?.manualRequired) {
+                    clearTimeout(forceCloseTimer);
+                } else {
+                    closeWorkerTab();
+                }
             }
         } catch (error) {
             Utils.logger('error', `Worker tab error: ${error.message}`);
@@ -1720,6 +1737,9 @@ export const TaskRunner = {
                     return;
                 }
 
+                // 最终失败只由用户的“重试失败”重新排队，DOM 重扫不得无限重试 400。
+                if (Database.isFailed(url)) return;
+
                 const text = card.textContent || '';
                 if (text.includes("已保存在我的库中") ||
                     text.includes("已保存") ||
@@ -1859,6 +1879,8 @@ export const TaskRunner = {
     },
 
     attemptAutoScroll: async () => {
+        // 限速恢复期间不继续滚动触发分页；恢复后的定时检查会接续推进。
+        if (State.appStatus === 'RATE_LIMITED') return;
         if (State.apiPipelineActive) {
             Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧自动滚动请求。');
             return;

@@ -238,6 +238,7 @@ export const Database = {
     getMaxRetry: (reason) => {
         if (!reason) return 1;
         if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
+        if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
         if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
         return 1;
     },

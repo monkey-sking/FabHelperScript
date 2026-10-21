@@ -11,6 +11,7 @@ import { Config } from '../config.js';
 import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { RateLimitManager } from './rate-limit-manager.js';
+import { isRateLimitedResponse } from './rate-limit-detection.js';
 
 export const PagePatcher = {
     _patchHasBeenApplied: false,
@@ -225,9 +226,14 @@ export const PagePatcher = {
         }
     },
 
-    isDebounceableSearch(url) {
+    isListingSearch(url) {
         if (typeof url !== 'string' || !url.includes('/i/listings/search')) return false;
         if (url.includes('aggregate_on=') || url.includes('count=0')) return false;
+        return true;
+    },
+
+    isDebounceableSearch(url) {
+        if (!this.isListingSearch(url)) return false;
 
         // Cursor requests are infinite-scroll page loads. Debouncing them delays
         // new product batches and can cancel pending page fetches during fast scroll.
@@ -359,13 +365,6 @@ export const PagePatcher = {
                     window.recordNetworkActivity();
                 }
 
-                if (request.status >= 200 && request.status < 300 &&
-                    request._url && self.isDebounceableSearch(request._url)) {
-                    if (typeof window.recordNetworkRequest === 'function') {
-                        window.recordNetworkRequest(Utils.getText('request_source_xhr_item'), true);
-                    }
-                }
-
                 if (request.status === 429 || request.status === '429' || request.status.toString() === '429') {
                     Utils.logger('warn', Utils.getText('xhr_detected_429', request.responseURL || request._url));
                     RateLimitManager.enterRateLimitedState(request.responseURL || request._url || 'XHR响应429');
@@ -376,10 +375,8 @@ export const PagePatcher = {
                     try {
                         const responseText = request.responseText;
                         if (responseText) {
-                            if (responseText.includes("Too many requests") ||
-                                responseText.includes("rate limit") ||
-                                responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                                Utils.logger('warn', Utils.getText('log_xhr_rate_limit_detect', responseText));
+                            if (isRateLimitedResponse(request.status, responseText)) {
+                                Utils.logger('warn', Utils.getText('log_xhr_rate_limit_detect', responseText.substring(0, 200)));
                                 RateLimitManager.enterRateLimitedState('XHR响应内容限速');
                                 return;
                             }
@@ -390,13 +387,7 @@ export const PagePatcher = {
                                     self.saveCursorFromSearchPayload(data);
                                 }
 
-                                if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
-                                    Utils.logger('warn', Utils.getText('detected_rate_limit_error', JSON.stringify(data)));
-                                    RateLimitManager.enterRateLimitedState('XHR响应限速错误');
-                                    return;
-                                }
-
-                                if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
+                                if (data.results && data.results.length === 0 && self.isListingSearch(request._url)) {
                                     const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
                                     const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
 
@@ -423,15 +414,11 @@ export const PagePatcher = {
                                         Utils.logger('info', Utils.getText('empty_search_initial'));
                                         return;
                                     } else {
-                                        Utils.logger('warn', Utils.getText('detected_possible_rate_limit_empty', JSON.stringify(data).substring(0, 200)));
-                                        RateLimitManager.enterRateLimitedState('XHR响应空结果');
+                                        Utils.logger('debug', '搜索返回空结果，等待列表状态更新；没有限速错误证据。');
                                         return;
                                     }
                                 }
 
-                                if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
-                                    RateLimitManager.recordSuccessfulRequest(Utils.getText('request_source_xhr_search'), true);
-                                }
                             } catch (jsonError) {
                                 // JSON解析错误，忽略
                             }
@@ -441,7 +428,7 @@ export const PagePatcher = {
                     }
                 }
 
-                if (self.isDebounceableSearch(request._url)) {
+                if (self.isListingSearch(request._url)) {
                     self.handleSearchResponse(request);
                 }
             };
@@ -535,13 +522,6 @@ export const PagePatcher = {
                         window.recordNetworkActivity();
                     }
 
-                    if (response.status >= 200 && response.status < 300 &&
-                        typeof url === 'string' && self.isDebounceableSearch(url)) {
-                        if (typeof window.recordNetworkRequest === 'function') {
-                            window.recordNetworkRequest('Fetch商品请求', true);
-                        }
-                    }
-
                     if (response.status === 429 || response.status === '429' || response.status.toString() === '429') {
                         response.clone();
                         Utils.logger('warn', Utils.getText('log_fetch_detected_429', response.url));
@@ -555,9 +535,7 @@ export const PagePatcher = {
                         // Fab's infinite-scroll renderer from receiving the fetch result.
                         response.clone().text().then(text => {
 
-                            if (text.includes("Too many requests") ||
-                                text.includes("rate limit") ||
-                                text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+                            if (isRateLimitedResponse(response.status, text)) {
                                 Utils.logger('warn', Utils.getText('log_fetch_rate_limit_detect', text.substring(0, 100)));
                                 RateLimitManager.enterRateLimitedState('Fetch响应内容限速').catch(e =>
                                     Utils.logger('error', Utils.getText('log_handling_rate_limit_error', e.message))
@@ -569,14 +547,9 @@ export const PagePatcher = {
                                 const data = JSON.parse(text);
                                 if (url.includes('/i/listings/search')) {
                                     self.saveCursorFromSearchPayload(data);
-                                }
-
-                                if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
-                                    Utils.logger('warn', Utils.getText('detected_rate_limit_error', 'API限速响应'));
-                                    RateLimitManager.enterRateLimitedState('API限速响应').catch(e =>
-                                        Utils.logger('error', Utils.getText('log_handling_rate_limit_error', e.message))
-                                    );
-                                    return response;
+                                    if (self.isListingSearch(url)) {
+                                        RateLimitManager.recordSuccessfulRequest('Fetch搜索响应', Array.isArray(data.results) && data.results.length > 0);
+                                    }
                                 }
 
                                 const responseUrl = response.url || '';
@@ -602,10 +575,7 @@ export const PagePatcher = {
                                     } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5000) {
                                         Utils.logger('info', Utils.getText('empty_search_initial'));
                                     } else {
-                                        Utils.logger('warn', Utils.getText('log_fetch_implicit_rate_limit', JSON.stringify(data).substring(0, 200)));
-                                        RateLimitManager.enterRateLimitedState('Fetch响应空结果').catch(e =>
-                                            Utils.logger('error', Utils.getText('log_handling_rate_limit_error', e.message))
-                                        );
+                                        Utils.logger('debug', '搜索返回空结果，等待列表状态更新；没有限速错误证据。');
                                     }
                                 }
                             } catch (jsonError) {

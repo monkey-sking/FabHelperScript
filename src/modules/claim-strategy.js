@@ -31,6 +31,7 @@
  * 一直是 DOM 点击。端点确认后，仅入库动作切换为 ApiClaim；列表枚举仍由页面 DOM 负责。
  */
 import { Utils } from './utils.js';
+import { isBundleTask } from './bundle-claim.js';
 
 export const CLAIM_RESULT = {
     SUCCESS: 'success',
@@ -83,20 +84,68 @@ export const multipartBody = (fields, boundary = '----FabHelperFormBoundary') =>
 };
 
 /**
+ * 判断价格档位是否免费：
+ * 支持数值 0、discountedPrice === 0（限时打折免费）、effectiveDiscountPercentage === 100。
+ */
+const isTierFree = (tier) => {
+    if (!tier) return false;
+    if (typeof tier === 'number') return tier === 0;
+    if (typeof tier === 'object') {
+        const effectivePrice = tier.discountedPrice ?? tier.price;
+        if (typeof effectivePrice === 'number' && Number(effectivePrice) === 0) return true;
+        if (tier.effectiveDiscountPercentage === 100) return true;
+    }
+    return false;
+};
+
+/**
+ * 判断单条许可是否免费：
+ * 包含 CC0 资产、免费价格档、或者直接挂在许可上的 0 元标记。
+ */
+const isLicenseFree = (l) => {
+    if (!l) return false;
+    const offerId = l.offerId || l.offer_id;
+    if (!offerId) return false;
+    if (l.isCc0 === true) return true;
+    if (isTierFree(l.priceTier)) return true;
+    if (typeof l.price === 'number' && l.price === 0) return true;
+    if (typeof l.discountedPrice === 'number' && l.discountedPrice === 0) return true;
+    return false;
+};
+
+/**
  * 从详情页 JSON 里挑出「免费许可」的 offerId。
  *
- * 判据来自竞品实测：priceTier.price === 0 的许可才是可白拿的；同一商品
- * 若 professional 档也免费则优先取它，否则取第一个免费档。
- * 注意价格单位是分（实测 6920 = $69.20），所以只与 0 比较是安全的。
+ * 判据来自竞品实测：priceTier.price === 0 或 discountedPrice === 0 的许可才是可白拿的；
+ * 同一商品若 professional 档也免费则优先取它，否则取第一个免费档。
+ * 如果 licenses 为空，支持从 startingPrice 或 listing.offerId 兜底。
  */
 export const pickFreeOfferId = (listing) => {
-    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
-    const free = list.filter(
-        (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
-    );
-    if (!free.length) return null;
-    const pro = free.find((l) => l.slug === 'professional');
-    return (pro || free[0]).offerId;
+    if (!listing) return null;
+    const list = Array.isArray(listing.licenses) ? listing.licenses : [];
+    const free = list.filter(isLicenseFree);
+    if (free.length > 0) {
+        const pro = free.find((l) => l.slug === 'professional');
+        const picked = pro || free[0];
+        return picked.offerId || picked.offer_id;
+    }
+
+    // 兜底 1: startingPrice 包含 offerId 且免费
+    const sp = listing.startingPrice;
+    if (sp) {
+        const offerId = sp.offerId || sp.offer_id;
+        if (offerId && (isTierFree(sp) || sp.price === 0 || sp.discountedPrice === 0 || sp.effectiveDiscountPercentage === 100)) {
+            return offerId;
+        }
+    }
+
+    // 兜底 2: listing 顶层字段标记为免费且有 offerId
+    const topOfferId = listing.offerId || listing.offer_id;
+    if (topOfferId && (listing.isFree === true || listing.price === 0 || listing.discountedPrice === 0)) {
+        return topOfferId;
+    }
+
+    return null;
 };
 
 const parseRetryAfterMs = (res) => {
@@ -164,6 +213,8 @@ export const ApiClaim = {
     /** 端点模板里的 {uid} 换成真实 uid。 */
     _url: (task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)),
 
+    _lastResolvedListing: null,
+
     /**
      * 解析 offer_id。
      * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
@@ -171,6 +222,7 @@ export const ApiClaim = {
      * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
      */
     _resolveOfferId: async (task) => {
+        ApiClaim._lastResolvedListing = null;
         if (typeof ApiClaim.resolveOfferId === 'function') return ApiClaim.resolveOfferId(task);
         if (task && task.offerId) return task.offerId;
 
@@ -200,7 +252,9 @@ export const ApiClaim = {
         }
 
         try {
-            return pickFreeOfferId(JSON.parse(res.responseText));
+            const listing = JSON.parse(res.responseText);
+            ApiClaim._lastResolvedListing = listing;
+            return pickFreeOfferId(listing);
         } catch (e) {
             const err = new Error(`解析 offer_id 失败: ${e.message}`);
             err.retryable = true;
@@ -209,6 +263,9 @@ export const ApiClaim = {
     },
 
     claim: async (task) => {
+        if (isBundleTask(task)) {
+            return { result: CLAIM_RESULT.UNAVAILABLE, reason: 'Bundle 需要官网零元结算流程', retryable: false, isBundle: true };
+        }
         if (!ApiClaim.isAvailable()) {
             return { result: CLAIM_RESULT.UNAVAILABLE, reason: '领取端点未配置' };
         }
@@ -241,6 +298,17 @@ export const ApiClaim = {
                 retryable: !e || e.retryable !== false
             };
         }
+
+        const resolvedListing = ApiClaim._lastResolvedListing;
+        if (resolvedListing && (resolvedListing.listingType === 'bundle' || isBundleTask(resolvedListing))) {
+            return {
+                result: CLAIM_RESULT.UNAVAILABLE,
+                reason: 'Bundle 需要官网零元结算流程',
+                retryable: false,
+                isBundle: true
+            };
+        }
+
         if (!offerId) {
             return {
                 result: CLAIM_RESULT.FAILURE,

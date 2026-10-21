@@ -7,6 +7,28 @@ import { fileURLToPath } from 'url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const indexSrc = fs.readFileSync(path.join(here, '../src/index.js'), 'utf8');
 
+test('checkout documents never launch listing scanning or instance management', async t => {
+    installFakeBrowser();
+    window.location.pathname = '/payment/web/purchase';
+    const { main } = await import('../src/index.js');
+    const { InstanceManager } = await import('../src/modules/instance-manager.js');
+    const { TaskRunner } = await import('../src/modules/task-runner.js');
+    const { State } = await import('../src/state.js');
+    const wasWorker = State.isWorkerTab;
+    t.after(() => { State.isWorkerTab = wasWorker; });
+    let instances = 0;
+    let workers = 0;
+    t.mock.method(InstanceManager, 'init', async () => instances++);
+    t.mock.method(TaskRunner, 'processDetailPage', async () => workers++);
+    await main();
+    assert.equal(instances, 0);
+    assert.equal(workers, 0);
+    window.location.search = '?workerId=worker_test&fab_bundle_checkout=bundle-test';
+    await main();
+    assert.equal(workers, 0);
+    assert.equal(instances, 0);
+});
+
 test('列表页启动不再引用已删除的 hasCookie', () => {
     assert.equal(/\bhasCookie\b/.test(indexSrc), false);
     assert.match(indexSrc, /const signedIn = Utils\.checkAuthentication\(true\)/);

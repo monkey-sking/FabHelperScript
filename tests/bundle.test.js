@@ -59,6 +59,10 @@ test('auto scan queues a free bundle with its real page URL, rejects paid bundle
     await TaskRunner.scanAndAddTasks([card]);
     assert.equal(State.db.todo.length, 0);
     assert.equal(TaskRunner.isCardFinished(card), true);
+    State.db.done = [];
+    State.db.failed = [{ uid, url: bundleUrl }];
+    await TaskRunner.scanAndAddTasks([card]);
+    assert.equal(State.db.todo.length, 0, '最终失败不能被 DOM 重扫自动重新加入');
 });
 
 test('bundle tasks survive storage reload, while search links are discarded', async t => {
@@ -90,7 +94,7 @@ test('API enumeration retains the bundle page route and recognizes zero-price st
     assert.equal(ListingSource.isClaimable(item), true);
 });
 
-test('bundle claim resolves its free professional offer through the existing listing API', async t => {
+test('bundle must not POST to ordinary add-to-library even when a free offer exists', async t => {
     const previous = { endpoint: ApiClaim.endpoint, fetchImpl: ApiClaim.fetchImpl };
     t.after(() => ApiClaim.configure(previous));
     t.mock.method(Utils, 'getCookie', () => 'test-csrf');
@@ -109,11 +113,6 @@ test('bundle claim resolves its free professional offer through the existing lis
         }
     });
     const result = await ApiClaim.claim({ uid, url: bundleUrl });
-    assert.equal(result.result, CLAIM_RESULT.SUCCESS);
-    assert.deepEqual(calls.map(({ method, url }) => ({ method, url })), [
-        { method: 'GET', url: `https://www.fab.com/i/listings/${uid}` },
-        { method: 'POST', url: `https://www.fab.com/i/listings/${uid}/add-to-library` }
-    ]);
-    assert.match(calls[1].data, /professional-free/);
-    assert.doesNotMatch(calls[1].data, /personal-free/);
+    assert.equal(result.result, CLAIM_RESULT.UNAVAILABLE);
+    assert.equal(calls.length, 0, 'bundle 的普通领取端点已实测返回 400，必须走官网结算');
 });

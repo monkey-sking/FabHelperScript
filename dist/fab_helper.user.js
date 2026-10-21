@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.25-20261016-1218
+// @version      3.5.26-20261021-1358
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -94,6 +94,9 @@
     log_detail_page: "This is a detail or worker page. Halting main script execution.",
     log_copy_failed: "Failed to copy log:",
     log_auto_add_enabled: '"Auto add" is enabled. Will process all tasks in the current "To-Do" queue.',
+    log_starting_execution: "Starting {0} pending tasks.",
+    log_max_workers_reached: "Worker limit reached ({0}).",
+    log_tasks_moved: "Moved {0} failed tasks back to the queue.",
     log_auto_add_toggle: "Infinite scroll auto add tasks {0}.",
     log_auto_scroll_toggle: "Auto-scroll page (auto scan all) {0}.",
     log_remember_pos_toggle: "Remember waterfall browsing position {0}.",
@@ -457,6 +460,9 @@
     log_detail_page: "\u8FD9\u662F\u8BE6\u60C5\u9875\u6216\u5DE5\u4F5C\u6807\u7B7E\u9875\u3002\u505C\u6B62\u4E3B\u811A\u672C\u6267\u884C\u3002",
     log_copy_failed: "\u590D\u5236\u65E5\u5FD7\u5931\u8D25:",
     log_auto_add_enabled: '"\u81EA\u52A8\u6DFB\u52A0"\u5DF2\u5F00\u542F\u3002\u5C06\u76F4\u63A5\u5904\u7406\u5F53\u524D"\u5F85\u529E"\u961F\u5217\u4E2D\u7684\u6240\u6709\u4EFB\u52A1\u3002',
+    log_starting_execution: "\u5F00\u59CB\u6267\u884C {0} \u4E2A\u5F85\u529E\u4EFB\u52A1\u3002",
+    log_max_workers_reached: "\u5DF2\u8FBE\u5230\u5DE5\u4F5C\u7EBF\u7A0B\u4E0A\u9650\uFF08{0}\uFF09\u3002",
+    log_tasks_moved: "\u5DF2\u5C06 {0} \u4E2A\u5931\u8D25\u4EFB\u52A1\u79FB\u56DE\u5F85\u529E\u961F\u5217\u3002",
     log_auto_add_toggle: "\u65E0\u9650\u6EDA\u52A8\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5DF2{0}\u3002",
     log_auto_scroll_toggle: "\u81EA\u52A8\u6EDA\u52A8\u9875\u9762\uFF08\u81EA\u52A8\u626B\u63CF\u5168\u90E8\uFF09\u5DF2{0}\u3002",
     log_remember_pos_toggle: "\u8BB0\u4F4F\u7011\u5E03\u6D41\u6D4F\u89C8\u4F4D\u7F6E\u529F\u80FD\u5DF2{0}\u3002",
@@ -1588,110 +1594,6 @@
     }, "findAllButtonsWithShadow")
   };
 
-  // src/modules/page-diagnostics.js
-  var PageDiagnostics = {
-    // 诊断商品详情页面状态
-    diagnoseDetailPage: /* @__PURE__ */ __name(() => {
-      const report = {
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        url: window.location.href,
-        pageTitle: document.title,
-        buttons: [],
-        licenseOptions: [],
-        priceInfo: {},
-        ownedStatus: {},
-        dynamicContent: {}
-      };
-      const buttons = document.querySelectorAll("button");
-      buttons.forEach((btn, index) => {
-        const text = btn.textContent?.trim();
-        const isVisible = btn.offsetParent !== null;
-        const isDisabled = btn.disabled;
-        const classes = btn.className;
-        if (text) {
-          report.buttons.push({
-            index,
-            text,
-            isVisible,
-            isDisabled,
-            classes,
-            hasClickHandler: btn.onclick !== null
-          });
-        }
-      });
-      const licenseElements = document.querySelectorAll('[class*="license"], [class*="License"], [role="option"]');
-      licenseElements.forEach((elem, index) => {
-        const text = elem.textContent?.trim();
-        const isVisible = elem.offsetParent !== null;
-        if (text) {
-          report.licenseOptions.push({
-            index,
-            text,
-            isVisible,
-            tagName: elem.tagName,
-            classes: elem.className,
-            role: elem.getAttribute("role")
-          });
-        }
-      });
-      const priceElements = document.querySelectorAll('[class*="price"], [class*="Price"]');
-      priceElements.forEach((elem, index) => {
-        const text = elem.textContent?.trim();
-        if (text) {
-          report.priceInfo[`price_${index}`] = {
-            text,
-            isVisible: elem.offsetParent !== null,
-            classes: elem.className
-          };
-        }
-      });
-      const ownedElements = document.querySelectorAll('h2, [class*="owned"], [class*="library"]');
-      ownedElements.forEach((elem, index) => {
-        const text = elem.textContent?.trim();
-        if (text && (text.includes("\u5E93") || text.includes("Library") || text.includes("\u62E5\u6709") || text.includes("Owned"))) {
-          report.ownedStatus[`owned_${index}`] = {
-            text,
-            isVisible: elem.offsetParent !== null,
-            tagName: elem.tagName,
-            classes: elem.className
-          };
-        }
-      });
-      return report;
-    }, "diagnoseDetailPage"),
-    // 输出诊断报告到日志
-    logDiagnosticReport: /* @__PURE__ */ __name((report) => {
-      console.group("=== Fab Helper \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
-      console.log(`\u9875\u9762: ${report.url}`);
-      console.log(`\u6807\u9898: ${report.pageTitle}`);
-      const visibleButtons2 = report.buttons.filter((b) => b.isVisible);
-      if (visibleButtons2.length > 0) {
-        console.log(`--- \u53EF\u89C1\u6309\u94AE (${visibleButtons2.length}) ---`);
-        visibleButtons2.forEach((btn) => {
-          console.log(`  [${btn.index}] "${btn.text}" (\u7981\u7528: ${btn.isDisabled}, \u7C7B: ${btn.classes.split(" ").slice(0, 2).join(" ")}...)`);
-        });
-      }
-      const visibleLicenses = report.licenseOptions.filter((l) => l.isVisible);
-      if (visibleLicenses.length > 0) {
-        console.log(`--- \u53EF\u89C1\u8BB8\u53EF\u9009\u9879 (${visibleLicenses.length}) ---`);
-        visibleLicenses.forEach((opt) => {
-          console.log(`  [${opt.index}] "${opt.text}" (\u6807\u7B7E: ${opt.tagName}, \u89D2\u8272: ${opt.role || "\u65E0"})`);
-        });
-      }
-      const visiblePrices = Object.values(report.priceInfo).filter((p) => p.isVisible);
-      if (visiblePrices.length > 0) {
-        console.log(`--- \u4EF7\u683C\u4FE1\u606F (${visiblePrices.length}) ---`);
-        visiblePrices.forEach((p) => console.log(`  \u4EF7\u683C: "${p.text}"`));
-      }
-      const visibleOwned = Object.values(report.ownedStatus).filter((s) => s.isVisible);
-      if (visibleOwned.length > 0) {
-        console.log(`--- \u62E5\u6709\u72B6\u6001 (${visibleOwned.length}) ---`);
-        visibleOwned.forEach((s) => console.log(`  \u72B6\u6001: "${s.text}"`));
-      }
-      console.groupEnd();
-    }, "logDiagnosticReport")
-  };
-
   // src/modules/data-cache.js
   var DataCache = {
     // 商品数据缓存 - 键为商品ID，值为商品数据
@@ -2021,6 +1923,265 @@
         return [];
       }
     }, "checkItemsPrices")
+  };
+
+  // src/modules/bundle-claim.js
+  var isCheckoutPage = /* @__PURE__ */ __name((pathname) => /^\/payment(?:\/|$)/i.test(pathname || ""), "isCheckoutPage");
+  var isBundleTask = /* @__PURE__ */ __name((task) => task?.listingType === "bundle" || task?.isBundle === true || /\/(?:bundles)\//i.test(task?.url || "") || typeof task?.name === "string" && /\bbundle\b/i.test(task.name), "isBundleTask");
+  function freeBundleOffers(listing) {
+    if (listing?.listingType !== "bundle") return [];
+    const offers = (listing.licenses || []).filter((license) => {
+      const tier = license?.priceTier;
+      const price = tier?.discountedPrice ?? tier?.price;
+      const offerId = license?.offerId || license?.offer_id;
+      const isFree = typeof price === "number" && price === 0 || tier?.effectiveDiscountPercentage === 100 || license?.isCc0 === true;
+      return isFree && typeof offerId === "string" && offerId;
+    }).map((license) => license.offerId || license.offer_id);
+    if (offers.length > 0) return offers;
+    const sp = listing?.startingPrice;
+    if (sp) {
+      const spPrice = sp.discountedPrice ?? sp.price;
+      const spOffer = sp.offerId || sp.offer_id;
+      if (typeof spPrice === "number" && spPrice === 0 && typeof spOffer === "string" && spOffer) {
+        return [spOffer];
+      }
+    }
+    return [];
+  }
+  __name(freeBundleOffers, "freeBundleOffers");
+  function bundleCheckoutUrl(src, offers) {
+    try {
+      const url = new URL(src, "https://www.fab.com");
+      if (url.origin !== "https://www.fab.com" || url.pathname !== "/payment/web/purchase") return null;
+      const match = url.searchParams.get("offers")?.match(/^1-[a-f0-9]{32}-([a-f0-9]{32})--$/i);
+      if (!match || !offers.includes(match[1])) return null;
+      return url.href;
+    } catch {
+      return null;
+    }
+  }
+  __name(bundleCheckoutUrl, "bundleCheckoutUrl");
+  function isZeroPriceCheckout(text = "") {
+    const amounts = [...text.matchAll(/(?:[$€£¥￥]|USD|EUR|GBP|CNY)\s*(\d[\d.,]*)/g)];
+    return amounts.length > 0 && amounts.every((match) => /^0+(?:[.,]0+)?$/.test(match[1]));
+  }
+  __name(isZeroPriceCheckout, "isZeroPriceCheckout");
+  var buttonText = /* @__PURE__ */ __name((button) => (button.textContent || "").replace(/\s+/g, " ").trim().toLowerCase(), "buttonText");
+  var libraryLabels = /* @__PURE__ */ new Set(["add to library", "add to my library", "\u6DFB\u52A0\u5230\u5E93", "\u6DFB\u52A0\u5230\u6211\u7684\u5E93", "\u52A0\u5165\u6211\u7684\u5E93"]);
+  async function acquireBundle(task, options = {}) {
+    const doc = options.doc ?? document;
+    const win = options.win ?? window;
+    const api = options.api || API;
+    const utils = options.utils || Utils;
+    const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    const now = options.now || Date.now;
+    const log2 = options.log || (() => {
+    });
+    const fail = /* @__PURE__ */ __name((reason, extra = {}) => {
+      log2(`[Bundle] ${reason}`);
+      return { success: false, reason, ...extra };
+    }, "fail");
+    const get = /* @__PURE__ */ __name(async (url) => {
+      const response = await api.gmFetch({ method: "GET", url, headers: {
+        accept: "application/json",
+        "x-requested-with": "XMLHttpRequest",
+        "x-csrftoken": utils.getCookie("fab_csrftoken") || ""
+      } });
+      if (response.status === 429) {
+        const err = new Error("\u63A5\u53E3\u8FD4\u56DE 429");
+        err.rateLimited = true;
+        const retry = response.getResponseHeader?.("retry-after") || response.responseHeaders?.match(/retry-after:\s*(\d+)/i)?.[1];
+        err.retryAfterMs = retry ? Number(retry) * 1e3 : null;
+        throw err;
+      }
+      if (response.status !== 200) throw new Error(`\u63A5\u53E3\u8FD4\u56DE ${response.status || "\u672A\u77E5\u72B6\u6001"}`);
+      return JSON.parse(response.responseText);
+    }, "get");
+    const owned = /* @__PURE__ */ __name(async () => {
+      const payload = await get(`https://www.fab.com/i/users/me/listings-states?listing_ids=${encodeURIComponent(task.uid)}`);
+      const states = Array.isArray(payload) ? payload : api.extractStateData(payload, "BundleVerify");
+      return Array.isArray(states) && states.some((state) => state?.uid === task.uid && state.acquired === true);
+    }, "owned");
+    try {
+      if (!isBundleTask(task) && task?.listingType !== "bundle" && !task?.isBundle) return fail("\u4E0D\u662F bundle \u4EFB\u52A1");
+      const listing = await get(`https://www.fab.com/i/listings/${encodeURIComponent(task.uid)}`);
+      if (listing?.listingType === "bundle") {
+        task.listingType = "bundle";
+        task.isBundle = true;
+      }
+      const offers = freeBundleOffers(listing);
+      if (!offers.length) return fail("\u672A\u627E\u5230\u514D\u8D39\u8BB8\u53EF\uFF0C\u505C\u6B62\u9886\u53D6");
+      if (await owned()) return { success: true };
+      if (isCheckoutPage(new URL(win.location.href).pathname)) return fail("\u8BF7\u4ECE bundle \u8BE6\u60C5\u9875\u542F\u52A8\u9886\u53D6");
+      const openDeadline = now() + 3e4;
+      let clicked = false;
+      let checkoutDoc = null;
+      while (now() < openDeadline) {
+        const frame = doc.querySelector('iframe[src*="/payment/web/purchase"]');
+        if (frame) {
+          if (!bundleCheckoutUrl(frame.getAttribute("src"), offers)) return fail("\u7ED3\u7B97\u94FE\u63A5\u4E0D\u662F\u6B64 bundle \u7684\u514D\u8D39\u8BB8\u53EF");
+          try {
+            checkoutDoc = frame.contentDocument;
+          } catch {
+            return fail("\u9700\u8981\u4EBA\u5DE5\u64CD\u4F5C\u8DE8\u57DF\u7ED3\u7B97\u9875\uFF0C\u5DF2\u4FDD\u7559\u9875\u9762", { manualRequired: true });
+          }
+          if (checkoutDoc?.body && checkoutDoc.querySelector("button")) break;
+        }
+        if (!clicked) {
+          const sidebar = doc.querySelector('aside, [role="complementary"]');
+          const button = [...sidebar?.querySelectorAll("button") || doc.querySelectorAll("button") || []].find((item) => !item.disabled && ["buy now", "\u7ACB\u5373\u8D2D\u4E70"].includes(buttonText(item)));
+          if (button) {
+            utils.deepClick(button);
+            clicked = true;
+            log2("[Bundle] \u5DF2\u6253\u5F00\u5B98\u7F51\u514D\u8D39\u7ED3\u7B97\u5165\u53E3");
+          }
+        }
+        await sleep(250);
+      }
+      if (!checkoutDoc?.body) return fail("\u672A\u80FD\u52A0\u8F7D bundle \u7ED3\u7B97\u9875");
+      const deadline = now() + 45e3;
+      let submitted = false;
+      let nextVerifyAt = 0;
+      while (now() < deadline) {
+        const visibleText = checkoutDoc.body?.innerText || "";
+        const captcha = [...checkoutDoc.querySelectorAll('iframe[title*="challenge"], iframe[src*="frame=challenge"]')].some((frame) => {
+          const rect = frame.getBoundingClientRect();
+          const style = checkoutDoc.defaultView?.getComputedStyle(frame);
+          return rect.width > 0 && rect.height > 0 && style?.visibility !== "hidden" && style?.display !== "none";
+        });
+        if (captcha || /verify you are human|请完成安全验证|确认您是真人/i.test(visibleText)) {
+          return fail("\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u5DF2\u4FDD\u7559\u7ED3\u7B97\u9875", { manualRequired: true });
+        }
+        if ([...checkoutDoc.querySelectorAll('input[type="checkbox"]')].some((input) => !input.checked && (input.required || /agree|terms|eula|同意|协议/i.test(input.closest?.("label")?.textContent || "")))) {
+          return fail("\u9700\u8981\u4EBA\u5DE5\u786E\u8BA4\u7ED3\u7B97\u6761\u6B3E\uFF0C\u5DF2\u4FDD\u7559\u7ED3\u7B97\u9875", { manualRequired: true });
+        }
+        if (!submitted) {
+          const button = [...checkoutDoc.querySelectorAll("button")].find((item) => !item.disabled && libraryLabels.has(buttonText(item)));
+          if (button) {
+            if (!isZeroPriceCheckout(visibleText)) return fail("\u7ED3\u7B97\u9875\u672A\u786E\u8BA4\u96F6\u5143\u91D1\u989D\uFF0C\u505C\u6B62\u9886\u53D6");
+            utils.deepClick(button);
+            submitted = true;
+            nextVerifyAt = now() + 2e3;
+            log2("[Bundle] \u5DF2\u70B9\u51FB\u96F6\u5143\u6DFB\u52A0\u5230\u5E93\uFF0C\u7B49\u5F85\u670D\u52A1\u7AEF\u786E\u8BA4");
+          }
+        } else if (now() >= nextVerifyAt) {
+          if (await owned()) {
+            log2("[Bundle] \u670D\u52A1\u7AEF\u786E\u8BA4\u5DF2\u5165\u5E93");
+            return { success: true };
+          }
+          nextVerifyAt = now() + 2e3;
+        }
+        await sleep(250);
+      }
+      return fail(submitted ? "\u7ED3\u7B97\u540E\u670D\u52A1\u7AEF\u672A\u786E\u8BA4\u5165\u5E93" : "\u7ED3\u7B97\u9875\u672A\u51FA\u73B0\u96F6\u5143\u6DFB\u52A0\u5230\u5E93\u6309\u94AE");
+    } catch (error) {
+      return fail(error.message, error.rateLimited ? { rateLimited: true, retryAfterMs: error.retryAfterMs } : {});
+    }
+  }
+  __name(acquireBundle, "acquireBundle");
+
+  // src/modules/page-diagnostics.js
+  var PageDiagnostics = {
+    // 诊断商品详情页面状态
+    diagnoseDetailPage: /* @__PURE__ */ __name(() => {
+      const report = {
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        url: window.location.href,
+        pageTitle: document.title,
+        buttons: [],
+        licenseOptions: [],
+        priceInfo: {},
+        ownedStatus: {},
+        dynamicContent: {}
+      };
+      const buttons = document.querySelectorAll("button");
+      buttons.forEach((btn, index) => {
+        const text = btn.textContent?.trim();
+        const isVisible = btn.offsetParent !== null;
+        const isDisabled = btn.disabled;
+        const classes = btn.className;
+        if (text) {
+          report.buttons.push({
+            index,
+            text,
+            isVisible,
+            isDisabled,
+            classes,
+            hasClickHandler: btn.onclick !== null
+          });
+        }
+      });
+      const licenseElements = document.querySelectorAll('[class*="license"], [class*="License"], [role="option"]');
+      licenseElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        const isVisible = elem.offsetParent !== null;
+        if (text) {
+          report.licenseOptions.push({
+            index,
+            text,
+            isVisible,
+            tagName: elem.tagName,
+            classes: elem.className,
+            role: elem.getAttribute("role")
+          });
+        }
+      });
+      const priceElements = document.querySelectorAll('[class*="price"], [class*="Price"]');
+      priceElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        if (text) {
+          report.priceInfo[`price_${index}`] = {
+            text,
+            isVisible: elem.offsetParent !== null,
+            classes: elem.className
+          };
+        }
+      });
+      const ownedElements = document.querySelectorAll('h2, [class*="owned"], [class*="library"]');
+      ownedElements.forEach((elem, index) => {
+        const text = elem.textContent?.trim();
+        if (text && (text.includes("\u5E93") || text.includes("Library") || text.includes("\u62E5\u6709") || text.includes("Owned"))) {
+          report.ownedStatus[`owned_${index}`] = {
+            text,
+            isVisible: elem.offsetParent !== null,
+            tagName: elem.tagName,
+            classes: elem.className
+          };
+        }
+      });
+      return report;
+    }, "diagnoseDetailPage"),
+    // 输出诊断报告到日志
+    logDiagnosticReport: /* @__PURE__ */ __name((report) => {
+      console.group("=== Fab Helper \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u62A5\u544A ===");
+      console.log(`\u9875\u9762: ${report.url}`);
+      console.log(`\u6807\u9898: ${report.pageTitle}`);
+      const visibleButtons2 = report.buttons.filter((b) => b.isVisible);
+      if (visibleButtons2.length > 0) {
+        console.log(`--- \u53EF\u89C1\u6309\u94AE (${visibleButtons2.length}) ---`);
+        visibleButtons2.forEach((btn) => {
+          console.log(`  [${btn.index}] "${btn.text}" (\u7981\u7528: ${btn.isDisabled}, \u7C7B: ${btn.classes.split(" ").slice(0, 2).join(" ")}...)`);
+        });
+      }
+      const visibleLicenses = report.licenseOptions.filter((l) => l.isVisible);
+      if (visibleLicenses.length > 0) {
+        console.log(`--- \u53EF\u89C1\u8BB8\u53EF\u9009\u9879 (${visibleLicenses.length}) ---`);
+        visibleLicenses.forEach((opt) => {
+          console.log(`  [${opt.index}] "${opt.text}" (\u6807\u7B7E: ${opt.tagName}, \u89D2\u8272: ${opt.role || "\u65E0"})`);
+        });
+      }
+      const visiblePrices = Object.values(report.priceInfo).filter((p) => p.isVisible);
+      if (visiblePrices.length > 0) {
+        console.log(`--- \u4EF7\u683C\u4FE1\u606F (${visiblePrices.length}) ---`);
+        visiblePrices.forEach((p) => console.log(`  \u4EF7\u683C: "${p.text}"`));
+      }
+      const visibleOwned = Object.values(report.ownedStatus).filter((s) => s.isVisible);
+      if (visibleOwned.length > 0) {
+        console.log(`--- \u62E5\u6709\u72B6\u6001 (${visibleOwned.length}) ---`);
+        visibleOwned.forEach((s) => console.log(`  \u72B6\u6001: "${s.text}"`));
+      }
+      console.groupEnd();
+    }, "logDiagnosticReport")
   };
 
   // src/modules/event-log.js
@@ -2407,6 +2568,7 @@
     getMaxRetry: /* @__PURE__ */ __name((reason) => {
       if (!reason) return 1;
       if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
+      if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
       if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
       return 1;
     }, "getMaxRetry"),
@@ -2462,6 +2624,29 @@
       return { retried: false };
     }, "markAsFailed")
   };
+
+  // src/modules/rate-limit-detection.js
+  var isLimitMessage = /* @__PURE__ */ __name((value) => typeof value === "string" && /^(?:(?:error|http)\s*[:\s-]*)?(?:429\b|too\s+many\s+requests\b|requests?\s+(?:was|were|has been)\s+throttled\b|rate[ _-]*limit(?:ed|[ _-]*(?:exceeded|reached))?(?:[.!:\s]|$)|请求过于频繁|请求被限流|请求次数过多)/i.test(value.trim()), "isLimitMessage");
+  function isRateLimitedResponse(status, body) {
+    if (Number(status) === 429) return true;
+    let value = body;
+    if (typeof value === "string") {
+      try {
+        value = JSON.parse(value);
+      } catch {
+        return value.length < 2e3 && isLimitMessage(value);
+      }
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+    if (["results", "items", "listings", "offers"].some((key) => Array.isArray(value[key]))) return false;
+    return ["detail", "message", "error", "code"].some((key) => isLimitMessage(value[key]));
+  }
+  __name(isRateLimitedResponse, "isRateLimitedResponse");
+  function isRateLimitedPage(title = "", text = "") {
+    if (/^(?:(?:error|http)\s*)?429(?:\s*[-:]?\s*too many requests)?(?:\s*[|–-]\s*(?:fab|nginx|cloudflare))?$/i.test(title.trim()) || /^too many requests(?:\s*[|–-]\s*(?:fab|nginx|cloudflare))?$/i.test(title.trim())) return true;
+    return text.length < 2e3 && isRateLimitedResponse(0, text);
+  }
+  __name(isRateLimitedPage, "isRateLimitedPage");
 
   // src/modules/rate-limit-manager.js
   var UI3 = null;
@@ -2660,7 +2845,7 @@
         } else {
           pageText = document.body.innerText || "";
         }
-        if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+        if (isRateLimitedPage(document.title || "", pageText)) {
           Utils.logger("warn", "\u9875\u9762\u5185\u5BB9\u5305\u542B\u9650\u901F\u4FE1\u606F\uFF0C\u786E\u8BA4\u4ECD\u5904\u4E8E\u9650\u901F\u72B6\u6001");
           await this.enterRateLimitedState("\u9875\u9762\u5185\u5BB9\u68C0\u6D4B");
           return false;
@@ -2974,9 +3159,13 @@
         }
       }
     },
-    isDebounceableSearch(url) {
+    isListingSearch(url) {
       if (typeof url !== "string" || !url.includes("/i/listings/search")) return false;
       if (url.includes("aggregate_on=") || url.includes("count=0")) return false;
+      return true;
+    },
+    isDebounceableSearch(url) {
+      if (!this.isListingSearch(url)) return false;
       try {
         const urlObj = new URL(url, window.location.origin);
         if (urlObj.searchParams.has("cursor")) return false;
@@ -3079,11 +3268,6 @@
           if (typeof window.recordNetworkActivity === "function") {
             window.recordNetworkActivity();
           }
-          if (request.status >= 200 && request.status < 300 && request._url && self.isDebounceableSearch(request._url)) {
-            if (typeof window.recordNetworkRequest === "function") {
-              window.recordNetworkRequest(Utils.getText("request_source_xhr_item"), true);
-            }
-          }
           if (request.status === 429 || request.status === "429" || request.status.toString() === "429") {
             Utils.logger("warn", Utils.getText("xhr_detected_429", request.responseURL || request._url));
             RateLimitManager.enterRateLimitedState(request.responseURL || request._url || "XHR\u54CD\u5E94429");
@@ -3093,8 +3277,8 @@
             try {
               const responseText = request.responseText;
               if (responseText) {
-                if (responseText.includes("Too many requests") || responseText.includes("rate limit") || responseText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
-                  Utils.logger("warn", Utils.getText("log_xhr_rate_limit_detect", responseText));
+                if (isRateLimitedResponse(request.status, responseText)) {
+                  Utils.logger("warn", Utils.getText("log_xhr_rate_limit_detect", responseText.substring(0, 200)));
                   RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u5185\u5BB9\u9650\u901F");
                   return;
                 }
@@ -3103,12 +3287,7 @@
                   if (request._url && request._url.includes("/i/listings/search")) {
                     self.saveCursorFromSearchPayload(data);
                   }
-                  if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
-                    Utils.logger("warn", Utils.getText("detected_rate_limit_error", JSON.stringify(data)));
-                    RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u9650\u901F\u9519\u8BEF");
-                    return;
-                  }
-                  if (data.results && data.results.length === 0 && self.isDebounceableSearch(request._url)) {
+                  if (data.results && data.results.length === 0 && self.isListingSearch(request._url)) {
                     const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
                     const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
                     const urlObj = new URL(request._url, window.location.origin);
@@ -3133,13 +3312,9 @@
                       Utils.logger("info", Utils.getText("empty_search_initial"));
                       return;
                     } else {
-                      Utils.logger("warn", Utils.getText("detected_possible_rate_limit_empty", JSON.stringify(data).substring(0, 200)));
-                      RateLimitManager.enterRateLimitedState("XHR\u54CD\u5E94\u7A7A\u7ED3\u679C");
+                      Utils.logger("debug", "\u641C\u7D22\u8FD4\u56DE\u7A7A\u7ED3\u679C\uFF0C\u7B49\u5F85\u5217\u8868\u72B6\u6001\u66F4\u65B0\uFF1B\u6CA1\u6709\u9650\u901F\u9519\u8BEF\u8BC1\u636E\u3002");
                       return;
                     }
-                  }
-                  if (self.isDebounceableSearch(request._url) && data.results && data.results.length > 0) {
-                    RateLimitManager.recordSuccessfulRequest(Utils.getText("request_source_xhr_search"), true);
                   }
                 } catch (jsonError) {
                 }
@@ -3147,7 +3322,7 @@
             } catch (e) {
             }
           }
-          if (self.isDebounceableSearch(request._url)) {
+          if (self.isListingSearch(request._url)) {
             self.handleSearchResponse(request);
           }
         }, "onLoad");
@@ -3226,11 +3401,6 @@
           if (typeof window.recordNetworkActivity === "function") {
             window.recordNetworkActivity();
           }
-          if (response.status >= 200 && response.status < 300 && typeof url === "string" && self.isDebounceableSearch(url)) {
-            if (typeof window.recordNetworkRequest === "function") {
-              window.recordNetworkRequest("Fetch\u5546\u54C1\u8BF7\u6C42", true);
-            }
-          }
           if (response.status === 429 || response.status === "429" || response.status.toString() === "429") {
             response.clone();
             Utils.logger("warn", Utils.getText("log_fetch_detected_429", response.url));
@@ -3240,7 +3410,7 @@
           }
           if (response.status >= 200 && response.status < 300) {
             response.clone().text().then((text) => {
-              if (text.includes("Too many requests") || text.includes("rate limit") || text.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+              if (isRateLimitedResponse(response.status, text)) {
                 Utils.logger("warn", Utils.getText("log_fetch_rate_limit_detect", text.substring(0, 100)));
                 RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94\u5185\u5BB9\u9650\u901F").catch(
                   (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
@@ -3251,13 +3421,9 @@
                 const data = JSON.parse(text);
                 if (url.includes("/i/listings/search")) {
                   self.saveCursorFromSearchPayload(data);
-                }
-                if (data.detail && (data.detail.includes("Too many requests") || data.detail.includes("rate limit"))) {
-                  Utils.logger("warn", Utils.getText("detected_rate_limit_error", "API\u9650\u901F\u54CD\u5E94"));
-                  RateLimitManager.enterRateLimitedState("API\u9650\u901F\u54CD\u5E94").catch(
-                    (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
-                  );
-                  return response;
+                  if (self.isListingSearch(url)) {
+                    RateLimitManager.recordSuccessfulRequest("Fetch\u641C\u7D22\u54CD\u5E94", Array.isArray(data.results) && data.results.length > 0);
+                  }
                 }
                 const responseUrl = response.url || "";
                 if (data.results && data.results.length === 0 && responseUrl.includes("/i/listings/search")) {
@@ -3280,10 +3446,7 @@
                   } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
                     Utils.logger("info", Utils.getText("empty_search_initial"));
                   } else {
-                    Utils.logger("warn", Utils.getText("log_fetch_implicit_rate_limit", JSON.stringify(data).substring(0, 200)));
-                    RateLimitManager.enterRateLimitedState("Fetch\u54CD\u5E94\u7A7A\u7ED3\u679C").catch(
-                      (e) => Utils.logger("error", Utils.getText("log_handling_rate_limit_error", e.message))
-                    );
+                    Utils.logger("debug", "\u641C\u7D22\u8FD4\u56DE\u7A7A\u7ED3\u679C\uFF0C\u7B49\u5F85\u5217\u8868\u72B6\u6001\u66F4\u65B0\uFF1B\u6CA1\u6709\u9650\u901F\u9519\u8BEF\u8BC1\u636E\u3002");
                   }
                 }
               } catch (jsonError) {
@@ -3944,14 +4107,47 @@
     lines.push("");
     return lines.join("\r\n");
   }, "multipartBody");
+  var isTierFree = /* @__PURE__ */ __name((tier) => {
+    if (!tier) return false;
+    if (typeof tier === "number") return tier === 0;
+    if (typeof tier === "object") {
+      const effectivePrice = tier.discountedPrice ?? tier.price;
+      if (typeof effectivePrice === "number" && Number(effectivePrice) === 0) return true;
+      if (tier.effectiveDiscountPercentage === 100) return true;
+    }
+    return false;
+  }, "isTierFree");
+  var isLicenseFree = /* @__PURE__ */ __name((l) => {
+    if (!l) return false;
+    const offerId = l.offerId || l.offer_id;
+    if (!offerId) return false;
+    if (l.isCc0 === true) return true;
+    if (isTierFree(l.priceTier)) return true;
+    if (typeof l.price === "number" && l.price === 0) return true;
+    if (typeof l.discountedPrice === "number" && l.discountedPrice === 0) return true;
+    return false;
+  }, "isLicenseFree");
   var pickFreeOfferId = /* @__PURE__ */ __name((listing) => {
-    const list = Array.isArray(listing && listing.licenses) ? listing.licenses : [];
-    const free = list.filter(
-      (l) => l && l.offerId && l.priceTier && Number(l.priceTier.price) === 0
-    );
-    if (!free.length) return null;
-    const pro = free.find((l) => l.slug === "professional");
-    return (pro || free[0]).offerId;
+    if (!listing) return null;
+    const list = Array.isArray(listing.licenses) ? listing.licenses : [];
+    const free = list.filter(isLicenseFree);
+    if (free.length > 0) {
+      const pro = free.find((l) => l.slug === "professional");
+      const picked = pro || free[0];
+      return picked.offerId || picked.offer_id;
+    }
+    const sp = listing.startingPrice;
+    if (sp) {
+      const offerId = sp.offerId || sp.offer_id;
+      if (offerId && (isTierFree(sp) || sp.price === 0 || sp.discountedPrice === 0 || sp.effectiveDiscountPercentage === 100)) {
+        return offerId;
+      }
+    }
+    const topOfferId = listing.offerId || listing.offer_id;
+    if (topOfferId && (listing.isFree === true || listing.price === 0 || listing.discountedPrice === 0)) {
+      return topOfferId;
+    }
+    return null;
   }, "pickFreeOfferId");
   var parseRetryAfterMs = /* @__PURE__ */ __name((res) => {
     if (!res) return null;
@@ -4004,6 +4200,7 @@
     isAvailable: /* @__PURE__ */ __name(() => Boolean(ApiClaim.endpoint) && typeof ApiClaim.fetchImpl === "function", "isAvailable"),
     /** 端点模板里的 {uid} 换成真实 uid。 */
     _url: /* @__PURE__ */ __name((task) => String(ApiClaim.endpoint).replace(/\{uid\}/g, encodeURIComponent(task && task.uid)), "_url"),
+    _lastResolvedListing: null,
     /**
      * 解析 offer_id。
      * 快路径：搜索结果自带 startingPrice.offerId，而免费商品的最低价档就是
@@ -4011,6 +4208,7 @@
      * 慢路径：拿不到时才回源详情页，按免费 + 优先 professional 挑。
      */
     _resolveOfferId: /* @__PURE__ */ __name(async (task) => {
+      ApiClaim._lastResolvedListing = null;
       if (typeof ApiClaim.resolveOfferId === "function") return ApiClaim.resolveOfferId(task);
       if (task && task.offerId) return task.offerId;
       let res;
@@ -4037,7 +4235,9 @@
         throw err;
       }
       try {
-        return pickFreeOfferId(JSON.parse(res.responseText));
+        const listing = JSON.parse(res.responseText);
+        ApiClaim._lastResolvedListing = listing;
+        return pickFreeOfferId(listing);
       } catch (e) {
         const err = new Error(`\u89E3\u6790 offer_id \u5931\u8D25: ${e.message}`);
         err.retryable = true;
@@ -4045,6 +4245,9 @@
       }
     }, "_resolveOfferId"),
     claim: /* @__PURE__ */ __name(async (task) => {
+      if (isBundleTask(task)) {
+        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "Bundle \u9700\u8981\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B", retryable: false, isBundle: true };
+      }
       if (!ApiClaim.isAvailable()) {
         return { result: CLAIM_RESULT.UNAVAILABLE, reason: "\u9886\u53D6\u7AEF\u70B9\u672A\u914D\u7F6E" };
       }
@@ -4071,6 +4274,15 @@
           result: CLAIM_RESULT.FAILURE,
           reason: e && e.message || "\u89E3\u6790 offer_id \u5931\u8D25",
           retryable: !e || e.retryable !== false
+        };
+      }
+      const resolvedListing = ApiClaim._lastResolvedListing;
+      if (resolvedListing && (resolvedListing.listingType === "bundle" || isBundleTask(resolvedListing))) {
+        return {
+          result: CLAIM_RESULT.UNAVAILABLE,
+          reason: "Bundle \u9700\u8981\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B",
+          retryable: false,
+          isBundle: true
         };
       }
       if (!offerId) {
@@ -5044,22 +5256,34 @@
         let success = false;
         let rateLimited = false;
         let retryAfterMs = null;
+        let bundleResult = null;
         try {
-          if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+          if (isBundleTask(currentTask)) {
+            bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
+            success = bundleResult.success;
+            rateLimited = Boolean(bundleResult.rateLimited);
+            retryAfterMs = bundleResult.retryAfterMs || null;
+          } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
             const apiResult = await ApiClaim.claim(currentTask);
             success = apiResult.result === CLAIM_RESULT.SUCCESS;
             if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
               rateLimited = true;
               retryAfterMs = apiResult.retryAfterMs || null;
-            } else if (!success && apiResult.retryable) {
-              logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason || "\u6682\u6001\u5931\u8D25"}\uFF0C\u56DE\u843D DOM \u9886\u53D6\u3002`);
+            } else if (apiResult.isBundle) {
+              logBuffer.push("[API\u5165\u5E93] \u8BC6\u522B\u4E3A Bundle \u5546\u54C1\uFF0C\u8F6C\u5165\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B\u3002");
+              currentTask.listingType = "bundle";
+              currentTask.isBundle = true;
+              bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
+              success = bundleResult.success;
+              rateLimited = Boolean(bundleResult.rateLimited);
+              retryAfterMs = bundleResult.retryAfterMs || null;
+            } else if (!success) {
+              logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason || "\u672A\u5B8C\u6210"}\uFF0C\u5C1D\u8BD5\u56DE\u843D DOM \u9886\u53D6\u3002`);
               const claimResult = await acquireOnDetailPage(currentTask, {
                 taskRunner: TaskRunner2,
                 log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
               });
               success = claimResult.success;
-            } else if (!success && apiResult.reason) {
-              logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason}`);
             }
           } else {
             const claimResult = await acquireOnDetailPage(currentTask, {
@@ -5103,7 +5327,11 @@
           } catch (error) {
             console.error("Error deleting worker value:", error);
           }
-          closeWorkerTab();
+          if (bundleResult?.manualRequired) {
+            clearTimeout(forceCloseTimer);
+          } else {
+            closeWorkerTab();
+          }
         }
       } catch (error) {
         Utils.logger("error", `Worker tab error: ${error.message}`);
@@ -5561,6 +5789,7 @@
             skippedInTodo++;
             return;
           }
+          if (Database.isFailed(url)) return;
           const text = card.textContent || "";
           if (text.includes("\u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D") || text.includes("\u5DF2\u4FDD\u5B58") || text.includes("Saved to My Library") || text.includes("In your library")) {
             skippedAlreadyOwned++;
@@ -5674,6 +5903,7 @@
       }
     }, "stopExecutionAndSettle"),
     attemptAutoScroll: /* @__PURE__ */ __name(async () => {
+      if (State.appStatus === "RATE_LIMITED") return;
       if (State.apiPipelineActive) {
         Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7\u81EA\u52A8\u6EDA\u52A8\u8BF7\u6C42\u3002");
         return;
@@ -8057,6 +8287,7 @@
   // src/index.js
   (function() {
     try {
+      if (isCheckoutPage(typeof window !== "undefined" ? window.location?.pathname : "")) return;
       const blockEnabled = typeof GM_getValue !== "undefined" ? GM_getValue("fab_block_resources_v1", true) : true;
       if (blockEnabled) {
         const meta = document.createElement("meta");
@@ -8720,6 +8951,7 @@
   }
   __name(setupRequestInterceptors, "setupRequestInterceptors");
   async function runDomDependentPart() {
+    if (isCheckoutPage(window.location.pathname)) return;
     if (State.hasRunDomPart) return;
     if (State.domIntervals && State.domIntervals.length) {
       State.domIntervals.forEach((id) => {
@@ -8770,16 +9002,14 @@
         } else {
           pageText = document.body.innerText || "";
         }
-        if (pageText.includes("Too many requests") || pageText.includes("rate limit") || pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+        if (isRateLimitedPage(document.title || "", pageText)) {
           Utils.logger("warn", Utils.getText("page_content_rate_limit_detected"));
           RateLimitManager.enterRateLimitedState(Utils.getText("rate_limit_source_page_content"));
         }
       }
     }, 5e3));
     const checkIsErrorPage = /* @__PURE__ */ __name((title, text) => {
-      const isCloudflareTitle = title.includes("Cloudflare") || title.includes("Attention Required");
-      const is429Text = text.includes("429") || text.includes("Too Many Requests") || text.includes("Too many requests");
-      if (isCloudflareTitle || is429Text) {
+      if (isRateLimitedPage(title, text)) {
         Utils.logger("warn", `[\u9875\u9762\u52A0\u8F7D] \u68C0\u6D4B\u5230429\u9519\u8BEF\u9875\u9762`);
         window.enterRateLimitedState("\u9875\u9762\u5185\u5BB9429\u68C0\u6D4B");
         return true;
@@ -8900,25 +9130,6 @@
         UI5.update();
       }
     }, 1e4));
-    let lastCardCount = TaskRunner2.getCardCounts().total;
-    let noNewCardsCounter = 0;
-    let lastScrollY = window.scrollY;
-    State.domIntervals.push(setInterval(() => {
-      if (State.appStatus !== "NORMAL") return;
-      const currentCardCount = TaskRunner2.getCardCounts().total;
-      if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
-        noNewCardsCounter++;
-        if (noNewCardsCounter >= 3) {
-          Utils.logger("warn", `${Utils.getText("implicit_rate_limit_detection")}`);
-          RateLimitManager.enterRateLimitedState(Utils.getText("source_implicit_rate_limit"));
-          noNewCardsCounter = 0;
-        }
-      } else if (currentCardCount > lastCardCount) {
-        noNewCardsCounter = 0;
-      }
-      lastCardCount = currentCardCount;
-      lastScrollY = window.scrollY;
-    }, 5e3));
     State.domIntervals.push(setInterval(async () => {
       try {
         if (UI5) UI5.update();
@@ -8974,6 +9185,7 @@
   }
   __name(runDomDependentPart, "runDomDependentPart");
   function ensureUILoaded() {
+    if (isCheckoutPage(window.location.pathname)) return;
     if (!document.getElementById(Config.UI_CONTAINER_ID)) {
       Utils.logger("warn", "\u68C0\u6D4B\u5230UI\u672A\u52A0\u8F7D\uFF0C\u5C1D\u8BD5\u91CD\u65B0\u521D\u59CB\u5316...");
       setTimeout(() => {
@@ -8987,6 +9199,9 @@
   }
   __name(ensureUILoaded, "ensureUILoaded");
   async function main() {
+    if (isCheckoutPage(window.location.pathname)) {
+      return;
+    }
     window.pageLoadTime = Date.now();
     TaskRunner2.onQueueCompleted = async () => {
       State.isExecuting = false;

@@ -477,3 +477,66 @@ test('注入返回 { success: true } 时流水线能真正领取成功（端到�
     assert.equal(r.result, CLAIM_RESULT.SUCCESS, 'worker 协议的返回值必须被正确识别');
     assert.equal(r.strategy, 'dom');
 });
+
+test('pickFreeOfferId 支持 100% 折扣/限时免费商品（discountedPrice 为 0）', () => {
+    const listing = {
+        licenses: [
+            { offerId: 'discounted-pro', slug: 'professional', priceTier: { price: 4999, discountedPrice: 0 } },
+            { offerId: 'discounted-per', slug: 'personal', priceTier: { price: 2999, discountedPrice: 0 } }
+        ]
+    };
+    assert.equal(pickFreeOfferId(listing), 'discounted-pro');
+});
+
+test('pickFreeOfferId 支持 effectiveDiscountPercentage === 100', () => {
+    const listing = {
+        licenses: [
+            { offerId: 'full-discount', slug: 'personal', priceTier: { price: 2000, effectiveDiscountPercentage: 100 } }
+        ]
+    };
+    assert.equal(pickFreeOfferId(listing), 'full-discount');
+});
+
+test('pickFreeOfferId 支持 CC0 资产（公开领域天然免费）', () => {
+    const listing = {
+        licenses: [
+            { offerId: 'cc0-asset', isCc0: true }
+        ]
+    };
+    assert.equal(pickFreeOfferId(listing), 'cc0-asset');
+});
+
+test('pickFreeOfferId 支持从 startingPrice 兜底解析免费 offerId', () => {
+    const listing = {
+        licenses: [],
+        startingPrice: {
+            offerId: 'sp-offer',
+            price: 0
+        }
+    };
+    assert.equal(pickFreeOfferId(listing), 'sp-offer');
+});
+
+test('ApiClaim 详情接口返回 listingType=bundle 时识别为 Bundle 并返回 isBundle: true', async () => {
+    resetAll();
+    ApiClaim.configure({
+        endpoint: 'https://www.fab.com/i/listings/{uid}/add-to-library',
+        fetchImpl: async (o) => {
+            if (o.method === 'GET') {
+                return {
+                    status: 200,
+                    responseText: JSON.stringify({
+                        listingType: 'bundle',
+                        licenses: [{ offerId: 'bundle-offer', priceTier: { price: 0 } }]
+                    })
+                };
+            }
+            return { status: 400 };
+        }
+    });
+
+    const r = await ApiClaim.claim({ uid: 'bundle-uid-1', url: 'https://www.fab.com/listings/bundle-uid-1' });
+    assert.equal(r.result, CLAIM_RESULT.UNAVAILABLE);
+    assert.equal(r.isBundle, true);
+    assert.match(r.reason, /Bundle/);
+});

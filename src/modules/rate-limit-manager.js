@@ -6,6 +6,7 @@ import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { Database } from './database.js';
 import { API } from './api.js';
+import { isRateLimitedPage } from './rate-limit-detection.js';
 
 // Forward declarations for circular dependencies
 let UI = null;
@@ -297,9 +298,7 @@ export const RateLimitManager = {
                 pageText = document.body.innerText || '';
             }
 
-            if (pageText.includes('Too many requests') ||
-                pageText.includes('rate limit') ||
-                pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+            if (isRateLimitedPage(document.title || '', pageText)) {
 
                 Utils.logger('warn', '页面内容包含限速信息，确认仍处于限速状态');
                 await this.enterRateLimitedState('页面内容检测');

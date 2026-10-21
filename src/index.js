@@ -8,6 +8,8 @@
 // Immediate optimization to block large resources (runs at document-start)
 (function () {
     try {
+        // Epic 的结算文档不能注入资源拦截或普通列表 UI。
+        if (isCheckoutPage(typeof window !== 'undefined' ? window.location?.pathname : '')) return;
         const blockEnabled = typeof GM_getValue !== 'undefined' ? GM_getValue('fab_block_resources_v1', true) : true;
         if (blockEnabled) {
             // 1. Inject CSP to block network requests for images, media, fonts, frames
@@ -118,6 +120,7 @@
 // Core modules
 import { Config } from './config.js';
 import { State } from './state.js';
+import { isCheckoutPage } from './modules/bundle-claim.js';
 
 // Feature modules
 import { Utils, setUIReference as setUtilsUIRef } from './modules/utils.js';
@@ -126,6 +129,7 @@ import { DataCache } from './modules/data-cache.js';
 import { API } from './modules/api.js';
 import { Database, setUIReference as setDbUIRef } from './modules/database.js';
 import { RateLimitManager, setDependencies as setRateLimitDeps } from './modules/rate-limit-manager.js';
+import { isRateLimitedPage } from './modules/rate-limit-detection.js';
 import { PagePatcher } from './modules/page-patcher.js';
 import { TaskRunner, setUIReference as setTaskRunnerUIRef, setDependencies as setTaskRunnerDeps } from './modules/task-runner.js';
 import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.js';
@@ -797,6 +801,7 @@ function setupRequestInterceptors() {
 
 // Run DOM dependent part
 async function runDomDependentPart() {
+    if (isCheckoutPage(window.location.pathname)) return;
     if (State.hasRunDomPart) return;
 
     // 重入清理：ensureUILoaded 可能在 SPA 路由重渲染时再次触发本函数，
@@ -857,9 +862,7 @@ async function runDomDependentPart() {
                 pageText = document.body.innerText || '';
             }
 
-            if (pageText.includes('Too many requests') ||
-                pageText.includes('rate limit') ||
-                pageText.match(/\{\s*"detail"\s*:\s*"Too many requests"\s*\}/i)) {
+            if (isRateLimitedPage(document.title || '', pageText)) {
                 Utils.logger('warn', Utils.getText('page_content_rate_limit_detected'));
                 RateLimitManager.enterRateLimitedState(Utils.getText('rate_limit_source_page_content'));
             }
@@ -868,9 +871,7 @@ async function runDomDependentPart() {
 
     // Check for 429 error page
     const checkIsErrorPage = (title, text) => {
-        const isCloudflareTitle = title.includes('Cloudflare') || title.includes('Attention Required');
-        const is429Text = text.includes('429') || text.includes('Too Many Requests') || text.includes('Too many requests');
-        if (isCloudflareTitle || is429Text) {
+        if (isRateLimitedPage(title, text)) {
             Utils.logger('warn', `[页面加载] 检测到429错误页面`);
             window.enterRateLimitedState('页面内容429检测');
             return true;
@@ -1034,30 +1035,7 @@ async function runDomDependentPart() {
         }
     }, 10000));
 
-    // Implicit rate limit detection (no new cards on scroll)
-    let lastCardCount = TaskRunner.getCardCounts().total;
-    let noNewCardsCounter = 0;
-    let lastScrollY = window.scrollY;
-
-    State.domIntervals.push(setInterval(() => {
-        if (State.appStatus !== 'NORMAL') return;
-
-        const currentCardCount = TaskRunner.getCardCounts().total;
-
-        if (window.scrollY > lastScrollY + 100 && currentCardCount === lastCardCount) {
-            noNewCardsCounter++;
-            if (noNewCardsCounter >= 3) {
-                Utils.logger('warn', `${Utils.getText('implicit_rate_limit_detection')}`);
-                RateLimitManager.enterRateLimitedState(Utils.getText('source_implicit_rate_limit'));
-                noNewCardsCounter = 0;
-            }
-        } else if (currentCardCount > lastCardCount) {
-            noNewCardsCounter = 0;
-        }
-
-        lastCardCount = currentCardCount;
-        lastScrollY = window.scrollY;
-    }, 5000));
+    // 未加载新卡只交给滚动的停滞护栏处理，不能据此宣称服务器返回了限速。
 
     // Page status monitoring — 全量刷新所有状态栏数字，避免各格数据割裂
     State.domIntervals.push(setInterval(async () => {
@@ -1135,6 +1113,7 @@ async function runDomDependentPart() {
 
 // Ensure UI is loaded
 function ensureUILoaded() {
+    if (isCheckoutPage(window.location.pathname)) return;
     if (!document.getElementById(Config.UI_CONTAINER_ID)) {
         Utils.logger('warn', '检测到UI未加载，尝试重新初始化...');
         setTimeout(() => {
@@ -1149,6 +1128,10 @@ function ensureUILoaded() {
 
 // Main initialization function
 export async function main() {
+    if (isCheckoutPage(window.location.pathname)) {
+        // 结算文档保留原生行为，由详情页中的 bundle worker 跨文档驱动。
+        return;
+    }
     window.pageLoadTime = Date.now();
 
     // Register queue completion callback
