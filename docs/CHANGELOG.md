@@ -2,6 +2,9 @@
 
 ## 3.5.26 (2026-10-21)
 
+- 优化人机验证与安全检查处理：新增统一的 `captcha-detection` 模块（覆盖 Cloudflare Turnstile、ArkoseLabs、hCaptcha、reCAPTCHA 及验证文案）。
+- 详情页与结算流程秒级检测人机验证并回传 `manualRequired`；遇到人机验证时自动保留标签页并注入横幅提示，绝不提前强退关闭。
+- 主标签页感知人机验证后立即自动暂停派发，防止继续并发请求导致账号封控；同时将该任务保留在待办队列头部，供人工完成验证后一键恢复执行。
 - 修复限时免费资产入库失败：支持 `discountedPrice === 0` 与 100% 折扣判定，补充 CC0 许可及 `startingPrice` 兜底解析。
 - 修复 `/listings/` 路由下的 Bundle 资产误走普通接口导致 400 失败：扩展 Bundle 标题与 API 类型探测，自动转入官网零元结算流程。
 - 修复 API 未直接成功时提前终止导致 DOM 兜底被截断的问题：打通 worker 标签页回落到已打开页面的 DOM 自动化领取。

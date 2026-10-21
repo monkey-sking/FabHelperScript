@@ -24,6 +24,7 @@ import { Config } from '../config.js';
 import { Utils } from './utils.js';
 import { API } from './api.js';
 import { PageDiagnostics } from './page-diagnostics.js';
+import { isCaptchaPresent } from './captcha-detection.js';
 
 /** 就绪检测 / 已拥有判定用的「关键元素」选择器 */
 const KEY_ELEMENT_SELECTOR =
@@ -433,6 +434,12 @@ const waitForOwnedAfterClick = async (ctx, push, isItemOwned) => {
                 return;
             }
 
+            if (isCaptchaPresent(ctx.doc)) {
+                push('点击后检测到人机验证，需要人工完成验证');
+                finish({ success: false, manualRequired: true });
+                return;
+            }
+
             const checkoutBtn = findCheckoutButton(ctx);
             if (checkoutBtn && !checkoutBtn.disabled) {
                 const lastClickTime = parseInt(checkoutBtn.dataset?.lastClickTime || '0', 10);
@@ -457,7 +464,7 @@ const waitForOwnedAfterClick = async (ctx, push, isItemOwned) => {
  *
  * @param {object} task    { uid, name, url }
  * @param {object} options 运行上下文，见 normalizeContext
- * @returns {Promise<{success: boolean, logs: string[]}>}
+ * @returns {Promise<{success: boolean, manualRequired?: boolean, logs: string[]}>}
  */
 export const acquireOnDetailPage = async (task, options = {}) => {
     const ctx = normalizeContext(options);
@@ -471,14 +478,30 @@ export const acquireOnDetailPage = async (task, options = {}) => {
     ctx.log = push;
 
     let success = false;
+    let manualRequired = false;
     try {
+        if (isCaptchaPresent(ctx.doc)) {
+            push('检测到人机验证 / 安全检查，需要人工完成验证');
+            return { success: false, manualRequired: true, logs };
+        }
+
         const pageReady = await waitForPageReady(ctx);
         if (!pageReady) {
             push('⚠️ 警告: 页面可能未完全加载，这可能导致操作失败');
         }
 
+        if (isCaptchaPresent(ctx.doc)) {
+            push('检测到人机验证 / 安全检查，需要人工完成验证');
+            return { success: false, manualRequired: true, logs };
+        }
+
         await waitForKeyElement(ctx);
         await dismissAdultWarning(ctx);
+
+        if (isCaptchaPresent(ctx.doc)) {
+            push('检测到人机验证 / 安全检查，需要人工完成验证');
+            return { success: false, manualRequired: true, logs };
+        }
 
         push('=== 页面状态诊断开始 ===');
         try {
@@ -491,13 +514,25 @@ export const acquireOnDetailPage = async (task, options = {}) => {
         push('=== 页面状态诊断结束 ===');
 
         success = await checkOwnedViaApi(ctx, task, push);
-        if (!success) success = await claimViaUi(ctx, push);
+        if (!success) {
+            const uiResult = await claimViaUi(ctx, push);
+            if (typeof uiResult === 'object') {
+                success = Boolean(uiResult.success);
+                manualRequired = Boolean(uiResult.manualRequired);
+            } else {
+                success = Boolean(uiResult);
+            }
+        }
+        if (!success && isCaptchaPresent(ctx.doc)) {
+            manualRequired = true;
+            push('检测到人机验证 / 安全检查，需要人工完成验证');
+        }
     } catch (error) {
         push(`A critical error occurred: ${error.message}`);
         success = false;
     }
 
-    return { success, logs };
+    return { success, manualRequired, logs };
 };
 
 /**

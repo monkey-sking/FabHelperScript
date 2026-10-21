@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.26-20261021-1358
+// @version      3.5.26-20261021-1447
 // @description  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品，已拥有自动隐藏，后台多标签处理，智能限速处理
 // @description:en  Fab Helper Optimized - Auto-claim free items, auto-hide owned items, background multi-tab processing, smart rate-limit handling
@@ -1420,8 +1420,8 @@
       try {
         const tag = doc && doc.getElementById && doc.getElementById("js-json-data-prefetched-data");
         if (tag && tag.textContent) {
-          const data = JSON.parse(tag.textContent);
-          const userInfo = data && data["/i/users/me"];
+          const data2 = JSON.parse(tag.textContent);
+          const userInfo = data2 && data2["/i/users/me"];
           if (userInfo) {
             if (userInfo.isAnonymous === true) return false;
             if (userInfo.isAnonymous === false) return true;
@@ -1468,8 +1468,8 @@
               }
               if (response.status >= 200 && response.status < 300) {
                 try {
-                  const data = JSON.parse(response.responseText);
-                  if (data && (data.id || data.uid || data.email || data.username || data.isAnonymous === false)) {
+                  const data2 = JSON.parse(response.responseText);
+                  if (data2 && (data2.id || data2.uid || data2.email || data2.username || data2.isAnonymous === false)) {
                     State.isAuthenticated = true;
                     resolve(true);
                     return;
@@ -3150,8 +3150,8 @@
         try {
           const responseText = request.responseText;
           if (responseText) {
-            const data = JSON.parse(responseText);
-            const hasResults = data && data.results && data.results.length > 0;
+            const data2 = JSON.parse(responseText);
+            const hasResults = data2 && data2.results && data2.results.length > 0;
             await RateLimitManager.recordSuccessfulRequest(Utils.getText("request_source_search_response"), hasResults);
           }
         } catch (e) {
@@ -3283,30 +3283,30 @@
                   return;
                 }
                 try {
-                  const data = JSON.parse(responseText);
+                  const data2 = JSON.parse(responseText);
                   if (request._url && request._url.includes("/i/listings/search")) {
-                    self.saveCursorFromSearchPayload(data);
+                    self.saveCursorFromSearchPayload(data2);
                   }
-                  if (data.results && data.results.length === 0 && self.isListingSearch(request._url)) {
-                    const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
-                    const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                  if (data2.results && data2.results.length === 0 && self.isListingSearch(request._url)) {
+                    const isEndOfList = data2.next === null && data2.previous !== null && data2.cursors && data2.cursors.next === null && data2.cursors.previous !== null;
+                    const isEmptySearch = data2.next === null && data2.previous === null && data2.cursors && data2.cursors.next === null && data2.cursors.previous === null;
                     const urlObj = new URL(request._url, window.location.origin);
                     const params = urlObj.searchParams;
                     const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
                     const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                     if (isEndOfList) {
-                      Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_list_end_normal", JSON.stringify(data2).substring(0, 200)));
                       RateLimitManager.recordSuccessfulRequest("XHR\u5217\u8868\u672B\u5C3E", true);
                       return;
                     } else if (isEmptySearch && hasSpecialFilters) {
-                      Utils.logger("info", Utils.getText("log_empty_search_with_filters", JSON.stringify(data).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_with_filters", JSON.stringify(data2).substring(0, 200)));
                       RateLimitManager.recordSuccessfulRequest("XHR\u7A7A\u641C\u7D22\u7ED3\u679C", true);
                       return;
                     } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
-                      Utils.logger("info", Utils.getText("log_empty_search_already_limited", JSON.stringify(data).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_already_limited", JSON.stringify(data2).substring(0, 200)));
                       return;
                     } else if (isEmptySearch && document.readyState !== "complete") {
-                      Utils.logger("info", Utils.getText("log_empty_search_page_loading", JSON.stringify(data).substring(0, 200)));
+                      Utils.logger("info", Utils.getText("log_empty_search_page_loading", JSON.stringify(data2).substring(0, 200)));
                       return;
                     } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
                       Utils.logger("info", Utils.getText("empty_search_initial"));
@@ -3418,31 +3418,31 @@
                 return response;
               }
               try {
-                const data = JSON.parse(text);
+                const data2 = JSON.parse(text);
                 if (url.includes("/i/listings/search")) {
-                  self.saveCursorFromSearchPayload(data);
+                  self.saveCursorFromSearchPayload(data2);
                   if (self.isListingSearch(url)) {
-                    RateLimitManager.recordSuccessfulRequest("Fetch\u641C\u7D22\u54CD\u5E94", Array.isArray(data.results) && data.results.length > 0);
+                    RateLimitManager.recordSuccessfulRequest("Fetch\u641C\u7D22\u54CD\u5E94", Array.isArray(data2.results) && data2.results.length > 0);
                   }
                 }
                 const responseUrl = response.url || "";
-                if (data.results && data.results.length === 0 && responseUrl.includes("/i/listings/search")) {
-                  const isEndOfList = data.next === null && data.previous !== null && data.cursors && data.cursors.next === null && data.cursors.previous !== null;
-                  const isEmptySearch = data.next === null && data.previous === null && data.cursors && data.cursors.next === null && data.cursors.previous === null;
+                if (data2.results && data2.results.length === 0 && responseUrl.includes("/i/listings/search")) {
+                  const isEndOfList = data2.next === null && data2.previous !== null && data2.cursors && data2.cursors.next === null && data2.cursors.previous !== null;
+                  const isEmptySearch = data2.next === null && data2.previous === null && data2.cursors && data2.cursors.next === null && data2.cursors.previous === null;
                   const urlObj = new URL(responseUrl, window.location.origin);
                   const params = urlObj.searchParams;
                   const nonFilteringParams = /* @__PURE__ */ new Set(["cursor", "count", "limit", "offset", "workerId"]);
                   const hasSpecialFilters = Array.from(params.keys()).some((key) => !nonFilteringParams.has(key));
                   if (isEndOfList) {
-                    Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_list_end", JSON.stringify(data2).substring(0, 200)));
                     RateLimitManager.recordSuccessfulRequest("Fetch\u5217\u8868\u672B\u5C3E", true);
                   } else if (isEmptySearch && hasSpecialFilters) {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_with_filters", JSON.stringify(data).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_with_filters", JSON.stringify(data2).substring(0, 200)));
                     RateLimitManager.recordSuccessfulRequest("Fetch\u7A7A\u641C\u7D22\u7ED3\u679C", true);
                   } else if (isEmptySearch && State.appStatus === "RATE_LIMITED") {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_already_limited", JSON.stringify(data).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_already_limited", JSON.stringify(data2).substring(0, 200)));
                   } else if (isEmptySearch && document.readyState !== "complete") {
-                    Utils.logger("info", Utils.getText("log_fetch_empty_page_loading", JSON.stringify(data).substring(0, 200)));
+                    Utils.logger("info", Utils.getText("log_fetch_empty_page_loading", JSON.stringify(data2).substring(0, 200)));
                   } else if (isEmptySearch && Date.now() - (window.pageLoadTime || 0) < 5e3) {
                     Utils.logger("info", Utils.getText("empty_search_initial"));
                   } else {
@@ -3684,6 +3684,39 @@
       };
     }
   };
+
+  // src/modules/captcha-detection.js
+  var CAPTCHA_IFRAME_SELECTORS = [
+    'iframe[src*="hcaptcha"]',
+    'iframe[src*="recaptcha"]',
+    'iframe[src*="captcha"]',
+    'iframe[src*="turnstile"]',
+    'iframe[src*="challenges.cloudflare.com"]',
+    'iframe[src*="arkoselabs"]',
+    'iframe[title*="challenge" i]',
+    'iframe[src*="frame=challenge" i]',
+    'iframe[title*="reCAPTCHA" i]',
+    'iframe[title*="Cloudflare" i]'
+  ];
+  var CAPTCHA_TEXT_REGEX = /(?:人机验证|确认您是真人|请完成安全验证|我不是机器人|安全检查|verify (?:that )?you are human|i(?:'m| am) not a robot|checking your browser|complete the security check|unusual traffic|challenge-running|cf-turnstile)/i;
+  function isCaptchaPresent(doc) {
+    if (!doc) return false;
+    try {
+      const frames = doc.querySelectorAll(CAPTCHA_IFRAME_SELECTORS.join(", "));
+      for (const frame of frames) {
+        const rect = frame.getBoundingClientRect ? frame.getBoundingClientRect() : { width: 0, height: 0 };
+        const win = frame.ownerDocument?.defaultView || doc.defaultView;
+        const style = win?.getComputedStyle ? win.getComputedStyle(frame) : null;
+        const isVisible = rect.width > 0 && rect.height > 0 && style?.visibility !== "hidden" && style?.display !== "none";
+        if (isVisible) return true;
+      }
+      const text = doc.body && doc.body.innerText || "";
+      return CAPTCHA_TEXT_REGEX.test(text);
+    } catch {
+      return false;
+    }
+  }
+  __name(isCaptchaPresent, "isCaptchaPresent");
 
   // src/modules/detail-claim.js
   var KEY_ELEMENT_SELECTOR = 'button, a.fabkit-Button-root, [role="button"], a[class*="Button"], a[class*="button"]';
@@ -4003,6 +4036,11 @@
           finish(true);
           return;
         }
+        if (isCaptchaPresent(ctx.doc)) {
+          push("\u70B9\u51FB\u540E\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
+          finish({ success: false, manualRequired: true });
+          return;
+        }
         const checkoutBtn = findCheckoutButton(ctx);
         if (checkoutBtn && !checkoutBtn.disabled) {
           const lastClickTime = parseInt(checkoutBtn.dataset?.lastClickTime || "0", 10);
@@ -4033,13 +4071,26 @@
     }, "push");
     ctx.log = push;
     let success = false;
+    let manualRequired = false;
     try {
+      if (isCaptchaPresent(ctx.doc)) {
+        push("\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u5B89\u5168\u68C0\u67E5\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
+        return { success: false, manualRequired: true, logs };
+      }
       const pageReady = await waitForPageReady(ctx);
       if (!pageReady) {
         push("\u26A0\uFE0F \u8B66\u544A: \u9875\u9762\u53EF\u80FD\u672A\u5B8C\u5168\u52A0\u8F7D\uFF0C\u8FD9\u53EF\u80FD\u5BFC\u81F4\u64CD\u4F5C\u5931\u8D25");
       }
+      if (isCaptchaPresent(ctx.doc)) {
+        push("\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u5B89\u5168\u68C0\u67E5\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
+        return { success: false, manualRequired: true, logs };
+      }
       await waitForKeyElement(ctx);
       await dismissAdultWarning(ctx);
+      if (isCaptchaPresent(ctx.doc)) {
+        push("\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u5B89\u5168\u68C0\u67E5\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
+        return { success: false, manualRequired: true, logs };
+      }
       push("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u5F00\u59CB ===");
       try {
         const report = ctx.diagnostics.diagnoseDetailPage();
@@ -4050,12 +4101,24 @@
       }
       push("=== \u9875\u9762\u72B6\u6001\u8BCA\u65AD\u7ED3\u675F ===");
       success = await checkOwnedViaApi(ctx, task, push);
-      if (!success) success = await claimViaUi(ctx, push);
+      if (!success) {
+        const uiResult = await claimViaUi(ctx, push);
+        if (typeof uiResult === "object") {
+          success = Boolean(uiResult.success);
+          manualRequired = Boolean(uiResult.manualRequired);
+        } else {
+          success = Boolean(uiResult);
+        }
+      }
+      if (!success && isCaptchaPresent(ctx.doc)) {
+        manualRequired = true;
+        push("\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u5B89\u5168\u68C0\u67E5\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
+      }
     } catch (error) {
       push(`A critical error occurred: ${error.message}`);
       success = false;
     }
-    return { success, logs };
+    return { success, manualRequired, logs };
   }, "acquireOnDetailPage");
   async function claimViaUi(ctx, push) {
     const isItemOwned = /* @__PURE__ */ __name(() => detectOwnedOnPage(ctx), "isItemOwned");
@@ -4957,12 +5020,12 @@
             continue;
           }
           const rawData = await response.json();
-          const data = API.extractStateData(rawData, "RefreshStates");
-          if (!data || !Array.isArray(data)) {
+          const data2 = API.extractStateData(rawData, "RefreshStates");
+          if (!data2 || !Array.isArray(data2)) {
             Utils.logger("warn", Utils.getText("log_unexpected_data_format"));
             continue;
           }
-          data.filter((item) => item.acquired).forEach((item) => ownedUids.add(item.uid));
+          data2.filter((item) => item.acquired).forEach((item) => ownedUids.add(item.uid));
           if (allUidsToCheck.length > i + API_CHUNK_SIZE) {
             await new Promise((r) => setTimeout(r, 250));
           }
@@ -5256,6 +5319,7 @@
         let success = false;
         let rateLimited = false;
         let retryAfterMs = null;
+        let manualRequired = false;
         let bundleResult = null;
         try {
           if (isBundleTask(currentTask)) {
@@ -5263,6 +5327,7 @@
             success = bundleResult.success;
             rateLimited = Boolean(bundleResult.rateLimited);
             retryAfterMs = bundleResult.retryAfterMs || null;
+            if (bundleResult?.manualRequired) manualRequired = true;
           } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
             const apiResult = await ApiClaim.claim(currentTask);
             success = apiResult.result === CLAIM_RESULT.SUCCESS;
@@ -5277,6 +5342,7 @@
               success = bundleResult.success;
               rateLimited = Boolean(bundleResult.rateLimited);
               retryAfterMs = bundleResult.retryAfterMs || null;
+              if (bundleResult?.manualRequired) manualRequired = true;
             } else if (!success) {
               logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason || "\u672A\u5B8C\u6210"}\uFF0C\u5C1D\u8BD5\u56DE\u843D DOM \u9886\u53D6\u3002`);
               const claimResult = await acquireOnDetailPage(currentTask, {
@@ -5284,6 +5350,7 @@
                 log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
               });
               success = claimResult.success;
+              if (claimResult?.manualRequired) manualRequired = true;
             }
           } else {
             const claimResult = await acquireOnDetailPage(currentTask, {
@@ -5291,6 +5358,7 @@
               log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log")
             });
             success = claimResult.success;
+            if (claimResult?.manualRequired) manualRequired = true;
           }
         } catch (error) {
           logBuffer.push(`A critical error occurred: ${error.message}`);
@@ -5298,11 +5366,11 @@
         } finally {
           if (!success) {
             try {
-              const vIframe = document.querySelector('iframe[src*="hcaptcha"], iframe[src*="recaptcha"], iframe[src*="captcha"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]');
-              const bodyText = document.body && document.body.innerText || "";
-              const vPhrases = ["\u4EBA\u673A\u9A8C\u8BC1", "\u786E\u8BA4\u60A8\u662F\u771F\u4EBA", "\u8BF7\u5B8C\u6210\u5B89\u5168\u9A8C\u8BC1", "\u6211\u4E0D\u662F\u673A\u5668\u4EBA", "Verify you are human", "I'm not a robot", "Checking your browser", "complete the security check", "unusual traffic"];
-              if (vIframe || vPhrases.some((p) => bodyText.includes(p))) {
-                logBuffer.push(Utils.getText("worker_captcha"));
+              if (manualRequired || isCaptchaPresent(document)) {
+                manualRequired = true;
+                if (!logBuffer.some((l) => l.includes(Utils.getText("worker_captcha")))) {
+                  logBuffer.push(Utils.getText("worker_captcha"));
+                }
               }
             } catch (e) {
             }
@@ -5314,6 +5382,7 @@
               success,
               rateLimited,
               retryAfterMs,
+              manualRequired,
               logs: logBuffer,
               task: currentTask,
               instanceId: payload.instanceId,
@@ -5327,8 +5396,16 @@
           } catch (error) {
             console.error("Error deleting worker value:", error);
           }
-          if (bundleResult?.manualRequired) {
+          if (manualRequired) {
             clearTimeout(forceCloseTimer);
+            try {
+              document.title = `\u26A0\uFE0F\u3010\u9700\u9A8C\u8BC1\u3011${document.title}`;
+              const banner = document.createElement("div");
+              banner.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:999999;background:#e53935;color:#fff;font-size:16px;font-weight:bold;padding:12px 20px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.5);";
+              banner.textContent = "\u{1F6A8} [Fab Helper] \u68C0\u6D4B\u5230\u5B89\u5168\u4EBA\u673A\u9A8C\u8BC1\uFF0C\u5DF2\u4E3A\u60A8\u4FDD\u7559\u6B64\u6807\u7B7E\u9875\u3002\u8BF7\u5728\u6B64\u9875\u9762\u5B8C\u6210\u9A8C\u8BC1\u540E\u56DE\u5230\u4E3B\u9875\u7EE7\u7EED\u3002";
+              document.body?.appendChild(banner);
+            } catch (e) {
+            }
           } else {
             closeWorkerTab();
           }
@@ -8072,7 +8149,7 @@
     }
     return null;
   }, "parseResponseHeader");
-  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data: data2 } = {}) => new Promise((resolve, reject) => {
     const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
     if (nativeFetch) {
       const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
@@ -8081,7 +8158,7 @@
         method: method || "POST",
         credentials: "include",
         headers: headers || {},
-        body: data,
+        body: data2,
         ...controller ? { signal: controller.signal } : {}
       }).then(async (response) => {
         clearTimeout(timer);
@@ -8100,7 +8177,7 @@
       method: method || "POST",
       url,
       headers,
-      data,
+      data: data2,
       onload: /* @__PURE__ */ __name((res) => resolve({
         status: res.status,
         responseText: res.responseText,
@@ -8905,27 +8982,27 @@
           }
           if (response.ok) {
             const clonedResponse = response.clone();
-            clonedResponse.json().then((data) => {
-              if (url.includes("/i/listings/search") && data.results && Array.isArray(data.results)) {
-                DataCache.saveListings(data.results);
-                if (data.cursors) {
-                  State.isEndOfSearchList = data.cursors.next === null;
-                } else if (typeof data.next !== "undefined") {
-                  State.isEndOfSearchList = data.next === null;
+            clonedResponse.json().then((data2) => {
+              if (url.includes("/i/listings/search") && data2.results && Array.isArray(data2.results)) {
+                DataCache.saveListings(data2.results);
+                if (data2.cursors) {
+                  State.isEndOfSearchList = data2.cursors.next === null;
+                } else if (typeof data2.next !== "undefined") {
+                  State.isEndOfSearchList = data2.next === null;
                 }
               } else if (url.includes("/i/users/me/listings-states")) {
-                if (Array.isArray(data)) {
-                  DataCache.saveOwnedStatus(data);
+                if (Array.isArray(data2)) {
+                  DataCache.saveOwnedStatus(data2);
                   triggerOwnedStatusUpdate();
                 } else {
-                  const extractedData = API.extractStateData(data, "FetchInterceptor");
+                  const extractedData = API.extractStateData(data2, "FetchInterceptor");
                   if (Array.isArray(extractedData) && extractedData.length > 0) {
                     DataCache.saveOwnedStatus(extractedData);
                     triggerOwnedStatusUpdate();
                   }
                 }
-              } else if (url.includes("/i/listings/prices-infos") && data.offers && Array.isArray(data.offers)) {
-                DataCache.savePrices(data.offers);
+              } else if (url.includes("/i/listings/prices-infos") && data2.offers && Array.isArray(data2.offers)) {
+                DataCache.savePrices(data2.offers);
               }
             }).catch(() => {
             });
@@ -9389,20 +9466,35 @@
             Utils.logger("warn", `[API\u5165\u5E93] \u6536\u5230 429${retryHint}\uFF1B\u6682\u505C\u65B0 worker \u6D3E\u53D1\u5E76\u8FDB\u5165\u6062\u590D\u68C0\u67E5\u3002`);
             await RateLimitManager.enterRateLimitedState("ApiClaim 429");
           }
+          const isManualRequired = Boolean(data.manualRequired) || logs && logs.some((l) => l.includes(Utils.getText("worker_captcha")) || l.includes("\u4EBA\u673A\u9A8C\u8BC1") || l.includes("CAPTCHA"));
+          if (isManualRequired) {
+            Utils.logger("warn", "\u{1F6A8} \u68C0\u6D4B\u5230\u5B89\u5168\u4EBA\u673A\u9A8C\u8BC1\uFF01\u5DF2\u81EA\u52A8\u6682\u505C\u4EFB\u52A1\u6267\u884C\u5E76\u4FDD\u7559\u9A8C\u8BC1\u6807\u7B7E\u9875\uFF0C\u8BF7\u5728\u5DF2\u6253\u5F00\u7684\u6807\u7B7E\u9875\u4E2D\u5B8C\u6210\u9A8C\u8BC1\u540E\u518D\u6B21\u70B9\u51FB\u300C\u4E00\u952E\u5F00\u5237\u300D\u3002");
+            if (State.isExecuting) {
+              State.isExecuting = false;
+              Database.saveExecutingState();
+            }
+          }
           const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);
-          const _failRes = await Database.markAsFailed(task, {
-            reason: cleanError,
-            logs: logs || [],
-            details: {
-              executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",
-              workerId: wid,
-              instanceId
+          if (isManualRequired) {
+            if (!Database.isTodo(task.url)) {
+              State.db.todo.unshift(task);
+              await Database.saveTodo();
             }
-          });
-          if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+          } else {
+            const _failRes = await Database.markAsFailed(task, {
+              reason: cleanError,
+              logs: logs || [],
+              details: {
+                executionTime: executionTime ? `${(executionTime / 1e3).toFixed(2)}s` : "\u672A\u77E5",
+                workerId: wid,
+                instanceId
+              }
+            });
+            if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+          }
         }
         UI5.update();
         if (State.isExecuting && TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {

@@ -1398,6 +1398,18 @@ function registerWorkerDoneListener(workerId) {
                     Utils.logger('warn', `[API入库] 收到 429${retryHint}；暂停新 worker 派发并进入恢复检查。`);
                     await RateLimitManager.enterRateLimitedState('ApiClaim 429');
                 }
+
+                const isManualRequired = Boolean(data.manualRequired) ||
+                    (logs && logs.some(l => l.includes(Utils.getText('worker_captcha')) || l.includes('人机验证') || l.includes('CAPTCHA')));
+
+                if (isManualRequired) {
+                    Utils.logger('warn', '🚨 检测到安全人机验证！已自动暂停任务执行并保留验证标签页，请在已打开的标签页中完成验证后再次点击「一键开刷」。');
+                    if (State.isExecuting) {
+                        State.isExecuting = false;
+                        Database.saveExecutingState();
+                    }
+                }
+
                 // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
                 const errorLog = logs && logs.length ?
                     (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
@@ -1406,16 +1418,25 @@ function registerWorkerDoneListener(workerId) {
 
                 const failMsg = isZh ? `❌ 任务失败: ${task.name} (${cleanError})` : `❌ Task failed: ${task.name} (${cleanError})`;
                 Utils.logger('warn', failMsg + timeSuffix);
-                const _failRes = await Database.markAsFailed(task, {
-                    reason: cleanError,
-                    logs: logs || [],
-                    details: {
-                        executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
-                        workerId: wid,
-                        instanceId: instanceId
+
+                if (isManualRequired) {
+                    // 人机验证不是任务本身损坏，保留在待办队列头部供用户验证后继续
+                    if (!Database.isTodo(task.url)) {
+                        State.db.todo.unshift(task);
+                        await Database.saveTodo();
                     }
-                });
-                if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+                } else {
+                    const _failRes = await Database.markAsFailed(task, {
+                        reason: cleanError,
+                        logs: logs || [],
+                        details: {
+                            executionTime: executionTime ? `${(executionTime / 1000).toFixed(2)}s` : '未知',
+                            workerId: wid,
+                            instanceId: instanceId
+                        }
+                    });
+                    if (!_failRes || !_failRes.retried) State.executionFailedTasks++;
+                }
             }
 
             UI.update();

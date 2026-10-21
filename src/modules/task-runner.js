@@ -21,6 +21,7 @@ import { KeepAlive } from './keepalive.js';
 import { acquireOnDetailPage } from './detail-claim.js';
 import { ApiClaim, CLAIM_RESULT } from './claim-strategy.js';
 import { acquireBundle, isBundleTask } from './bundle-claim.js';
+import { isCaptchaPresent } from './captcha-detection.js';
 
 // 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
 // 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
@@ -1052,6 +1053,7 @@ export const TaskRunner = {
             let success = false;
             let rateLimited = false;
             let retryAfterMs = null;
+            let manualRequired = false;
             let bundleResult = null;
 
             // 页面枚举、滚动和 worker 调度保持旧逻辑；只有真正的入库动作切到已确认的 API。
@@ -1063,6 +1065,7 @@ export const TaskRunner = {
                     success = bundleResult.success;
                     rateLimited = Boolean(bundleResult.rateLimited);
                     retryAfterMs = bundleResult.retryAfterMs || null;
+                    if (bundleResult?.manualRequired) manualRequired = true;
                 } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
                     const apiResult = await ApiClaim.claim(currentTask);
                     success = apiResult.result === CLAIM_RESULT.SUCCESS;
@@ -1077,6 +1080,7 @@ export const TaskRunner = {
                         success = bundleResult.success;
                         rateLimited = Boolean(bundleResult.rateLimited);
                         retryAfterMs = bundleResult.retryAfterMs || null;
+                        if (bundleResult?.manualRequired) manualRequired = true;
                     } else if (!success) {
                         logBuffer.push(`[API入库] ${apiResult.reason || '未完成'}，尝试回落 DOM 领取。`);
                         const claimResult = await acquireOnDetailPage(currentTask, {
@@ -1084,6 +1088,7 @@ export const TaskRunner = {
                             log: (msg) => logBuffer.push(msg)
                         });
                         success = claimResult.success;
+                        if (claimResult?.manualRequired) manualRequired = true;
                     }
                 } else {
                     const claimResult = await acquireOnDetailPage(currentTask, {
@@ -1091,6 +1096,7 @@ export const TaskRunner = {
                         log: (msg) => logBuffer.push(msg)
                     });
                     success = claimResult.success;
+                    if (claimResult?.manualRequired) manualRequired = true;
                 }
             } catch (error) {
                 logBuffer.push(`A critical error occurred: ${error.message}`);
@@ -1100,11 +1106,11 @@ export const TaskRunner = {
                 // 便于事后区分「该适配的失败」与「被风控拦截的失败」。
                 if (!success) {
                     try {
-                        const vIframe = document.querySelector('iframe[src*="hcaptcha"], iframe[src*="recaptcha"], iframe[src*="captcha"], iframe[src*="turnstile"], iframe[src*="challenges.cloudflare.com"], iframe[src*="arkoselabs"]');
-                        const bodyText = (document.body && document.body.innerText) || '';
-                        const vPhrases = ['人机验证', '确认您是真人', '请完成安全验证', '我不是机器人', 'Verify you are human', "I'm not a robot", 'Checking your browser', 'complete the security check', 'unusual traffic'];
-                        if (vIframe || vPhrases.some(p => bodyText.includes(p))) {
-                            logBuffer.push(Utils.getText('worker_captcha'));
+                        if (manualRequired || isCaptchaPresent(document)) {
+                            manualRequired = true;
+                            if (!logBuffer.some(l => l.includes(Utils.getText('worker_captcha')))) {
+                                logBuffer.push(Utils.getText('worker_captcha'));
+                            }
                         }
                     } catch (e) { /* ignore */ }
                 }
@@ -1115,6 +1121,7 @@ export const TaskRunner = {
                         success: success,
                         rateLimited,
                         retryAfterMs,
+                        manualRequired,
                         logs: logBuffer,
                         task: currentTask,
                         instanceId: payload.instanceId,
@@ -1130,8 +1137,15 @@ export const TaskRunner = {
                     console.error('Error deleting worker value:', error);
                 }
 
-                if (bundleResult?.manualRequired) {
+                if (manualRequired) {
                     clearTimeout(forceCloseTimer);
+                    try {
+                        document.title = `⚠️【需验证】${document.title}`;
+                        const banner = document.createElement('div');
+                        banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999999;background:#e53935;color:#fff;font-size:16px;font-weight:bold;padding:12px 20px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+                        banner.textContent = '🚨 [Fab Helper] 检测到安全人机验证，已为您保留此标签页。请在此页面完成验证后回到主页继续。';
+                        document.body?.appendChild(banner);
+                    } catch (e) {}
                 } else {
                     closeWorkerTab();
                 }
