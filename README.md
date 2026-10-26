@@ -1,5 +1,9 @@
 # Fab Helper Script
 
+<!-- badges:start -->
+[![License](https://img.shields.io/github/license/monkey-sking/FabHelperScript?style=flat-square)](https://github.com/monkey-sking/FabHelperScript/blob/main/LICENSE) [![Last commit](https://img.shields.io/github/last-commit/monkey-sking/FabHelperScript?style=flat-square)](https://github.com/monkey-sking/FabHelperScript/commits/main) [![JavaScript](https://img.shields.io/github/languages/top/monkey-sking/FabHelperScript?style=flat-square)](https://github.com/monkey-sking/FabHelperScript/search?l=JavaScript) [![Stars](https://img.shields.io/github/stars/monkey-sking/FabHelperScript?style=flat-square)](https://github.com/monkey-sking/FabHelperScript/stargazers) [![views](https://hits.sh/github.com/monkey-sking/FabHelperScript.svg?style=flat-square&label=views&color=0e75b6)](https://github.com/monkey-sking/FabHelperScript)
+<!-- badges:end -->
+
 **中文** | [English](README_EN.md)
 
 Fab Helper 是专为 [Fab.com](https://www.fab.com) 平台打造的高性能自动化辅助与体验优化用户脚本（v3.5.x）。针对海量资产浏览与入库场景，深度整合了 **API 优先极速入库**、**官网原生零元结算驱动**、**极致资源拦截**、**智能限速退避**、**安全人机验证提醒保护** 以及 **高精度瀑布流浏览记忆** 等现代化能力。
