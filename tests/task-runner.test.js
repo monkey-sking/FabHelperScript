@@ -943,10 +943,10 @@ test('maxDispatchSlots uses API claim cap when claim transport is live', () => {
         fetchImpl: async () => ({ status: 200 })
     });
     try {
-        assert.equal(TaskRunner.maxDispatchSlots(), 1);
+        assert.equal(TaskRunner.maxDispatchSlots(), Config.API_CLAIM_MAX_CONCURRENT_WORKERS);
         State.activeWorkers = 0;
         assert.equal(TaskRunner.hasDispatchSlot(), true);
-        State.activeWorkers = 1;
+        State.activeWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
         assert.equal(TaskRunner.hasDispatchSlot(), false);
     } finally {
         Config.USE_API_CLAIM = originalUse;

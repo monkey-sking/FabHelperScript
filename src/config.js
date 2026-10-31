@@ -15,10 +15,10 @@ export const Config = {
     // 保持原来的页面枚举逻辑：DOM 滚动负责加载商品、保存页面时间位置，
     // 不用 cursor API 取代旧 worker 流程。只有实际“加入我的库”动作走 API。
     USE_API_PIPELINE: false,
-    // 旧 DOM 枚举仍会开 worker 标签页；API 领取在该路径下必须串行并留出间隔，
-    // 否则 7 个 worker 同时 POST 极易触发 429。完整 API 流水线另有自己的令牌桶。
+    // 旧 DOM 枚举仍会开 worker 标签页；API 领取支持 3 个并发工作标签页，
+    // 并通过 API_CLAIM_MIN_INTERVAL_MS 错开派发节拍，避免同时打满请求触发 429。
     USE_API_CLAIM: true,
-    API_CLAIM_MAX_CONCURRENT_WORKERS: 1,
+    API_CLAIM_MAX_CONCURRENT_WORKERS: 3,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
