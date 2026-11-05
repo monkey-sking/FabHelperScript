@@ -35,6 +35,18 @@ test('列表页启动不再引用已删除的 hasCookie', () => {
     assert.match(indexSrc, /if \(signedIn\) \{\s*Utils\.verifyServerSession/);
 });
 
+test('清除浏览位置通过模块引用启用刷新守卫，而不是依赖不存在的全局', () => {
+    const uiSrc = fs.readFileSync(path.join(here, '../src/modules/ui.js'), 'utf8');
+    assert.match(uiSrc, /import \{ PagePatcher \} from '\.\/page-patcher\.js';/);
+    assert.match(uiSrc, /await PagePatcher\.clearSavedPosition\('User UI Reset'\);/);
+    assert.match(uiSrc, /PagePatcher\.armResetGuard\(\);/);
+    assert.doesNotMatch(uiSrc, /typeof PagePatcher !== 'undefined'/);
+
+    const dbSrc = fs.readFileSync(path.join(here, '../src/modules/database.js'), 'utf8');
+    assert.match(dbSrc, /import \{ PagePatcher \} from '\.\/page-patcher\.js';/);
+    assert.match(dbSrc, /await PagePatcher\.clearSavedPosition\('Reset all data'\);/);
+});
+
 test('manual verification report pauses execution, retains task, updates UI and never dispatches again', async t => {
     installFakeBrowser();
     const { registerWorkerDoneListener } = await import('../src/index.js');

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261105-1314
+// @version      3.5.27-20261105-1457
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -2364,269 +2364,6 @@
     }), "exportLegacy")
   };
 
-  // src/modules/database.js
-  var UI2 = null;
-  var setUIReference2 = /* @__PURE__ */ __name((uiModule) => {
-    UI2 = uiModule;
-  }, "setUIReference");
-  var Database = {
-    normalizeListingUrl: /* @__PURE__ */ __name((url) => {
-      if (!url) return "";
-      const cleanUrl = String(url).split("?")[0].toLowerCase();
-      const uidMatch = cleanUrl.match(/\/(?:listings|bundles)\/([^/?#]+)/i);
-      if (uidMatch && uidMatch[1]) {
-        return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
-      }
-      return cleanUrl;
-    }, "normalizeListingUrl"),
-    // 归一化 url 的 Set，避免 isDone 在热路径上对每个 done 项重复 normalize（O(n²)）。
-    doneSet: /* @__PURE__ */ new Set(),
-    // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
-    // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
-    _doneRef: null,
-    // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
-    _safeGet: /* @__PURE__ */ __name(async (key, def) => {
-      try {
-        return await GM_getValue(key, def);
-      } catch (e) {
-        Utils.logger("error", `\u8BFB\u53D6\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
-        return def;
-      }
-    }, "_safeGet"),
-    _safeSet: /* @__PURE__ */ __name((key, val) => {
-      try {
-        GM_setValue(key, val);
-      } catch (e) {
-        Utils.logger("error", `\u5199\u5165\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
-      }
-    }, "_safeSet"),
-    getListingUid: /* @__PURE__ */ __name((url) => {
-      if (!url) return "";
-      const uidMatch = String(url).split("?")[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
-      return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : "";
-    }, "getListingUid"),
-    seedDoneOwnedStatusCache: /* @__PURE__ */ __name(() => {
-      const states = State.db.done.map((url) => Database.getListingUid(url)).filter(Boolean).map((uid) => ({
-        uid,
-        acquired: true,
-        lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      }));
-      DataCache.saveOwnedStatus(states);
-      return states.length;
-    }, "seedDoneOwnedStatusCache"),
-    normalizeDoneList: /* @__PURE__ */ __name(() => {
-      const normalized = [];
-      const seen = /* @__PURE__ */ new Set();
-      State.db.done.forEach((url) => {
-        const cleanUrl = Database.normalizeListingUrl(url);
-        if (!cleanUrl || seen.has(cleanUrl)) return;
-        seen.add(cleanUrl);
-        normalized.push(cleanUrl);
-      });
-      const changed = normalized.length !== State.db.done.length || normalized.some((url, index) => url !== State.db.done[index]);
-      State.db.done = normalized;
-      Database.doneSet = new Set(normalized);
-      return changed;
-    }, "normalizeDoneList"),
-    addDoneUrl: /* @__PURE__ */ __name((url) => {
-      const normalizedChanged = Database.normalizeDoneList();
-      const cleanUrl = Database.normalizeListingUrl(url);
-      if (!cleanUrl) return normalizedChanged;
-      if (Database.isDone(cleanUrl)) return normalizedChanged;
-      State.db.done.push(cleanUrl);
-      Database.doneSet.add(cleanUrl);
-      Database.seedDoneOwnedStatusCache();
-      return true;
-    }, "addDoneUrl"),
-    load: /* @__PURE__ */ __name(async () => {
-      const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
-      State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && Database.getListingUid(t.url)) : [];
-      State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
-      State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
-      State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
-      State.autoAddOnScroll = await Database._safeGet(Config.DB_KEYS.AUTO_ADD, false);
-      State.rememberScrollPosition = await Database._safeGet(Config.DB_KEYS.REMEMBER_POS, false);
-      State.autoResumeAfter429 = await Database._safeGet(Config.DB_KEYS.AUTO_RESUME, false);
-      State.autoRefreshEmptyPage = await Database._safeGet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
-      State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false);
-      State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
-      State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
-      State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
-      State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
-      State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
-      State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
-      if (Database.normalizeDoneList()) {
-        await Database.saveDone();
-      }
-      Database.seedDoneOwnedStatusCache();
-      Utils.logger("info", Utils.getText("log_db_loaded"), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
-    }, "load"),
-    // 添加保存待办列表的方法
-    saveTodo: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo), "saveTodo"),
-    saveDone: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.DONE, State.db.done), "saveDone"),
-    saveFailed: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed), "saveFailed"),
-    saveHidePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
-    saveAutoAddPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
-    // Save the setting
-    saveAutoScrollPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), "saveAutoScrollPref"),
-    // 保存自动滚动页面开关
-    saveRememberPosPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition), "saveRememberPosPref"),
-    saveAutoResumePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
-    saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
-    // 保存无商品自动刷新设置
-    saveHideDiscountedPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), "saveHideDiscountedPref"),
-    // 保存隐藏打折付费设置
-    saveHidePaidPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), "saveHidePaidPref"),
-    // 保存隐藏所有付费设置
-    saveBlockResourcesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
-    // 保存禁用大资源设置
-    saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
-    // Save the execution state
-    resetAllData: /* @__PURE__ */ __name(async () => {
-      if (window.confirm(Utils.getText("confirm_clear_data"))) {
-        await GM_deleteValue(Config.DB_KEYS.TODO);
-        await GM_deleteValue(Config.DB_KEYS.DONE);
-        await GM_deleteValue(Config.DB_KEYS.FAILED);
-        await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
-        EventLog.reset();
-        await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
-        await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
-        await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
-        if (typeof PagePatcher !== "undefined" && PagePatcher.clearSavedPosition) {
-          await PagePatcher.clearSavedPosition("Reset all data");
-        } else {
-          await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-          if (typeof sessionStorage !== "undefined") {
-            try {
-              sessionStorage.removeItem("fab_helper_recovery_cursor");
-              sessionStorage.removeItem("fab_helper_last_recovery_cursor");
-            } catch (e) {
-            }
-          }
-          State.savedCursor = null;
-        }
-        State.db.todo = [];
-        State.db.done = [];
-        Database.doneSet = /* @__PURE__ */ new Set();
-        State.db.failed = [];
-        State.blockLargeResources = true;
-        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
-        if (UI2) {
-          UI2.removeAllOverlays();
-          UI2.update();
-        }
-      }
-    }, "resetAllData"),
-    isDone: /* @__PURE__ */ __name((url) => {
-      if (!url) return false;
-      const cleanUrl = Database.normalizeListingUrl(url);
-      if (Database._doneRef !== State.db.done) {
-        Database.doneSet = new Set(State.db.done.map((u) => Database.normalizeListingUrl(u)));
-        Database._doneRef = State.db.done;
-      }
-      return Database.doneSet.has(cleanUrl);
-    }, "isDone"),
-    isFailed: /* @__PURE__ */ __name((url) => {
-      if (!url) return false;
-      const cleanUrl = Database.normalizeListingUrl(url);
-      return State.db.failed.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
-    }, "isFailed"),
-    isTodo: /* @__PURE__ */ __name((url) => {
-      if (!url) return false;
-      const cleanUrl = Database.normalizeListingUrl(url);
-      return State.db.todo.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
-    }, "isTodo"),
-    markAsDone: /* @__PURE__ */ __name(async (task) => {
-      if (!task || !task.uid) {
-        Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5B8C\u6210\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
-        return;
-      }
-      const initialTodoCount = State.db.todo.length;
-      State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-      if (State.db.todo.length !== initialTodoCount) {
-        Database.saveTodo();
-      }
-      if (State.db.todo.length === initialTodoCount && initialTodoCount > 0) {
-        Utils.logger("warn", "\u4EFB\u52A1\u672A\u80FD\u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\uFF0C\u53EF\u80FD\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u5904\u7406");
-      }
-      let changed = false;
-      const initialFailedCount = State.db.failed.length;
-      State.db.failed = State.db.failed.filter((failedTask) => failedTask.uid !== task.uid);
-      if (State.db.failed.length !== initialFailedCount) {
-        changed = true;
-        await Database.saveFailed();
-      }
-      if (Database.addDoneUrl(task.url)) {
-        changed = true;
-      }
-      if (changed) {
-        await Database.saveDone();
-      }
-    }, "markAsDone"),
-    // 根据失败原因判定自动重试上限：
-    //  - 人机验证/适配类：重试无意义且会招更多风控 → 0 次，直接进失败列表
-    //  - 环境类(超时/被远程判死/唤醒清理)：值得自动重试 → 3 次
-    //  - 其他(可能只是页面没加载好)：给 1 次机会
-    getMaxRetry: /* @__PURE__ */ __name((reason) => {
-      if (!reason) return 1;
-      if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
-      if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
-      if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
-      return 1;
-    }, "getMaxRetry"),
-    // 返回 { retried: bool }。retried=true 表示已按归因自动放回待办重试，未计入最终失败；
-    // 调用方据此决定是否累加 executionFailedTasks。
-    markAsFailed: /* @__PURE__ */ __name(async (task, failureInfo = {}) => {
-      if (!task || !task.uid) {
-        Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
-        return { retried: false };
-      }
-      const reason = failureInfo.reason || "\u672A\u77E5\u539F\u56E0";
-      const nextRetry = (task.retryCount || 0) + 1;
-      const maxRetry = Database.getMaxRetry(reason);
-      State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
-      if (nextRetry <= maxRetry) {
-        State.db.todo.push({ ...task, retryCount: nextRetry });
-        Utils.logger("info", Utils.getText("log_auto_retry", nextRetry, maxRetry, task.name) + ` [${reason}]`);
-        await Database.saveTodo();
-        if (UI2) UI2.update();
-        return { retried: true };
-      }
-      const failedTask = {
-        ...task,
-        failedAt: (/* @__PURE__ */ new Date()).toISOString(),
-        failureReason: reason,
-        errorDetails: failureInfo.details || null,
-        workerLogs: failureInfo.logs || [],
-        retryCount: nextRetry
-      };
-      Utils.logger("warn", `\u{1F4CB} \u4EFB\u52A1\u5931\u8D25\u8BE6\u60C5:`);
-      Utils.logger("warn", `   - \u4EFB\u52A1\u540D\u79F0: ${task.name}`);
-      Utils.logger("warn", `   - \u4EFB\u52A1UID: ${task.uid}`);
-      Utils.logger("warn", `   - \u5931\u8D25\u539F\u56E0: ${failedTask.failureReason}`);
-      Utils.logger("warn", `   - \u91CD\u8BD5\u6B21\u6570: ${failedTask.retryCount}`);
-      if (failedTask.errorDetails) {
-        Utils.logger("warn", `   - \u9519\u8BEF\u8BE6\u60C5: ${JSON.stringify(failedTask.errorDetails)}`);
-      }
-      if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
-        Utils.logger("warn", `   - \u5DE5\u4F5C\u7EBF\u7A0B\u65E5\u5FD7 (${failedTask.workerLogs.length} \u6761):`);
-        failedTask.workerLogs.slice(-5).forEach((log2, i) => {
-          Utils.logger("warn", `     ${i + 1}. ${log2}`);
-        });
-      }
-      const existingIndex = State.db.failed.findIndex((f) => f.uid === task.uid);
-      if (existingIndex >= 0) {
-        State.db.failed[existingIndex] = failedTask;
-        Utils.logger("debug", `\u66F4\u65B0\u4E86\u5DF2\u5B58\u5728\u7684\u5931\u8D25\u8BB0\u5F55: ${task.name}`);
-      } else {
-        State.db.failed.push(failedTask);
-      }
-      await Database.saveTodo();
-      await Database.saveFailed();
-      return { retried: false };
-    }, "markAsFailed")
-  };
-
   // src/modules/rate-limit-detection.js
   var isLimitMessage = /* @__PURE__ */ __name((value) => typeof value === "string" && /^(?:(?:error|http)\s*[:\s-]*)?(?:429\b|too\s+many\s+requests\b|requests?\s+(?:was|were|has been)\s+throttled\b|rate[ _-]*limit(?:ed|[ _-]*(?:exceeded|reached))?(?:[.!:\s]|$)|请求过于频繁|请求被限流|请求次数过多)/i.test(value.trim()), "isLimitMessage");
   function isRateLimitedResponse(status, body) {
@@ -2651,11 +2388,11 @@
   __name(isRateLimitedPage, "isRateLimitedPage");
 
   // src/modules/rate-limit-manager.js
-  var UI3 = null;
+  var UI2 = null;
   var TaskRunner = null;
   var countdownRefresh = null;
   var setDependencies = /* @__PURE__ */ __name((deps) => {
-    UI3 = deps.UI;
+    UI2 = deps.UI;
     TaskRunner = deps.TaskRunner;
     countdownRefresh = deps.countdownRefresh;
   }, "setDependencies");
@@ -2730,9 +2467,9 @@
         startTime: State.rateLimitStartTime,
         source
       });
-      if (UI3) {
-        UI3.updateDebugTab();
-        UI3.update();
+      if (UI2) {
+        UI2.updateDebugTab();
+        UI2.update();
       }
       const { visible: actualVisibleCards } = TaskRunner?.getCardCounts ? TaskRunner.getCardCounts() : { visible: document.querySelectorAll(Config.SELECTORS.card).length };
       const visibleCountElement = document.getElementById("fab-status-visible");
@@ -2767,7 +2504,7 @@
     recordSuccessfulRequest: /* @__PURE__ */ __name(async function(source = "\u672A\u77E5\u6765\u6E90", hasResults = true) {
       if (hasResults) {
         State.successfulSearchCount++;
-        if (UI3) UI3.updateDebugTab();
+        if (UI2) UI2.updateDebugTab();
       }
       if (State.appStatus !== "RATE_LIMITED") {
         return;
@@ -2816,9 +2553,9 @@
       State.normalStartTime = Date.now();
       State.consecutiveSuccessCount = 0;
       await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
-      if (UI3) {
-        UI3.updateDebugTab();
-        UI3.update();
+      if (UI2) {
+        UI2.updateDebugTab();
+        UI2.update();
       }
       if (State.db.todo.length > 0 && !State.isExecuting && TaskRunner) {
         Utils.logger("info", `\u53D1\u73B0 ${State.db.todo.length} \u4E2A\u5F85\u529E\u4EFB\u52A1\uFF0C\u81EA\u52A8\u6062\u590D\u6267\u884C...`);
@@ -2940,9 +2677,9 @@
             State.normalStartTime = now;
             State.consecutiveSuccessCount = 0;
             await GM_deleteValue(Config.DB_KEYS.APP_STATUS);
-            if (UI3) {
-              UI3.updateDebugTab();
-              UI3.update();
+            if (UI2) {
+              UI2.updateDebugTab();
+              UI2.update();
             }
           } else {
             const oldStart = State.rateLimitStartTime;
@@ -2999,7 +2736,7 @@
   var RESET_GUARD_KEY = "fab_helper_reset_guard";
   var RESET_GUARD_TTL_MS = 60 * 1e3;
   var RESET_GUARD_TOP_TOLERANCE_PX = 200;
-  var PagePatcher2 = {
+  var PagePatcher = {
     _patchHasBeenApplied: false,
     _lastSeenCursor: null,
     _lastCheckedUrl: null,
@@ -3576,6 +3313,257 @@
         });
       };
     }
+  };
+
+  // src/modules/database.js
+  var UI3 = null;
+  var setUIReference2 = /* @__PURE__ */ __name((uiModule) => {
+    UI3 = uiModule;
+  }, "setUIReference");
+  var Database = {
+    normalizeListingUrl: /* @__PURE__ */ __name((url) => {
+      if (!url) return "";
+      const cleanUrl = String(url).split("?")[0].toLowerCase();
+      const uidMatch = cleanUrl.match(/\/(?:listings|bundles)\/([^/?#]+)/i);
+      if (uidMatch && uidMatch[1]) {
+        return `https://www.fab.com/listings/${uidMatch[1].toLowerCase()}`;
+      }
+      return cleanUrl;
+    }, "normalizeListingUrl"),
+    // 归一化 url 的 Set，避免 isDone 在热路径上对每个 done 项重复 normalize（O(n²)）。
+    doneSet: /* @__PURE__ */ new Set(),
+    // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
+    // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
+    _doneRef: null,
+    // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
+    _safeGet: /* @__PURE__ */ __name(async (key, def) => {
+      try {
+        return await GM_getValue(key, def);
+      } catch (e) {
+        Utils.logger("error", `\u8BFB\u53D6\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
+        return def;
+      }
+    }, "_safeGet"),
+    _safeSet: /* @__PURE__ */ __name((key, val) => {
+      try {
+        GM_setValue(key, val);
+      } catch (e) {
+        Utils.logger("error", `\u5199\u5165\u5B58\u50A8\u5931\u8D25 [${key}]: ${e.message}`);
+      }
+    }, "_safeSet"),
+    getListingUid: /* @__PURE__ */ __name((url) => {
+      if (!url) return "";
+      const uidMatch = String(url).split("?")[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
+      return uidMatch && uidMatch[1] ? uidMatch[1].toLowerCase() : "";
+    }, "getListingUid"),
+    seedDoneOwnedStatusCache: /* @__PURE__ */ __name(() => {
+      const states = State.db.done.map((url) => Database.getListingUid(url)).filter(Boolean).map((uid) => ({
+        uid,
+        acquired: true,
+        lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }));
+      DataCache.saveOwnedStatus(states);
+      return states.length;
+    }, "seedDoneOwnedStatusCache"),
+    normalizeDoneList: /* @__PURE__ */ __name(() => {
+      const normalized = [];
+      const seen = /* @__PURE__ */ new Set();
+      State.db.done.forEach((url) => {
+        const cleanUrl = Database.normalizeListingUrl(url);
+        if (!cleanUrl || seen.has(cleanUrl)) return;
+        seen.add(cleanUrl);
+        normalized.push(cleanUrl);
+      });
+      const changed = normalized.length !== State.db.done.length || normalized.some((url, index) => url !== State.db.done[index]);
+      State.db.done = normalized;
+      Database.doneSet = new Set(normalized);
+      return changed;
+    }, "normalizeDoneList"),
+    addDoneUrl: /* @__PURE__ */ __name((url) => {
+      const normalizedChanged = Database.normalizeDoneList();
+      const cleanUrl = Database.normalizeListingUrl(url);
+      if (!cleanUrl) return normalizedChanged;
+      if (Database.isDone(cleanUrl)) return normalizedChanged;
+      State.db.done.push(cleanUrl);
+      Database.doneSet.add(cleanUrl);
+      Database.seedDoneOwnedStatusCache();
+      return true;
+    }, "addDoneUrl"),
+    load: /* @__PURE__ */ __name(async () => {
+      const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
+      State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && Database.getListingUid(t.url)) : [];
+      State.db.done = await Database._safeGet(Config.DB_KEYS.DONE, []);
+      State.db.failed = await Database._safeGet(Config.DB_KEYS.FAILED, []);
+      State.hideSaved = await Database._safeGet(Config.DB_KEYS.HIDE, false);
+      State.autoAddOnScroll = await Database._safeGet(Config.DB_KEYS.AUTO_ADD, false);
+      State.rememberScrollPosition = await Database._safeGet(Config.DB_KEYS.REMEMBER_POS, false);
+      State.autoResumeAfter429 = await Database._safeGet(Config.DB_KEYS.AUTO_RESUME, false);
+      State.autoRefreshEmptyPage = await Database._safeGet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, true);
+      State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false);
+      State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
+      State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
+      State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
+      State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
+      State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
+      State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
+      if (Database.normalizeDoneList()) {
+        await Database.saveDone();
+      }
+      Database.seedDoneOwnedStatusCache();
+      Utils.logger("info", Utils.getText("log_db_loaded"), `(Session) To-Do: ${State.db.todo.length}, Done: ${State.db.done.length}, Failed: ${State.db.failed.length}`);
+    }, "load"),
+    // 添加保存待办列表的方法
+    saveTodo: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo), "saveTodo"),
+    saveDone: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.DONE, State.db.done), "saveDone"),
+    saveFailed: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed), "saveFailed"),
+    saveHidePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
+    saveAutoAddPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
+    // Save the setting
+    saveAutoScrollPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_SCROLL, State.autoScroll), "saveAutoScrollPref"),
+    // 保存自动滚动页面开关
+    saveRememberPosPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.REMEMBER_POS, State.rememberScrollPosition), "saveRememberPosPref"),
+    saveAutoResumePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_RESUME, State.autoResumeAfter429), "saveAutoResumePref"),
+    saveAutoRefreshEmptyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_REFRESH_EMPTY, State.autoRefreshEmptyPage), "saveAutoRefreshEmptyPref"),
+    // 保存无商品自动刷新设置
+    saveHideDiscountedPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), "saveHideDiscountedPref"),
+    // 保存隐藏打折付费设置
+    saveHidePaidPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), "saveHidePaidPref"),
+    // 保存隐藏所有付费设置
+    saveBlockResourcesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
+    // 保存禁用大资源设置
+    saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
+    // Save the execution state
+    resetAllData: /* @__PURE__ */ __name(async () => {
+      if (window.confirm(Utils.getText("confirm_clear_data"))) {
+        await GM_deleteValue(Config.DB_KEYS.TODO);
+        await GM_deleteValue(Config.DB_KEYS.DONE);
+        await GM_deleteValue(Config.DB_KEYS.FAILED);
+        await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
+        EventLog.reset();
+        await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
+        await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
+        await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
+        await PagePatcher.clearSavedPosition("Reset all data");
+        State.db.todo = [];
+        State.db.done = [];
+        Database.doneSet = /* @__PURE__ */ new Set();
+        State.db.failed = [];
+        State.blockLargeResources = true;
+        Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
+        if (UI3) {
+          UI3.removeAllOverlays();
+          UI3.update();
+        }
+      }
+    }, "resetAllData"),
+    isDone: /* @__PURE__ */ __name((url) => {
+      if (!url) return false;
+      const cleanUrl = Database.normalizeListingUrl(url);
+      if (Database._doneRef !== State.db.done) {
+        Database.doneSet = new Set(State.db.done.map((u) => Database.normalizeListingUrl(u)));
+        Database._doneRef = State.db.done;
+      }
+      return Database.doneSet.has(cleanUrl);
+    }, "isDone"),
+    isFailed: /* @__PURE__ */ __name((url) => {
+      if (!url) return false;
+      const cleanUrl = Database.normalizeListingUrl(url);
+      return State.db.failed.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
+    }, "isFailed"),
+    isTodo: /* @__PURE__ */ __name((url) => {
+      if (!url) return false;
+      const cleanUrl = Database.normalizeListingUrl(url);
+      return State.db.todo.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
+    }, "isTodo"),
+    markAsDone: /* @__PURE__ */ __name(async (task) => {
+      if (!task || !task.uid) {
+        Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5B8C\u6210\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
+        return;
+      }
+      const initialTodoCount = State.db.todo.length;
+      State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+      if (State.db.todo.length !== initialTodoCount) {
+        Database.saveTodo();
+      }
+      if (State.db.todo.length === initialTodoCount && initialTodoCount > 0) {
+        Utils.logger("warn", "\u4EFB\u52A1\u672A\u80FD\u4ECE\u5F85\u529E\u5217\u8868\u4E2D\u79FB\u9664\uFF0C\u53EF\u80FD\u5DF2\u88AB\u5176\u4ED6\u64CD\u4F5C\u5904\u7406");
+      }
+      let changed = false;
+      const initialFailedCount = State.db.failed.length;
+      State.db.failed = State.db.failed.filter((failedTask) => failedTask.uid !== task.uid);
+      if (State.db.failed.length !== initialFailedCount) {
+        changed = true;
+        await Database.saveFailed();
+      }
+      if (Database.addDoneUrl(task.url)) {
+        changed = true;
+      }
+      if (changed) {
+        await Database.saveDone();
+      }
+    }, "markAsDone"),
+    // 根据失败原因判定自动重试上限：
+    //  - 人机验证/适配类：重试无意义且会招更多风控 → 0 次，直接进失败列表
+    //  - 环境类(超时/被远程判死/唤醒清理)：值得自动重试 → 3 次
+    //  - 其他(可能只是页面没加载好)：给 1 次机会
+    getMaxRetry: /* @__PURE__ */ __name((reason) => {
+      if (!reason) return 1;
+      if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
+      if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
+      if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
+      return 1;
+    }, "getMaxRetry"),
+    // 返回 { retried: bool }。retried=true 表示已按归因自动放回待办重试，未计入最终失败；
+    // 调用方据此决定是否累加 executionFailedTasks。
+    markAsFailed: /* @__PURE__ */ __name(async (task, failureInfo = {}) => {
+      if (!task || !task.uid) {
+        Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
+        return { retried: false };
+      }
+      const reason = failureInfo.reason || "\u672A\u77E5\u539F\u56E0";
+      const nextRetry = (task.retryCount || 0) + 1;
+      const maxRetry = Database.getMaxRetry(reason);
+      State.db.todo = State.db.todo.filter((t) => t.uid !== task.uid);
+      if (nextRetry <= maxRetry) {
+        State.db.todo.push({ ...task, retryCount: nextRetry });
+        Utils.logger("info", Utils.getText("log_auto_retry", nextRetry, maxRetry, task.name) + ` [${reason}]`);
+        await Database.saveTodo();
+        if (UI3) UI3.update();
+        return { retried: true };
+      }
+      const failedTask = {
+        ...task,
+        failedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        failureReason: reason,
+        errorDetails: failureInfo.details || null,
+        workerLogs: failureInfo.logs || [],
+        retryCount: nextRetry
+      };
+      Utils.logger("warn", `\u{1F4CB} \u4EFB\u52A1\u5931\u8D25\u8BE6\u60C5:`);
+      Utils.logger("warn", `   - \u4EFB\u52A1\u540D\u79F0: ${task.name}`);
+      Utils.logger("warn", `   - \u4EFB\u52A1UID: ${task.uid}`);
+      Utils.logger("warn", `   - \u5931\u8D25\u539F\u56E0: ${failedTask.failureReason}`);
+      Utils.logger("warn", `   - \u91CD\u8BD5\u6B21\u6570: ${failedTask.retryCount}`);
+      if (failedTask.errorDetails) {
+        Utils.logger("warn", `   - \u9519\u8BEF\u8BE6\u60C5: ${JSON.stringify(failedTask.errorDetails)}`);
+      }
+      if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
+        Utils.logger("warn", `   - \u5DE5\u4F5C\u7EBF\u7A0B\u65E5\u5FD7 (${failedTask.workerLogs.length} \u6761):`);
+        failedTask.workerLogs.slice(-5).forEach((log2, i) => {
+          Utils.logger("warn", `     ${i + 1}. ${log2}`);
+        });
+      }
+      const existingIndex = State.db.failed.findIndex((f) => f.uid === task.uid);
+      if (existingIndex >= 0) {
+        State.db.failed[existingIndex] = failedTask;
+        Utils.logger("debug", `\u66F4\u65B0\u4E86\u5DF2\u5B58\u5728\u7684\u5931\u8D25\u8BB0\u5F55: ${task.name}`);
+      } else {
+        State.db.failed.push(failedTask);
+      }
+      await Database.saveTodo();
+      await Database.saveFailed();
+      return { retried: false };
+    }, "markAsFailed")
   };
 
   // src/modules/instance-manager.js
@@ -5033,8 +5021,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       await Database.saveRememberPosPref();
       Utils.logger("info", Utils.getText("log_remember_pos_toggle", State.rememberScrollPosition ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
       if (!State.rememberScrollPosition) {
-        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.clearSavedPosition) {
-          await PagePatcher2.clearSavedPosition("Remember position disabled");
+        if (typeof PagePatcher !== "undefined" && PagePatcher.clearSavedPosition) {
+          await PagePatcher.clearSavedPosition("Remember position disabled");
         } else {
           await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
           if (typeof sessionStorage !== "undefined") {
@@ -5047,11 +5035,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           State.savedCursor = null;
         }
       } else {
-        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.releaseResetGuard) {
-          PagePatcher2.releaseResetGuard("remember position enabled");
+        if (typeof PagePatcher !== "undefined" && PagePatcher.releaseResetGuard) {
+          PagePatcher.releaseResetGuard("remember position enabled");
         }
-        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.unlockCursorSaving) {
-          PagePatcher2.unlockCursorSaving();
+        if (typeof PagePatcher !== "undefined" && PagePatcher.unlockCursorSaving) {
+          PagePatcher.unlockCursorSaving();
         }
         if (State.UI && State.UI.savedPositionDisplay) {
           State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
@@ -5140,7 +5128,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (probeResponse.status === 429) {
             throw new Error("Probe failed with 429. Still rate-limited.");
           } else if (probeResponse.status >= 200 && probeResponse.status < 300) {
-            await PagePatcher2.handleSearchResponse({ status: 200 });
+            await PagePatcher.handleSearchResponse({ status: 200 });
             Utils.logger("info", Utils.getText("log_connection_restored"));
             TaskRunner2.toggleExecution();
           } else {
@@ -6792,32 +6780,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       };
       clearPositionBtn.onclick = async () => {
         const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
-        if (State.savedCursor || State.apiCursor || typeof PagePatcher !== "undefined" && PagePatcher._lastSeenCursor || hasRecoveryCursor) {
-          if (typeof PagePatcher !== "undefined" && PagePatcher.lockCursorSaving) {
-            PagePatcher.lockCursorSaving();
-          }
+        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+          PagePatcher.lockCursorSaving();
           if (confirm(Utils.getText("confirm_reset_position"))) {
-            if (typeof PagePatcher !== "undefined" && PagePatcher.clearSavedPosition) {
-              await PagePatcher.clearSavedPosition("User UI Reset");
-            } else {
-              State.savedCursor = null;
-              State.apiCursor = null;
-              await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-              await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
-              if (typeof sessionStorage !== "undefined") {
-                try {
-                  sessionStorage.removeItem("fab_helper_recovery_cursor");
-                  sessionStorage.removeItem("fab_helper_last_recovery_cursor");
-                } catch (e) {
-                }
-              }
-              if (State.UI && State.UI.savedPositionDisplay) {
-                State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
-              }
-            }
-            if (typeof PagePatcher !== "undefined" && PagePatcher.armResetGuard) {
-              PagePatcher.armResetGuard();
-            }
+            await PagePatcher.clearSavedPosition("User UI Reset");
+            PagePatcher.armResetGuard();
             try {
               window.scrollTo(0, 0);
             } catch (e) {
@@ -6833,9 +6800,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
             window.location.reload();
           } else {
-            if (typeof PagePatcher !== "undefined" && PagePatcher.unlockCursorSaving) {
-              PagePatcher.unlockCursorSaving();
-            }
+            PagePatcher.unlockCursorSaving();
           }
         } else {
           Utils.logger("info", Utils.getText("no_position_to_reset"));
@@ -9565,7 +9530,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     }
     await RateLimitManager.initStatus();
     setupRequestInterceptors();
-    await PagePatcher2.init();
+    await PagePatcher.init();
     const tempTasks = await GM_getValue("temp_todo_tasks", null);
     if (tempTasks && tempTasks.length > 0) {
       Utils.logger("info", `\u4ECE429\u6062\u590D\uFF1A\u627E\u5230 ${tempTasks.length} \u4E2A\u4E34\u65F6\u4FDD\u5B58\u7684\u5F85\u529E\u4EFB\u52A1\uFF0C\u6B63\u5728\u6062\u590D...`);

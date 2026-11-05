@@ -17,6 +17,7 @@ import { RateLimitManager } from './rate-limit-manager.js';
 import { KeepAlive } from './keepalive.js';
 import { EventLog } from './event-log.js';
 import { VerificationNotifications } from './verification-notifications.js';
+import { PagePatcher } from './page-patcher.js';
 
 // Forward declaration for TaskRunner (will be set via dependency injection)
 let TaskRunner = null;
@@ -546,33 +547,13 @@ export const UI = {
         clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
         clearPositionBtn.onclick = async () => {
             const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
-            if (State.savedCursor || State.apiCursor || (typeof PagePatcher !== 'undefined' && PagePatcher._lastSeenCursor) || hasRecoveryCursor) {
-                if (typeof PagePatcher !== 'undefined' && PagePatcher.lockCursorSaving) {
-                    PagePatcher.lockCursorSaving();
-                }
+            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+                PagePatcher.lockCursorSaving();
                 if (confirm(Utils.getText('confirm_reset_position'))) {
-                    if (typeof PagePatcher !== 'undefined' && PagePatcher.clearSavedPosition) {
-                        await PagePatcher.clearSavedPosition('User UI Reset');
-                    } else {
-                        State.savedCursor = null;
-                        State.apiCursor = null;
-                        await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                        await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
-                        if (typeof sessionStorage !== 'undefined') {
-                            try {
-                                sessionStorage.removeItem('fab_helper_recovery_cursor');
-                                sessionStorage.removeItem('fab_helper_last_recovery_cursor');
-                            } catch (e) { }
-                        }
-                        if (State.UI && State.UI.savedPositionDisplay) {
-                            State.UI.savedPositionDisplay.textContent = Utils.getText('no_saved_position');
-                        }
-                    }
+                    await PagePatcher.clearSavedPosition('User UI Reset');
 
                     // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
-                    if (typeof PagePatcher !== 'undefined' && PagePatcher.armResetGuard) {
-                        PagePatcher.armResetGuard();
-                    }
+                    PagePatcher.armResetGuard();
 
                     // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
                     try {
@@ -590,9 +571,7 @@ export const UI = {
 
                     window.location.reload();
                 } else {
-                    if (typeof PagePatcher !== 'undefined' && PagePatcher.unlockCursorSaving) {
-                        PagePatcher.unlockCursorSaving();
-                    }
+                    PagePatcher.unlockCursorSaving();
                 }
             } else {
                 Utils.logger('info', Utils.getText('no_position_to_reset'));

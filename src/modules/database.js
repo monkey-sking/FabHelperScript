@@ -6,6 +6,7 @@ import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { DataCache } from './data-cache.js';
 import { EventLog } from './event-log.js';
+import { PagePatcher } from './page-patcher.js';
 
 // Forward declaration for circular dependency
 let UI = null;
@@ -146,18 +147,8 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
-            if (typeof PagePatcher !== 'undefined' && PagePatcher.clearSavedPosition) {
-                await PagePatcher.clearSavedPosition('Reset all data');
-            } else {
-                await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
-                if (typeof sessionStorage !== 'undefined') {
-                    try {
-                        sessionStorage.removeItem('fab_helper_recovery_cursor');
-                        sessionStorage.removeItem('fab_helper_last_recovery_cursor');
-                    } catch (e) { }
-                }
-                State.savedCursor = null;
-            }
+            // 直接走模块实现：它会同时清掉内存游标、GM 键和 sessionStorage 恢复标记。
+            await PagePatcher.clearSavedPosition('Reset all data');
             State.db.todo = [];
             State.db.done = [];
             Database.doneSet = new Set();
