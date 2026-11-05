@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261031-1605
+// @version      3.5.27-20261105-1232
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -2996,12 +2996,18 @@
   };
 
   // src/modules/page-patcher.js
+  var RESET_GUARD_KEY = "fab_helper_reset_guard";
+  var RESET_GUARD_TTL_MS = 60 * 1e3;
+  var RESET_GUARD_TOP_TOLERANCE_PX = 200;
   var PagePatcher2 = {
     _patchHasBeenApplied: false,
     _lastSeenCursor: null,
     _lastCheckedUrl: null,
     _bodyObserver: null,
     _isCursorSaveLocked: false,
+    _isResetGuardActive: false,
+    _resetGuardStartedAt: 0,
+    _resetGuardForcedScrollRestoration: false,
     // State for request debouncing
     _debounceXhrTimer: null,
     _pendingXhr: null,
@@ -3010,7 +3016,113 @@
       this._isCursorSaveLocked = true;
     },
     unlockCursorSaving() {
+      if (this._isResetGuardActive) return;
       this._isCursorSaveLocked = false;
+    },
+    armResetGuard() {
+      this._isResetGuardActive = true;
+      this._resetGuardStartedAt = Date.now();
+      this._isCursorSaveLocked = true;
+      if (typeof sessionStorage !== "undefined") {
+        try {
+          sessionStorage.setItem(RESET_GUARD_KEY, String(this._resetGuardStartedAt));
+        } catch (e) {
+        }
+      }
+      if (this._setScrollRestoration("manual")) {
+        this._resetGuardForcedScrollRestoration = true;
+      }
+      Utils.logger("info", "[Guard] \u5DF2\u6E05\u9664\u4F4D\u7F6E\uFF1A\u5217\u8868\u56DE\u5230\u7B2C\u4E00\u9875\u524D\u6682\u505C\u8BB0\u5F55\u6EDA\u52A8\u4F4D\u7F6E");
+    },
+    // 刷新后初始化阶段检测守卫标记（页面变量不会跨刷新，必须借 sessionStorage）
+    initResetGuard() {
+      if (typeof sessionStorage === "undefined") return;
+      let stamp = null;
+      try {
+        stamp = sessionStorage.getItem(RESET_GUARD_KEY);
+      } catch (e) {
+        return;
+      }
+      if (!stamp) return;
+      if (State.isRecoveryMode) {
+        this._clearResetGuardFlag();
+        return;
+      }
+      const startedAt = Number(stamp) || Date.now();
+      if (Date.now() - startedAt > RESET_GUARD_TTL_MS) {
+        this._clearResetGuardFlag();
+        return;
+      }
+      this._isResetGuardActive = true;
+      this._resetGuardStartedAt = startedAt;
+      this._isCursorSaveLocked = true;
+      if (this._setScrollRestoration("manual")) {
+        this._resetGuardForcedScrollRestoration = true;
+      }
+      Utils.logger("info", "[Guard] \u68C0\u6D4B\u5230\u4F4D\u7F6E\u5DF2\u91CD\u7F6E\uFF0C\u6682\u505C\u8BB0\u5F55\u76F4\u5230\u5217\u8868\u56DE\u5230\u7B2C\u4E00\u9875");
+    },
+    releaseResetGuard(reason) {
+      if (!this._isResetGuardActive) return;
+      this._isResetGuardActive = false;
+      this._resetGuardStartedAt = 0;
+      this._isCursorSaveLocked = false;
+      this._clearResetGuardFlag();
+      if (this._resetGuardForcedScrollRestoration) {
+        this._resetGuardForcedScrollRestoration = false;
+        this._restoreScrollRestorationWhenSettled();
+      }
+      Utils.logger("debug", `[Guard] \u6062\u590D\u8BB0\u5F55\u6EDA\u52A8\u4F4D\u7F6E (${reason})`);
+    },
+    // 第一个「不带 cursor=」的列表搜索说明列表真的从第一页重新加载了。此刻若页面
+    // 已回到顶部，说明没有滚动还原的回放，可以恢复记录；否则保持守卫压住回放游标。
+    observeResetGuard(url) {
+      if (!this._isResetGuardActive) return;
+      if (Date.now() - this._resetGuardStartedAt > RESET_GUARD_TTL_MS) {
+        this.releaseResetGuard("guard timeout");
+        return;
+      }
+      if (typeof url !== "string" || !url.includes("/i/listings/search")) return;
+      if (url.includes("cursor=")) return;
+      if (this._currentScrollY() > RESET_GUARD_TOP_TOLERANCE_PX) return;
+      this.releaseResetGuard("list reloaded from page 1");
+    },
+    _clearResetGuardFlag() {
+      if (typeof sessionStorage === "undefined") return;
+      try {
+        sessionStorage.removeItem(RESET_GUARD_KEY);
+      } catch (e) {
+      }
+    },
+    _setScrollRestoration(mode) {
+      try {
+        if (typeof history !== "undefined" && history) {
+          history.scrollRestoration = mode;
+          return true;
+        }
+      } catch (e) {
+      }
+      return false;
+    },
+    // 等本次加载的滚动还原决策走完再交还浏览器默认行为
+    _restoreScrollRestorationWhenSettled() {
+      const revert = /* @__PURE__ */ __name(() => this._setScrollRestoration("auto"), "revert");
+      if (typeof document !== "undefined" && document && document.readyState === "complete") {
+        setTimeout(revert, 2e3);
+      } else if (typeof window !== "undefined" && window && typeof window.addEventListener === "function") {
+        window.addEventListener("load", () => setTimeout(revert, 2e3), { once: true });
+      } else {
+        revert();
+      }
+    },
+    _currentScrollY() {
+      try {
+        if (typeof window !== "undefined" && window) {
+          if (typeof window.scrollY === "number") return window.scrollY;
+          if (typeof window.pageYOffset === "number") return window.pageYOffset;
+        }
+      } catch (e) {
+      }
+      return 0;
     },
     // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
     // 自动滚动/自动加任务运行期间也必须保存当前游标，否则 UI 永远显示无位置。
@@ -3040,6 +3152,7 @@
       } catch (e) {
         Utils.logger("warn", "[Cursor] Failed to restore cursor state:", e);
       }
+      this.initResetGuard();
       this.applyPatches();
       Utils.logger("debug", "[Cursor] Network interceptors applied.");
       this.setupSortMonitor();
@@ -3333,6 +3446,7 @@
       }, "listenerAwareSend");
       XMLHttpRequest.prototype.open = function(method, url, ...args) {
         let modifiedUrl = url;
+        self.observeResetGuard(url);
         if (self.shouldPatchUrl(url)) {
           modifiedUrl = self.getPatchedUrl(url);
           this._isDebouncedSearch = false;
@@ -3386,6 +3500,7 @@
       window.fetch = function(input, init) {
         let url = typeof input === "string" ? input : input.url;
         let modifiedInput = input;
+        self.observeResetGuard(url);
         if (self.shouldPatchUrl(url)) {
           const modifiedUrl = self.getPatchedUrl(url);
           if (typeof input === "string") {
@@ -4932,6 +5047,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           State.savedCursor = null;
         }
       } else {
+        if (typeof PagePatcher2 !== "undefined" && PagePatcher2.releaseResetGuard) {
+          PagePatcher2.releaseResetGuard("remember position enabled");
+        }
         if (typeof PagePatcher2 !== "undefined" && PagePatcher2.unlockCursorSaving) {
           PagePatcher2.unlockCursorSaving();
         }
@@ -6696,6 +6814,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               if (State.UI && State.UI.savedPositionDisplay) {
                 State.UI.savedPositionDisplay.textContent = Utils.getText("no_saved_position");
               }
+            }
+            if (typeof PagePatcher !== "undefined" && PagePatcher.armResetGuard) {
+              PagePatcher.armResetGuard();
+            }
+            try {
+              window.scrollTo(0, 0);
+            } catch (e) {
             }
             try {
               const url = new URL(window.location.href);

@@ -13,12 +13,23 @@ import { Utils } from './utils.js';
 import { RateLimitManager } from './rate-limit-manager.js';
 import { isRateLimitedResponse } from './rate-limit-detection.js';
 
+// 用户点「清除浏览位置」后会刷新页面，浏览器可能把旧的滚动深度还原回去：
+// Fab 的虚拟列表为了填满视口会连发带 cursor= 的分页请求，脚本会把这些回放出来的
+// 深游标重新存下来 —— 于是出现「刷新后位置还是旧的」。这个守卫让刷新后的自动记录
+// 暂停，直到列表真的从第一页重新加载为止。
+const RESET_GUARD_KEY = 'fab_helper_reset_guard';
+const RESET_GUARD_TTL_MS = 60 * 1000;
+const RESET_GUARD_TOP_TOLERANCE_PX = 200;
+
 export const PagePatcher = {
     _patchHasBeenApplied: false,
     _lastSeenCursor: null,
     _lastCheckedUrl: null,
     _bodyObserver: null,
     _isCursorSaveLocked: false,
+    _isResetGuardActive: false,
+    _resetGuardStartedAt: 0,
+    _resetGuardForcedScrollRestoration: false,
 
     // State for request debouncing
     _debounceXhrTimer: null,
@@ -30,7 +41,123 @@ export const PagePatcher = {
     },
 
     unlockCursorSaving() {
+        // 重置守卫期间由守卫的释放逻辑接管，避免拦截器里的自动解锁把守卫绕过
+        if (this._isResetGuardActive) return;
         this._isCursorSaveLocked = false;
+    },
+
+    armResetGuard() {
+        this._isResetGuardActive = true;
+        this._resetGuardStartedAt = Date.now();
+        this._isCursorSaveLocked = true;
+        if (typeof sessionStorage !== 'undefined') {
+            try {
+                sessionStorage.setItem(RESET_GUARD_KEY, String(this._resetGuardStartedAt));
+            } catch (e) { }
+        }
+        // 刷新时浏览器会还原上一次的滚动深度，这正是回放游标的源头
+        if (this._setScrollRestoration('manual')) {
+            this._resetGuardForcedScrollRestoration = true;
+        }
+        Utils.logger('info', '[Guard] 已清除位置：列表回到第一页前暂停记录滚动位置');
+    },
+
+    // 刷新后初始化阶段检测守卫标记（页面变量不会跨刷新，必须借 sessionStorage）
+    initResetGuard() {
+        if (typeof sessionStorage === 'undefined') return;
+        let stamp = null;
+        try {
+            stamp = sessionStorage.getItem(RESET_GUARD_KEY);
+        } catch (e) {
+            return;
+        }
+        if (!stamp) return;
+
+        // 用户主动「恢复位置」的意图优先于重置守卫
+        if (State.isRecoveryMode) {
+            this._clearResetGuardFlag();
+            return;
+        }
+
+        const startedAt = Number(stamp) || Date.now();
+        if (Date.now() - startedAt > RESET_GUARD_TTL_MS) {
+            this._clearResetGuardFlag();
+            return;
+        }
+
+        this._isResetGuardActive = true;
+        this._resetGuardStartedAt = startedAt;
+        this._isCursorSaveLocked = true;
+        if (this._setScrollRestoration('manual')) {
+            this._resetGuardForcedScrollRestoration = true;
+        }
+        Utils.logger('info', '[Guard] 检测到位置已重置，暂停记录直到列表回到第一页');
+    },
+
+    releaseResetGuard(reason) {
+        if (!this._isResetGuardActive) return;
+        this._isResetGuardActive = false;
+        this._resetGuardStartedAt = 0;
+        this._isCursorSaveLocked = false;
+        this._clearResetGuardFlag();
+        if (this._resetGuardForcedScrollRestoration) {
+            this._resetGuardForcedScrollRestoration = false;
+            this._restoreScrollRestorationWhenSettled();
+        }
+        Utils.logger('debug', `[Guard] 恢复记录滚动位置 (${reason})`);
+    },
+
+    // 第一个「不带 cursor=」的列表搜索说明列表真的从第一页重新加载了。此刻若页面
+    // 已回到顶部，说明没有滚动还原的回放，可以恢复记录；否则保持守卫压住回放游标。
+    observeResetGuard(url) {
+        if (!this._isResetGuardActive) return;
+        if (Date.now() - this._resetGuardStartedAt > RESET_GUARD_TTL_MS) {
+            this.releaseResetGuard('guard timeout');
+            return;
+        }
+        if (typeof url !== 'string' || !url.includes('/i/listings/search')) return;
+        if (url.includes('cursor=')) return;
+        if (this._currentScrollY() > RESET_GUARD_TOP_TOLERANCE_PX) return;
+        this.releaseResetGuard('list reloaded from page 1');
+    },
+
+    _clearResetGuardFlag() {
+        if (typeof sessionStorage === 'undefined') return;
+        try {
+            sessionStorage.removeItem(RESET_GUARD_KEY);
+        } catch (e) { }
+    },
+
+    _setScrollRestoration(mode) {
+        try {
+            if (typeof history !== 'undefined' && history) {
+                history.scrollRestoration = mode;
+                return true;
+            }
+        } catch (e) { }
+        return false;
+    },
+
+    // 等本次加载的滚动还原决策走完再交还浏览器默认行为
+    _restoreScrollRestorationWhenSettled() {
+        const revert = () => this._setScrollRestoration('auto');
+        if (typeof document !== 'undefined' && document && document.readyState === 'complete') {
+            setTimeout(revert, 2000);
+        } else if (typeof window !== 'undefined' && window && typeof window.addEventListener === 'function') {
+            window.addEventListener('load', () => setTimeout(revert, 2000), { once: true });
+        } else {
+            revert();
+        }
+    },
+
+    _currentScrollY() {
+        try {
+            if (typeof window !== 'undefined' && window) {
+                if (typeof window.scrollY === 'number') return window.scrollY;
+                if (typeof window.pageYOffset === 'number') return window.pageYOffset;
+            }
+        } catch (e) { }
+        return 0;
     },
 
     // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
@@ -65,6 +192,8 @@ export const PagePatcher = {
         } catch (e) {
             Utils.logger('warn', '[Cursor] Failed to restore cursor state:', e);
         }
+
+        this.initResetGuard();
 
         // 应用拦截器
         this.applyPatches();
@@ -439,6 +568,7 @@ export const PagePatcher = {
 
         XMLHttpRequest.prototype.open = function (method, url, ...args) {
             let modifiedUrl = url;
+            self.observeResetGuard(url);
             if (self.shouldPatchUrl(url)) {
                 modifiedUrl = self.getPatchedUrl(url);
                 this._isDebouncedSearch = false;
@@ -502,6 +632,7 @@ export const PagePatcher = {
         window.fetch = function (input, init) {
             let url = (typeof input === 'string') ? input : input.url;
             let modifiedInput = input;
+            self.observeResetGuard(url);
             if (self.shouldPatchUrl(url)) {
                 const modifiedUrl = self.getPatchedUrl(url);
                 if (typeof input === 'string') {

@@ -569,6 +569,16 @@ export const UI = {
                         }
                     }
 
+                    // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
+                    if (typeof PagePatcher !== 'undefined' && PagePatcher.armResetGuard) {
+                        PagePatcher.armResetGuard();
+                    }
+
+                    // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
+                    try {
+                        window.scrollTo(0, 0);
+                    } catch (e) { }
+
                     try {
                         const url = new URL(window.location.href);
                         if (url.searchParams.has('cursor')) {

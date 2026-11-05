@@ -517,6 +517,10 @@ export const TaskRunner = {
                 State.savedCursor = null;
             }
         } else {
+            if (typeof PagePatcher !== 'undefined' && PagePatcher.releaseResetGuard) {
+                // 用户主动重新开启「记住位置」，重置守卫不应继续压着记录
+                PagePatcher.releaseResetGuard('remember position enabled');
+            }
             if (typeof PagePatcher !== 'undefined' && PagePatcher.unlockCursorSaving) {
                 PagePatcher.unlockCursorSaving();
             }

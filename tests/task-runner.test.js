@@ -1511,6 +1511,134 @@ test('PagePatcher clearSavedPosition locks saving, clears sessionStorage, and de
     PagePatcher.unlockCursorSaving();
 });
 
+test('reset guard drops replayed cursors after a position reset until the list returns to page 1', async () => {
+    const originalWindow = globalThis.window;
+    const originalHistory = globalThis.history;
+    const originalDocument = globalThis.document;
+    const originalSessionStorage = globalThis.sessionStorage;
+    const savedValues = [];
+
+    const session = new Map();
+    globalThis.sessionStorage = {
+        getItem: (k) => (session.has(k) ? session.get(k) : null),
+        setItem: (k, v) => session.set(k, String(v)),
+        removeItem: (k) => session.delete(k)
+    };
+    globalThis.history = { scrollRestoration: 'auto' };
+    globalThis.document = { readyState: 'loading' };
+    globalThis.window = { scrollY: 0, pageYOffset: 0, location: { origin: 'https://www.fab.com' } };
+    globalThis.GM_setValue = async (key, val) => { savedValues.push({ key, val }); };
+    globalThis.GM_deleteValue = async () => { };
+
+    State.rememberScrollPosition = true;
+    State.isRecoveryMode = false;
+    State.savedCursor = 'stale-deep-cursor';
+    PagePatcher._isResetGuardActive = false;
+    PagePatcher._resetGuardForcedScrollRestoration = false;
+    PagePatcher.unlockCursorSaving();
+
+    try {
+        await PagePatcher.clearSavedPosition('User UI Reset');
+        PagePatcher.armResetGuard();
+
+        assert.equal(session.has('fab_helper_reset_guard'), true);
+        assert.equal(PagePatcher._isCursorSaveLocked, true);
+        // 刷新后不再还原旧滚动深度，回放的深游标也就无从产生
+        assert.equal(globalThis.history.scrollRestoration, 'manual');
+
+        PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=replayed-deep');
+        assert.equal(savedValues.length, 0);
+        assert.equal(State.savedCursor, null);
+
+        // 带 cursor 的回放请求不解除守卫
+        PagePatcher.observeResetGuard('https://www.fab.com/i/listings/search?cursor=replayed-deep');
+        assert.equal(PagePatcher._isResetGuardActive, true);
+
+        // 页面还停在浏览器还原出来的深处：即使首屏请求无游标也继续守住
+        globalThis.window.scrollY = 8000;
+        PagePatcher.observeResetGuard('https://www.fab.com/i/listings/search?is_free=1');
+        assert.equal(PagePatcher._isResetGuardActive, true);
+
+        // 列表从第一页重新加载且回到顶部：守卫解除，恢复记录
+        globalThis.window.scrollY = 0;
+        PagePatcher.observeResetGuard('https://www.fab.com/i/listings/search?is_free=1');
+        assert.equal(PagePatcher._isResetGuardActive, false);
+        assert.equal(PagePatcher._isCursorSaveLocked, false);
+        assert.equal(session.has('fab_helper_reset_guard'), false);
+
+        PagePatcher.saveLatestCursorFromUrl('https://www.fab.com/i/listings/search?cursor=user-scrolled');
+        assert.equal(savedValues.length, 1);
+        assert.equal(savedValues[0].val, 'user-scrolled');
+    } finally {
+        PagePatcher._isResetGuardActive = false;
+        PagePatcher._resetGuardForcedScrollRestoration = false;
+        PagePatcher.unlockCursorSaving();
+        State.savedCursor = null;
+        State.rememberScrollPosition = false;
+        globalThis.window = originalWindow;
+        globalThis.history = originalHistory;
+        globalThis.document = originalDocument;
+        globalThis.sessionStorage = originalSessionStorage;
+    }
+});
+
+test('initResetGuard re-arms the cursor guard after reload, honouring recovery mode and TTL', () => {
+    const originalWindow = globalThis.window;
+    const originalHistory = globalThis.history;
+    const originalDocument = globalThis.document;
+    const originalSessionStorage = globalThis.sessionStorage;
+
+    const session = new Map();
+    globalThis.sessionStorage = {
+        getItem: (k) => (session.has(k) ? session.get(k) : null),
+        setItem: (k, v) => session.set(k, String(v)),
+        removeItem: (k) => session.delete(k)
+    };
+    globalThis.history = { scrollRestoration: 'auto' };
+    globalThis.document = { readyState: 'loading' };
+    globalThis.window = { scrollY: 0, pageYOffset: 0, location: { origin: 'https://www.fab.com' } };
+
+    PagePatcher._isResetGuardActive = false;
+    PagePatcher._resetGuardForcedScrollRestoration = false;
+    PagePatcher.unlockCursorSaving();
+
+    try {
+        // 刷新前写入的守卫标记必须在刷新后的 init 里重新生效
+        session.set('fab_helper_reset_guard', String(Date.now()));
+        State.isRecoveryMode = false;
+        PagePatcher.initResetGuard();
+        assert.equal(PagePatcher._isResetGuardActive, true);
+        assert.equal(PagePatcher._isCursorSaveLocked, true);
+        assert.equal(globalThis.history.scrollRestoration, 'manual');
+
+        // 过期的守卫标记直接丢弃，不能永久禁用位置记录
+        PagePatcher.releaseResetGuard('test');
+        assert.equal(PagePatcher._isCursorSaveLocked, false);
+        session.set('fab_helper_reset_guard', String(Date.now() - 120000));
+        PagePatcher.initResetGuard();
+        assert.equal(PagePatcher._isResetGuardActive, false);
+        assert.equal(PagePatcher._isCursorSaveLocked, false);
+        assert.equal(session.has('fab_helper_reset_guard'), false);
+
+        // 用户主动恢复位置时不启用守卫
+        session.set('fab_helper_reset_guard', String(Date.now()));
+        State.isRecoveryMode = true;
+        PagePatcher.initResetGuard();
+        assert.equal(PagePatcher._isResetGuardActive, false);
+        assert.equal(PagePatcher._isCursorSaveLocked, false);
+        assert.equal(session.has('fab_helper_reset_guard'), false);
+    } finally {
+        State.isRecoveryMode = false;
+        PagePatcher._isResetGuardActive = false;
+        PagePatcher._resetGuardForcedScrollRestoration = false;
+        PagePatcher.unlockCursorSaving();
+        globalThis.window = originalWindow;
+        globalThis.history = originalHistory;
+        globalThis.document = originalDocument;
+        globalThis.sessionStorage = originalSessionStorage;
+    }
+});
+
 test('refreshes card count cache from real DOM after infinite-scroll loads new cards', () => {
     const originalDocument = globalThis.document;
     const originalWindow = globalThis.window;
