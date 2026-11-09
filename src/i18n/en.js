@@ -3,13 +3,19 @@
  */
 export const en = {
     // 基础UI
-    hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Start Tasks', executing: 'Executing...', stopExecute: 'Stop', retry_failed: 'Retry Failed',
-    added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Hidden', visible: 'Visible',
+    hide: 'Hide Done', show: 'Show Done', sync: 'Sync State', execute: 'Auto Claim', executing: 'Stop Claim', stopExecute: 'Stop Claim', retry_failed: 'Retry Failed',
+    added: 'Done', failed: 'Failed', todo: 'To-Do', hidden: 'Filtered', visible: 'Visible',
     clearLog: 'Clear Log', copyLog: 'Copy Log', copied: 'Copied!',
     tab_dashboard: 'Dashboard', tab_settings: 'Settings', tab_debug: 'Debug',
     toast_all_tasks_completed: '🎉 All tasks have been completed!',
     toast_reached_bottom: '🏁 Reached the bottom of the list, all items scanned!',
     close: 'Close',
+
+    // 设置分组
+    settings_group_automation: '⚡ Automation',
+    settings_group_filter: '🎯 Filters',
+    settings_group_performance: '🚀 Performance & Alerts',
+    settings_group_maintenance: '🛠️ Maintenance & Advanced',
 
     // 应用标题和标签
     app_title: 'Fab Helper',
@@ -202,16 +208,17 @@ export const en = {
     source_scroll_api_monitoring: 'Scroll API Monitoring',
 
     // 设置项
-    setting_auto_refresh: 'Auto refresh when no items visible',
-    setting_auto_add_scroll: 'Auto add tasks on infinite scroll',
-    setting_auto_scroll: 'Auto-scroll page (auto scan all, off by default)',
-    setting_remember_position: 'Remember waterfall browsing position',
+    setting_auto_refresh: 'Auto Refresh Empty Page',
+    setting_auto_add_scroll: 'Auto Add on Scroll',
+    setting_auto_scroll: 'Auto Scroll Page',
+    setting_remember_position: 'Remember Position',
     setting_auto_resume_429: 'Auto resume after 429 errors',
-    setting_hide_discounted: 'Hide discounted paid items',
-    setting_hide_paid: 'Hide all paid items',
-    setting_block_large_resources: 'Disable images and media',
-    setting_max_workers: 'Concurrent Worker Tabs',
-    setting_max_workers_tooltip: 'Number of concurrent worker tabs for claiming (recommended 1-15, default 7)',
+    setting_hide_discounted: 'Filter Discounted Items',
+    setting_hide_paid: 'Filter Paid Items',
+    setting_block_large_resources: 'Block Large Resources',
+    setting_max_workers: 'Worker Tabs',
+    setting_max_workers_tooltip: 'Concurrent worker tabs (default 7)',
+    setting_verification_notify: 'Verification Alert',
     log_max_workers_changed: 'Concurrent worker tabs set to: %s',
     setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
 

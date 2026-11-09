@@ -3,15 +3,21 @@
  */
 export const zh = {
     // 基础UI
-    hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键开刷', executing: '执行中...', stopExecute: '停止', retry_failed: '重试失败',
+    hide: '隐藏已得', show: '显示已得', sync: '同步状态', execute: '一键入库', executing: '停止入库', stopExecute: '停止入库', retry_failed: '重试失败',
     hideDiscounted: '隐藏打折', showDiscounted: '显示打折',
     hidePaid: '隐藏付费', showPaid: '显示付费',
-    added: '已入库', failed: '失败', todo: '待办', hidden: '已隐藏', visible: '可见',
+    added: '已入库', failed: '失败', todo: '待处理', hidden: '已滤', visible: '可见',
     clearLog: '清空日志', copyLog: '复制日志', copied: '已复制!',
     tab_dashboard: '仪表盘', tab_settings: '设定', tab_debug: '调试',
     toast_all_tasks_completed: '🎉 所有任务已处理完成！',
     toast_reached_bottom: '🏁 已到达商品列表底部，全部商品扫描完毕！',
     close: '关闭',
+
+    // 设置分组
+    settings_group_automation: '⚡ 自动化',
+    settings_group_filter: '🎯 视图过滤',
+    settings_group_performance: '🚀 性能与通知',
+    settings_group_maintenance: '🛠️ 维护与高级',
 
     // 应用标题和标签
     app_title: 'Fab Helper',
@@ -204,16 +210,17 @@ export const zh = {
     source_scroll_api_monitoring: '滚动API监控',
 
     // 设置项
-    setting_auto_refresh: '无商品可见时自动刷新',
-    setting_auto_add_scroll: '无限滚动时自动添加任务',
-    setting_auto_scroll: '自动滚动页面（自动扫描全部，默认关）',
-    setting_remember_position: '记住瀑布流浏览位置',
+    setting_auto_refresh: '空页自动刷新',
+    setting_auto_add_scroll: '滚动自动入库',
     setting_auto_resume_429: '429后自动恢复并继续',
-    setting_hide_discounted: '隐藏打折的付费商品',
-    setting_hide_paid: '隐藏所有付费商品',
-    setting_block_large_resources: '禁用图片/媒体等大资源',
-    setting_max_workers: '并发工作标签页数量',
-    setting_max_workers_tooltip: '同时领取的并发 worker 标签页数量（建议 1~15，默认 7）',
+    setting_auto_scroll: '自动向下翻页',
+    setting_remember_position: '记忆浏览位置',
+    setting_hide_discounted: '过滤打折商品',
+    setting_hide_paid: '过滤付费商品',
+    setting_block_large_resources: '无图省流模式',
+    setting_max_workers: '并发工作标签',
+    setting_max_workers_tooltip: '并发 worker 标签页数量（默认 7）',
+    setting_verification_notify: '人机验证通知',
     log_max_workers_changed: '并发工作标签页数量已设置为: %s',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 

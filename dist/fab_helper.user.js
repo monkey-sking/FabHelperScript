@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261109-1331
+// @version      3.5.27-20261109-1503
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -34,14 +34,14 @@
     hide: "Hide Done",
     show: "Show Done",
     sync: "Sync State",
-    execute: "Start Tasks",
-    executing: "Executing...",
-    stopExecute: "Stop",
+    execute: "Auto Claim",
+    executing: "Stop Claim",
+    stopExecute: "Stop Claim",
     retry_failed: "Retry Failed",
     added: "Done",
     failed: "Failed",
     todo: "To-Do",
-    hidden: "Hidden",
+    hidden: "Filtered",
     visible: "Visible",
     clearLog: "Clear Log",
     copyLog: "Copy Log",
@@ -52,6 +52,11 @@
     toast_all_tasks_completed: "\u{1F389} All tasks have been completed!",
     toast_reached_bottom: "\u{1F3C1} Reached the bottom of the list, all items scanned!",
     close: "Close",
+    // 设置分组
+    settings_group_automation: "\u26A1 Automation",
+    settings_group_filter: "\u{1F3AF} Filters",
+    settings_group_performance: "\u{1F680} Performance & Alerts",
+    settings_group_maintenance: "\u{1F6E0}\uFE0F Maintenance & Advanced",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "Free",
@@ -218,16 +223,17 @@
     source_implicit_rate_limit: "Implicit Rate Limit Detection",
     source_scroll_api_monitoring: "Scroll API Monitoring",
     // 设置项
-    setting_auto_refresh: "Auto refresh when no items visible",
-    setting_auto_add_scroll: "Auto add tasks on infinite scroll",
-    setting_auto_scroll: "Auto-scroll page (auto scan all, off by default)",
-    setting_remember_position: "Remember waterfall browsing position",
+    setting_auto_refresh: "Auto Refresh Empty Page",
+    setting_auto_add_scroll: "Auto Add on Scroll",
+    setting_auto_scroll: "Auto Scroll Page",
+    setting_remember_position: "Remember Position",
     setting_auto_resume_429: "Auto resume after 429 errors",
-    setting_hide_discounted: "Hide discounted paid items",
-    setting_hide_paid: "Hide all paid items",
-    setting_block_large_resources: "Disable images and media",
-    setting_max_workers: "Concurrent Worker Tabs",
-    setting_max_workers_tooltip: "Number of concurrent worker tabs for claiming (recommended 1-15, default 7)",
+    setting_hide_discounted: "Filter Discounted Items",
+    setting_hide_paid: "Filter Paid Items",
+    setting_block_large_resources: "Block Large Resources",
+    setting_max_workers: "Worker Tabs",
+    setting_max_workers_tooltip: "Concurrent worker tabs (default 7)",
+    setting_verification_notify: "Verification Alert",
     log_max_workers_changed: "Concurrent worker tabs set to: %s",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
@@ -399,9 +405,9 @@
     hide: "\u9690\u85CF\u5DF2\u5F97",
     show: "\u663E\u793A\u5DF2\u5F97",
     sync: "\u540C\u6B65\u72B6\u6001",
-    execute: "\u4E00\u952E\u5F00\u5237",
-    executing: "\u6267\u884C\u4E2D...",
-    stopExecute: "\u505C\u6B62",
+    execute: "\u4E00\u952E\u5165\u5E93",
+    executing: "\u505C\u6B62\u5165\u5E93",
+    stopExecute: "\u505C\u6B62\u5165\u5E93",
     retry_failed: "\u91CD\u8BD5\u5931\u8D25",
     hideDiscounted: "\u9690\u85CF\u6253\u6298",
     showDiscounted: "\u663E\u793A\u6253\u6298",
@@ -409,8 +415,8 @@
     showPaid: "\u663E\u793A\u4ED8\u8D39",
     added: "\u5DF2\u5165\u5E93",
     failed: "\u5931\u8D25",
-    todo: "\u5F85\u529E",
-    hidden: "\u5DF2\u9690\u85CF",
+    todo: "\u5F85\u5904\u7406",
+    hidden: "\u5DF2\u6EE4",
     visible: "\u53EF\u89C1",
     clearLog: "\u6E05\u7A7A\u65E5\u5FD7",
     copyLog: "\u590D\u5236\u65E5\u5FD7",
@@ -421,6 +427,11 @@
     toast_all_tasks_completed: "\u{1F389} \u6240\u6709\u4EFB\u52A1\u5DF2\u5904\u7406\u5B8C\u6210\uFF01",
     toast_reached_bottom: "\u{1F3C1} \u5DF2\u5230\u8FBE\u5546\u54C1\u5217\u8868\u5E95\u90E8\uFF0C\u5168\u90E8\u5546\u54C1\u626B\u63CF\u5B8C\u6BD5\uFF01",
     close: "\u5173\u95ED",
+    // 设置分组
+    settings_group_automation: "\u26A1 \u81EA\u52A8\u5316",
+    settings_group_filter: "\u{1F3AF} \u89C6\u56FE\u8FC7\u6EE4",
+    settings_group_performance: "\u{1F680} \u6027\u80FD\u4E0E\u901A\u77E5",
+    settings_group_maintenance: "\u{1F6E0}\uFE0F \u7EF4\u62A4\u4E0E\u9AD8\u7EA7",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "\u514D\u8D39",
@@ -587,16 +598,17 @@
     source_implicit_rate_limit: "\u9690\u6027\u9650\u901F\u68C0\u6D4B",
     source_scroll_api_monitoring: "\u6EDA\u52A8API\u76D1\u63A7",
     // 设置项
-    setting_auto_refresh: "\u65E0\u5546\u54C1\u53EF\u89C1\u65F6\u81EA\u52A8\u5237\u65B0",
-    setting_auto_add_scroll: "\u65E0\u9650\u6EDA\u52A8\u65F6\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1",
-    setting_auto_scroll: "\u81EA\u52A8\u6EDA\u52A8\u9875\u9762\uFF08\u81EA\u52A8\u626B\u63CF\u5168\u90E8\uFF0C\u9ED8\u8BA4\u5173\uFF09",
-    setting_remember_position: "\u8BB0\u4F4F\u7011\u5E03\u6D41\u6D4F\u89C8\u4F4D\u7F6E",
+    setting_auto_refresh: "\u7A7A\u9875\u81EA\u52A8\u5237\u65B0",
+    setting_auto_add_scroll: "\u6EDA\u52A8\u81EA\u52A8\u5165\u5E93",
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
-    setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
-    setting_hide_paid: "\u9690\u85CF\u6240\u6709\u4ED8\u8D39\u5546\u54C1",
-    setting_block_large_resources: "\u7981\u7528\u56FE\u7247/\u5A92\u4F53\u7B49\u5927\u8D44\u6E90",
-    setting_max_workers: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u9875\u6570\u91CF",
-    setting_max_workers_tooltip: "\u540C\u65F6\u9886\u53D6\u7684\u5E76\u53D1 worker \u6807\u7B7E\u9875\u6570\u91CF\uFF08\u5EFA\u8BAE 1~15\uFF0C\u9ED8\u8BA4 7\uFF09",
+    setting_auto_scroll: "\u81EA\u52A8\u5411\u4E0B\u7FFB\u9875",
+    setting_remember_position: "\u8BB0\u5FC6\u6D4F\u89C8\u4F4D\u7F6E",
+    setting_hide_discounted: "\u8FC7\u6EE4\u6253\u6298\u5546\u54C1",
+    setting_hide_paid: "\u8FC7\u6EE4\u4ED8\u8D39\u5546\u54C1",
+    setting_block_large_resources: "\u65E0\u56FE\u7701\u6D41\u6A21\u5F0F",
+    setting_max_workers: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E",
+    setting_max_workers_tooltip: "\u5E76\u53D1 worker \u6807\u7B7E\u9875\u6570\u91CF\uFF08\u9ED8\u8BA4 7\uFF09",
+    setting_verification_notify: "\u4EBA\u673A\u9A8C\u8BC1\u901A\u77E5",
     log_max_workers_changed: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u9875\u6570\u91CF\u5DF2\u8BBE\u7F6E\u4E3A: %s",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
@@ -1110,6 +1122,11 @@
       execBtn: null,
       syncBtn: null,
       hideBtn: null,
+      retryFailedBtn: null,
+      maxWorkersInput: null,
+      progressTrack: null,
+      progressBar: null,
+      statusKeepAlive: null,
       logPanel: null,
       savedPositionDisplay: null,
       debugContent: null,
@@ -6354,11 +6371,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (document.getElementById(Config.UI_CONTAINER_ID)) return true;
       const styles = `
             :root {
-                --bg-color: rgba(28, 28, 30, 0.9);
-                --border-color: rgba(255, 255, 255, 0.15);
+                --bg-color: rgba(22, 22, 26, 0.88);
+                --card-bg: rgba(255, 255, 255, 0.04);
+                --card-border: rgba(255, 255, 255, 0.08);
+                --border-color: rgba(255, 255, 255, 0.12);
                 --text-color-primary: #f5f5f7;
-                --text-color-secondary: #a0a0a5;
-                --radius-l: 12px;
+                --text-color-secondary: #98989f;
+                --radius-l: 14px;
                 --radius-m: 8px;
                 --radius-s: 6px;
                 --blue: #007aff; --pink: #ff2d55; --green: #34c759;
@@ -6371,15 +6390,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 right: 20px;
                 z-index: 9999;
                 background: var(--bg-color);
-                backdrop-filter: blur(15px) saturate(1.8);
-                -webkit-backdrop-filter: blur(15px) saturate(1.8);
+                backdrop-filter: blur(20px) saturate(1.8);
+                -webkit-backdrop-filter: blur(20px) saturate(1.8);
                 border: 1px solid var(--border-color);
                 border-radius: var(--radius-l);
                 color: var(--text-color-primary);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                width: 300px;
-                font-size: 14px;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                width: 310px;
+                font-size: 13.5px;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
             }
             #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
                 box-sizing: border-box;
@@ -6414,12 +6433,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 display: flex;
                 flex-wrap: wrap;
                 gap: 6px;
+                margin-bottom: 8px;
             }
             .fab-helper-status-item {
-                background: var(--dark-gray);
-                padding: 8px 6px;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                padding: 7px 4px;
                 border-radius: var(--radius-m);
-                font-size: 12px;
+                font-size: 11.5px;
                 color: var(--text-color-secondary);
                 display: flex;
                 flex-direction: column;
@@ -6427,22 +6448,40 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 align-items: center;
                 gap: 2px;
                 min-width: 0;
+                transition: border-color 0.2s, background-color 0.2s;
+            }
+            .fab-helper-status-item.grid-3 {
                 flex-grow: 1;
                 flex-basis: calc((100% - 12px) / 3);
+            }
+            .fab-helper-status-item.grid-2 {
+                flex-grow: 1;
+                flex-basis: calc((100% - 6px) / 2);
+            }
+            .fab-helper-status-item.has-failed {
+                border-color: rgba(255, 45, 85, 0.5);
+                background: rgba(255, 45, 85, 0.08);
             }
             .fab-helper-status-label {
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 4px;
+                gap: 3px;
                 white-space: nowrap;
+                font-size: 11px;
             }
             .fab-helper-status-item span {
                 display: block;
-                font-size: 18px;
-                font-weight: 600;
+                font-size: 17px;
+                font-weight: 700;
                 color: #fff;
                 margin-top: 0;
+                font-variant-numeric: tabular-nums;
+            }
+            @keyframes fab-pulse-glow {
+                0% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0.45); }
+                70% { box-shadow: 0 0 0 8px rgba(255, 45, 85, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0); }
             }
             .fab-helper-execute-btn {
                 width: 100%;
@@ -6452,21 +6491,41 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 font-size: 16px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.2s ease;
+                transition: all 0.25s ease;
                 color: #fff;
                 background: var(--blue);
-                margin-bottom: 12px;
+                margin-bottom: 8px;
                 display: flex;
                 justify-content: center;
                 align-items: center;
                 gap: 8px;
+                box-shadow: 0 2px 10px rgba(0, 122, 255, 0.3);
             }
             .fab-helper-execute-btn.executing {
                 background: var(--pink);
+                box-shadow: 0 2px 12px rgba(255, 45, 85, 0.4);
+                animation: fab-pulse-glow 2s infinite;
+            }
+            .fab-progress-track {
+                width: 100%;
+                height: 4px;
+                background: rgba(255, 255, 255, 0.1);
+                border-radius: 2px;
+                margin-bottom: 8px;
+                overflow: hidden;
+                display: none;
+            }
+            .fab-progress-bar {
+                height: 100%;
+                background: linear-gradient(90deg, var(--blue), #5ac8fa);
+                width: 0%;
+                transition: width 0.3s ease;
+                border-radius: 2px;
             }
             .fab-helper-actions {
                 display: flex;
-                gap: 8px;
+                gap: 6px;
+                margin-bottom: 8px;
             }
             .fab-helper-actions button {
                 flex: 1;
@@ -6474,62 +6533,88 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 5px;
-                background: var(--dark-gray);
-                border: none;
+                gap: 4px;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
                 border-radius: var(--radius-m);
                 color: var(--text-color-primary);
-                padding: 8px 6px;
+                padding: 7px 4px;
                 cursor: pointer;
-                transition: background-color 0.2s;
+                transition: background-color 0.2s, border-color 0.2s;
                 white-space: nowrap;
-                font-size: 13.5px;
+                font-size: 12.5px;
                 font-weight: normal;
             }
             .fab-helper-actions button:hover {
-                background: #4a4a4c;
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.18);
+            }
+            .fab-helper-actions button:disabled {
+                opacity: 0.4;
+                cursor: not-allowed;
+            }
+            .fab-helper-position-container {
+                margin-bottom: 8px;
+                padding: 5px 8px;
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-s);
+                font-size: 12px;
+                display: flex;
+                align-items: center;
+                gap: 4px;
+            }
+            .fab-helper-keepalive-status {
+                font-size: 11px;
+                opacity: 0.85;
+                margin: 0 2px 6px 2px;
+                display: none;
             }
             .fab-log-container {
-                padding: 0 12px 12px 12px;
-                border-bottom: 1px solid var(--border-color);
-                margin-bottom: 12px;
+                margin-top: 6px;
+                border-top: 1px solid var(--border-color);
+                padding-top: 6px;
             }
             .fab-log-header {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                margin-bottom: 8px;
-                margin-top: 8px;
+                margin-bottom: 6px;
+                cursor: pointer;
+                user-select: none;
             }
             .fab-log-header span {
-                font-size: 14px;
+                font-size: 12px;
                 font-weight: 500;
                 color: var(--text-color-secondary);
+                display: flex;
+                align-items: center;
+                gap: 4px;
             }
             .fab-log-controls button {
                 background: transparent;
                 border: none;
                 color: var(--text-color-secondary);
                 cursor: pointer;
-                padding: 4px;
-                font-size: 18px;
+                padding: 2px 4px;
+                font-size: 14px;
                 line-height: 1;
             }
             #${Config.UI_LOG_ID} {
-                background: rgba(10,10,10,0.85);
-                color: #ddd;
+                background: rgba(10, 10, 12, 0.85);
+                color: #e0e0e4;
                 font-size: 11px;
                 line-height: 1.4;
-                padding: 8px;
+                padding: 7px 8px;
                 border-radius: var(--radius-m);
-                max-height: 150px;
+                max-height: 130px;
                 overflow-y: auto;
-                min-height: 50px;
+                min-height: 44px;
                 display: flex;
                 flex-direction: column-reverse;
-                box-shadow: inset 0 1px 4px rgba(0,0,0,0.2);
+                box-shadow: inset 0 1px 4px rgba(0,0,0,0.3);
                 scrollbar-width: thin;
-                scrollbar-color: rgba(255,255,255,0.3) rgba(0,0,0,0.2);
+                scrollbar-color: rgba(255,255,255,0.2) rgba(0,0,0,0.2);
             }
             #${Config.UI_LOG_ID}::-webkit-scrollbar {
                 width: 8px;
@@ -6547,14 +6632,79 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 10px 0;
-                border-bottom: 1px solid var(--border-color);
+                padding: 6px 0;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             }
             .fab-setting-row:last-child {
                 border-bottom: none;
             }
             .fab-setting-label {
+                font-size: 13px;
+                color: var(--text-color-primary);
+            }
+            .fab-card-group {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                padding: 8px 10px;
+                margin-bottom: 8px;
+            }
+            .fab-card-group:last-child {
+                margin-bottom: 0;
+            }
+            .fab-card-group-title {
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-color-secondary);
+                margin-bottom: 6px;
+            }
+            .fab-stepper-btn {
+                width: 24px;
+                height: 24px;
+                border-radius: var(--radius-s);
+                border: 1px solid var(--border-color);
+                background: var(--dark-gray);
+                color: var(--text-color-primary);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: bold;
                 font-size: 14px;
+                line-height: 1;
+                transition: background 0.15s;
+            }
+            .fab-stepper-btn:hover {
+                background: rgba(255, 255, 255, 0.15);
+            }
+            .fab-stepper-input {
+                width: 40px;
+                height: 24px;
+                text-align: center;
+                border-radius: var(--radius-s);
+                border: 1px solid var(--border-color);
+                background: rgba(0, 0, 0, 0.3);
+                color: var(--text-color-primary);
+                font-weight: 600;
+                font-size: 13px;
+                -moz-appearance: textfield;
+            }
+            .fab-danger-btn {
+                width: 100%;
+                margin-top: 6px;
+                background-color: rgba(255, 45, 85, 0.18);
+                color: var(--pink);
+                border: 1px solid rgba(255, 45, 85, 0.4);
+                padding: 7px 10px;
+                border-radius: var(--radius-m);
+                font-size: 12.5px;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s;
+            }
+            .fab-danger-btn:hover {
+                background-color: var(--pink);
+                color: #fff;
             }
             .fab-toggle-switch {
                 position: relative;
@@ -6707,16 +6857,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       State.UI.tabContents.dashboard = dashboardContent;
       const statusBar = document.createElement("div");
       statusBar.className = "fab-helper-status-bar";
-      const createStatusItem = /* @__PURE__ */ __name((id, label, icon) => {
+      const createStatusItem = /* @__PURE__ */ __name((id, label, icon, gridClass = "grid-3") => {
         const item = document.createElement("div");
-        item.className = "fab-helper-status-item";
+        item.className = `fab-helper-status-item ${gridClass}`;
         item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
         return item;
       }, "createStatusItem");
-      State.UI.statusVisible = createStatusItem("fab-status-visible", Utils.getText("visible"), "\u{1F441}\uFE0F");
-      State.UI.statusTodo = createStatusItem("fab-status-todo", Utils.getText("todo"), "\u{1F4E5}");
-      State.UI.statusDone = createStatusItem("fab-status-done", Utils.getText("added"), "\u2705");
-      State.UI.statusFailed = createStatusItem("fab-status-failed", Utils.getText("failed"), "\u274C");
+      State.UI.statusTodo = createStatusItem("fab-status-todo", Utils.getText("todo"), "\u{1F4E5}", "grid-3");
+      State.UI.statusDone = createStatusItem("fab-status-done", Utils.getText("added"), "\u2705", "grid-3");
+      State.UI.statusFailed = createStatusItem("fab-status-failed", Utils.getText("failed"), "\u274C", "grid-3");
       State.UI.statusFailed.style.cursor = "pointer";
       State.UI.statusFailed.title = Utils.getText("tooltip_open_failed");
       State.UI.statusFailed.onclick = () => {
@@ -6731,11 +6880,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           });
         }
       };
-      State.UI.statusHidden = createStatusItem("fab-status-hidden", Utils.getText("hidden"), "\u{1F648}");
+      State.UI.statusVisible = createStatusItem("fab-status-visible", Utils.getText("visible"), "\u{1F441}\uFE0F", "grid-2");
+      State.UI.statusHidden = createStatusItem("fab-status-hidden", Utils.getText("hidden"), "\u{1F648}", "grid-2");
       statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+      const progressTrack = document.createElement("div");
+      progressTrack.className = "fab-progress-track";
+      const progressBar = document.createElement("div");
+      progressBar.className = "fab-progress-bar";
+      progressTrack.appendChild(progressBar);
+      State.UI.progressTrack = progressTrack;
+      State.UI.progressBar = progressBar;
       State.UI.statusKeepAlive = document.createElement("div");
       State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
-      State.UI.statusKeepAlive.style.cssText = "font-size:11px;opacity:0.8;margin:4px 2px 0;display:none;";
       State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
       State.UI.execBtn = document.createElement("button");
       State.UI.execBtn.className = "fab-helper-execute-btn";
@@ -6763,13 +6919,19 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const logHeader = document.createElement("div");
       logHeader.className = "fab-log-header";
       const logTitle = document.createElement("span");
-      logTitle.textContent = Utils.getText("operation_log");
+      const toggleArrow = document.createElement("span");
+      toggleArrow.textContent = "\u25BE";
+      toggleArrow.style.transition = "transform 0.2s";
+      const logTitleText = document.createElement("span");
+      logTitleText.textContent = Utils.getText("operation_log");
+      logTitle.append(toggleArrow, logTitleText);
       const logControls = document.createElement("div");
       logControls.className = "fab-log-controls";
       const copyLogBtn = document.createElement("button");
       copyLogBtn.innerHTML = "\u{1F4C4}";
       copyLogBtn.title = Utils.getText("copyLog");
-      copyLogBtn.onclick = () => {
+      copyLogBtn.onclick = (e) => {
+        e.stopPropagation();
         navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
           const originalText = copyLogBtn.textContent;
           copyLogBtn.textContent = "\u2705";
@@ -6781,17 +6943,23 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const clearLogBtn = document.createElement("button");
       clearLogBtn.innerHTML = "\u{1F5D1}\uFE0F";
       clearLogBtn.title = Utils.getText("clearLog");
-      clearLogBtn.onclick = () => {
+      clearLogBtn.onclick = (e) => {
+        e.stopPropagation();
         State.UI.logPanel.innerHTML = "";
       };
       logControls.append(copyLogBtn, clearLogBtn);
       logHeader.append(logTitle, logControls);
       State.UI.logPanel = document.createElement("div");
       State.UI.logPanel.id = Config.UI_LOG_ID;
+      let isLogOpen = true;
+      logHeader.onclick = () => {
+        isLogOpen = !isLogOpen;
+        State.UI.logPanel.style.display = isLogOpen ? "flex" : "none";
+        toggleArrow.style.transform = isLogOpen ? "rotate(0deg)" : "rotate(-90deg)";
+      };
       logContainer.append(logHeader, State.UI.logPanel);
       const positionContainer = document.createElement("div");
       positionContainer.className = "fab-helper-position-container";
-      positionContainer.style.cssText = "margin: 8px 0; padding: 6px 8px; background-color: rgba(0,0,0,0.05); border-radius: 4px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center;";
       const positionIcon = document.createElement("span");
       positionIcon.textContent = Utils.getText("position_indicator");
       positionIcon.style.marginRight = "4px";
@@ -6802,9 +6970,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       positionContainer.appendChild(positionIcon);
       positionContainer.appendChild(positionInfo);
       const clearPositionBtn = document.createElement("button");
-      clearPositionBtn.textContent = "\u{1F504}";
+      clearPositionBtn.textContent = "\u21BA";
       clearPositionBtn.title = Utils.getText("clear_position_tooltip");
-      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s;";
+      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);";
       clearPositionBtn.onmouseover = () => {
         clearPositionBtn.style.opacity = "1";
       };
@@ -6840,11 +7008,28 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       };
       positionContainer.appendChild(clearPositionBtn);
-      dashboardContent.append(logContainer, positionContainer, statusBar, State.UI.statusKeepAlive, State.UI.execBtn, actionButtons);
+      dashboardContent.append(
+        State.UI.execBtn,
+        State.UI.progressTrack,
+        statusBar,
+        actionButtons,
+        positionContainer,
+        State.UI.statusKeepAlive,
+        logContainer
+      );
       container.appendChild(dashboardContent);
       const settingsContent = document.createElement("div");
       settingsContent.className = "fab-helper-tab-content";
       settingsContent.style.display = "none";
+      const createCardGroup = /* @__PURE__ */ __name((titleText) => {
+        const card = document.createElement("div");
+        card.className = "fab-card-group";
+        const cardTitle = document.createElement("div");
+        cardTitle.className = "fab-card-group-title";
+        cardTitle.textContent = titleText;
+        card.appendChild(cardTitle);
+        return card;
+      }, "createCardGroup");
       const createSettingRow = /* @__PURE__ */ __name((labelText, stateKey) => {
         const row = document.createElement("div");
         row.className = "fab-setting-row";
@@ -6885,22 +7070,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         row.append(label, switchContainer);
         return row;
       }, "createSettingRow");
-      const autoAddSetting = createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll");
-      settingsContent.appendChild(autoAddSetting);
-      const autoScrollSetting = createSettingRow(Utils.getText("setting_auto_scroll"), "autoScroll");
-      settingsContent.appendChild(autoScrollSetting);
-      const rememberPosSetting = createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition");
-      settingsContent.appendChild(rememberPosSetting);
-      const autoResumeSetting = createSettingRow(Utils.getText("setting_auto_resume_429"), "autoResumeAfter429");
-      settingsContent.appendChild(autoResumeSetting);
-      const autoRefreshEmptySetting = createSettingRow(Utils.getText("setting_auto_refresh"), "autoRefreshEmptyPage");
-      settingsContent.appendChild(autoRefreshEmptySetting);
-      const hideDiscountedPaidSetting = createSettingRow(Utils.getText("setting_hide_discounted"), "hideDiscountedPaid");
-      settingsContent.appendChild(hideDiscountedPaidSetting);
-      const hidePaidSetting = createSettingRow(Utils.getText("setting_hide_paid"), "hidePaid");
-      settingsContent.appendChild(hidePaidSetting);
-      const blockResourcesSetting = createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources");
-      settingsContent.appendChild(blockResourcesSetting);
       const createNumberSettingRow = /* @__PURE__ */ __name((labelText, stateKey, min, max, tooltip) => {
         const row = document.createElement("div");
         row.className = "fab-setting-row";
@@ -6912,18 +7081,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         controlContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
         const minusBtn = document.createElement("button");
         minusBtn.type = "button";
-        minusBtn.textContent = "-";
-        minusBtn.style.cssText = "width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;";
+        minusBtn.className = "fab-stepper-btn";
+        minusBtn.textContent = "\u2212";
         const valueInput = document.createElement("input");
         valueInput.type = "number";
         valueInput.min = String(min);
         valueInput.max = String(max);
         valueInput.value = State[stateKey] ?? 7;
-        valueInput.style.cssText = "width: 44px; height: 26px; text-align: center; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-color); font-weight: bold; font-size: 13px; -moz-appearance: textfield;";
+        valueInput.className = "fab-stepper-input";
         const plusBtn = document.createElement("button");
         plusBtn.type = "button";
+        plusBtn.className = "fab-stepper-btn";
         plusBtn.textContent = "+";
-        plusBtn.style.cssText = "width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;";
         const applyVal = /* @__PURE__ */ __name(async (val) => {
           const target = Math.max(min, Math.min(max, val));
           valueInput.value = target;
@@ -6952,6 +7121,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         row.append(label, controlContainer);
         return row;
       }, "createNumberSettingRow");
+      const groupAutomation = createCardGroup(Utils.getText("settings_group_automation"));
+      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll"));
+      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_scroll"), "autoScroll"));
+      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition"));
+      settingsContent.appendChild(groupAutomation);
+      const groupFilter = createCardGroup(Utils.getText("settings_group_filter"));
+      groupFilter.appendChild(createSettingRow(Utils.getText("setting_hide_discounted"), "hideDiscountedPaid"));
+      groupFilter.appendChild(createSettingRow(Utils.getText("setting_hide_paid"), "hidePaid"));
+      settingsContent.appendChild(groupFilter);
+      const groupPerformance = createCardGroup(Utils.getText("settings_group_performance"));
       const maxWorkersSetting = createNumberSettingRow(
         Utils.getText("setting_max_workers"),
         "maxWorkers",
@@ -6959,20 +7138,21 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         15,
         Utils.getText("setting_max_workers_tooltip")
       );
-      settingsContent.appendChild(maxWorkersSetting);
+      groupPerformance.appendChild(maxWorkersSetting);
+      groupPerformance.appendChild(createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources"));
       const notificationRow = document.createElement("div");
       notificationRow.className = "fab-setting-row";
       const notificationLabel = document.createElement("span");
       notificationLabel.className = "fab-setting-label";
-      notificationLabel.textContent = State.lang === "zh" ? "\u4EBA\u673A\u9A8C\u8BC1\u901A\u77E5" : "Verification notifications";
+      notificationLabel.textContent = Utils.getText("setting_verification_notify");
       const notificationButton = document.createElement("button");
-      notificationButton.style.cssText = "padding:6px 8px;cursor:pointer;border-radius:var(--radius-m);";
+      notificationButton.style.cssText = "padding: 4px 8px; font-size: 12px; cursor: pointer; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color-primary);";
       const renderNotificationPermission = /* @__PURE__ */ __name((permission = VerificationNotifications.permission()) => {
         const zh2 = State.lang === "zh";
-        const labels = zh2 ? { granted: "\u53D1\u9001\u6D4B\u8BD5\u901A\u77E5", default: "\u5F00\u542F\u5E76\u6D4B\u8BD5", denied: "\u5DF2\u88AB\u6D4F\u89C8\u5668\u963B\u6B62", unsupported: "\u6D4F\u89C8\u5668\u4E0D\u652F\u6301", unavailable: "\u6682\u4E0D\u53EF\u7528\uFF0C\u70B9\u51FB\u91CD\u8BD5" } : { granted: "Test notification", default: "Enable and test", denied: "Blocked by browser", unsupported: "Not supported", unavailable: "Unavailable, retry" };
+        const labels = zh2 ? { granted: "\u6D4B\u8BD5\u901A\u77E5", default: "\u5F00\u542F\u5E76\u6D4B\u8BD5", denied: "\u5DF2\u88AB\u963B\u6B62", unsupported: "\u4E0D\u652F\u6301", unavailable: "\u91CD\u8BD5" } : { granted: "Test alert", default: "Enable & test", denied: "Blocked", unsupported: "Unsupported", unavailable: "Retry" };
         notificationButton.textContent = labels[permission] || labels.unavailable;
         notificationButton.disabled = permission === "unsupported";
-        notificationButton.title = zh2 ? "\u5141\u8BB8\u901A\u77E5\u540E\uFF0C\u9047\u5230\u9A8C\u8BC1\u4F1A\u63D0\u9192\u60A8\u3002\u82E5\u88AB\u963B\u6B62\uFF0C\u8BF7\u5728\u5730\u5740\u680F\u7684\u7F51\u7AD9\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u901A\u77E5\uFF1B\u7CFB\u7EDF\u52FF\u6270\u4E5F\u53EF\u80FD\u9690\u85CF\u901A\u77E5\u3002" : "Allow notifications for verification alerts. If blocked, enable notifications in site settings; system Do Not Disturb may hide alerts.";
+        notificationButton.title = zh2 ? "\u5141\u8BB8\u901A\u77E5\u540E\uFF0C\u9047\u5230\u9A8C\u8BC1\u4F1A\u63D0\u9192\u60A8\u3002\u82E5\u88AB\u963B\u6B62\uFF0C\u8BF7\u5728\u7F51\u7AD9\u8BBE\u7F6E\u4E2D\u5141\u8BB8\u901A\u77E5\u3002" : "Allow notifications for verification alerts. If blocked, enable notifications in site settings.";
       }, "renderNotificationPermission");
       renderNotificationPermission();
       notificationButton.onclick = async () => {
@@ -6981,12 +7161,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (permission !== "granted") Utils.logger("warn", notificationButton.title);
       };
       notificationRow.append(notificationLabel, notificationButton);
-      settingsContent.appendChild(notificationRow);
-      const resetButton = document.createElement("button");
-      resetButton.textContent = Utils.getText("clear_all_data");
-      resetButton.style.cssText = "width: 100%; margin-top: 15px; background-color: var(--pink); color: white; padding: 10px; border-radius: var(--radius-m); border: none; cursor: pointer;";
-      resetButton.onclick = Database.resetAllData;
-      settingsContent.appendChild(resetButton);
+      groupPerformance.appendChild(notificationRow);
+      settingsContent.appendChild(groupPerformance);
+      const groupMaintenance = createCardGroup(Utils.getText("settings_group_maintenance"));
+      groupMaintenance.appendChild(createSettingRow(Utils.getText("setting_auto_resume_429"), "autoResumeAfter429"));
+      groupMaintenance.appendChild(createSettingRow(Utils.getText("setting_auto_refresh"), "autoRefreshEmptyPage"));
       const debugModeRow = document.createElement("div");
       debugModeRow.className = "fab-setting-row";
       debugModeRow.title = Utils.getText("setting_debug_tooltip");
@@ -7010,7 +7189,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       debugSwitchContainer.append(debugInput, debugSlider);
       debugModeRow.append(debugLabel, debugSwitchContainer);
       debugModeRow.classList.toggle("active", State.debugMode);
-      settingsContent.appendChild(debugModeRow);
+      groupMaintenance.appendChild(debugModeRow);
+      const resetButton = document.createElement("button");
+      resetButton.className = "fab-danger-btn";
+      resetButton.textContent = Utils.getText("clear_all_data");
+      resetButton.onclick = Database.resetAllData;
+      groupMaintenance.appendChild(resetButton);
+      settingsContent.appendChild(groupMaintenance);
       State.UI.tabContents.settings = settingsContent;
       container.appendChild(settingsContent);
       const debugContent = document.createElement("div");
@@ -7137,6 +7322,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;
       if (State.UI.statusHidden) State.UI.statusHidden.querySelector("span").textContent = hiddenCount;
       if (State.UI.statusVisible) State.UI.statusVisible.querySelector("span").textContent = visibleCount;
+      if (State.UI.statusFailed) {
+        State.UI.statusFailed.classList.toggle("has-failed", failedCount > 0);
+      }
       const statusLabelUpdates = [
         { element: State.UI.statusVisible, icon: "\u{1F441}\uFE0F", key: "visible" },
         { element: State.UI.statusTodo, icon: "\u{1F4E5}", key: "todo" },
@@ -7182,6 +7370,17 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           }
         }
       }
+      if (State.UI.progressTrack && State.UI.progressBar) {
+        if (State.isExecuting && State.executionTotalTasks > 0) {
+          State.UI.progressTrack.style.display = "block";
+          const progress = State.executionCompletedTasks + State.executionFailedTasks;
+          const percentage = Math.min(100, Math.round(progress / State.executionTotalTasks * 100));
+          State.UI.progressBar.style.width = `${percentage}%`;
+        } else {
+          State.UI.progressTrack.style.display = "none";
+          State.UI.progressBar.style.width = "0%";
+        }
+      }
       if (State.UI.hideBtn) {
         State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
       }
@@ -7192,6 +7391,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
         State.UI.retryFailedBtn.title = State.db.failed.length > 0 ? Utils.getText("retry_failed") + ` (${State.db.failed.length})` : Utils.getText("no_failed_tasks");
       }
+      const groupTitles = State.UI.container.querySelectorAll(".fab-card-group-title");
+      const groupKeys = [
+        "settings_group_automation",
+        "settings_group_filter",
+        "settings_group_performance",
+        "settings_group_maintenance"
+      ];
+      groupTitles.forEach((titleEl, idx) => {
+        if (groupKeys[idx]) {
+          titleEl.textContent = Utils.getText(groupKeys[idx]);
+        }
+      });
     }, "update"),
     removeAllOverlays: /* @__PURE__ */ __name(() => {
       document.querySelectorAll(Config.SELECTORS.card).forEach((card) => {
