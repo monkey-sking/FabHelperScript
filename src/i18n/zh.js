@@ -212,6 +212,9 @@ export const zh = {
     setting_hide_discounted: '隐藏打折的付费商品',
     setting_hide_paid: '隐藏所有付费商品',
     setting_block_large_resources: '禁用图片/媒体等大资源',
+    setting_max_workers: '并发工作标签页数量',
+    setting_max_workers_tooltip: '同时领取的并发 worker 标签页数量（建议 1~15，默认 7）',
+    log_max_workers_changed: '并发工作标签页数量已设置为: %s',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 
     // 状态文本

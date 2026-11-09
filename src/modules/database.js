@@ -105,6 +105,7 @@ export const Database = {
         State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false); // 加载隐藏打折付费设置
         State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
         State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
+        State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS); // 加载并发工作标签页设置
         State.debugMode = await Database._safeGet('fab_helper_debug_mode', false); // 加载调试模式设置
         State.currentSortOption = await Database._safeGet('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
@@ -132,6 +133,7 @@ export const Database = {
     saveHideDiscountedPref: () => Database._safeSet(Config.DB_KEYS.HIDE_DISCOUNTED, State.hideDiscountedPaid), // 保存隐藏打折付费设置
     saveHidePaidPref: () => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), // 保存隐藏所有付费设置
     saveBlockResourcesPref: () => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), // 保存禁用大资源设置
+    saveMaxWorkersPref: () => Database._safeSet(Config.DB_KEYS.MAX_WORKERS, State.maxWorkers), // 保存并发工作标签页设置
     saveExecutingState: () => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
@@ -147,6 +149,7 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
+            await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS); // 清除并发工作标签页设置
             // 直接走模块实现：它会同时清掉内存游标、GM 键和 sessionStorage 恢复标记。
             await PagePatcher.clearSavedPosition('Reset all data');
             State.db.todo = [];
@@ -154,6 +157,7 @@ export const Database = {
             Database.doneSet = new Set();
             State.db.failed = [];
             State.blockLargeResources = true;
+            State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {
                 UI.removeAllOverlays();

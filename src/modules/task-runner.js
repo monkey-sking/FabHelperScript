@@ -582,6 +582,21 @@ export const TaskRunner = {
         if (UI) UI.update();
     },
 
+    setMaxWorkers: async (count) => {
+        const parsed = parseInt(count, 10);
+        const safeVal = Math.max(1, Math.min(15, Number.isFinite(parsed) ? parsed : 7));
+        State.maxWorkers = safeVal;
+        await Database.saveMaxWorkersPref();
+        Utils.logger('info', Utils.getText('log_max_workers_changed', safeVal));
+
+        if (State.isExecuting && TaskRunner.hasDispatchSlot()) {
+            TaskRunner.executeBatch();
+        }
+
+        if (UI) UI.update();
+        return safeVal;
+    },
+
     stop: () => {
         if (!State.isExecuting) return;
         State.isExecuting = false;
@@ -830,6 +845,12 @@ export const TaskRunner = {
     },
 
     maxDispatchSlots: () => {
+        if (State.maxWorkers !== undefined && State.maxWorkers !== null) {
+            const configured = Number(State.maxWorkers);
+            if (Number.isFinite(configured) && configured >= 1) {
+                return Math.max(1, Math.min(15, Math.floor(configured)));
+            }
+        }
         if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
             return Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1);
         }

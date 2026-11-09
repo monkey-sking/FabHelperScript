@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261105-1457
+// @version      3.5.27-20261109-1331
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -226,6 +226,9 @@
     setting_hide_discounted: "Hide discounted paid items",
     setting_hide_paid: "Hide all paid items",
     setting_block_large_resources: "Disable images and media",
+    setting_max_workers: "Concurrent Worker Tabs",
+    setting_max_workers_tooltip: "Number of concurrent worker tabs for claiming (recommended 1-15, default 7)",
+    log_max_workers_changed: "Concurrent worker tabs set to: %s",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
     status_enabled: "enabled",
@@ -592,6 +595,9 @@
     setting_hide_discounted: "\u9690\u85CF\u6253\u6298\u7684\u4ED8\u8D39\u5546\u54C1",
     setting_hide_paid: "\u9690\u85CF\u6240\u6709\u4ED8\u8D39\u5546\u54C1",
     setting_block_large_resources: "\u7981\u7528\u56FE\u7247/\u5A92\u4F53\u7B49\u5927\u8D44\u6E90",
+    setting_max_workers: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u9875\u6570\u91CF",
+    setting_max_workers_tooltip: "\u540C\u65F6\u9886\u53D6\u7684\u5E76\u53D1 worker \u6807\u7B7E\u9875\u6570\u91CF\uFF08\u5EFA\u8BAE 1~15\uFF0C\u9ED8\u8BA4 7\uFF09",
+    log_max_workers_changed: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u9875\u6570\u91CF\u5DF2\u8BBE\u7F6E\u4E3A: %s",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
     status_enabled: "\u5F00\u542F",
@@ -775,7 +781,7 @@
     // 旧 DOM 枚举仍会开 worker 标签页；API 领取支持 3 个并发工作标签页，
     // 并通过 API_CLAIM_MIN_INTERVAL_MS 错开派发节拍，避免同时打满请求触发 429。
     USE_API_CLAIM: true,
-    API_CLAIM_MAX_CONCURRENT_WORKERS: 3,
+    API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
@@ -837,6 +843,8 @@
       // 隐藏所有付费商品
       BLOCK_RESOURCES: "fab_block_resources_v1",
       // 禁用大资源设置键
+      MAX_WORKERS: "fab_max_workers_v1",
+      // 并发工作标签页数量设置键
       // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
       // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
       EVENT_LOG: "fab_event_log_v1"
@@ -971,6 +979,8 @@
     // 是否隐藏所有付费商品
     blockLargeResources: true,
     // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
+    maxWorkers: 7,
+    // 并发工作标签页数量（默认7）
     debugMode: false,
     // 是否启用调试模式
     lang: "zh",
@@ -3402,6 +3412,7 @@
       State.hideDiscountedPaid = await Database._safeGet(Config.DB_KEYS.HIDE_DISCOUNTED, false);
       State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
       State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
+      State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS);
       State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
       State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
       State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
@@ -3431,6 +3442,8 @@
     // 保存隐藏所有付费设置
     saveBlockResourcesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), "saveBlockResourcesPref"),
     // 保存禁用大资源设置
+    saveMaxWorkersPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.MAX_WORKERS, State.maxWorkers), "saveMaxWorkersPref"),
+    // 保存并发工作标签页设置
     saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
@@ -3443,12 +3456,14 @@
         await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
         await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
+        await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS);
         await PagePatcher.clearSavedPosition("Reset all data");
         State.db.todo = [];
         State.db.done = [];
         Database.doneSet = /* @__PURE__ */ new Set();
         State.db.failed = [];
         State.blockLargeResources = true;
+        State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI3) {
           UI3.removeAllOverlays();
@@ -5091,6 +5106,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
       if (UI4) UI4.update();
     }, "toggleBlockResources"),
+    setMaxWorkers: /* @__PURE__ */ __name(async (count) => {
+      const parsed = parseInt(count, 10);
+      const safeVal = Math.max(1, Math.min(15, Number.isFinite(parsed) ? parsed : 7));
+      State.maxWorkers = safeVal;
+      await Database.saveMaxWorkersPref();
+      Utils.logger("info", Utils.getText("log_max_workers_changed", safeVal));
+      if (State.isExecuting && TaskRunner2.hasDispatchSlot()) {
+        TaskRunner2.executeBatch();
+      }
+      if (UI4) UI4.update();
+      return safeVal;
+    }, "setMaxWorkers"),
     stop: /* @__PURE__ */ __name(() => {
       if (!State.isExecuting) return;
       State.isExecuting = false;
@@ -5289,6 +5316,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }, 5e3);
     }, "runWatchdog"),
     maxDispatchSlots: /* @__PURE__ */ __name(() => {
+      if (State.maxWorkers !== void 0 && State.maxWorkers !== null) {
+        const configured = Number(State.maxWorkers);
+        if (Number.isFinite(configured) && configured >= 1) {
+          return Math.max(1, Math.min(15, Math.floor(configured)));
+        }
+      }
       if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
         return Math.max(1, Number(Config.API_CLAIM_MAX_CONCURRENT_WORKERS) || 1);
       }
@@ -6868,6 +6901,65 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       settingsContent.appendChild(hidePaidSetting);
       const blockResourcesSetting = createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources");
       settingsContent.appendChild(blockResourcesSetting);
+      const createNumberSettingRow = /* @__PURE__ */ __name((labelText, stateKey, min, max, tooltip) => {
+        const row = document.createElement("div");
+        row.className = "fab-setting-row";
+        if (tooltip) row.title = tooltip;
+        const label = document.createElement("span");
+        label.className = "fab-setting-label";
+        label.textContent = labelText;
+        const controlContainer = document.createElement("div");
+        controlContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
+        const minusBtn = document.createElement("button");
+        minusBtn.type = "button";
+        minusBtn.textContent = "-";
+        minusBtn.style.cssText = "width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;";
+        const valueInput = document.createElement("input");
+        valueInput.type = "number";
+        valueInput.min = String(min);
+        valueInput.max = String(max);
+        valueInput.value = State[stateKey] ?? 7;
+        valueInput.style.cssText = "width: 44px; height: 26px; text-align: center; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-color); font-weight: bold; font-size: 13px; -moz-appearance: textfield;";
+        const plusBtn = document.createElement("button");
+        plusBtn.type = "button";
+        plusBtn.textContent = "+";
+        plusBtn.style.cssText = "width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;";
+        const applyVal = /* @__PURE__ */ __name(async (val) => {
+          const target = Math.max(min, Math.min(max, val));
+          valueInput.value = target;
+          if (TaskRunner3 && TaskRunner3.setMaxWorkers) {
+            await TaskRunner3.setMaxWorkers(target);
+          } else {
+            State[stateKey] = target;
+          }
+        }, "applyVal");
+        minusBtn.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          applyVal((Number(valueInput.value) || min) - 1);
+        };
+        plusBtn.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          applyVal((Number(valueInput.value) || min) + 1);
+        };
+        valueInput.onchange = (e) => {
+          e.stopPropagation();
+          applyVal(Number(e.target.value) || min);
+        };
+        State.UI.maxWorkersInput = valueInput;
+        controlContainer.append(minusBtn, valueInput, plusBtn);
+        row.append(label, controlContainer);
+        return row;
+      }, "createNumberSettingRow");
+      const maxWorkersSetting = createNumberSettingRow(
+        Utils.getText("setting_max_workers"),
+        "maxWorkers",
+        1,
+        15,
+        Utils.getText("setting_max_workers_tooltip")
+      );
+      settingsContent.appendChild(maxWorkersSetting);
       const notificationRow = document.createElement("div");
       notificationRow.className = "fab-setting-row";
       const notificationLabel = document.createElement("span");
@@ -7092,6 +7184,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
       if (State.UI.hideBtn) {
         State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
+      }
+      if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
+        State.UI.maxWorkersInput.value = State.maxWorkers;
       }
       if (State.UI.retryFailedBtn) {
         State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;

@@ -210,6 +210,9 @@ export const en = {
     setting_hide_discounted: 'Hide discounted paid items',
     setting_hide_paid: 'Hide all paid items',
     setting_block_large_resources: 'Disable images and media',
+    setting_max_workers: 'Concurrent Worker Tabs',
+    setting_max_workers_tooltip: 'Number of concurrent worker tabs for claiming (recommended 1-15, default 7)',
+    log_max_workers_changed: 'Concurrent worker tabs set to: %s',
     setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
 
     // 状态文本

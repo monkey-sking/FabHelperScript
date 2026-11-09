@@ -46,6 +46,8 @@ test('database keys used by persisted settings are defined', () => {
     assert.equal(Config.DB_KEYS.HIDE_PAID.length > 0, true);
     assert.equal(typeof Config.DB_KEYS.BLOCK_RESOURCES, 'string');
     assert.equal(Config.DB_KEYS.BLOCK_RESOURCES.length > 0, true);
+    assert.equal(typeof Config.DB_KEYS.MAX_WORKERS, 'string');
+    assert.equal(Config.DB_KEYS.MAX_WORKERS.length > 0, true);
     assert.equal('TASK' in Config.DB_KEYS, false);
 });
 
@@ -937,7 +939,9 @@ test('maxDispatchSlots uses API claim cap when claim transport is live', () => {
     const originalUse = Config.USE_API_CLAIM;
     const originalFetch = ApiClaim.fetchImpl;
     const originalEndpoint = ApiClaim.endpoint;
+    const originalMaxWorkers = State.maxWorkers;
     Config.USE_API_CLAIM = true;
+    State.maxWorkers = null;
     ApiClaim.configure({
         endpoint: FAB_CLAIM_ENDPOINT,
         fetchImpl: async () => ({ status: 200 })
@@ -952,20 +956,62 @@ test('maxDispatchSlots uses API claim cap when claim transport is live', () => {
         Config.USE_API_CLAIM = originalUse;
         ApiClaim.endpoint = originalEndpoint;
         ApiClaim.fetchImpl = originalFetch;
+        State.maxWorkers = originalMaxWorkers;
         State.activeWorkers = 0;
     }
 });
 
 test('maxDispatchSlots stays at MAX_CONCURRENT_WORKERS when API claim is off', () => {
     const originalUse = Config.USE_API_CLAIM;
+    const originalMaxWorkers = State.maxWorkers;
     Config.USE_API_CLAIM = false;
+    State.maxWorkers = null;
     try {
         assert.equal(TaskRunner.maxDispatchSlots(), Config.MAX_CONCURRENT_WORKERS);
         State.activeWorkers = 1;
         assert.equal(TaskRunner.hasDispatchSlot(), true);
     } finally {
         Config.USE_API_CLAIM = originalUse;
+        State.maxWorkers = originalMaxWorkers;
         State.activeWorkers = 0;
+    }
+});
+
+test('setMaxWorkers clamps worker count between 1 and 15, persists to storage, and configures maxDispatchSlots', async () => {
+    const originalMaxWorkers = State.maxWorkers;
+    const originalSafeSet = Database._safeSet;
+    let savedKey = null;
+    let savedVal = null;
+    Database._safeSet = async (key, val) => {
+        savedKey = key;
+        savedVal = val;
+    };
+
+    try {
+        // Clamp upper bound
+        const resultUpper = await TaskRunner.setMaxWorkers(20);
+        assert.equal(resultUpper, 15);
+        assert.equal(State.maxWorkers, 15);
+        assert.equal(savedKey, Config.DB_KEYS.MAX_WORKERS);
+        assert.equal(savedVal, 15);
+        assert.equal(TaskRunner.maxDispatchSlots(), 15);
+
+        // Clamp lower bound
+        const resultLower = await TaskRunner.setMaxWorkers(0);
+        assert.equal(resultLower, 1);
+        assert.equal(State.maxWorkers, 1);
+        assert.equal(savedVal, 1);
+        assert.equal(TaskRunner.maxDispatchSlots(), 1);
+
+        // Valid custom value
+        const resultCustom = await TaskRunner.setMaxWorkers(7);
+        assert.equal(resultCustom, 7);
+        assert.equal(State.maxWorkers, 7);
+        assert.equal(savedVal, 7);
+        assert.equal(TaskRunner.maxDispatchSlots(), 7);
+    } finally {
+        State.maxWorkers = originalMaxWorkers;
+        Database._safeSet = originalSafeSet;
     }
 });
 

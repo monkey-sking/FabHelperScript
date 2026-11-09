@@ -19,6 +19,7 @@ export const State = {
     hideDiscountedPaid: false, // 是否隐藏打折的付费商品
     hidePaid: false, // 是否隐藏所有付费商品
     blockLargeResources: true, // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
+    maxWorkers: 7, // 并发工作标签页数量（默认7）
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务

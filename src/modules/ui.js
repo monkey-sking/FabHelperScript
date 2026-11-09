@@ -660,6 +660,78 @@ export const UI = {
         const blockResourcesSetting = createSettingRow(Utils.getText('setting_block_large_resources'), 'blockLargeResources');
         settingsContent.appendChild(blockResourcesSetting);
 
+        const createNumberSettingRow = (labelText, stateKey, min, max, tooltip) => {
+            const row = document.createElement('div');
+            row.className = 'fab-setting-row';
+            if (tooltip) row.title = tooltip;
+
+            const label = document.createElement('span');
+            label.className = 'fab-setting-label';
+            label.textContent = labelText;
+
+            const controlContainer = document.createElement('div');
+            controlContainer.style.cssText = 'display: flex; align-items: center; gap: 6px;';
+
+            const minusBtn = document.createElement('button');
+            minusBtn.type = 'button';
+            minusBtn.textContent = '-';
+            minusBtn.style.cssText = 'width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;';
+
+            const valueInput = document.createElement('input');
+            valueInput.type = 'number';
+            valueInput.min = String(min);
+            valueInput.max = String(max);
+            valueInput.value = State[stateKey] ?? 7;
+            valueInput.style.cssText = 'width: 44px; height: 26px; text-align: center; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); color: var(--text-color); font-weight: bold; font-size: 13px; -moz-appearance: textfield;';
+
+            const plusBtn = document.createElement('button');
+            plusBtn.type = 'button';
+            plusBtn.textContent = '+';
+            plusBtn.style.cssText = 'width: 26px; height: 26px; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color); cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; line-height: 1;';
+
+            const applyVal = async (val) => {
+                const target = Math.max(min, Math.min(max, val));
+                valueInput.value = target;
+                if (TaskRunner && TaskRunner.setMaxWorkers) {
+                    await TaskRunner.setMaxWorkers(target);
+                } else {
+                    State[stateKey] = target;
+                }
+            };
+
+            minusBtn.onclick = (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                applyVal((Number(valueInput.value) || min) - 1);
+            };
+
+            plusBtn.onclick = (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                applyVal((Number(valueInput.value) || min) + 1);
+            };
+
+            valueInput.onchange = (e) => {
+                e.stopPropagation();
+                applyVal(Number(e.target.value) || min);
+            };
+
+            State.UI.maxWorkersInput = valueInput;
+
+            controlContainer.append(minusBtn, valueInput, plusBtn);
+            row.append(label, controlContainer);
+            return row;
+        };
+
+        const maxWorkersSetting = createNumberSettingRow(
+            Utils.getText('setting_max_workers'),
+            'maxWorkers',
+            1,
+            15,
+            Utils.getText('setting_max_workers_tooltip')
+        );
+        settingsContent.appendChild(maxWorkersSetting);
+
         const notificationRow = document.createElement('div');
         notificationRow.className = 'fab-setting-row';
         const notificationLabel = document.createElement('span');
@@ -926,6 +998,10 @@ export const UI = {
 
         if (State.UI.hideBtn) {
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
+        }
+
+        if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
+            State.UI.maxWorkersInput.value = State.maxWorkers;
         }
 
         if (State.UI.retryFailedBtn) {

@@ -18,7 +18,7 @@ export const Config = {
     // 旧 DOM 枚举仍会开 worker 标签页；API 领取支持 3 个并发工作标签页，
     // 并通过 API_CLAIM_MIN_INTERVAL_MS 错开派发节拍，避免同时打满请求触发 429。
     USE_API_CLAIM: true,
-    API_CLAIM_MAX_CONCURRENT_WORKERS: 3,
+    API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
@@ -66,6 +66,7 @@ export const Config = {
         HIDE_DISCOUNTED: 'fab_hideDiscounted_v8', // 隐藏打折的付费商品
         HIDE_PAID: 'fab_hidePaid_v8', // 隐藏所有付费商品
         BLOCK_RESOURCES: 'fab_block_resources_v1', // 禁用大资源设置键
+        MAX_WORKERS: 'fab_max_workers_v1', // 并发工作标签页数量设置键
         // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
         // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
         EVENT_LOG: 'fab_event_log_v1',
