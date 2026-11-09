@@ -111,18 +111,24 @@ src/
 
 Customize behaviors in the **"Settings"** tab of the dashboard:
 
-| Configuration | Description |
-| :--- | :--- |
-| **Auto add on scroll** | Automatically queues free products in view while scrolling. |
-| **Auto scroll page** | Automatically scrolls the page down smoothly to load and claim the entire library unattended. |
-| **Remember scroll position** | Remembers search scroll depth and automatically restores position on page reopen/refresh. |
-| **Auto resume after 429** | Pauses on 429 rate limits and resumes automatically once the cooldown probe succeeds. |
-| **Auto refresh empty page** | Automatically reloads the page to fetch the next batch when all items in view are hidden or empty. |
-| **Hide discounted paid** | Hides paid items that are currently discounted (leaving only free and 100% off items). |
-| **Hide all paid** | Hides all non-free items from the list. |
-| **Block large resources** | Blocks images, media, 3D WebGL viewers, and non-essential fonts for maximum speed and savings. |
-| **Verification notifications** | Click to grant browser notification permissions for manual verification alerts. |
-| **Debug mode** | Enables detailed diagnostic logs for troubleshooting. |
+### ⚡ Automation
+- **Auto Add on Scroll**: Automatically queues free products in view while scrolling.
+- **Auto Scroll Page**: Automatically scrolls the page down smoothly to load and claim the entire library unattended (off by default).
+- **Remember Position**: Remembers search scroll depth and automatically restores position on page reopen/refresh.
+
+### 🎯 Filters
+- **Filter Discounted Items**: Hides paid items that are currently discounted (leaving only free and 100% off items).
+- **Filter Paid Items**: Hides all non-free items from the list.
+
+### 🚀 Performance & Alerts
+- **Worker Tabs**: Adjust the number of concurrent worker tabs for claiming via stepper controls (range 1–15, **default 7**).
+- **Block Large Resources**: Blocks images, media, 3D WebGL viewers, and non-essential fonts for maximum speed and memory savings.
+- **Verification Alert**: Request browser notification permissions for native desktop alerts when human verification is required.
+
+### 🛠️ Maintenance & Advanced
+- **Auto Resume after 429**: Pauses on 429 rate limits and resumes automatically once the cooldown probe succeeds.
+- **Auto Refresh Empty Page**: Automatically reloads the page to fetch the next batch when all items in view are hidden or empty.
+- **Debug Mode**: Enables detailed diagnostic logs for troubleshooting.
 
 ---
 
@@ -134,7 +140,7 @@ When platform security checks or CAPTCHAs are triggered, Fab Helper handles it s
 2. **Desktop Notification**: If enabled in Settings, your browser sends a desktop notification alerting you that manual verification is needed.
 3. **Verify & Resume**:
    - Switch to the tab with **`⚠️【需验证】`** in its title and complete the challenge manually;
-   - Return to the Fab search page and click **"Start Tasks"** on the dashboard to resume claiming.
+   - Return to the Fab search page and click **"Auto Claim"** on the dashboard to resume claiming.
 
 ---
 
