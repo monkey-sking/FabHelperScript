@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261109-1503
+// @version      3.5.27-20261113-0838
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -172,6 +172,10 @@
     auto_scroll_safety_stop: "[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).",
     auto_scroll_resume_hidden: "[Auto Add] No visible items remain on page; scrolling to load next page and continue hiding/adding.",
     auto_scroll_resume_empty: "[Auto Add] Page has no cards and list is not at end; scheduling a recovery refresh.",
+    memory_recycle_trigger: "[Memory Recycle] {0} cards accumulated on page (threshold {1}); reloading and resuming from the saved position (session recycle #{2}).",
+    memory_recycle_resume: "[Memory Recycle] Reload complete; resuming scan from the saved cursor...",
+    memory_recycle_disabled: "[Memory Recycle] List position moved back to the beginning after {0} recycles; auto recycle paused to avoid a reload loop (continuing on the current page).",
+    memory_recycle_failed: "[Memory Recycle] Reload failed, continuing on the current page: {0}",
     // HTTP状态检测
     http_status_check_performance_api: "Using Performance API check, no longer sending HEAD requests",
     // 页面状态检测
@@ -547,6 +551,10 @@
     auto_scroll_safety_stop: "[\u81EA\u52A8\u6EDA\u52A8] \u8FDE\u7EED {0} \u8F6E\u672A\u53D1\u73B0\u65B0\u5185\u5BB9\u4E14\u672A\u6536\u5230\u670D\u52A1\u5668\u5230\u5E95\u4FE1\u53F7\uFF0C\u5B89\u5168\u505C\u6B62\uFF08\u672A\u786E\u8BA4\u81EA\u52A8\u5165\u5E93\u6210\u529F\uFF0C\u8BF7\u68C0\u67E5\u7F51\u7EDC/\u63A5\u53E3\uFF09\u3002",
     auto_scroll_resume_hidden: "[\u81EA\u52A8\u5165\u5E93] \u9875\u9762\u5DF2\u65E0\u53EF\u89C1\u5546\u54C1\uFF0C\u4E3B\u52A8\u6EDA\u52A8\u52A0\u8F7D\u4E0B\u4E00\u9875\u7EE7\u7EED\u9690\u85CF/\u5165\u5E93\u3002",
     auto_scroll_resume_empty: "[\u81EA\u52A8\u5165\u5E93] \u9875\u9762\u6CA1\u6709\u5361\u7247\u4E14\u672A\u5230\u5217\u8868\u672B\u5C3E\uFF0C\u5B89\u6392\u4E00\u6B21\u6062\u590D\u5237\u65B0\u3002",
+    memory_recycle_trigger: "[\u5185\u5B58\u56DE\u6536] \u9875\u9762\u5DF2\u7D2F\u79EF {0} \u5F20\u5361\u7247\uFF08\u9608\u503C {1}\uFF09\uFF0C\u5237\u65B0\u9875\u9762\u5E76\u4ECE\u4FDD\u5B58\u4F4D\u7F6E\u7EE7\u7EED\uFF08\u672C\u6B21\u4F1A\u8BDD\u7B2C {2} \u6B21\uFF09\u3002",
+    memory_recycle_resume: "[\u5185\u5B58\u56DE\u6536] \u5237\u65B0\u5B8C\u6210\uFF0C\u6B63\u5728\u4ECE\u4E0A\u6B21\u4FDD\u5B58\u7684\u6E38\u6807\u4F4D\u7F6E\u7EE7\u7EED\u626B\u63CF...",
+    memory_recycle_disabled: "[\u5185\u5B58\u56DE\u6536] \u8FDE\u7EED {0} \u6B21\u56DE\u6536\u540E\u5217\u8868\u4F4D\u7F6E\u53CD\u800C\u9000\u56DE\u5F00\u5934\uFF0C\u5DF2\u6682\u505C\u81EA\u52A8\u56DE\u6536\uFF0C\u907F\u514D\u5FAA\u73AF\u5237\u65B0\uFF08\u672C\u8F6E\u7EE7\u7EED\u5728\u5F53\u524D\u9875\u9762\u626B\u63CF\uFF09\u3002",
+    memory_recycle_failed: "[\u5185\u5B58\u56DE\u6536] \u5237\u65B0\u5931\u8D25\uFF0C\u7EE7\u7EED\u5728\u5F53\u524D\u9875\u9762\u626B\u63CF: {0}",
     // HTTP状态检测
     http_status_check_performance_api: "\u4F7F\u7528Performance API\u68C0\u67E5\uFF0C\u4E0D\u518D\u53D1\u9001HEAD\u8BF7\u6C42",
     // 页面状态检测
@@ -800,6 +808,18 @@
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
+    // 内存回收（分块刷新续跑）：Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直
+    // 留在 DOM 里（实测 11,893 张免费卡 ≈ 15.5 万节点 / 单渲染进程 2GB）。
+    // 全站 4 万+ 免费商品一次性滚完会线性涨到 6-7GB 并触发 V8 OOM。
+    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的
+    // cursor 从原位置继续，把内存占用重新压回阈值附近。
+    MEMORY_RECYCLE_ENABLED: true,
+    MEMORY_RECYCLE_CARD_THRESHOLD: 3e3,
+    // 页面内卡片总数达到该值触发刷新；0 = 关闭
+    MEMORY_RECYCLE_MIN_INTERVAL_MS: 45e3,
+    // 两次回收的最小间隔（跨刷新，防抖动/防循环）
+    MEMORY_RECYCLE_MAX_PER_SESSION: 30,
+    // 单标签页会话最多回收次数，兜底防循环刷新
     // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
     //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
     //               仍作为领取后端，流水线照常启动、走接口领取。
@@ -1023,6 +1043,11 @@
     // 新增：标记是否正在扫描任务，防止重复扫描
     processedCardUids: /* @__PURE__ */ new Set(),
     // 新增：已处理过的卡片UID，防止重复添加
+    // --- 内存回收（分块刷新续跑）---
+    // 页面内卡片累积到阈值后刷新页面释放 DOM，再靠游标续跑。这些标记只用于
+    // 防重复触发/防循环，刷新后由模块初始化重新置位。
+    memoryRecycleInFlight: false,
+    memoryRecycleDisabled: false,
     totalScannedOwned: 0,
     // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
     // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
@@ -1956,7 +1981,15 @@
 
   // src/modules/bundle-claim.js
   var isCheckoutPage = /* @__PURE__ */ __name((pathname) => /^\/payment(?:\/|$)/i.test(pathname || ""), "isCheckoutPage");
-  var isBundleTask = /* @__PURE__ */ __name((task) => task?.listingType === "bundle" || task?.isBundle === true || /\/(?:bundles)\//i.test(task?.url || "") || typeof task?.name === "string" && /\bbundle\b/i.test(task.name), "isBundleTask");
+  var isConfirmedBundleTask = /* @__PURE__ */ __name((task) => {
+    if (task?.isBundle === false) return false;
+    if (task?.listingType === "bundle" || task?.isBundle === true) return true;
+    return /\/(?:bundles)\//i.test(task?.url || "");
+  }, "isConfirmedBundleTask");
+  var isBundleTask = /* @__PURE__ */ __name((task) => {
+    if (isConfirmedBundleTask(task)) return true;
+    return !task?.listingType && task?.isBundle !== false && typeof task?.name === "string" && /\bbundle\b/i.test(task.name);
+  }, "isBundleTask");
   function freeBundleOffers(listing) {
     if (listing?.listingType !== "bundle") return [];
     const offers = (listing.licenses || []).filter((license) => {
@@ -2034,9 +2067,15 @@
     try {
       if (!isBundleTask(task) && task?.listingType !== "bundle" && !task?.isBundle) return fail("\u4E0D\u662F bundle \u4EFB\u52A1");
       const listing = await get(`https://www.fab.com/i/listings/${encodeURIComponent(task.uid)}`);
-      if (listing?.listingType === "bundle") {
+      const listingType = typeof listing?.listingType === "string" ? listing.listingType : "";
+      if (listingType === "bundle") {
         task.listingType = "bundle";
         task.isBundle = true;
+      } else if (listingType) {
+        task.listingType = listingType;
+        task.isBundle = false;
+        log2(`[Bundle] \u63A5\u53E3\u7C7B\u578B\u4E3A ${listingType}\uFF0C\u4E0D\u662F bundle\uFF0C\u8F6C\u666E\u901A\u9886\u53D6\u6D41\u7A0B`);
+        return { success: false, notBundle: true };
       }
       const offers = freeBundleOffers(listing);
       if (!offers.length) return fail("\u672A\u627E\u5230\u514D\u8D39\u8BB8\u53EF\uFF0C\u505C\u6B62\u9886\u53D6");
@@ -4445,7 +4484,7 @@
       }
     }, "_resolveOfferId"),
     claim: /* @__PURE__ */ __name(async (task) => {
-      if (isBundleTask(task)) {
+      if (isConfirmedBundleTask(task)) {
         return { result: CLAIM_RESULT.UNAVAILABLE, reason: "Bundle \u9700\u8981\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B", retryable: false, isBundle: true };
       }
       if (!ApiClaim.isAvailable()) {
@@ -4477,7 +4516,7 @@
         };
       }
       const resolvedListing = ApiClaim._lastResolvedListing;
-      if (resolvedListing && (resolvedListing.listingType === "bundle" || isBundleTask(resolvedListing))) {
+      if (resolvedListing && isConfirmedBundleTask(resolvedListing)) {
         return {
           result: CLAIM_RESULT.UNAVAILABLE,
           reason: "Bundle \u9700\u8981\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B",
@@ -4697,8 +4736,20 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     } catch (_e) {
     }
   };
+  var MEM_RECYCLE_KEYS = {
+    COUNT: "fab_helper_mem_recycle_count_v1",
+    LAST_AT: "fab_helper_mem_recycle_last_at_v1",
+    LAST_CURSOR: "fab_helper_mem_recycle_last_cursor_v1",
+    STRIKES: "fab_helper_mem_recycle_strikes_v1",
+    PENDING: "fab_helper_mem_recycle_pending_v1"
+  };
   var UI4 = null;
   var countdownRefresh2 = null;
+  var reloadPage = /* @__PURE__ */ __name(() => {
+    if (typeof location !== "undefined" && typeof location.reload === "function") {
+      location.reload();
+    }
+  }, "reloadPage");
   var registerWorkerDoneListener = null;
   function setUIReference3(uiModule) {
     UI4 = uiModule;
@@ -4707,6 +4758,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
   function setDependencies2(deps = {}) {
     countdownRefresh2 = deps.countdownRefresh || countdownRefresh2;
     registerWorkerDoneListener = deps.registerWorkerDoneListener || registerWorkerDoneListener;
+    reloadPage = deps.reloadPage || reloadPage;
   }
   __name(setDependencies2, "setDependencies");
   var TaskRunner2 = {
@@ -5532,28 +5584,26 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         let retryAfterMs = null;
         let manualRequired = false;
         let bundleResult = null;
-        try {
-          if (isBundleTask(currentTask)) {
-            bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
-            success = bundleResult.success;
-            rateLimited = Boolean(bundleResult.rateLimited);
-            retryAfterMs = bundleResult.retryAfterMs || null;
-            if (bundleResult?.manualRequired) manualRequired = true;
-          } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+        const claimNormally = /* @__PURE__ */ __name(async (allowBundleRedirect = true) => {
+          if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
             const apiResult = await ApiClaim.claim(currentTask);
             success = apiResult.result === CLAIM_RESULT.SUCCESS;
             if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
               rateLimited = true;
               retryAfterMs = apiResult.retryAfterMs || null;
             } else if (apiResult.isBundle) {
-              logBuffer.push("[API\u5165\u5E93] \u8BC6\u522B\u4E3A Bundle \u5546\u54C1\uFF0C\u8F6C\u5165\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B\u3002");
-              currentTask.listingType = "bundle";
-              currentTask.isBundle = true;
-              bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
-              success = bundleResult.success;
-              rateLimited = Boolean(bundleResult.rateLimited);
-              retryAfterMs = bundleResult.retryAfterMs || null;
-              if (bundleResult?.manualRequired) manualRequired = true;
+              if (!allowBundleRedirect) {
+                logBuffer.push("[API\u5165\u5E93] \u63A5\u53E3\u53CD\u590D\u5224\u5B9A\u4E3A Bundle\uFF0C\u505C\u6B62\u81EA\u52A8\u91CD\u8BD5\u4EE5\u907F\u514D\u6B7B\u5FAA\u73AF\u3002");
+              } else {
+                logBuffer.push("[API\u5165\u5E93] \u8BC6\u522B\u4E3A Bundle \u5546\u54C1\uFF0C\u8F6C\u5165\u5B98\u7F51\u96F6\u5143\u7ED3\u7B97\u6D41\u7A0B\u3002");
+                currentTask.listingType = "bundle";
+                currentTask.isBundle = true;
+                bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
+                success = bundleResult.success;
+                rateLimited = Boolean(bundleResult.rateLimited);
+                retryAfterMs = bundleResult.retryAfterMs || null;
+                if (bundleResult?.manualRequired) manualRequired = true;
+              }
             } else if (!success) {
               logBuffer.push(`[API\u5165\u5E93] ${apiResult.reason || "\u672A\u5B8C\u6210"}\uFF0C\u5C1D\u8BD5\u56DE\u843D DOM \u9886\u53D6\u3002`);
               const claimResult = await acquireOnDetailPage(currentTask, {
@@ -5570,6 +5620,22 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             });
             success = claimResult.success;
             if (claimResult?.manualRequired) manualRequired = true;
+          }
+        }, "claimNormally");
+        try {
+          if (isBundleTask(currentTask)) {
+            bundleResult = await acquireBundle(currentTask, { log: /* @__PURE__ */ __name((msg) => logBuffer.push(msg), "log") });
+            if (bundleResult?.notBundle) {
+              logBuffer.push("[Bundle] \u8BE5\u5546\u54C1\u6807\u9898\u542B Bundle\uFF0C\u4F46\u63A5\u53E3\u7C7B\u578B\u662F\u666E\u901A\u5546\u54C1\uFF0C\u6539\u7528\u666E\u901A\u9886\u53D6\u6D41\u7A0B\u3002");
+              await claimNormally(false);
+            } else {
+              success = bundleResult.success;
+              rateLimited = Boolean(bundleResult.rateLimited);
+              retryAfterMs = bundleResult.retryAfterMs || null;
+              if (bundleResult?.manualRequired) manualRequired = true;
+            }
+          } else {
+            await claimNormally();
           }
         } catch (error) {
           logBuffer.push(`A critical error occurred: ${error.message}`);
@@ -5664,6 +5730,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         return { total: 0, hidden: 0, visible: 0 };
       }
       const cards = cardsArg ? Array.from(cardsArg) : Array.from(document.querySelectorAll(Config.SELECTORS.card));
+      cards.forEach((card) => card.setAttribute?.("data-fab-card", "true"));
       const hidden = cards.reduce((count, card) => count + (TaskRunner2.isCardHidden(card) ? 1 : 0), 0);
       const total = cards.length;
       const visible = total - hidden;
@@ -5700,6 +5767,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     setCardHidden: /* @__PURE__ */ __name((card, hidden) => {
       if (!card) return;
       const wasHidden = TaskRunner2.isCardHidden(card);
+      card.setAttribute?.("data-fab-card", "true");
       if (hidden) {
         if (card.style) card.style.display = "none";
         card.setAttribute?.("data-fab-hidden", "true");
@@ -6151,6 +6219,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       } finally {
         State.isScanningTasks = false;
+        TaskRunner2.maybeRecycleMemory();
       }
     }, "scanAndAddTasks"),
     handleRateLimit: /* @__PURE__ */ __name(async (url) => {
@@ -6193,6 +6262,138 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (UI4) UI4.update();
       }
     }, "stopExecutionAndSettle"),
+    // ===== 内存回收：分块刷新续跑 =====
+    // Fab 搜索结果是「只追加」的普通列表：滚动加载过的卡片不会回收，11,893 张免费卡
+    // 就留下 15.5 万 DOM 节点 / 单渲染进程约 2GB。全站 4 万+ 一次跑完会线性涨到
+    // 6-7GB（此前已出现 V8 OOM）。因此每累积 N 张卡片、等队列与 worker 都空闲时
+    // 刷新一次页面，用已有的 cursor 注入从原位置续跑，把峰值压回阈值附近。
+    getDomCardCount: /* @__PURE__ */ __name(() => {
+      try {
+        if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") return 0;
+        return document.querySelectorAll(`${Config.SELECTORS.card}, [data-fab-card="true"], [data-fab-hidden="true"], [data-fab-processed="true"]`).length;
+      } catch (_e) {
+        return 0;
+      }
+    }, "getDomCardCount"),
+    _sessionGet: /* @__PURE__ */ __name((key) => {
+      try {
+        if (typeof sessionStorage === "undefined") return null;
+        return sessionStorage.getItem(key);
+      } catch (_e) {
+        return null;
+      }
+    }, "_sessionGet"),
+    _sessionSet: /* @__PURE__ */ __name((key, value) => {
+      try {
+        if (typeof sessionStorage !== "undefined") sessionStorage.setItem(key, String(value));
+      } catch (_e) {
+      }
+    }, "_sessionSet"),
+    _sessionRemove: /* @__PURE__ */ __name((key) => {
+      try {
+        if (typeof sessionStorage !== "undefined") sessionStorage.removeItem(key);
+      } catch (_e) {
+      }
+    }, "_sessionRemove"),
+    // 从游标里解析排序时间（Fab 按 -firstPublishedAt 倒序，游标里带最后一条的 ISO 时间）。
+    // 仅用于判断「续跑是不是退回了列表开头」，解析失败返回 null，不影响主流程。
+    cursorSortTimestamp: /* @__PURE__ */ __name((cursor) => {
+      if (!cursor || typeof atob !== "function") return null;
+      try {
+        const decoded = atob(cursor);
+        const match = decoded.match(/(?:^|&)p=([^&]+)/);
+        if (!match || !match[1]) return null;
+        const value = decodeURIComponent(match[1].replace(/\+/g, " "));
+        if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) return null;
+        const ts = Date.parse(value);
+        return Number.isFinite(ts) ? ts : null;
+      } catch (_e) {
+        return null;
+      }
+    }, "cursorSortTimestamp"),
+    // 防循环：连续两次回收后游标时间反而变晚，说明列表被从头重载（cursor 未生效）。
+    _noteMemoryRecycleProgress: /* @__PURE__ */ __name((currentCursor) => {
+      const prevCursor = TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.LAST_CURSOR);
+      if (!prevCursor || !currentCursor) return;
+      const prevTs = TaskRunner2.cursorSortTimestamp(prevCursor);
+      const curTs = TaskRunner2.cursorSortTimestamp(currentCursor);
+      if (prevTs === null || curTs === null) return;
+      const strikes = Number(TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.STRIKES)) || 0;
+      if (curTs > prevTs + 6e4) {
+        const next = strikes + 1;
+        TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.STRIKES, next);
+        if (next >= 2) {
+          State.memoryRecycleDisabled = true;
+          Utils.logger("warn", Utils.getText("memory_recycle_disabled", next));
+        }
+        return;
+      }
+      if (strikes > 0) TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.STRIKES, 0);
+    }, "_noteMemoryRecycleProgress"),
+    canRecycleMemory: /* @__PURE__ */ __name((cardCount) => {
+      const threshold = Number(Config.MEMORY_RECYCLE_CARD_THRESHOLD) || 0;
+      if (!Config.MEMORY_RECYCLE_ENABLED || threshold <= 0) return false;
+      if (State.memoryRecycleDisabled || State.memoryRecycleInFlight) return false;
+      if (!State.autoScroll || State.apiPipelineActive) return false;
+      if (State.appStatus !== "NORMAL" || State.manualVerificationPending) return false;
+      if (State.isAutoScrolling || State.isScanningTasks || State.isDispatchingTasks) return false;
+      if (State.isRefreshScheduled || State.isRecoveryMode) return false;
+      if (State.isEndOfSearchList) return false;
+      if (State.db.todo.length > 0 || State.activeWorkers > 0) return false;
+      if (!State.savedCursor) return false;
+      const now = Date.now();
+      const lastAt = Number(TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.LAST_AT)) || 0;
+      if (lastAt && now - lastAt < Config.MEMORY_RECYCLE_MIN_INTERVAL_MS) return false;
+      const used = Number(TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.COUNT)) || 0;
+      if (used >= Config.MEMORY_RECYCLE_MAX_PER_SESSION) return false;
+      const count = typeof cardCount === "number" ? cardCount : TaskRunner2.getDomCardCount();
+      return count >= threshold;
+    }, "canRecycleMemory"),
+    maybeRecycleMemory: /* @__PURE__ */ __name(() => {
+      try {
+        if (!TaskRunner2.canRecycleMemory()) return false;
+        TaskRunner2._noteMemoryRecycleProgress(State.savedCursor);
+        if (State.memoryRecycleDisabled) return false;
+        const cardCount = TaskRunner2.getDomCardCount();
+        State.memoryRecycleInFlight = true;
+        const used = (Number(TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.COUNT)) || 0) + 1;
+        TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.COUNT, used);
+        TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.LAST_AT, Date.now());
+        TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.LAST_CURSOR, State.savedCursor);
+        TaskRunner2._sessionSet(MEM_RECYCLE_KEYS.PENDING, "1");
+        Utils.logger("info", Utils.getText(
+          "memory_recycle_trigger",
+          cardCount,
+          Number(Config.MEMORY_RECYCLE_CARD_THRESHOLD),
+          used
+        ));
+        reloadPage();
+        return true;
+      } catch (error) {
+        State.memoryRecycleInFlight = false;
+        Utils.logger("warn", Utils.getText("memory_recycle_failed", error.message));
+        return false;
+      }
+    }, "maybeRecycleMemory"),
+    // 刷新后由主流程调用：消费 pending 标记并主动续跑。正常滚动循环通常也能自己
+    // 接上（初始扫描 -> executeBatch -> attemptAutoScroll），但某些页首屏没有
+    // 新任务/已入库卡时不会触发，必须显式接管一次。
+    resumeAfterMemoryRecycle: /* @__PURE__ */ __name(() => {
+      if (TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.PENDING) !== "1") return false;
+      TaskRunner2._sessionRemove(MEM_RECYCLE_KEYS.PENDING);
+      if (!State.autoScroll || State.apiPipelineActive || State.isWorkerTab) return false;
+      Utils.logger("info", Utils.getText("memory_recycle_resume"));
+      setTimeout(() => {
+        if (!State.autoScroll || State.apiPipelineActive) return;
+        if (State.isEndOfSearchList) return;
+        if (State.db.todo.length > 0) {
+          TaskRunner2.startExecution();
+          return;
+        }
+        TaskRunner2.attemptAutoScroll();
+      }, 6e3);
+      return true;
+    }, "resumeAfterMemoryRecycle"),
     attemptAutoScroll: /* @__PURE__ */ __name(async () => {
       if (State.manualVerificationPending) return;
       if (State.appStatus === "RATE_LIMITED") return;
@@ -6280,6 +6481,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       await doScroll();
       setTimeout(async () => {
         State.isAutoScrolling = false;
+        if (TaskRunner2.maybeRecycleMemory()) return;
         const currentScrollHeight = typeof document !== "undefined" && document.documentElement ? document.documentElement.scrollHeight : 0;
         const currentScrollY = typeof window !== "undefined" ? window.scrollY : 0;
         const newTodoCount = State.db.todo.length;
@@ -9647,6 +9849,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
       }, 3e3);
     }
+    TaskRunner2.resumeAfterMemoryRecycle();
     State.domIntervals.push(setInterval(() => {
       if (!State.hideSaved && !State.hideDiscountedPaid && !State.hidePaid) return;
       const cards = document.querySelectorAll(TaskRunner2.getVisibleCardSelector());
@@ -9709,6 +9912,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             countdownRefresh3(randomDelay, Utils.getText("rate_limit_no_visible_reason"));
           }
         }
+        TaskRunner2.maybeRecycleMemory();
       } catch (error) {
         Utils.logger("error", `\u9875\u9762\u72B6\u6001\u68C0\u67E5\u51FA\u9519: ${error.message}`);
       }

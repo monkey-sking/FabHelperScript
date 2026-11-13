@@ -39,6 +39,11 @@ export const State = {
     isDispatchingTasks: false, // 新增：标记是否正在派发任务
     isScanningTasks: false, // 新增：标记是否正在扫描任务，防止重复扫描
     processedCardUids: new Set(), // 新增：已处理过的卡片UID，防止重复添加
+    // --- 内存回收（分块刷新续跑）---
+    // 页面内卡片累积到阈值后刷新页面释放 DOM，再靠游标续跑。这些标记只用于
+    // 防重复触发/防循环，刷新后由模块初始化重新置位。
+    memoryRecycleInFlight: false,
+    memoryRecycleDisabled: false,
     totalScannedOwned: 0, // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
                           // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
     savedCursor: null, // Holds the loaded cursor for hijacking

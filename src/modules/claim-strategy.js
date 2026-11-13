@@ -31,7 +31,7 @@
  * 一直是 DOM 点击。端点确认后，仅入库动作切换为 ApiClaim；列表枚举仍由页面 DOM 负责。
  */
 import { Utils } from './utils.js';
-import { isBundleTask } from './bundle-claim.js';
+import { isConfirmedBundleTask } from './bundle-claim.js';
 
 export const CLAIM_RESULT = {
     SUCCESS: 'success',
@@ -263,7 +263,9 @@ export const ApiClaim = {
     },
 
     claim: async (task) => {
-        if (isBundleTask(task)) {
+        // 只按确定信号短路；标题含 "Bundle" 的普通资产要先取详情确认类型，
+        // 否则会被误转到零元结算再回落到这里，形成无限循环。
+        if (isConfirmedBundleTask(task)) {
             return { result: CLAIM_RESULT.UNAVAILABLE, reason: 'Bundle 需要官网零元结算流程', retryable: false, isBundle: true };
         }
         if (!ApiClaim.isAvailable()) {
@@ -300,7 +302,7 @@ export const ApiClaim = {
         }
 
         const resolvedListing = ApiClaim._lastResolvedListing;
-        if (resolvedListing && (resolvedListing.listingType === 'bundle' || isBundleTask(resolvedListing))) {
+        if (resolvedListing && isConfirmedBundleTask(resolvedListing)) {
             return {
                 result: CLAIM_RESULT.UNAVAILABLE,
                 reason: 'Bundle 需要官网零元结算流程',

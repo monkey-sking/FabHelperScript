@@ -147,6 +147,10 @@ export const zh = {
     auto_scroll_safety_stop: '[自动滚动] 连续 {0} 轮未发现新内容且未收到服务器到底信号，安全停止（未确认自动入库成功，请检查网络/接口）。',
     auto_scroll_resume_hidden: '[自动入库] 页面已无可见商品，主动滚动加载下一页继续隐藏/入库。',
     auto_scroll_resume_empty: '[自动入库] 页面没有卡片且未到列表末尾，安排一次恢复刷新。',
+    memory_recycle_trigger: '[内存回收] 页面已累积 {0} 张卡片（阈值 {1}），刷新页面并从保存位置继续（本次会话第 {2} 次）。',
+    memory_recycle_resume: '[内存回收] 刷新完成，正在从上次保存的游标位置继续扫描...',
+    memory_recycle_disabled: '[内存回收] 连续 {0} 次回收后列表位置反而退回开头，已暂停自动回收，避免循环刷新（本轮继续在当前页面扫描）。',
+    memory_recycle_failed: '[内存回收] 刷新失败，继续在当前页面扫描: {0}',
 
     // HTTP状态检测
     http_status_check_performance_api: '使用Performance API检查，不再发送HEAD请求',

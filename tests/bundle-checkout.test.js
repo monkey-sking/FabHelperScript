@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { acquireBundle, bundleCheckoutUrl, freeBundleOffers, isZeroPriceCheckout, isCheckoutPage } from '../src/modules/bundle-claim.js';
+import { acquireBundle, bundleCheckoutUrl, freeBundleOffers, isZeroPriceCheckout, isCheckoutPage, isBundleTask } from '../src/modules/bundle-claim.js';
 import { Database } from '../src/modules/database.js';
 import { TaskRunner } from '../src/modules/task-runner.js';
 import { API } from '../src/modules/api.js';
 import { Utils } from '../src/modules/utils.js';
+import { ApiClaim, FAB_CLAIM_ENDPOINT } from '../src/modules/claim-strategy.js';
 
 const uid = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const offer = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -155,4 +156,74 @@ test('bundle worker reports success only after iframe checkout and server verifi
     assert.equal(reports[0][1].success, true);
     assert.equal(removed.length, 1);
     assert.equal(closes, 1);
+});
+
+test('a plain asset whose title contains Bundle stops being treated as a bundle once its type is known', () => {
+    const name = 'Abandoned Bus Depot — Horror Props and Environment Bundle';
+    const url = `https://www.fab.com/listings/${uid}`;
+    assert.equal(isBundleTask({ name, url }), true);
+    assert.equal(isBundleTask({ name, url, listingType: '3d-model' }), false);
+    assert.equal(isBundleTask({ name, url: `https://www.fab.com/bundles/${uid}` }), true);
+    assert.equal(isBundleTask({ name, url: `https://www.fab.com/bundles/${uid}`, isBundle: false }), false);
+});
+
+test('acquireBundle hands a non-bundle listing type back to the ordinary claim path', async () => {
+    const h = harness();
+    const plainTask = { uid, url: `https://www.fab.com/listings/${uid}`, name: 'Abandoned Bus Depot — Horror Props and Environment Bundle' };
+    const result = await acquireBundle(plainTask, {
+        ...h.options,
+        api: {
+            gmFetch: async () => ({
+                status: 200,
+                responseText: JSON.stringify({ listingType: '3d-model', licenses: [{ isCc0: true, offerId: offer, priceTier: { price: 0 } }] })
+            })
+        }
+    });
+    assert.equal(result.success, false);
+    assert.equal(result.notBundle, true);
+    assert.equal(plainTask.listingType, '3d-model');
+    assert.equal(plainTask.isBundle, false);
+    assert.equal(isBundleTask(plainTask), false);
+    assert.equal(h.clicks(), 0, 'must not drive the bundle checkout for a plain asset');
+});
+
+test('worker claims a title-only "Bundle" through the ordinary API instead of failing', async t => {
+    const h = harness();
+    const plainTask = { uid, url: `https://www.fab.com/listings/${uid}`, name: 'Abandoned Bus Depot — Horror Props and Environment Bundle' };
+    const previousClaim = { endpoint: ApiClaim.endpoint, fetchImpl: ApiClaim.fetchImpl };
+    t.after(() => ApiClaim.configure(previousClaim));
+    const keys = ['window', 'document', 'GM_getValue', 'GM_setValue', 'GM_deleteValue'];
+    const originals = new Map(keys.map(key => [key, globalThis[key]]));
+    t.after(() => { for (const [key, value] of originals) globalThis[key] = value; });
+    const reports = [];
+    const calls = [];
+    globalThis.window = { location: { href: `${plainTask.url}?workerId=worker_test`, search: '?workerId=worker_test' }, close: () => {} };
+    globalThis.document = h.doc;
+    globalThis.GM_getValue = async () => ({ task: plainTask, instanceId: 'test-instance' });
+    globalThis.GM_setValue = async (...args) => reports.push(args);
+    globalThis.GM_deleteValue = async () => {};
+    t.mock.method(globalThis, 'setTimeout', (callback, delay) => { if (delay < 1000) callback(); return 1; });
+    t.mock.method(globalThis, 'clearTimeout', () => {});
+    let wallClock = 1000;
+    t.mock.method(Date, 'now', () => (wallClock += 250));
+    t.mock.method(Utils, 'getCookie', () => 'test-csrf');
+    const fetchImpl = async req => {
+        calls.push(req);
+        if (req.method === 'GET') {
+            return {
+                status: 200,
+                responseText: JSON.stringify({ listingType: '3d-model', licenses: [{ isCc0: true, offerId: offer, priceTier: { price: 0 } }] })
+            };
+        }
+        return { status: 204 };
+    };
+    t.mock.method(API, 'gmFetch', fetchImpl);
+    ApiClaim.configure({ endpoint: FAB_CLAIM_ENDPOINT, fetchImpl });
+
+    await TaskRunner.processDetailPage();
+
+    assert.equal(calls.filter(call => call.method === 'POST').length, 1, 'ordinary claim must POST exactly once');
+    assert.equal(reports.length, 1);
+    assert.equal(reports[0][1].success, true);
+    assert.ok(reports[0][1].logs.some(line => line.includes('普通领取流程')), 'logs should explain the fallback');
 });

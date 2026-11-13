@@ -31,9 +31,24 @@ import { VerificationNotifications } from './verification-notifications.js';
 // globalThis.setTimeout（由测试手动 flush），不受影响。
 const _realSetTimeout = (typeof setTimeout === 'function') ? setTimeout : (cb) => { try { cb(); } catch (_e) {} };
 
+// 内存回收（分块刷新续跑）使用的会话级键。放 sessionStorage 是为了在刷新后
+// 仍然能读取上一次回收的时间/游标，用于限流与防循环；关掉标签页即清空。
+const MEM_RECYCLE_KEYS = {
+    COUNT: 'fab_helper_mem_recycle_count_v1',
+    LAST_AT: 'fab_helper_mem_recycle_last_at_v1',
+    LAST_CURSOR: 'fab_helper_mem_recycle_last_cursor_v1',
+    STRIKES: 'fab_helper_mem_recycle_strikes_v1',
+    PENDING: 'fab_helper_mem_recycle_pending_v1'
+};
+
 // Forward declaration for UI (will be set via dependency injection)
 let UI = null;
 let countdownRefresh = null;
+let reloadPage = () => {
+    if (typeof location !== 'undefined' && typeof location.reload === 'function') {
+        location.reload();
+    }
+};
 // worker 回传监听注册函数（由 index.js 通过 deps 注入）。按 workerId 派生独立回传键
 // 监听，避免旧版单键 WORKER_DONE 在多标签页并发完成时后者覆盖前者导致报告丢失/重复加库。
 let registerWorkerDoneListener = null;
@@ -45,6 +60,7 @@ export function setUIReference(uiModule) {
 export function setDependencies(deps = {}) {
     countdownRefresh = deps.countdownRefresh || countdownRefresh;
     registerWorkerDoneListener = deps.registerWorkerDoneListener || registerWorkerDoneListener;
+    reloadPage = deps.reloadPage || reloadPage;
 }
 
 export const TaskRunner = {
@@ -1089,28 +1105,28 @@ export const TaskRunner = {
             // 页面枚举、滚动和 worker 调度保持旧逻辑；只有真正的入库动作切到已确认的 API。
             // API 的暂态故障必须回落到当前已打开的详情页 DOM；429 则绝不能叠加 DOM 请求，
             // 交由主标签页暂停派发并等待恢复。
-            try {
-                if (isBundleTask(currentTask)) {
-                    bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
-                    success = bundleResult.success;
-                    rateLimited = Boolean(bundleResult.rateLimited);
-                    retryAfterMs = bundleResult.retryAfterMs || null;
-                    if (bundleResult?.manualRequired) manualRequired = true;
-                } else if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
+            const claimNormally = async (allowBundleRedirect = true) => {
+                if (Config.USE_API_CLAIM && ApiClaim.isAvailable()) {
                     const apiResult = await ApiClaim.claim(currentTask);
                     success = apiResult.result === CLAIM_RESULT.SUCCESS;
                     if (apiResult.result === CLAIM_RESULT.RATE_LIMITED) {
                         rateLimited = true;
                         retryAfterMs = apiResult.retryAfterMs || null;
                     } else if (apiResult.isBundle) {
-                        logBuffer.push('[API入库] 识别为 Bundle 商品，转入官网零元结算流程。');
-                        currentTask.listingType = 'bundle';
-                        currentTask.isBundle = true;
-                        bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
-                        success = bundleResult.success;
-                        rateLimited = Boolean(bundleResult.rateLimited);
-                        retryAfterMs = bundleResult.retryAfterMs || null;
-                        if (bundleResult?.manualRequired) manualRequired = true;
+                        if (!allowBundleRedirect) {
+                            // 详情接口与 Bundle 结算流程对类型的判断互相矛盾时，
+                            // 再转一次只会无限循环，直接按失败收尾。
+                            logBuffer.push('[API入库] 接口反复判定为 Bundle，停止自动重试以避免死循环。');
+                        } else {
+                            logBuffer.push('[API入库] 识别为 Bundle 商品，转入官网零元结算流程。');
+                            currentTask.listingType = 'bundle';
+                            currentTask.isBundle = true;
+                            bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
+                            success = bundleResult.success;
+                            rateLimited = Boolean(bundleResult.rateLimited);
+                            retryAfterMs = bundleResult.retryAfterMs || null;
+                            if (bundleResult?.manualRequired) manualRequired = true;
+                        }
                     } else if (!success) {
                         logBuffer.push(`[API入库] ${apiResult.reason || '未完成'}，尝试回落 DOM 领取。`);
                         const claimResult = await acquireOnDetailPage(currentTask, {
@@ -1127,6 +1143,23 @@ export const TaskRunner = {
                     });
                     success = claimResult.success;
                     if (claimResult?.manualRequired) manualRequired = true;
+                }
+            };
+
+            try {
+                if (isBundleTask(currentTask)) {
+                    bundleResult = await acquireBundle(currentTask, { log: msg => logBuffer.push(msg) });
+                    if (bundleResult?.notBundle) {
+                        logBuffer.push('[Bundle] 该商品标题含 Bundle，但接口类型是普通商品，改用普通领取流程。');
+                        await claimNormally(false);
+                    } else {
+                        success = bundleResult.success;
+                        rateLimited = Boolean(bundleResult.rateLimited);
+                        retryAfterMs = bundleResult.retryAfterMs || null;
+                        if (bundleResult?.manualRequired) manualRequired = true;
+                    }
+                } else {
+                    await claimNormally();
                 }
             } catch (error) {
                 logBuffer.push(`A critical error occurred: ${error.message}`);
@@ -1239,6 +1272,7 @@ export const TaskRunner = {
         }
 
         const cards = cardsArg ? Array.from(cardsArg) : Array.from(document.querySelectorAll(Config.SELECTORS.card));
+        cards.forEach(card => card.setAttribute?.('data-fab-card', 'true'));
         const hidden = cards.reduce((count, card) => count + (TaskRunner.isCardHidden(card) ? 1 : 0), 0);
         const total = cards.length;
         const visible = total - hidden;
@@ -1285,6 +1319,7 @@ export const TaskRunner = {
     setCardHidden: (card, hidden) => {
         if (!card) return;
         const wasHidden = TaskRunner.isCardHidden(card);
+        card.setAttribute?.('data-fab-card', 'true');
 
         if (hidden) {
             // 按用户原始记录：已入库/已隐藏商品不占高度、不占空间 —— 用 display:none
@@ -1880,6 +1915,8 @@ export const TaskRunner = {
         } finally {
             // 确保扫描锁被释放
             State.isScanningTasks = false;
+            // 扫描结束、队列/worker 空闲时检查是否需要刷新页面回收 DOM 内存
+            TaskRunner.maybeRecycleMemory();
         }
     },
 
@@ -1926,6 +1963,155 @@ export const TaskRunner = {
             Database.saveTodo();
             if (UI) UI.update();
         }
+    },
+
+    // ===== 内存回收：分块刷新续跑 =====
+    // Fab 搜索结果是「只追加」的普通列表：滚动加载过的卡片不会回收，11,893 张免费卡
+    // 就留下 15.5 万 DOM 节点 / 单渲染进程约 2GB。全站 4 万+ 一次跑完会线性涨到
+    // 6-7GB（此前已出现 V8 OOM）。因此每累积 N 张卡片、等队列与 worker 都空闲时
+    // 刷新一次页面，用已有的 cursor 注入从原位置续跑，把峰值压回阈值附近。
+    getDomCardCount: () => {
+        try {
+            if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return 0;
+            return document.querySelectorAll(`${Config.SELECTORS.card}, [data-fab-card="true"], [data-fab-hidden="true"], [data-fab-processed="true"]`).length;
+        } catch (_e) {
+            return 0;
+        }
+    },
+
+    _sessionGet: (key) => {
+        try {
+            if (typeof sessionStorage === 'undefined') return null;
+            return sessionStorage.getItem(key);
+        } catch (_e) {
+            return null;
+        }
+    },
+
+    _sessionSet: (key, value) => {
+        try {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(key, String(value));
+        } catch (_e) { }
+    },
+
+    _sessionRemove: (key) => {
+        try {
+            if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key);
+        } catch (_e) { }
+    },
+
+    // 从游标里解析排序时间（Fab 按 -firstPublishedAt 倒序，游标里带最后一条的 ISO 时间）。
+    // 仅用于判断「续跑是不是退回了列表开头」，解析失败返回 null，不影响主流程。
+    cursorSortTimestamp: (cursor) => {
+        if (!cursor || typeof atob !== 'function') return null;
+        try {
+            const decoded = atob(cursor);
+            const match = decoded.match(/(?:^|&)p=([^&]+)/);
+            if (!match || !match[1]) return null;
+            const value = decodeURIComponent(match[1].replace(/\+/g, ' '));
+            if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value)) return null;
+            const ts = Date.parse(value);
+            return Number.isFinite(ts) ? ts : null;
+        } catch (_e) {
+            return null;
+        }
+    },
+
+    // 防循环：连续两次回收后游标时间反而变晚，说明列表被从头重载（cursor 未生效）。
+    _noteMemoryRecycleProgress: (currentCursor) => {
+        const prevCursor = TaskRunner._sessionGet(MEM_RECYCLE_KEYS.LAST_CURSOR);
+        if (!prevCursor || !currentCursor) return;
+        const prevTs = TaskRunner.cursorSortTimestamp(prevCursor);
+        const curTs = TaskRunner.cursorSortTimestamp(currentCursor);
+        if (prevTs === null || curTs === null) return;
+
+        const strikes = Number(TaskRunner._sessionGet(MEM_RECYCLE_KEYS.STRIKES)) || 0;
+        if (curTs > prevTs + 60000) {
+            const next = strikes + 1;
+            TaskRunner._sessionSet(MEM_RECYCLE_KEYS.STRIKES, next);
+            if (next >= 2) {
+                State.memoryRecycleDisabled = true;
+                Utils.logger('warn', Utils.getText('memory_recycle_disabled', next));
+            }
+            return;
+        }
+        if (strikes > 0) TaskRunner._sessionSet(MEM_RECYCLE_KEYS.STRIKES, 0);
+    },
+
+    canRecycleMemory: (cardCount) => {
+        const threshold = Number(Config.MEMORY_RECYCLE_CARD_THRESHOLD) || 0;
+        if (!Config.MEMORY_RECYCLE_ENABLED || threshold <= 0) return false;
+        if (State.memoryRecycleDisabled || State.memoryRecycleInFlight) return false;
+        // 只在「自动滚动全量扫描」模式下回收：其它模式刷新会打断用户手动浏览。
+        if (!State.autoScroll || State.apiPipelineActive) return false;
+        if (State.appStatus !== 'NORMAL' || State.manualVerificationPending) return false;
+        if (State.isAutoScrolling || State.isScanningTasks || State.isDispatchingTasks) return false;
+        if (State.isRefreshScheduled || State.isRecoveryMode) return false;
+        if (State.isEndOfSearchList) return false;
+        // 只在队列与 worker 都空闲时刷新，避免把在途任务/回传弄丢。
+        if (State.db.todo.length > 0 || State.activeWorkers > 0) return false;
+        // 没有游标就刷新 = 从头重扫，绝对不允许。
+        if (!State.savedCursor) return false;
+
+        const now = Date.now();
+        const lastAt = Number(TaskRunner._sessionGet(MEM_RECYCLE_KEYS.LAST_AT)) || 0;
+        if (lastAt && now - lastAt < Config.MEMORY_RECYCLE_MIN_INTERVAL_MS) return false;
+        const used = Number(TaskRunner._sessionGet(MEM_RECYCLE_KEYS.COUNT)) || 0;
+        if (used >= Config.MEMORY_RECYCLE_MAX_PER_SESSION) return false;
+
+        const count = typeof cardCount === 'number' ? cardCount : TaskRunner.getDomCardCount();
+        return count >= threshold;
+    },
+
+    maybeRecycleMemory: () => {
+        try {
+            if (!TaskRunner.canRecycleMemory()) return false;
+
+            TaskRunner._noteMemoryRecycleProgress(State.savedCursor);
+            if (State.memoryRecycleDisabled) return false;
+
+            const cardCount = TaskRunner.getDomCardCount();
+            State.memoryRecycleInFlight = true;
+            const used = (Number(TaskRunner._sessionGet(MEM_RECYCLE_KEYS.COUNT)) || 0) + 1;
+            TaskRunner._sessionSet(MEM_RECYCLE_KEYS.COUNT, used);
+            TaskRunner._sessionSet(MEM_RECYCLE_KEYS.LAST_AT, Date.now());
+            TaskRunner._sessionSet(MEM_RECYCLE_KEYS.LAST_CURSOR, State.savedCursor);
+            TaskRunner._sessionSet(MEM_RECYCLE_KEYS.PENDING, '1');
+
+            Utils.logger('info', Utils.getText(
+                'memory_recycle_trigger',
+                cardCount,
+                Number(Config.MEMORY_RECYCLE_CARD_THRESHOLD),
+                used
+            ));
+            reloadPage();
+            return true;
+        } catch (error) {
+            State.memoryRecycleInFlight = false;
+            Utils.logger('warn', Utils.getText('memory_recycle_failed', error.message));
+            return false;
+        }
+    },
+
+    // 刷新后由主流程调用：消费 pending 标记并主动续跑。正常滚动循环通常也能自己
+    // 接上（初始扫描 -> executeBatch -> attemptAutoScroll），但某些页首屏没有
+    // 新任务/已入库卡时不会触发，必须显式接管一次。
+    resumeAfterMemoryRecycle: () => {
+        if (TaskRunner._sessionGet(MEM_RECYCLE_KEYS.PENDING) !== '1') return false;
+        TaskRunner._sessionRemove(MEM_RECYCLE_KEYS.PENDING);
+        if (!State.autoScroll || State.apiPipelineActive || State.isWorkerTab) return false;
+
+        Utils.logger('info', Utils.getText('memory_recycle_resume'));
+        setTimeout(() => {
+            if (!State.autoScroll || State.apiPipelineActive) return;
+            if (State.isEndOfSearchList) return;
+            if (State.db.todo.length > 0) {
+                TaskRunner.startExecution();
+                return;
+            }
+            TaskRunner.attemptAutoScroll();
+        }, 6000);
+        return true;
     },
 
     attemptAutoScroll: async () => {
@@ -2067,6 +2253,8 @@ export const TaskRunner = {
         // Wait for potential content loading and scanning
         setTimeout(async () => {
             State.isAutoScrolling = false;
+            // 每轮滚动收尾都检查一次：达到阈值且空闲则刷新页面续跑
+            if (TaskRunner.maybeRecycleMemory()) return;
 
             const currentScrollHeight = (typeof document !== 'undefined' && document.documentElement) ? document.documentElement.scrollHeight : 0;
             const currentScrollY = (typeof window !== 'undefined') ? window.scrollY : 0;

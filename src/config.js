@@ -25,6 +25,15 @@ export const Config = {
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
     // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
     PIPELINE_RESCAN_INTERVAL_MS: 0,
+    // 内存回收（分块刷新续跑）：Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直
+    // 留在 DOM 里（实测 11,893 张免费卡 ≈ 15.5 万节点 / 单渲染进程 2GB）。
+    // 全站 4 万+ 免费商品一次性滚完会线性涨到 6-7GB 并触发 V8 OOM。
+    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的
+    // cursor 从原位置继续，把内存占用重新压回阈值附近。
+    MEMORY_RECYCLE_ENABLED: true,
+    MEMORY_RECYCLE_CARD_THRESHOLD: 3000, // 页面内卡片总数达到该值触发刷新；0 = 关闭
+    MEMORY_RECYCLE_MIN_INTERVAL_MS: 45000, // 两次回收的最小间隔（跨刷新，防抖动/防循环）
+    MEMORY_RECYCLE_MAX_PER_SESSION: 30, // 单标签页会话最多回收次数，兜底防循环刷新
     // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
     //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
     //               仍作为领取后端，流水线照常启动、走接口领取。

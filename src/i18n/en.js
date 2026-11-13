@@ -145,6 +145,10 @@ export const en = {
     auto_scroll_safety_stop: '[Auto Scroll] No new content for {0} consecutive rounds and no server end-of-list signal received; safety stop (auto-add success NOT confirmed, check network/API).',
     auto_scroll_resume_hidden: '[Auto Add] No visible items remain on page; scrolling to load next page and continue hiding/adding.',
     auto_scroll_resume_empty: '[Auto Add] Page has no cards and list is not at end; scheduling a recovery refresh.',
+    memory_recycle_trigger: '[Memory Recycle] {0} cards accumulated on page (threshold {1}); reloading and resuming from the saved position (session recycle #{2}).',
+    memory_recycle_resume: '[Memory Recycle] Reload complete; resuming scan from the saved cursor...',
+    memory_recycle_disabled: '[Memory Recycle] List position moved back to the beginning after {0} recycles; auto recycle paused to avoid a reload loop (continuing on the current page).',
+    memory_recycle_failed: '[Memory Recycle] Reload failed, continuing on the current page: {0}',
 
     // HTTP状态检测
     http_status_check_performance_api: 'Using Performance API check, no longer sending HEAD requests',

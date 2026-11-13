@@ -986,6 +986,10 @@ async function runDomDependentPart() {
         }, 3000); // 给页面一点渲染时间
     }
 
+    // 上一次页面是因为「内存回收」而刷新的：消费标记并主动接上自动滚动，
+    // 避免首屏没有新任务/已入库卡时滚动循环不启动、停在原地。
+    TaskRunner.resumeAfterMemoryRecycle();
+
     // Periodic card processing check
     // 间隔 10s：跳过已处理隐藏卡片（状态稳定），只检查可见未处理卡片
     State.domIntervals.push(setInterval(() => {
@@ -1076,6 +1080,9 @@ async function runDomDependentPart() {
                     countdownRefresh(randomDelay, Utils.getText('rate_limit_no_visible_reason'));
                 }
             }
+
+            // 周期兜底：滚动循环停住时也能在空闲态触发内存回收
+            TaskRunner.maybeRecycleMemory();
         } catch (error) {
             Utils.logger('error', `页面状态检查出错: ${error.message}`);
         }

@@ -2,10 +2,22 @@ import { API } from './api.js';
 import { Utils } from './utils.js';
 
 export const isCheckoutPage = pathname => /^\/payment(?:\/|$)/i.test(pathname || '');
-export const isBundleTask = task => task?.listingType === 'bundle'
-    || task?.isBundle === true
-    || /\/(?:bundles)\//i.test(task?.url || '')
-    || (typeof task?.name === 'string' && /\bbundle\b/i.test(task.name));
+/** 只认接口/URL 给出的确定信号：标题里的 "Bundle" 不算，
+ * 否则 "... Environment Bundle" 这类普通 3D 资产会被带进零元结算流程。 */
+export const isConfirmedBundleTask = task => {
+    if (task?.isBundle === false) return false;
+    if (task?.listingType === 'bundle' || task?.isBundle === true) return true;
+    return /\/(?:bundles)\//i.test(task?.url || '');
+};
+
+export const isBundleTask = task => {
+    // 接口已确认不是 bundle 时以接口为准，不再被标题里的 "Bundle" 误导。
+    if (isConfirmedBundleTask(task)) return true;
+    // 普通资产也常把 "Bundle" 写进标题（如 "... Horror Props and Environment Bundle"
+    // 实际是 3d-model）。只有还没有接口类型时，才用标题做兜底判断。
+    return !task?.listingType && task?.isBundle !== false
+        && typeof task?.name === 'string' && /\bbundle\b/i.test(task.name);
+};
 
 export function freeBundleOffers(listing) {
     if (listing?.listingType !== 'bundle') return [];
@@ -91,9 +103,17 @@ export async function acquireBundle(task, options = {}) {
     try {
         if (!isBundleTask(task) && task?.listingType !== 'bundle' && !task?.isBundle) return fail('不是 bundle 任务');
         const listing = await get(`https://www.fab.com/i/listings/${encodeURIComponent(task.uid)}`);
-        if (listing?.listingType === 'bundle') {
+        const listingType = typeof listing?.listingType === 'string' ? listing.listingType : '';
+        if (listingType === 'bundle') {
             task.listingType = 'bundle';
             task.isBundle = true;
+        } else if (listingType) {
+            // 标题含 "Bundle" 但接口类型是 3d-model / asset 等普通商品：交给普通领取流程。
+            // 这里不能判失败，否则这些免费 CC 资产会被误记为「未找到免费许可」。
+            task.listingType = listingType;
+            task.isBundle = false;
+            log(`[Bundle] 接口类型为 ${listingType}，不是 bundle，转普通领取流程`);
+            return { success: false, notBundle: true };
         }
         const offers = freeBundleOffers(listing);
         if (!offers.length) return fail('未找到免费许可，停止领取');
