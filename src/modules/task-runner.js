@@ -705,6 +705,69 @@ export const TaskRunner = {
         return safeVal;
     },
 
+    getWorkMode: () => {
+        if (!State.fastApiScan) return 'page';
+        return State.incrementalEarlyStop ? 'incremental' : 'full';
+    },
+
+    setWorkMode: async (mode) => {
+        const validModes = ['full', 'incremental', 'page'];
+        if (!validModes.includes(mode)) return TaskRunner.getWorkMode();
+        if (TaskRunner.getWorkMode() === mode) {
+            if (UI) UI.update();
+            return mode;
+        }
+        if (State.isExecuting || FastScanner.isRunning()) {
+            if (FastScanner.isRunning()) {
+                await FastScanner.stop();
+            }
+            TaskRunner.stop();
+        }
+        if (mode === 'full') {
+            State.fastApiScan = true;
+            State.incrementalEarlyStop = false;
+        } else if (mode === 'incremental') {
+            State.fastApiScan = true;
+            State.incrementalEarlyStop = true;
+        } else {
+            State.fastApiScan = false;
+        }
+        await Database.saveFastApiScanPref();
+        await Database.saveIncrementalEarlyStopPref();
+        Utils.logger('info', Utils.getText('log_work_mode_changed', Utils.getText(`mode_${mode}`)));
+        if (UI) UI.update();
+        return mode;
+    },
+
+    getPageSubMode: () => {
+        if (State.autoScroll) return 'auto_scroll';
+        if (State.autoAddOnScroll) return 'on_scroll';
+        return 'visible';
+    },
+
+    setPageSubMode: async (subMode) => {
+        const validSubModes = ['visible', 'on_scroll', 'auto_scroll'];
+        if (!validSubModes.includes(subMode)) return TaskRunner.getPageSubMode();
+        if (subMode === 'visible') {
+            State.autoAddOnScroll = false;
+            State.autoScroll = false;
+        } else if (subMode === 'on_scroll') {
+            State.autoAddOnScroll = true;
+            State.autoScroll = false;
+        } else {
+            State.autoAddOnScroll = false;
+            State.autoScroll = true;
+            State.isEndOfSearchList = false;
+            State.autoScrollAttempts = 0;
+            State.hasReachedBottomToastShown = false;
+        }
+        await Database.saveAutoAddPref();
+        await Database.saveAutoScrollPref();
+        Utils.logger('info', Utils.getText('log_page_submode_changed', Utils.getText(`page_submode_${subMode}`)));
+        if (UI) UI.update();
+        return subMode;
+    },
+
     toggleFastApiScan: async () => {
         if (State.isExecuting || FastScanner.isRunning()) {
             if (FastScanner.isRunning()) {
@@ -763,6 +826,7 @@ export const TaskRunner = {
         State.isExecuting = false;
         Database.saveExecutingState();
         Database.saveTodo();
+        KeepAlive.stop();
         State.runningWorkers = {};
         State.activeWorkers = 0;
         State.executionTotalTasks = 0;
@@ -1733,7 +1797,7 @@ export const TaskRunner = {
                 }
             } else if (State.appStatus === 'NORMAL' && State.hiddenThisPageCount > 0) {
                 Utils.logger('debug', Utils.getText('page_status_hidden_no_visible', State.hiddenThisPageCount));
-                if (State.autoScroll || State.autoAddOnScroll) {
+                if (!State.fastApiScan && (State.autoScroll || State.autoAddOnScroll)) {
                     TaskRunner.attemptAutoScroll();
                 }
             }
@@ -1859,7 +1923,7 @@ export const TaskRunner = {
     },
 
     scanAndAddTasks: async (cards) => {
-        if (FastScanner.isRunning()) return;
+        if (State.fastApiScan || FastScanner.isRunning()) return;
         if (!State.autoAddOnScroll && !State.autoScroll) return;
 
         // 未登录或 session 已过期时，卡片上拿不到价格信息，isFreeCard 会把所有商品
@@ -2014,7 +2078,7 @@ export const TaskRunner = {
             if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
                     State.autoAddRetryTimer = setTimeout(() => {
                     State.autoAddRetryTimer = null;
-                    if (State.autoAddOnScroll || State.autoScroll) {
+                    if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll)) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加重试失败: ${error.message}`));
                     }

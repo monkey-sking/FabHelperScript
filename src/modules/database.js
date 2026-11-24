@@ -174,6 +174,15 @@ export const Database = {
             )
         );
         State.debugMode = await Database._safeGet('fab_helper_debug_mode', false); // 加载调试模式设置
+        State.uiExpanded = Boolean(await Database._safeGet(Config.DB_KEYS.UI_EXPANDED, true));
+        const savedCheckpoint = await Database._safeGet(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null);
+        State.hasFastScanCheckpoint = Boolean(
+            savedCheckpoint && (
+                (Array.isArray(savedCheckpoint.slices) && savedCheckpoint.slices.some((s) => !s.done))
+                || (Array.isArray(savedCheckpoint.pendingUnknowns) && savedCheckpoint.pendingUnknowns.length > 0)
+                || (Array.isArray(savedCheckpoint.pendingClaims) && savedCheckpoint.pendingClaims.length > 0)
+            )
+        );
         State.currentSortOption = await Database._safeGet('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
 
@@ -221,6 +230,7 @@ export const Database = {
     saveApiScanConcurrencyPref: () => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency),
     saveIncrementalEarlyStopPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop),
     saveIncrementalStopPagesPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages),
+    saveUiExpandedPref: () => Database._safeSet(Config.DB_KEYS.UI_EXPANDED, State.uiExpanded),
     saveExecutingState: () => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
@@ -262,6 +272,7 @@ export const Database = {
             State.incrementalEarlyStop = false;
             State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
             State.fastScanStatus = null;
+            State.hasFastScanCheckpoint = false;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {
                 UI.removeAllOverlays();
@@ -341,7 +352,7 @@ export const Database = {
     getMaxRetry: (reason) => {
         if (!reason) return 1;
         if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
-        if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
+        if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可|服务端内部错误|500 Internal error|服务端返回错误提示/i.test(reason)) return 0;
         if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
         return 1;
     },

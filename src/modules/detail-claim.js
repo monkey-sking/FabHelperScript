@@ -220,6 +220,30 @@ const checkOwnedViaApi = async (ctx, task, push) => {
     return false;
 };
 
+const ERROR_TOAST_SELECTOR = '.fabkit-Snackbar-root, div[class*="Toast-root"], [role="alert"]';
+const ERROR_TOAST_PATTERNS = /ooops|an error occurred|something went wrong|try again later|发生错误|出错了|内部错误|请稍后再试/i;
+
+/**
+ * 检测页面是否弹出 Fab 错误提示（例如 500 Internal error 触发的红色 Toast），
+ * 避免点完按钮后空等 60 秒超时。
+ */
+const detectErrorToastOnPage = (ctx) => {
+    const { doc, win, utils } = ctx;
+    const ownedSnacks = Config.OWNED_SUCCESS_CRITERIA?.snackbarText || [];
+    const nodes = doc?.querySelectorAll?.(ERROR_TOAST_SELECTOR) || [];
+    for (const el of nodes) {
+        const style = (win && win.getComputedStyle) ? win.getComputedStyle(el) : null;
+        if (style && (style.display === 'none' || style.visibility === 'hidden')) continue;
+        const text = utils.normalizeWhitespace(el.textContent || '');
+        if (!text) continue;
+        if (ownedSnacks.some((okText) => text.includes(okText))) continue;
+        if (ERROR_TOAST_PATTERNS.test(text)) {
+            return { found: true, text };
+        }
+    }
+    return { found: false };
+};
+
 /**
  * UI 归属判定（三种信号任一命中即可）：
  *   snackbar 文案 / 按钮文案 / 「已保存在我的库中」状态徽章
@@ -440,6 +464,13 @@ const waitForOwnedAfterClick = async (ctx, push, isItemOwned) => {
                 return;
             }
 
+            const errorToast = detectErrorToastOnPage(ctx);
+            if (errorToast.found) {
+                push(`Fab 服务端返回错误提示，无法入库: ${errorToast.text}`);
+                finish({ success: false, serverError: true });
+                return;
+            }
+
             const checkoutBtn = findCheckoutButton(ctx);
             if (checkoutBtn && !checkoutBtn.disabled) {
                 const lastClickTime = parseInt(checkoutBtn.dataset?.lastClickTime || '0', 10);
@@ -479,6 +510,7 @@ export const acquireOnDetailPage = async (task, options = {}) => {
 
     let success = false;
     let manualRequired = false;
+    let serverError = false;
     try {
         if (isCaptchaPresent(ctx.doc)) {
             push('检测到人机验证 / 安全检查，需要人工完成验证');
@@ -519,6 +551,7 @@ export const acquireOnDetailPage = async (task, options = {}) => {
             if (typeof uiResult === 'object') {
                 success = Boolean(uiResult.success);
                 manualRequired = Boolean(uiResult.manualRequired);
+                serverError = Boolean(uiResult.serverError);
             } else {
                 success = Boolean(uiResult);
             }
@@ -532,7 +565,7 @@ export const acquireOnDetailPage = async (task, options = {}) => {
         success = false;
     }
 
-    return { success, manualRequired, logs };
+    return { success, manualRequired, serverError, logs };
 };
 
 /**

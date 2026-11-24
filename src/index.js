@@ -933,8 +933,7 @@ async function runDomDependentPart() {
                 const shouldProcessNewCards = State.hideSaved ||
                     State.hideDiscountedPaid ||
                     State.hidePaid ||
-                    State.autoAddOnScroll ||
-                    State.autoScroll ||
+                    (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll)) ||
                     State.isExecuting ||
                     State.db.todo.length > 0;
 
@@ -947,7 +946,7 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
+                    if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -987,7 +986,7 @@ async function runDomDependentPart() {
                 }
             }, 1500);
         }
-    } else if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    } else if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1075,7 +1074,7 @@ async function runDomDependentPart() {
                         Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
                 }
             } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
-                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
+                && !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
                 // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
                 // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
                 // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
@@ -1434,7 +1433,7 @@ export function registerWorkerDoneListener(workerId) {
 
                 // 任务失败时，从日志中寻找具体原因以 warn 级别显式输出
                 const errorLog = logs && logs.length ?
-                    (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
+                    (logs.find(log => log.includes(Utils.getText('worker_captcha'))) || logs.find(log => log.includes('服务端') || log.includes('500') || log.includes('Error') || log.includes('Timeout') || log.includes('failed') || log.includes('Critical')) || logs[logs.length - 1]) :
                     (isZh ? '工作标签页报告失败' : 'Worker tab reported failure');
                 const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, '') : (isZh ? '未知原因' : 'Unknown reason');
 

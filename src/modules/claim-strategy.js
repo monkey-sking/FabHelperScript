@@ -379,9 +379,19 @@ export const ApiClaim = {
             return { result: CLAIM_RESULT.FAILURE, reason: '接口返回 400，请求体可能被拒绝', retryable: false };
         }
 
-        // 5xx 是服务端临时故障，值得回落到 DOM 再试一次
+        // 5xx 是服务端临时故障，值得回落到 DOM 再试一次；
+        // 但 Fab 明确的 500 {"detail":"Internal error"} 标注 serverInternalError 供批量路径快败。
         if (status >= 500) {
-            return { result: CLAIM_RESULT.FAILURE, reason: `接口返回 ${status}`, retryable: true };
+            if (isFabInternalServerError(response)) {
+                return {
+                    result: CLAIM_RESULT.FAILURE,
+                    reason: '接口返回 500 (Fab 服务端内部错误)',
+                    retryable: true,
+                    status,
+                    serverInternalError: true
+                };
+            }
+            return { result: CLAIM_RESULT.FAILURE, reason: `接口返回 ${status}`, retryable: true, status };
         }
 
         return {
@@ -398,6 +408,19 @@ export const ApiClaim = {
  */
 let domClaimImpl = null;
 export const setDomClaim = (fn) => { domClaimImpl = fn; };
+
+const isFabInternalServerError = (response) => {
+    if (!response || Number(response.status) !== 500) return false;
+    const text = String(response.responseText || '').trim();
+    if (!text) return false;
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed.detail === 'string' && /internal error/i.test(parsed.detail)) {
+            return true;
+        }
+    } catch (_e) { /* fall back to regex check */ }
+    return /"detail"\s*:\s*"Internal error"/i.test(text);
+};
 
 /**
  * 把注入实现的返回值归一成规范形态。

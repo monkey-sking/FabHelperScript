@@ -84,6 +84,7 @@ export const Config = {
         INCREMENTAL_EARLY_STOP: 'fab_incremental_early_stop_v1', // 增量早停开关 (-firstPublishedAt)
         INCREMENTAL_STOP_PAGES: 'fab_incremental_stop_pages_v1', // 连续全已拥有页数早停阈值
         FAST_SCAN_CHECKPOINT: 'fab_fast_scan_checkpoint_v1', // 极速扫描断点进度
+        UI_EXPANDED: 'fab_ui_expanded_v1', // 主面板展开/收起状态
         // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
         // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
         EVENT_LOG: 'fab_event_log_v1',

@@ -590,12 +590,14 @@ export const createFastScanner = (deps = {}) => {
         lastCheckpointAt = now;
         try {
             await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, buildCheckpointPayload());
+            getState().hasFastScanCheckpoint = true;
         } catch (_e) { /* ignore */ }
     };
 
     const clearCheckpoint = async () => {
         try {
             await gmDelete(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT);
+            getState().hasFastScanCheckpoint = false;
         } catch (_e) { /* ignore */ }
     };
 
@@ -854,7 +856,12 @@ export const createFastScanner = (deps = {}) => {
                     lastClaimAt = nowFn();
                 }
 
-                const outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+                let outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+
+                if (outcome.serverInternalError && task.offerId) {
+                    // 搜索返回的 offerId 触发 500 Internal error 时，回源详情换另一免费许可（如 professional）再试一次
+                    outcome = await runClaimWithSlowPathGuard({ ...task, offerId: '' }, apiClaim);
+                }
 
                 if (outcome.result === CLAIM_RESULT.SUCCESS) {
                     noteSuccess();
@@ -878,6 +885,12 @@ export const createFastScanner = (deps = {}) => {
                     task.isBundle = true;
                     await routeToFallback(task);
                     syncStatus();
+                } else if (outcome.serverInternalError) {
+                    await db.markAsFailed(task, {
+                        reason: 'Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库'
+                    });
+                    currentStats.failed += 1;
+                    syncStatus(true);
                 } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
                     await routeToFallback(task);
                     syncStatus();
@@ -1213,7 +1226,13 @@ export const createFastScanner = (deps = {}) => {
                 : (Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5)
         )));
 
-        const baseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+        const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+        const baseParams = (incEnabled && rawBaseParams.sort_by !== '-firstPublishedAt')
+            ? { ...rawBaseParams, sort_by: '-firstPublishedAt' }
+            : rawBaseParams;
+        if (incEnabled && rawBaseParams.sort_by !== '-firstPublishedAt') {
+            logMsg('info', '[FastScanner] 追新模式已自动按最新发布倒序 (-firstPublishedAt) 扫描（保留当前筛选）');
+        }
         currentQueryKey = buildQueryKey(baseParams);
 
         currentPhase = 'calibrating';

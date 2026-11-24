@@ -60,8 +60,9 @@ export const UI = {
         // Style Injection
         const styles = `
             :root {
-                --bg-color: rgba(22, 22, 26, 0.88);
-                --card-bg: rgba(255, 255, 255, 0.04);
+                --bg-color: rgba(18, 19, 23, 0.90);
+                --card-bg: rgba(255, 255, 255, 0.045);
+                --card-bg-recessed: rgba(0, 0, 0, 0.28);
                 --card-border: rgba(255, 255, 255, 0.08);
                 --border-color: rgba(255, 255, 255, 0.12);
                 --text-color-primary: #f5f5f7;
@@ -69,9 +70,9 @@ export const UI = {
                 --radius-l: 14px;
                 --radius-m: 8px;
                 --radius-s: 6px;
-                --blue: #007aff; --pink: #ff2d55; --green: #34c759;
-                --orange: #ff9500; --gray: #8e8e93; --dark-gray: #3a3a3c;
-                --blue-bg: rgba(0, 122, 255, 0.2);
+                --blue: #0a84ff; --pink: #ff375f; --green: #30d158;
+                --orange: #ff9f0a; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                --blue-bg: rgba(10, 132, 255, 0.18);
             }
             #${Config.UI_CONTAINER_ID} {
                 position: fixed;
@@ -85,12 +86,83 @@ export const UI = {
                 border-radius: var(--radius-l);
                 color: var(--text-color-primary);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                width: 310px;
-                font-size: 13.5px;
-                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                width: 316px;
+                font-size: 13px;
+                font-variant-numeric: tabular-nums;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.09);
             }
             #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
                 box-sizing: border-box;
+            }
+            #${Config.UI_CONTAINER_ID} button:focus-visible,
+            #${Config.UI_CONTAINER_ID} input:focus-visible {
+                outline: 2px solid var(--blue);
+                outline-offset: 1px;
+            }
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-tabs,
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-tab-content {
+                display: none !important;
+            }
+            .fab-helper-header {
+                padding: 8px 12px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+            }
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-header {
+                border-bottom: none;
+            }
+            .fab-header-brand {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                min-width: 0;
+            }
+            .fab-header-version {
+                font-size: 11px;
+                color: var(--text-color-secondary);
+                background: rgba(255, 255, 255, 0.07);
+                padding: 1px 5px;
+                border-radius: var(--radius-s);
+            }
+            .fab-header-actions {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-shrink: 0;
+            }
+            .fab-header-live-badge {
+                display: none;
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-color-primary);
+                background: var(--blue-bg);
+                border: 1px solid rgba(10, 132, 255, 0.4);
+                padding: 2px 7px;
+                border-radius: 999px;
+                white-space: nowrap;
+            }
+            .fab-collapse-btn {
+                width: 24px;
+                height: 24px;
+                border-radius: var(--radius-s);
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
+                color: var(--text-color-secondary);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                line-height: 1;
+                padding: 0;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-collapse-btn:hover {
+                background: rgba(255, 255, 255, 0.12);
+                color: var(--text-color-primary);
             }
             .fab-helper-tabs {
                 display: flex;
@@ -98,8 +170,8 @@ export const UI = {
             }
             .fab-helper-tabs button {
                 flex: 1;
-                padding: 10px 0;
-                font-size: 14px;
+                padding: 8px 0;
+                font-size: 13px;
                 font-weight: 500;
                 cursor: pointer;
                 background: transparent;
@@ -116,7 +188,108 @@ export const UI = {
                 border-bottom: 2px solid var(--blue);
             }
             .fab-helper-tab-content {
-                padding: 12px;
+                padding: 10px 12px 12px;
+                max-height: min(72vh, 540px);
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar {
+                width: 6px;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+            }
+            .fab-mode-switcher {
+                display: flex;
+                gap: 3px;
+                padding: 3px;
+                background: var(--card-bg-recessed);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                margin-bottom: 8px;
+            }
+            .fab-mode-btn {
+                flex: 1;
+                min-width: 0;
+                padding: 6px 4px;
+                border: none;
+                border-radius: var(--radius-s);
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-mode-btn:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-mode-btn.active {
+                background: var(--blue);
+                color: #fff;
+                font-weight: 600;
+                box-shadow: 0 1px 4px rgba(10, 132, 255, 0.35);
+            }
+            .fab-mode-panel {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                padding: 7px 9px;
+                margin-bottom: 8px;
+            }
+            .fab-mode-panel .fab-setting-row {
+                padding: 4px 0;
+            }
+            .fab-mode-telemetry {
+                font-size: 11.5px;
+                color: var(--text-color-secondary);
+                padding-top: 5px;
+                margin-top: 4px;
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .fab-submode-switcher {
+                display: flex;
+                gap: 3px;
+                padding: 2px;
+                background: var(--card-bg-recessed);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: var(--radius-s);
+                margin-bottom: 5px;
+            }
+            .fab-submode-btn {
+                flex: 1;
+                min-width: 0;
+                padding: 4px 3px;
+                border: none;
+                border-radius: 4px;
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 11.5px;
+                font-weight: 500;
+                cursor: pointer;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-submode-btn:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-submode-btn.active {
+                background: rgba(10, 132, 255, 0.24);
+                color: #fff;
+                font-weight: 600;
             }
             .fab-helper-status-bar {
                 display: flex;
@@ -127,7 +300,7 @@ export const UI = {
             .fab-helper-status-item {
                 background: var(--card-bg);
                 border: 1px solid var(--card-border);
-                padding: 7px 4px;
+                padding: 6px 4px;
                 border-radius: var(--radius-m);
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
@@ -148,8 +321,8 @@ export const UI = {
                 flex-basis: calc((100% - 6px) / 2);
             }
             .fab-helper-status-item.has-failed {
-                border-color: rgba(255, 45, 85, 0.5);
-                background: rgba(255, 45, 85, 0.08);
+                border-color: rgba(255, 55, 95, 0.5);
+                background: rgba(255, 55, 95, 0.08);
             }
             .fab-helper-status-label {
                 display: flex;
@@ -161,38 +334,38 @@ export const UI = {
             }
             .fab-helper-status-item span {
                 display: block;
-                font-size: 17px;
+                font-size: 16px;
                 font-weight: 700;
                 color: #fff;
                 margin-top: 0;
                 font-variant-numeric: tabular-nums;
             }
             @keyframes fab-pulse-glow {
-                0% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0.45); }
-                70% { box-shadow: 0 0 0 8px rgba(255, 45, 85, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0); }
+                0% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0.45); }
+                70% { box-shadow: 0 0 0 8px rgba(255, 55, 95, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
                 width: 100%;
                 border: none;
                 border-radius: var(--radius-m);
-                padding: 12px 14px;
-                font-size: 16px;
+                padding: 10px 14px;
+                font-size: 14.5px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.25s ease;
+                transition: all 0.2s ease;
                 color: #fff;
                 background: var(--blue);
                 margin-bottom: 8px;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                gap: 8px;
-                box-shadow: 0 2px 10px rgba(0, 122, 255, 0.3);
+                gap: 6px;
+                box-shadow: 0 2px 10px rgba(10, 132, 255, 0.3);
             }
             .fab-helper-execute-btn.executing {
                 background: var(--pink);
-                box-shadow: 0 2px 12px rgba(255, 45, 85, 0.4);
+                box-shadow: 0 2px 12px rgba(255, 55, 95, 0.4);
                 animation: fab-pulse-glow 2s infinite;
             }
             .fab-progress-track {
@@ -227,14 +400,14 @@ export const UI = {
                 border: 1px solid var(--card-border);
                 border-radius: var(--radius-m);
                 color: var(--text-color-primary);
-                padding: 7px 4px;
+                padding: 7px 6px;
                 cursor: pointer;
                 transition: background-color 0.2s, border-color 0.2s;
                 white-space: nowrap;
-                font-size: 12.5px;
+                font-size: 12px;
                 font-weight: normal;
             }
-            .fab-helper-actions button:hover {
+            .fab-helper-actions button:hover:not(:disabled) {
                 background: rgba(255, 255, 255, 0.1);
                 border-color: rgba(255, 255, 255, 0.18);
             }
@@ -243,12 +416,12 @@ export const UI = {
                 cursor: not-allowed;
             }
             .fab-helper-position-container {
-                margin-bottom: 8px;
-                padding: 5px 8px;
-                background: var(--card-bg);
-                border: 1px solid var(--card-border);
+                margin-top: 4px;
+                padding: 4px 7px;
+                background: var(--card-bg-recessed);
+                border: 1px solid rgba(255, 255, 255, 0.06);
                 border-radius: var(--radius-s);
-                font-size: 12px;
+                font-size: 11.5px;
                 display: flex;
                 align-items: center;
                 gap: 4px;
@@ -296,7 +469,7 @@ export const UI = {
                 line-height: 1.4;
                 padding: 7px 8px;
                 border-radius: var(--radius-m);
-                max-height: 130px;
+                max-height: 120px;
                 overflow-y: auto;
                 min-height: 44px;
                 display: flex;
@@ -321,6 +494,7 @@ export const UI = {
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                gap: 8px;
                 padding: 6px 0;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             }
@@ -328,7 +502,7 @@ export const UI = {
                 border-bottom: none;
             }
             .fab-setting-label {
-                font-size: 13px;
+                font-size: 12.5px;
                 color: var(--text-color-primary);
             }
             .fab-card-group {
@@ -346,6 +520,33 @@ export const UI = {
                 font-weight: 600;
                 color: var(--text-color-secondary);
                 margin-bottom: 6px;
+            }
+            .fab-collapsible-card {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                overflow: hidden;
+            }
+            .fab-collapsible-toggle {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 8px 10px;
+                border: none;
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: left;
+            }
+            .fab-collapsible-toggle:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-collapsible-body {
+                padding: 0 10px 8px;
+                border-top: 1px solid rgba(255, 255, 255, 0.05);
             }
             .fab-stepper-btn {
                 width: 24px;
@@ -381,9 +582,9 @@ export const UI = {
             .fab-danger-btn {
                 width: 100%;
                 margin-top: 6px;
-                background-color: rgba(255, 45, 85, 0.18);
+                background-color: rgba(255, 55, 95, 0.16);
                 color: var(--pink);
-                border: 1px solid rgba(255, 45, 85, 0.4);
+                border: 1px solid rgba(255, 55, 95, 0.4);
                 padding: 7px 10px;
                 border-radius: var(--radius-m);
                 font-size: 12.5px;
@@ -398,8 +599,9 @@ export const UI = {
             .fab-toggle-switch {
                 position: relative;
                 display: inline-block;
-                width: 44px;
-                height: 24px;
+                width: 40px;
+                height: 22px;
+                flex-shrink: 0;
             }
             .fab-toggle-switch input {
                 opacity: 0;
@@ -414,25 +616,25 @@ export const UI = {
                 right: 0;
                 bottom: 0;
                 background-color: var(--dark-gray);
-                transition: .4s;
-                border-radius: 24px;
+                transition: .25s;
+                border-radius: 22px;
             }
             .fab-toggle-slider:before {
                 position: absolute;
                 content: "";
-                height: 20px;
-                width: 20px;
+                height: 18px;
+                width: 18px;
                 left: 2px;
                 bottom: 2px;
                 background-color: white;
-                transition: .4s;
+                transition: .25s;
                 border-radius: 50%;
             }
             input:checked + .fab-toggle-slider {
                 background-color: var(--blue);
             }
             input:checked + .fab-toggle-slider:before {
-                transform: translateX(20px);
+                transform: translateX(18px);
             }
             .fab-debug-history-container {
                 scrollbar-width: thin;
@@ -511,6 +713,13 @@ export const UI = {
                     opacity: 1;
                 }
             }
+            @media (prefers-reduced-motion: reduce) {
+                #${Config.UI_CONTAINER_ID} *,
+                .fab-helper-toast {
+                    animation: none !important;
+                    transition: none !important;
+                }
+            }
         `;
 
         const styleSheet = document.createElement("style");
@@ -520,262 +729,22 @@ export const UI = {
         const container = document.createElement('div');
         container.id = Config.UI_CONTAINER_ID;
         State.UI.container = container;
+        State.UI.i18nBindings = [];
 
-        // Header with Version
-        const header = document.createElement('div');
-        header.style.cssText = 'padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;';
-        const title = document.createElement('span');
-        title.textContent = Utils.getText('app_title');
-        title.style.fontWeight = '600';
-        const version = document.createElement('span');
-        version.textContent = `v${GM_info.script.version}`;
-        version.style.cssText = 'font-size: 12px; color: var(--text-color-secondary); background: var(--dark-gray); padding: 2px 5px; border-radius: var(--radius-s);';
-        header.append(title, version);
-        container.appendChild(header);
-
-        // Tab Controls
-        const tabContainer = document.createElement('div');
-        tabContainer.className = 'fab-helper-tabs';
-        const tabs = ['dashboard', 'settings', 'debug'];
-        tabs.forEach(tabName => {
-            const btn = document.createElement('button');
-            btn.textContent = Utils.getText(`tab_${tabName}`);
-            btn.onclick = () => UI.switchTab(tabName);
-            if (tabName === 'dashboard') btn.classList.add('active');
-            tabContainer.appendChild(btn);
-            State.UI.tabs[tabName] = btn;
-        });
-        container.appendChild(tabContainer);
-
-        // Dashboard Tab
-        const dashboardContent = document.createElement('div');
-        dashboardContent.className = 'fab-helper-tab-content';
-        dashboardContent.style.display = 'block';
-        State.UI.tabContents.dashboard = dashboardContent;
-
-        const statusBar = document.createElement('div');
-        statusBar.className = 'fab-helper-status-bar';
-
-        const createStatusItem = (id, label, icon, gridClass = 'grid-3') => {
-            const item = document.createElement('div');
-            item.className = `fab-helper-status-item ${gridClass}`;
-            item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
-            return item;
+        const bindText = (el, key, prefix = '', suffix = '') => {
+            State.UI.i18nBindings.push({ el, key, prefix, suffix });
+            el.textContent = `${prefix}${Utils.getText(key)}${suffix}`;
+            return el;
         };
 
-        State.UI.statusTodo = createStatusItem('fab-status-todo', Utils.getText('todo'), '📥', 'grid-3');
-        State.UI.statusDone = createStatusItem('fab-status-done', Utils.getText('added'), '✅', 'grid-3');
-        State.UI.statusFailed = createStatusItem('fab-status-failed', Utils.getText('failed'), '❌', 'grid-3');
-        State.UI.statusFailed.style.cursor = 'pointer';
-        State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
-        State.UI.statusFailed.onclick = () => {
-            if (State.db.failed.length === 0) {
-                Utils.logger('info', Utils.getText('failed_list_empty'));
-                return;
-            }
-            if (window.confirm(Utils.getText('confirm_open_failed', State.db.failed.length))) {
-                Utils.logger('info', Utils.getText('opening_failed_items', State.db.failed.length));
-                State.db.failed.forEach(task => {
-                    GM_openInTab(task.url, { active: false });
-                });
-            }
-        };
-        State.UI.statusVisible = createStatusItem('fab-status-visible', Utils.getText('visible'), '👁️', 'grid-2');
-        State.UI.statusHidden = createStatusItem('fab-status-hidden', Utils.getText('hidden'), '🙈', 'grid-2');
-        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
-
-        // Micro progress bar
-        const progressTrack = document.createElement('div');
-        progressTrack.className = 'fab-progress-track';
-        const progressBar = document.createElement('div');
-        progressBar.className = 'fab-progress-bar';
-        progressTrack.appendChild(progressBar);
-        State.UI.progressTrack = progressTrack;
-        State.UI.progressBar = progressBar;
-
-        // Keep-alive status
-        State.UI.statusKeepAlive = document.createElement('div');
-        State.UI.statusKeepAlive.className = 'fab-helper-keepalive-status';
-        State.UI.statusKeepAlive.title = '后台保活：♥心跳(Worker,不被节流) + ❄️防冻结(WebRTC)。后台/锁屏时应持续刷新；若显示未启动说明 Worker 被页面 CSP 拦截';
-
-        State.UI.execBtn = document.createElement('button');
-        State.UI.execBtn.className = 'fab-helper-execute-btn';
-        State.UI.execBtn.onclick = () => TaskRunner && TaskRunner.toggleExecution();
-
-        if (State.isExecuting) {
-            State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
-            State.UI.execBtn.classList.add('executing');
-        } else {
-            State.UI.execBtn.textContent = Utils.getText('execute');
-            State.UI.execBtn.classList.remove('executing');
-        }
-
-        const actionButtons = document.createElement('div');
-        actionButtons.className = 'fab-helper-actions';
-
-        State.UI.syncBtn = document.createElement('button');
-        State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
-        State.UI.syncBtn.onclick = () => TaskRunner && TaskRunner.refreshVisibleStates();
-
-        State.UI.hideBtn = document.createElement('button');
-        State.UI.hideBtn.onclick = () => TaskRunner && TaskRunner.toggleHideSaved();
-
-        State.UI.retryFailedBtn = document.createElement('button');
-        State.UI.retryFailedBtn.textContent = '🔁 ' + Utils.getText('retry_failed');
-        State.UI.retryFailedBtn.onclick = () => TaskRunner && TaskRunner.retryFailedTasks();
-
-        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.retryFailedBtn);
-
-        // Log Panel
-        const logContainer = document.createElement('div');
-        logContainer.className = 'fab-log-container';
-
-        const logHeader = document.createElement('div');
-        logHeader.className = 'fab-log-header';
-        const logTitle = document.createElement('span');
-        const toggleArrow = document.createElement('span');
-        toggleArrow.textContent = '▾';
-        toggleArrow.style.transition = 'transform 0.2s';
-        const logTitleText = document.createElement('span');
-        logTitleText.textContent = Utils.getText('operation_log');
-        logTitle.append(toggleArrow, logTitleText);
-        const logControls = document.createElement('div');
-        logControls.className = 'fab-log-controls';
-
-        const copyLogBtn = document.createElement('button');
-        copyLogBtn.innerHTML = '📄';
-        copyLogBtn.title = Utils.getText('copyLog');
-        copyLogBtn.onclick = (e) => {
-            e.stopPropagation();
-            navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
-                const originalText = copyLogBtn.textContent;
-                copyLogBtn.textContent = '✅';
-                setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
-            }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
-        };
-
-        const clearLogBtn = document.createElement('button');
-        clearLogBtn.innerHTML = '🗑️';
-        clearLogBtn.title = Utils.getText('clearLog');
-        clearLogBtn.onclick = (e) => {
-            e.stopPropagation();
-            State.UI.logPanel.innerHTML = '';
-        };
-
-        logControls.append(copyLogBtn, clearLogBtn);
-        logHeader.append(logTitle, logControls);
-
-        State.UI.logPanel = document.createElement('div');
-        State.UI.logPanel.id = Config.UI_LOG_ID;
-
-        let isLogOpen = true;
-        logHeader.onclick = () => {
-            isLogOpen = !isLogOpen;
-            State.UI.logPanel.style.display = isLogOpen ? 'flex' : 'none';
-            toggleArrow.style.transform = isLogOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
-        };
-
-        logContainer.append(logHeader, State.UI.logPanel);
-
-        // Position Display
-        const positionContainer = document.createElement('div');
-        positionContainer.className = 'fab-helper-position-container';
-
-        const positionIcon = document.createElement('span');
-        positionIcon.textContent = Utils.getText('position_indicator');
-        positionIcon.style.marginRight = '4px';
-
-        const positionInfo = document.createElement('span');
-        positionInfo.textContent = Config.USE_API_PIPELINE
-            ? UI.getApiPositionText()
-            : Utils.decodeCursor(State.savedCursor);
-        // Fix overflow: allow text to shrink and show ellipsis so the reset button stays visible
-        positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
-        State.UI.savedPositionDisplay = positionInfo;
-
-        positionContainer.appendChild(positionIcon);
-        positionContainer.appendChild(positionInfo);
-
-        const clearPositionBtn = document.createElement('button');
-        clearPositionBtn.textContent = '↺';
-        clearPositionBtn.title = Utils.getText('clear_position_tooltip');
-        clearPositionBtn.style.cssText = 'background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);';
-        clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
-        clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
-        clearPositionBtn.onclick = async () => {
-            const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
-            let hasFastCheckpoint = false;
-            try {
-                hasFastCheckpoint = Boolean(await GM_getValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null));
-            } catch (_e) { /* ignore */ }
-            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor || hasFastCheckpoint || State.fastScanStatus) {
-                PagePatcher.lockCursorSaving();
-                if (confirm(Utils.getText('confirm_reset_position'))) {
-                    await FastScanner.clearCheckpoint();
-                    State.fastScanStatus = null;
-                    await PagePatcher.clearSavedPosition('User UI Reset');
-
-                    // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
-                    PagePatcher.armResetGuard();
-
-                    // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
-                    try {
-                        window.scrollTo(0, 0);
-                    } catch (e) { }
-
-                    try {
-                        const url = new URL(window.location.href);
-                        if (url.searchParams.has('cursor')) {
-                            url.searchParams.delete('cursor');
-                            window.location.href = url.toString();
-                            return;
-                        }
-                    } catch (e) { }
-
-                    window.location.reload();
-                } else {
-                    PagePatcher.unlockCursorSaving();
-                }
-            } else {
-                Utils.logger('info', Utils.getText('no_position_to_reset'));
-            }
-        };
-        positionContainer.appendChild(clearPositionBtn);
-
-        dashboardContent.append(
-            State.UI.execBtn,
-            State.UI.progressTrack,
-            statusBar,
-            actionButtons,
-            positionContainer,
-            State.UI.statusKeepAlive,
-            logContainer
-        );
-        container.appendChild(dashboardContent);
-
-        // Settings Tab
-        const settingsContent = document.createElement('div');
-        settingsContent.className = 'fab-helper-tab-content';
-        settingsContent.style.display = 'none';
-
-        const createCardGroup = (titleText) => {
-            const card = document.createElement('div');
-            card.className = 'fab-card-group';
-            const cardTitle = document.createElement('div');
-            cardTitle.className = 'fab-card-group-title';
-            cardTitle.textContent = titleText;
-            card.appendChild(cardTitle);
-            return card;
-        };
-
-        const createSettingRow = (labelText, stateKey, tooltip) => {
+        const createSettingRow = (labelKey, stateKey, tooltipKey = null, uiRefKey = null) => {
             const row = document.createElement('div');
             row.className = 'fab-setting-row';
-            if (tooltip) row.title = tooltip;
+            if (tooltipKey) row.title = Utils.getText(tooltipKey);
 
             const label = document.createElement('span');
             label.className = 'fab-setting-label';
-            label.textContent = labelText;
+            bindText(label, labelKey);
 
             const switchContainer = document.createElement('label');
             switchContainer.className = 'fab-toggle-switch';
@@ -798,7 +767,7 @@ export const UI = {
                 } else if (stateKey === 'autoScroll') {
                     TaskRunner.toggleAutoScroll();
                 } else if (stateKey === 'rememberScrollPosition') {
-                    TaskRunner.toggleRememberPosition();
+                    await TaskRunner.toggleRememberPosition();
                 } else if (stateKey === 'autoResumeAfter429') {
                     TaskRunner.toggleAutoResume();
                 } else if (stateKey === 'autoRefreshEmptyPage') {
@@ -811,10 +780,15 @@ export const UI = {
                     TaskRunner.toggleBlockResources();
                 }
                 e.target.checked = Boolean(State[stateKey]);
+                UI.update();
             };
 
             const slider = document.createElement('span');
             slider.className = 'fab-toggle-slider';
+
+            if (uiRefKey) {
+                State.UI[uiRefKey] = input;
+            }
 
             switchContainer.append(input, slider);
             row.append(label, switchContainer);
@@ -822,15 +796,15 @@ export const UI = {
             return row;
         };
 
-        const createNumberSettingRow = (labelText, stateKey, min, max, tooltip, options = {}) => {
+        const createNumberSettingRow = (labelKey, stateKey, min, max, tooltipKey, options = {}) => {
             const { onChange, uiRefKey, defaultValue } = options;
             const row = document.createElement('div');
             row.className = 'fab-setting-row';
-            if (tooltip) row.title = tooltip;
+            if (tooltipKey) row.title = Utils.getText(tooltipKey);
 
             const label = document.createElement('span');
             label.className = 'fab-setting-label';
-            label.textContent = labelText;
+            bindText(label, labelKey);
 
             const controlContainer = document.createElement('div');
             controlContainer.style.cssText = 'display: flex; align-items: center; gap: 6px;';
@@ -889,68 +863,412 @@ export const UI = {
             return row;
         };
 
-        // Group 1: 自动化
-        const groupAutomation = createCardGroup(Utils.getText('settings_group_automation'));
-        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_fast_api_scan'), 'fastApiScan', Utils.getText('setting_fast_api_scan_tooltip')));
-        groupAutomation.appendChild(createNumberSettingRow(
-            Utils.getText('setting_api_scan_concurrency'),
+        const createCardGroup = (titleKey) => {
+            const card = document.createElement('div');
+            card.className = 'fab-card-group';
+            const cardTitle = document.createElement('div');
+            cardTitle.className = 'fab-card-group-title';
+            bindText(cardTitle, titleKey);
+            card.appendChild(cardTitle);
+            return card;
+        };
+
+        // Header with Version & Collapse Toggle
+        const header = document.createElement('div');
+        header.className = 'fab-helper-header';
+
+        const brand = document.createElement('div');
+        brand.className = 'fab-header-brand';
+        const title = document.createElement('span');
+        bindText(title, 'app_title');
+        title.style.fontWeight = '600';
+        const version = document.createElement('span');
+        version.className = 'fab-header-version';
+        const scriptVersion = globalThis.GM_info?.script?.version || '';
+        version.textContent = scriptVersion ? `v${scriptVersion}` : '';
+        brand.append(title, version);
+
+        const headerActions = document.createElement('div');
+        headerActions.className = 'fab-header-actions';
+
+        const headerLiveBadge = document.createElement('span');
+        headerLiveBadge.className = 'fab-header-live-badge';
+        State.UI.headerLiveBadge = headerLiveBadge;
+
+        const collapseBtn = document.createElement('button');
+        collapseBtn.type = 'button';
+        collapseBtn.className = 'fab-collapse-btn';
+        collapseBtn.onclick = () => {
+            State.uiExpanded = !State.uiExpanded;
+            Database.saveUiExpandedPref();
+            UI.update();
+        };
+        State.UI.collapseBtn = collapseBtn;
+
+        headerActions.append(headerLiveBadge, collapseBtn);
+        header.append(brand, headerActions);
+        container.appendChild(header);
+
+        // Tab Controls
+        const tabContainer = document.createElement('div');
+        tabContainer.className = 'fab-helper-tabs';
+        State.UI.tabsContainer = tabContainer;
+        const tabs = ['dashboard', 'settings', 'debug'];
+        State.activeTab = State.activeTab || 'dashboard';
+        tabs.forEach(tabName => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            bindText(btn, `tab_${tabName}`);
+            btn.onclick = () => UI.switchTab(tabName);
+            if (tabName === State.activeTab) btn.classList.add('active');
+            tabContainer.appendChild(btn);
+            State.UI.tabs[tabName] = btn;
+        });
+        container.appendChild(tabContainer);
+
+        // Dashboard Tab
+        const dashboardContent = document.createElement('div');
+        dashboardContent.className = 'fab-helper-tab-content';
+        dashboardContent.style.display = 'block';
+        State.UI.tabContents.dashboard = dashboardContent;
+
+        // 1. Work Mode Switcher (Full / Incremental / Page)
+        const modeSwitcher = document.createElement('div');
+        modeSwitcher.className = 'fab-mode-switcher';
+        State.UI.modeButtons = {};
+        ['full', 'incremental', 'page'].forEach((mode) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'fab-mode-btn';
+            btn.setAttribute('data-mode', mode);
+            bindText(btn, `mode_${mode}`);
+            btn.onclick = () => TaskRunner && TaskRunner.setWorkMode(mode);
+            modeSwitcher.appendChild(btn);
+            State.UI.modeButtons[mode] = btn;
+        });
+
+        // 2. Contextual Mode Panels
+        State.UI.modePanels = {};
+
+        // 2a. Full API Scan Panel
+        const fullPanel = document.createElement('div');
+        fullPanel.className = 'fab-mode-panel';
+        fullPanel.appendChild(createNumberSettingRow(
+            'setting_api_scan_concurrency',
             'apiScanConcurrency',
             1,
             Config.MAX_API_SCAN_CONCURRENCY || 6,
-            Utils.getText('setting_api_scan_concurrency_tooltip'),
+            'setting_api_scan_concurrency_tooltip',
             {
                 onChange: (v) => TaskRunner && TaskRunner.setApiScanConcurrency(v),
                 uiRefKey: 'apiScanConcurrencyInput',
                 defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
             }
         ));
-        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_incremental_early_stop'), 'incrementalEarlyStop', Utils.getText('setting_incremental_early_stop_tooltip')));
-        groupAutomation.appendChild(createNumberSettingRow(
-            Utils.getText('setting_incremental_stop_pages'),
+        const fastScanStatusDisplay = document.createElement('div');
+        fastScanStatusDisplay.className = 'fab-mode-telemetry';
+        State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
+        fullPanel.appendChild(fastScanStatusDisplay);
+        State.UI.modePanels.full = fullPanel;
+
+        // 2b. Incremental Catch-up Panel
+        const incPanel = document.createElement('div');
+        incPanel.className = 'fab-mode-panel';
+        incPanel.appendChild(createNumberSettingRow(
+            'setting_incremental_stop_pages',
             'incrementalStopPages',
             1,
             50,
-            Utils.getText('setting_incremental_stop_pages_tooltip'),
+            'setting_incremental_stop_pages_tooltip',
             {
                 onChange: (v) => TaskRunner && TaskRunner.setIncrementalStopPages(v),
                 uiRefKey: 'incrementalStopPagesInput',
                 defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
             }
         ));
-        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_auto_add_scroll'), 'autoAddOnScroll'));
-        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_auto_scroll'), 'autoScroll'));
-        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_remember_position'), 'rememberScrollPosition'));
-        settingsContent.appendChild(groupAutomation);
+        const incScanStatusDisplay = document.createElement('div');
+        incScanStatusDisplay.className = 'fab-mode-telemetry';
+        State.UI.incScanStatusDisplay = incScanStatusDisplay;
+        incPanel.appendChild(incScanStatusDisplay);
+        State.UI.modePanels.incremental = incPanel;
 
-        // Group 2: 视图过滤
-        const groupFilter = createCardGroup(Utils.getText('settings_group_filter'));
-        groupFilter.appendChild(createSettingRow(Utils.getText('setting_hide_discounted'), 'hideDiscountedPaid'));
-        groupFilter.appendChild(createSettingRow(Utils.getText('setting_hide_paid'), 'hidePaid'));
+        // 2c. Page DOM Mode Panel
+        const pagePanel = document.createElement('div');
+        pagePanel.className = 'fab-mode-panel';
+
+        const subModeSwitcher = document.createElement('div');
+        subModeSwitcher.className = 'fab-submode-switcher';
+        State.UI.pageSubModeButtons = {};
+        ['visible', 'on_scroll', 'auto_scroll'].forEach((subMode) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'fab-submode-btn';
+            btn.setAttribute('data-submode', subMode);
+            bindText(btn, `page_submode_${subMode}`);
+            btn.onclick = () => TaskRunner && TaskRunner.setPageSubMode(subMode);
+            subModeSwitcher.appendChild(btn);
+            State.UI.pageSubModeButtons[subMode] = btn;
+        });
+        pagePanel.appendChild(subModeSwitcher);
+
+        pagePanel.appendChild(createSettingRow(
+            'setting_remember_position',
+            'rememberScrollPosition',
+            'setting_page_only_tooltip',
+            'rememberPositionCheckbox'
+        ));
+
+        // DOM Position Display inside Page Panel
+        const positionContainer = document.createElement('div');
+        positionContainer.className = 'fab-helper-position-container';
+
+        const positionIcon = document.createElement('span');
+        positionIcon.textContent = Utils.getText('position_indicator');
+        positionIcon.style.marginRight = '2px';
+
+        const positionInfo = document.createElement('span');
+        positionInfo.textContent = Config.USE_API_PIPELINE
+            ? UI.getApiPositionText()
+            : Utils.decodeCursor(State.savedCursor);
+        positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        State.UI.savedPositionDisplay = positionInfo;
+
+        const clearPositionBtn = document.createElement('button');
+        clearPositionBtn.type = 'button';
+        clearPositionBtn.textContent = '↺';
+        clearPositionBtn.title = Utils.getText('clear_position_tooltip');
+        clearPositionBtn.style.cssText = 'background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);';
+        clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
+        clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
+        clearPositionBtn.onclick = async () => {
+            const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
+            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+                PagePatcher.lockCursorSaving();
+                if (confirm(Utils.getText('confirm_reset_position'))) {
+                    await PagePatcher.clearSavedPosition('User UI Reset');
+
+                    // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
+                    PagePatcher.armResetGuard();
+
+                    // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
+                    try {
+                        window.scrollTo(0, 0);
+                    } catch (e) { }
+
+                    try {
+                        const url = new URL(window.location.href);
+                        if (url.searchParams.has('cursor')) {
+                            url.searchParams.delete('cursor');
+                            window.location.href = url.toString();
+                            return;
+                        }
+                    } catch (e) { }
+
+                    window.location.reload();
+                } else {
+                    PagePatcher.unlockCursorSaving();
+                }
+            } else {
+                Utils.logger('info', Utils.getText('no_position_to_reset'));
+            }
+        };
+        positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
+        pagePanel.appendChild(positionContainer);
+        State.UI.modePanels.page = pagePanel;
+
+        // 3. Primary Execute Button
+        State.UI.execBtn = document.createElement('button');
+        State.UI.execBtn.type = 'button';
+        State.UI.execBtn.className = 'fab-helper-execute-btn';
+        State.UI.execBtn.onclick = () => TaskRunner && TaskRunner.toggleExecution();
+
+        // 4. Micro progress bar & Keep-alive status
+        const progressTrack = document.createElement('div');
+        progressTrack.className = 'fab-progress-track';
+        const progressBar = document.createElement('div');
+        progressBar.className = 'fab-progress-bar';
+        progressTrack.appendChild(progressBar);
+        State.UI.progressTrack = progressTrack;
+        State.UI.progressBar = progressBar;
+
+        State.UI.statusKeepAlive = document.createElement('div');
+        State.UI.statusKeepAlive.className = 'fab-helper-keepalive-status';
+        State.UI.statusKeepAlive.title = '后台保活：♥心跳(Worker,不被节流) + ❄️防冻结(WebRTC)。后台/锁屏时应持续刷新；若显示未启动说明 Worker 被页面 CSP 拦截';
+
+        // 5. Status Metrics Bar
+        const statusBar = document.createElement('div');
+        statusBar.className = 'fab-helper-status-bar';
+
+        const createStatusItem = (id, labelKey, icon, gridClass = 'grid-3') => {
+            const item = document.createElement('div');
+            item.className = `fab-helper-status-item ${gridClass}`;
+            const labelDiv = document.createElement('div');
+            labelDiv.className = 'fab-helper-status-label';
+            bindText(labelDiv, labelKey, `${icon} `);
+            const valSpan = document.createElement('span');
+            valSpan.id = id;
+            valSpan.textContent = '0';
+            item.append(labelDiv, valSpan);
+            item._valueEl = valSpan;
+            return item;
+        };
+
+        State.UI.statusTodo = createStatusItem('fab-status-todo', 'todo', '📥', 'grid-3');
+        State.UI.statusDone = createStatusItem('fab-status-done', 'added', '✅', 'grid-3');
+        State.UI.statusFailed = createStatusItem('fab-status-failed', 'failed', '❌', 'grid-3');
+        State.UI.statusFailed.style.cursor = 'pointer';
+        State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
+        State.UI.statusFailed.onclick = () => {
+            if (State.db.failed.length === 0) {
+                Utils.logger('info', Utils.getText('failed_list_empty'));
+                return;
+            }
+            if (window.confirm(Utils.getText('confirm_open_failed', State.db.failed.length))) {
+                Utils.logger('info', Utils.getText('opening_failed_items', State.db.failed.length));
+                State.db.failed.forEach(task => {
+                    GM_openInTab(task.url, { active: false });
+                });
+            }
+        };
+        State.UI.statusVisible = createStatusItem('fab-status-visible', 'visible', '👁️', 'grid-2');
+        State.UI.statusHidden = createStatusItem('fab-status-hidden', 'hidden', '🙈', 'grid-2');
+        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+
+        // 6. Action Buttons Row
+        const actionButtons = document.createElement('div');
+        actionButtons.className = 'fab-helper-actions';
+
+        State.UI.syncBtn = document.createElement('button');
+        State.UI.syncBtn.type = 'button';
+        bindText(State.UI.syncBtn, 'sync', '🔄 ');
+        State.UI.syncBtn.onclick = () => TaskRunner && TaskRunner.refreshVisibleStates();
+
+        State.UI.hideBtn = document.createElement('button');
+        State.UI.hideBtn.type = 'button';
+        State.UI.hideBtn.onclick = () => TaskRunner && TaskRunner.toggleHideSaved();
+
+        State.UI.resetCheckpointBtn = document.createElement('button');
+        State.UI.resetCheckpointBtn.type = 'button';
+        bindText(State.UI.resetCheckpointBtn, 'reset_checkpoint', '↺ ');
+        State.UI.resetCheckpointBtn.onclick = async () => {
+            if (State.isExecuting || FastScanner.isRunning()) return;
+            if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
+            if (window.confirm(Utils.getText('confirm_reset_checkpoint'))) {
+                await FastScanner.clearCheckpoint();
+                State.fastScanStatus = null;
+                State.hasFastScanCheckpoint = false;
+                Utils.logger('info', Utils.getText('log_checkpoint_cleared'));
+                UI.update();
+            }
+        };
+
+        State.UI.retryFailedBtn = document.createElement('button');
+        State.UI.retryFailedBtn.type = 'button';
+        State.UI.retryFailedBtn.onclick = () => TaskRunner && TaskRunner.retryFailedTasks();
+
+        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.resetCheckpointBtn, State.UI.retryFailedBtn);
+
+        // 7. Collapsible Operation Log Panel
+        const logContainer = document.createElement('div');
+        logContainer.className = 'fab-log-container';
+
+        const logHeader = document.createElement('div');
+        logHeader.className = 'fab-log-header';
+        const logTitle = document.createElement('span');
+        const toggleArrow = document.createElement('span');
+        toggleArrow.textContent = '▾';
+        toggleArrow.style.transition = 'transform 0.2s';
+        const logTitleText = document.createElement('span');
+        bindText(logTitleText, 'operation_log');
+        logTitle.append(toggleArrow, logTitleText);
+        const logControls = document.createElement('div');
+        logControls.className = 'fab-log-controls';
+
+        const copyLogBtn = document.createElement('button');
+        copyLogBtn.type = 'button';
+        copyLogBtn.textContent = '📄';
+        copyLogBtn.title = Utils.getText('copyLog');
+        copyLogBtn.onclick = (e) => {
+            e.stopPropagation();
+            navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
+                const originalText = copyLogBtn.textContent;
+                copyLogBtn.textContent = '✅';
+                setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
+            }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
+        };
+
+        const clearLogBtn = document.createElement('button');
+        clearLogBtn.type = 'button';
+        clearLogBtn.textContent = '🗑️';
+        clearLogBtn.title = Utils.getText('clearLog');
+        clearLogBtn.onclick = (e) => {
+            e.stopPropagation();
+            State.UI.logPanel.innerHTML = '';
+        };
+
+        logControls.append(copyLogBtn, clearLogBtn);
+        logHeader.append(logTitle, logControls);
+
+        State.UI.logPanel = document.createElement('div');
+        State.UI.logPanel.id = Config.UI_LOG_ID;
+
+        let isLogOpen = true;
+        logHeader.onclick = () => {
+            isLogOpen = !isLogOpen;
+            State.UI.logPanel.style.display = isLogOpen ? 'flex' : 'none';
+            toggleArrow.style.transform = isLogOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+        };
+
+        logContainer.append(logHeader, State.UI.logPanel);
+
+        dashboardContent.append(
+            modeSwitcher,
+            fullPanel,
+            incPanel,
+            pagePanel,
+            State.UI.execBtn,
+            State.UI.progressTrack,
+            State.UI.statusKeepAlive,
+            statusBar,
+            actionButtons,
+            logContainer
+        );
+        container.appendChild(dashboardContent);
+
+        // Settings Tab (Slimmed: 5 visible controls + 1 collapsed Advanced drawer)
+        const settingsContent = document.createElement('div');
+        settingsContent.className = 'fab-helper-tab-content';
+        settingsContent.style.display = 'none';
+
+        // Card 1: 浏览过滤
+        const groupFilter = createCardGroup('settings_group_browse_filter');
+        groupFilter.appendChild(createSettingRow('setting_hide_discounted', 'hideDiscountedPaid'));
+        groupFilter.appendChild(createSettingRow('setting_hide_paid', 'hidePaid'));
         settingsContent.appendChild(groupFilter);
 
-        // Group 3: 性能与通知
-        const groupPerformance = createCardGroup(Utils.getText('settings_group_performance'));
-        const maxWorkersSetting = createNumberSettingRow(
-            Utils.getText('setting_max_workers'),
+        // Card 2: 通用与兜底
+        const groupGeneral = createCardGroup('settings_group_general');
+        groupGeneral.appendChild(createNumberSettingRow(
+            'setting_max_workers',
             'maxWorkers',
             1,
             15,
-            Utils.getText('setting_max_workers_tooltip'),
+            'setting_max_workers_desc_tooltip',
             {
                 onChange: (v) => TaskRunner && TaskRunner.setMaxWorkers(v),
                 uiRefKey: 'maxWorkersInput',
                 defaultValue: 7
             }
-        );
-        groupPerformance.appendChild(maxWorkersSetting);
-        groupPerformance.appendChild(createSettingRow(Utils.getText('setting_block_large_resources'), 'blockLargeResources'));
+        ));
+        groupGeneral.appendChild(createSettingRow('setting_block_large_resources', 'blockLargeResources'));
 
         const notificationRow = document.createElement('div');
         notificationRow.className = 'fab-setting-row';
         const notificationLabel = document.createElement('span');
         notificationLabel.className = 'fab-setting-label';
-        notificationLabel.textContent = Utils.getText('setting_verification_notify');
+        bindText(notificationLabel, 'setting_verification_notify');
         const notificationButton = document.createElement('button');
+        notificationButton.type = 'button';
         notificationButton.style.cssText = 'padding: 4px 8px; font-size: 12px; cursor: pointer; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color-primary);';
         const renderNotificationPermission = (permission = VerificationNotifications.permission()) => {
             const zh = State.lang === 'zh';
@@ -970,73 +1288,111 @@ export const UI = {
             if (permission !== 'granted') Utils.logger('warn', notificationButton.title);
         };
         notificationRow.append(notificationLabel, notificationButton);
-        groupPerformance.appendChild(notificationRow);
-        settingsContent.appendChild(groupPerformance);
+        groupGeneral.appendChild(notificationRow);
+        settingsContent.appendChild(groupGeneral);
 
-        // Group 4: 维护与高级
-        const groupMaintenance = createCardGroup(Utils.getText('settings_group_maintenance'));
-        groupMaintenance.appendChild(createSettingRow(Utils.getText('setting_auto_resume_429'), 'autoResumeAfter429'));
-        groupMaintenance.appendChild(createSettingRow(Utils.getText('setting_auto_refresh'), 'autoRefreshEmptyPage'));
+        // Card 3: Collapsible Advanced & Maintenance
+        const advancedCard = document.createElement('div');
+        advancedCard.className = 'fab-collapsible-card';
 
-        // Debug mode toggle
+        const advancedToggle = document.createElement('button');
+        advancedToggle.type = 'button';
+        advancedToggle.className = 'fab-collapsible-toggle';
+        const advancedTitle = document.createElement('span');
+        bindText(advancedTitle, 'settings_group_advanced');
+        const advancedChevron = document.createElement('span');
+        advancedChevron.textContent = State.settingsAdvancedOpen ? '▾' : '▸';
+        advancedToggle.append(advancedTitle, advancedChevron);
+        advancedToggle.setAttribute('aria-expanded', State.settingsAdvancedOpen ? 'true' : 'false');
+
+        const advancedBody = document.createElement('div');
+        advancedBody.className = 'fab-collapsible-body';
+        advancedBody.style.display = State.settingsAdvancedOpen ? 'block' : 'none';
+        advancedBody.appendChild(createSettingRow('setting_auto_resume_429', 'autoResumeAfter429'));
+        advancedBody.appendChild(createSettingRow('setting_auto_refresh', 'autoRefreshEmptyPage'));
+
+        const resetButton = document.createElement('button');
+        resetButton.type = 'button';
+        resetButton.className = 'fab-danger-btn';
+        bindText(resetButton, 'clear_all_data');
+        resetButton.onclick = Database.resetAllData;
+        advancedBody.appendChild(resetButton);
+
+        advancedToggle.onclick = () => {
+            State.settingsAdvancedOpen = !State.settingsAdvancedOpen;
+            advancedBody.style.display = State.settingsAdvancedOpen ? 'block' : 'none';
+            advancedChevron.textContent = State.settingsAdvancedOpen ? '▾' : '▸';
+            advancedToggle.setAttribute('aria-expanded', State.settingsAdvancedOpen ? 'true' : 'false');
+        };
+
+        State.UI.settingsAdvancedToggle = advancedToggle;
+        State.UI.settingsAdvancedBody = advancedBody;
+        advancedCard.append(advancedToggle, advancedBody);
+        settingsContent.appendChild(advancedCard);
+
+        State.UI.tabContents.settings = settingsContent;
+        container.appendChild(settingsContent);
+
+        // Debug Tab (includes relocated Debug Mode toggle)
+        const debugContent = document.createElement('div');
+        debugContent.className = 'fab-helper-tab-content';
+        debugContent.style.display = 'none';
+        State.UI.debugContent = debugContent;
+        State.UI.tabContents.debug = debugContent;
+
+        const debugModeCard = document.createElement('div');
+        debugModeCard.className = 'fab-card-group';
         const debugModeRow = document.createElement('div');
         debugModeRow.className = 'fab-setting-row';
         debugModeRow.title = Utils.getText('setting_debug_tooltip');
 
         const debugLabel = document.createElement('span');
         debugLabel.className = 'fab-setting-label';
-        debugLabel.textContent = Utils.getText('debug_mode');
-        debugLabel.style.color = '#ff9800';
+        bindText(debugLabel, 'debug_mode');
+        debugLabel.style.color = '#ff9f0a';
 
         const debugSwitchContainer = document.createElement('label');
         debugSwitchContainer.className = 'fab-toggle-switch';
 
         const debugInput = document.createElement('input');
         debugInput.type = 'checkbox';
-        debugInput.checked = State.debugMode;
+        debugInput.checked = Boolean(State.debugMode);
         debugInput.onchange = (e) => {
             State.debugMode = e.target.checked;
             debugModeRow.classList.toggle('active', State.debugMode);
-            Utils.logger('info', Utils.getText('log_debug_mode_toggle', State.debugMode ? Utils.getText('status_enabled') : Utils.getText('status_disabled')));
+            Utils.logger(
+                'info',
+                Utils.getText(
+                    'log_debug_mode_toggled',
+                    State.debugMode ? Utils.getText('status_enabled') : Utils.getText('status_disabled'),
+                    State.debugMode ? Utils.getText('log_debug_mode_detail_info') : ''
+                )
+            );
             GM_setValue('fab_helper_debug_mode', State.debugMode);
         };
+        State.UI.debugModeCheckbox = debugInput;
 
         const debugSlider = document.createElement('span');
         debugSlider.className = 'fab-toggle-slider';
-
         debugSwitchContainer.append(debugInput, debugSlider);
         debugModeRow.append(debugLabel, debugSwitchContainer);
-        debugModeRow.classList.toggle('active', State.debugMode);
-        groupMaintenance.appendChild(debugModeRow);
-
-        const resetButton = document.createElement('button');
-        resetButton.className = 'fab-danger-btn';
-        resetButton.textContent = Utils.getText('clear_all_data');
-        resetButton.onclick = Database.resetAllData;
-        groupMaintenance.appendChild(resetButton);
-        settingsContent.appendChild(groupMaintenance);
-
-        State.UI.tabContents.settings = settingsContent;
-        container.appendChild(settingsContent);
-
-        // Debug Tab
-        const debugContent = document.createElement('div');
-        debugContent.className = 'fab-helper-tab-content';
-        debugContent.style.display = 'none';
-        State.UI.debugContent = debugContent;
+        debugModeRow.classList.toggle('active', Boolean(State.debugMode));
+        debugModeCard.appendChild(debugModeRow);
+        debugContent.appendChild(debugModeCard);
 
         const debugHeader = document.createElement('div');
         debugHeader.style.cssText = 'display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;';
 
         const debugTitle = document.createElement('h4');
-        debugTitle.textContent = Utils.getText('status_history');
+        bindText(debugTitle, 'status_history');
         debugTitle.style.cssText = 'margin: 0; font-size: 14px; white-space: nowrap;';
 
         const debugControls = document.createElement('div');
         debugControls.style.cssText = 'display: flex; gap: 6px; flex-wrap: wrap;';
 
         const copyHistoryBtn = document.createElement('button');
-        copyHistoryBtn.textContent = Utils.getText('copy_btn');
+        copyHistoryBtn.type = 'button';
+        bindText(copyHistoryBtn, 'copy_btn');
         copyHistoryBtn.title = '复制详细历史记录';
         copyHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
         copyHistoryBtn.onclick = () => {
@@ -1066,7 +1422,8 @@ export const UI = {
         };
 
         const clearHistoryBtn = document.createElement('button');
-        clearHistoryBtn.textContent = Utils.getText('clear_btn');
+        clearHistoryBtn.type = 'button';
+        bindText(clearHistoryBtn, 'clear_btn');
         clearHistoryBtn.title = '清空历史记录';
         clearHistoryBtn.style.cssText = 'background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;';
         clearHistoryBtn.onclick = async () => {
@@ -1088,15 +1445,16 @@ export const UI = {
         };
 
         const diagnosisBtn = document.createElement('button');
-        diagnosisBtn.textContent = Utils.getText('page_diagnosis');
-        diagnosisBtn.style.cssText = 'background: #2196F3; border: 1px solid #1976D2; color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;';
+        diagnosisBtn.type = 'button';
+        bindText(diagnosisBtn, 'page_diagnosis');
+        diagnosisBtn.style.cssText = 'background: var(--blue); border: 1px solid rgba(255,255,255,0.18); color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;';
         diagnosisBtn.onclick = () => {
             try {
                 const report = PageDiagnostics.diagnoseDetailPage();
                 PageDiagnostics.logDiagnosticReport(report);
-                Utils.logger('info', Utils.getText('page_diagnosis_complete'));
+                Utils.logger('info', Utils.getText('log_diagnosis_complete'));
             } catch (error) {
-                Utils.logger('error', Utils.getText('page_diagnosis_failed', error.message));
+                Utils.logger('error', Utils.getText('log_diagnosis_failed', error.message));
             }
         };
 
@@ -1109,34 +1467,149 @@ export const UI = {
         State.UI.historyContainer = historyListContainer;
 
         debugContent.append(debugHeader, historyListContainer);
-        State.UI.tabContents.debug = debugContent;
         container.appendChild(debugContent);
 
         document.body.appendChild(container);
+        UI.update();
         return true;
     },
 
     update: () => {
         if (!State.UI.container) return;
 
-        // Update title
-        const titleElement = State.UI.container.querySelector('span[style*="font-weight: 600"]');
-        if (titleElement) {
-            titleElement.textContent = Utils.getText('app_title');
+        // Refresh static i18n text bindings
+        if (Array.isArray(State.UI.i18nBindings)) {
+            State.UI.i18nBindings.forEach(({ el, key, prefix = '', suffix = '' }) => {
+                if (el) el.textContent = `${prefix}${Utils.getText(key)}${suffix}`;
+            });
         }
 
-        // Update tab texts
-        const tabs = ['dashboard', 'settings', 'debug'];
-        tabs.forEach((tabName) => {
-            const tabButton = State.UI.tabs[tabName];
-            if (tabButton) {
-                tabButton.textContent = Utils.getText(`tab_${tabName}`);
-            }
-        });
+        const mode = TaskRunner?.getWorkMode
+            ? TaskRunner.getWorkMode()
+            : (!State.fastApiScan ? 'page' : (State.incrementalEarlyStop ? 'incremental' : 'full'));
+        const pageSubMode = TaskRunner?.getPageSubMode
+            ? TaskRunner.getPageSubMode()
+            : (State.autoScroll ? 'auto_scroll' : (State.autoAddOnScroll ? 'on_scroll' : 'visible'));
+        const isRunning = Boolean(State.isExecuting || FastScanner.isRunning());
+        const fs = State.fastScanStatus;
+        const expanded = Boolean(State.uiExpanded);
 
-        // Update sync button text
-        if (State.UI.syncBtn) {
-            State.UI.syncBtn.textContent = '🔄 ' + Utils.getText('sync');
+        // Collapsed / expanded chrome
+        State.UI.container.classList.toggle('fab-helper-collapsed', !expanded);
+        if (State.UI.tabsContainer) {
+            State.UI.tabsContainer.style.display = expanded ? 'flex' : 'none';
+        }
+        const activeTab = State.activeTab || 'dashboard';
+        for (const name in State.UI.tabContents) {
+            if (State.UI.tabContents[name]) {
+                State.UI.tabContents[name].style.display = (expanded && name === activeTab) ? 'block' : 'none';
+            }
+        }
+        if (State.UI.collapseBtn) {
+            State.UI.collapseBtn.textContent = expanded ? '−' : '+';
+            State.UI.collapseBtn.title = Utils.getText(expanded ? 'tooltip_collapse_ui' : 'tooltip_expand_ui');
+            State.UI.collapseBtn.setAttribute('aria-label', State.UI.collapseBtn.title);
+            State.UI.collapseBtn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        }
+        if (State.UI.headerLiveBadge) {
+            let badgeText = '';
+            const fastRunning = FastScanner.isRunning() || Boolean(fs?.running);
+            if (!expanded) {
+                if (fastRunning && fs) {
+                    if (mode === 'full' && fs.totalEstimated > 0) {
+                        const pct = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
+                        badgeText = `⚡ ${pct}%`;
+                    } else if (mode === 'incremental') {
+                        badgeText = `🆕 ${fs.itemsScanned.toLocaleString()}`;
+                    } else {
+                        badgeText = `⚡ ${fs.itemsScanned.toLocaleString()}`;
+                    }
+                } else if (isRunning) {
+                    badgeText = State.executionTotalTasks > 0
+                        ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`
+                        : (State.lang === 'zh' ? '执行中' : 'Running');
+                } else if (mode === 'full' && (State.hasFastScanCheckpoint || fs?.phase === 'paused')) {
+                    badgeText = State.lang === 'zh' ? '⚡ 断点' : '⚡ Paused';
+                }
+            }
+            State.UI.headerLiveBadge.textContent = badgeText;
+            State.UI.headerLiveBadge.style.display = badgeText ? 'inline-flex' : 'none';
+        }
+
+        // Work mode switcher & contextual panels
+        for (const key in State.UI.modeButtons) {
+            const btn = State.UI.modeButtons[key];
+            if (!btn) continue;
+            const isActive = key === mode;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
+        for (const key in State.UI.modePanels) {
+            const panel = State.UI.modePanels[key];
+            if (panel) panel.style.display = key === mode ? 'block' : 'none';
+        }
+        for (const key in State.UI.pageSubModeButtons) {
+            const btn = State.UI.pageSubModeButtons[key];
+            if (!btn) continue;
+            const isActive = key === pageSubMode;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        }
+
+        // Mode-specific telemetry text
+        if (State.UI.fastScanStatusDisplay) {
+            const zh = State.lang === 'zh';
+            if (fs && fs.running && fs.mode !== 'incremental') {
+                const totalStr = fs.totalEstimated > 0
+                    ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
+                    : '';
+                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
+                State.UI.fastScanStatusDisplay.textContent = zh
+                    ? `⚡ ${fs.activeConcurrency}路 · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 新领 ${fs.claimedDirect}${rateTag}`
+                    : `⚡ ${fs.activeConcurrency}x · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
+            } else if (fs && fs.phase === 'paused' && fs.mode !== 'incremental') {
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                    'fast_scan_status_paused',
+                    fs.itemsScanned.toLocaleString(),
+                    fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : '?'
+                );
+            } else if (fs && fs.phase === 'completed' && fs.mode !== 'incremental') {
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                    'fast_scan_status_completed',
+                    fs.claimedDirect,
+                    fs.itemsScanned.toLocaleString()
+                );
+            } else if (State.hasFastScanCheckpoint) {
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText('fast_full_checkpoint_ready');
+            } else {
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText('fast_full_idle_hint');
+            }
+        }
+
+        if (State.UI.incScanStatusDisplay) {
+            if (fs && fs.running && fs.mode === 'incremental') {
+                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
+                State.UI.incScanStatusDisplay.textContent = Utils.getText(
+                    'fast_inc_running_status',
+                    fs.itemsScanned.toLocaleString(),
+                    fs.itemsPerSec,
+                    fs.claimedDirect
+                ) + rateTag;
+            } else if (fs && fs.phase === 'completed' && fs.mode === 'incremental') {
+                State.UI.incScanStatusDisplay.textContent = Utils.getText(
+                    'fast_inc_completed_status',
+                    fs.claimedDirect,
+                    fs.itemsScanned.toLocaleString()
+                );
+            } else {
+                State.UI.incScanStatusDisplay.textContent = Utils.getText('fast_inc_idle_hint');
+            }
+        }
+
+        if (Config.USE_API_PIPELINE && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = UI.getApiPositionText();
+        } else if (mode === 'page' && State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
         }
 
         // Update Status Numbers
@@ -1144,34 +1617,6 @@ export const UI = {
         const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
         const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
         const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
-
-        if (apiMode && State.UI.savedPositionDisplay) {
-            State.UI.savedPositionDisplay.textContent = UI.getApiPositionText();
-        } else if (State.fastApiScan && State.fastScanStatus && State.UI.savedPositionDisplay) {
-            const fs = State.fastScanStatus;
-            const zh = State.lang === 'zh';
-            if (fs.running) {
-                const totalStr = fs.totalEstimated > 0
-                    ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
-                    : '';
-                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
-                State.UI.savedPositionDisplay.textContent = zh
-                    ? `⚡ ${fs.activeConcurrency}路 · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 新领 ${fs.claimedDirect}${rateTag}`
-                    : `⚡ ${fs.activeConcurrency}x · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
-            } else if (fs.phase === 'paused') {
-                State.UI.savedPositionDisplay.textContent = Utils.getText(
-                    'fast_scan_status_paused',
-                    fs.itemsScanned.toLocaleString(),
-                    fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : '?'
-                );
-            } else if (fs.phase === 'completed') {
-                State.UI.savedPositionDisplay.textContent = Utils.getText(
-                    'fast_scan_status_completed',
-                    fs.claimedDirect,
-                    fs.itemsScanned.toLocaleString()
-                );
-            }
-        }
 
         const cardCounts = TaskRunner?.getCardCounts
             ? TaskRunner.getCardCounts()
@@ -1183,37 +1628,35 @@ export const UI = {
         const hiddenCount = cardCounts.hidden;
         const visibleCount = cardCounts.visible;
 
-        if (State.UI.statusTodo) State.UI.statusTodo.querySelector('span').textContent = todoCount;
-        if (State.UI.statusDone) State.UI.statusDone.querySelector('span').textContent = doneCount;
-        if (State.UI.statusFailed) State.UI.statusFailed.querySelector('span').textContent = failedCount;
-        if (State.UI.statusHidden) State.UI.statusHidden.querySelector('span').textContent = hiddenCount;
-        if (State.UI.statusVisible) State.UI.statusVisible.querySelector('span').textContent = visibleCount;
+        const setStatusCount = (item, val) => {
+            if (!item) return;
+            const span = item._valueEl || item.querySelector('span');
+            if (span) span.textContent = val;
+        };
+        setStatusCount(State.UI.statusTodo, todoCount);
+        setStatusCount(State.UI.statusDone, doneCount);
+        setStatusCount(State.UI.statusFailed, failedCount);
+        setStatusCount(State.UI.statusHidden, hiddenCount);
+        setStatusCount(State.UI.statusVisible, visibleCount);
 
+        if (State.UI.statusVisible) State.UI.statusVisible.style.display = mode === 'page' ? '' : 'none';
+        if (State.UI.statusHidden) State.UI.statusHidden.style.display = mode === 'page' ? '' : 'none';
         if (State.UI.statusFailed) {
             State.UI.statusFailed.classList.toggle('has-failed', failedCount > 0);
         }
 
-        // Update status labels
-        const statusLabelUpdates = [
-            { element: State.UI.statusVisible, icon: '👁️', key: 'visible' },
-            { element: State.UI.statusTodo, icon: '📥', key: 'todo' },
-            { element: State.UI.statusDone, icon: '✅', key: 'added' },
-            { element: State.UI.statusFailed, icon: '❌', key: 'failed' },
-            { element: State.UI.statusHidden, icon: '🙈', key: 'hidden' }
-        ];
-        statusLabelUpdates.forEach(({ element, icon, key }) => {
-            const labelDiv = element?.querySelector('.fab-helper-status-label');
-            if (labelDiv) {
-                labelDiv.textContent = `${icon} ${Utils.getText(key)}`;
-            }
-        });
-
-        // Update Button States
+        // Update Primary Execute Button
         if (State.UI.execBtn) {
-            if (State.isExecuting) {
-                State.UI.execBtn.innerHTML = `<span>${Utils.getText('executing')}</span>`;
+            if (isRunning) {
+                const stopKey = mode === 'full'
+                    ? 'exec_full_stop'
+                    : (mode === 'incremental' ? 'exec_inc_stop' : 'exec_page_stop');
+                State.UI.execBtn.textContent = Utils.getText(stopKey);
                 State.UI.execBtn.classList.add('executing');
-                if (State.executionTotalTasks > 0) {
+                if (mode === 'full' && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
+                    const percentage = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
+                    State.UI.execBtn.title = Utils.getText('tooltip_executing_progress', fs.itemsScanned, fs.totalEstimated, percentage);
+                } else if (State.executionTotalTasks > 0) {
                     const progress = State.executionCompletedTasks + State.executionFailedTasks;
                     const percentage = Math.round((progress / State.executionTotalTasks) * 100);
                     State.UI.execBtn.title = Utils.getText('tooltip_executing_progress', progress, State.executionTotalTasks, percentage);
@@ -1221,7 +1664,15 @@ export const UI = {
                     State.UI.execBtn.title = Utils.getText('tooltip_executing');
                 }
             } else {
-                State.UI.execBtn.textContent = Utils.getText('execute');
+                let startKey = 'exec_full_start';
+                if (mode === 'full') {
+                    startKey = (State.hasFastScanCheckpoint || fs?.phase === 'paused') ? 'exec_full_resume' : 'exec_full_start';
+                } else if (mode === 'incremental') {
+                    startKey = 'exec_inc_start';
+                } else {
+                    startKey = `exec_page_${pageSubMode}`;
+                }
+                State.UI.execBtn.textContent = Utils.getText(startKey);
                 State.UI.execBtn.classList.remove('executing');
                 State.UI.execBtn.title = Utils.getText('tooltip_start_tasks');
             }
@@ -1229,7 +1680,7 @@ export const UI = {
 
         // 后台保活状态(实测用)：执行时显示心跳/防冻结状态，非执行时隐藏
         if (State.UI.statusKeepAlive) {
-            if (!State.isExecuting) {
+            if (!isRunning) {
                 State.UI.statusKeepAlive.style.display = 'none';
             } else {
                 State.UI.statusKeepAlive.style.display = '';
@@ -1245,9 +1696,9 @@ export const UI = {
         }
 
         if (State.UI.progressTrack && State.UI.progressBar) {
-            if (State.fastApiScan && State.fastScanStatus && State.fastScanStatus.running && State.fastScanStatus.totalEstimated > 0) {
+            if (State.fastApiScan && fs && fs.running && fs.totalEstimated > 0) {
                 State.UI.progressTrack.style.display = 'block';
-                const percentage = Math.min(100, Math.round((State.fastScanStatus.itemsScanned / State.fastScanStatus.totalEstimated) * 100));
+                const percentage = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
                 State.UI.progressBar.style.width = `${percentage}%`;
             } else if (State.isExecuting && State.executionTotalTasks > 0) {
                 State.UI.progressTrack.style.display = 'block';
@@ -1260,10 +1711,27 @@ export const UI = {
             }
         }
 
+        // Context-aware action buttons
+        if (State.UI.syncBtn) {
+            State.UI.syncBtn.style.display = mode === 'page' ? '' : 'none';
+        }
         if (State.UI.hideBtn) {
+            State.UI.hideBtn.style.display = mode === 'page' ? '' : 'none';
             State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
         }
+        if (State.UI.resetCheckpointBtn) {
+            State.UI.resetCheckpointBtn.style.display = mode === 'full' ? '' : 'none';
+            State.UI.resetCheckpointBtn.disabled = isRunning || (!State.hasFastScanCheckpoint && !State.fastScanStatus);
+        }
+        if (State.UI.retryFailedBtn) {
+            State.UI.retryFailedBtn.textContent = '🔁 ' + Utils.getText('retry_failed') + (failedCount > 0 ? ` (${failedCount})` : '');
+            State.UI.retryFailedBtn.disabled = failedCount === 0;
+            State.UI.retryFailedBtn.title = failedCount > 0
+                ? Utils.getText('retry_failed') + ` (${failedCount})`
+                : Utils.getText('no_failed_tasks');
+        }
 
+        // Sync inputs & checkboxes
         if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
             State.UI.maxWorkersInput.value = State.maxWorkers;
         }
@@ -1273,28 +1741,12 @@ export const UI = {
         if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
             State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
         }
-
-        if (State.UI.retryFailedBtn) {
-            State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
-            State.UI.retryFailedBtn.title = State.db.failed.length > 0
-                ? Utils.getText('retry_failed') + ` (${State.db.failed.length})`
-                : Utils.getText('no_failed_tasks');
+        if (State.UI.rememberPositionCheckbox) {
+            State.UI.rememberPositionCheckbox.checked = Boolean(State.rememberScrollPosition);
         }
-
-        const groupTitles = State.UI.container.querySelectorAll('.fab-card-group-title');
-        const groupKeys = [
-            'settings_group_automation',
-            'settings_group_filter',
-            'settings_group_performance',
-            'settings_group_maintenance'
-        ];
-        groupTitles.forEach((titleEl, idx) => {
-            if (groupKeys[idx]) {
-                titleEl.textContent = Utils.getText(groupKeys[idx]);
-            }
-        });
-
-
+        if (State.UI.debugModeCheckbox) {
+            State.UI.debugModeCheckbox.checked = Boolean(State.debugMode);
+        }
     },
 
     removeAllOverlays: () => {
@@ -1355,13 +1807,23 @@ export const UI = {
     },
 
     switchTab: (tabName) => {
+        State.activeTab = tabName;
+        if (!State.uiExpanded) {
+            State.uiExpanded = true;
+            Database.saveUiExpandedPref();
+        }
         for (const name in State.UI.tabs) {
-            State.UI.tabs[name].classList.toggle('active', name === tabName);
-            State.UI.tabContents[name].style.display = name === tabName ? 'block' : 'none';
+            if (State.UI.tabs[name]) {
+                State.UI.tabs[name].classList.toggle('active', name === tabName);
+            }
+            if (State.UI.tabContents[name]) {
+                State.UI.tabContents[name].style.display = name === tabName ? 'block' : 'none';
+            }
         }
         if (tabName === 'debug') {
             UI.updateDebugTab();
         }
+        UI.update();
     },
 
     updateDebugTab: () => {

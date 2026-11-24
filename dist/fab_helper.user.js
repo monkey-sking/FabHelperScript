@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261124-1452
+// @version      3.5.27-20261124-1623
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -57,6 +57,39 @@
     settings_group_filter: "\u{1F3AF} Filters",
     settings_group_performance: "\u{1F680} Performance & Alerts",
     settings_group_maintenance: "\u{1F6E0}\uFE0F Maintenance & Advanced",
+    settings_group_browse_filter: "\u{1F3AF} Browse Filters",
+    settings_group_general: "\u2699\uFE0F General & Fallback",
+    settings_group_advanced: "Advanced & Maintenance",
+    // 工作模式与子模式
+    mode_full: "\u26A1 Full",
+    mode_incremental: "\u{1F195} Latest",
+    mode_page: "\u{1F4DC} Page",
+    page_submode_visible: "Visible",
+    page_submode_on_scroll: "On Scroll",
+    page_submode_auto_scroll: "Auto Page",
+    exec_full_start: "\u26A1 Start Full Scan",
+    exec_full_resume: "\u26A1 Resume Full Scan",
+    exec_full_stop: "\u23F9 Stop Full Scan",
+    exec_inc_start: "\u{1F195} Start Catch-up",
+    exec_inc_stop: "\u23F9 Stop Catch-up",
+    exec_page_visible: "\u{1F4DC} Claim Visible",
+    exec_page_on_scroll: "\u{1F4DC} Start On-Scroll",
+    exec_page_auto_scroll: "\u{1F4DC} Start Auto-Scroll",
+    exec_page_stop: "\u23F9 Stop Claim",
+    fast_full_idle_hint: "Parallel API shard scan for current filters",
+    fast_full_checkpoint_ready: "\u26A1 Checkpoint saved \xB7 Ready to resume",
+    fast_inc_idle_hint: "Newest first (-firstPublishedAt) \xB7 Keeps filters",
+    fast_inc_running_status: "\u{1F195} Catch-up \xB7 {0} scanned \xB7 {1}/s \xB7 +{2}",
+    fast_inc_completed_status: "\u{1F195} Catch-up done \xB7 {1} scanned \xB7 +{0}",
+    reset_checkpoint: "Reset Checkpoint",
+    confirm_reset_checkpoint: "Clear the saved fast-scan checkpoint and start over?",
+    log_checkpoint_cleared: "Fast-scan checkpoint cleared.",
+    setting_max_workers_desc_tooltip: "Worker tabs for bundles, CAPTCHA fallback, and Page mode (1-15, default 7)",
+    setting_page_only_tooltip: "Only applies in Page mode",
+    tooltip_collapse_ui: "Collapse panel",
+    tooltip_expand_ui: "Expand panel",
+    log_work_mode_changed: "Switched to {0} mode.",
+    log_page_submode_changed: "Page capture mode set to {0}.",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "Free",
@@ -452,6 +485,39 @@
     settings_group_filter: "\u{1F3AF} \u89C6\u56FE\u8FC7\u6EE4",
     settings_group_performance: "\u{1F680} \u6027\u80FD\u4E0E\u901A\u77E5",
     settings_group_maintenance: "\u{1F6E0}\uFE0F \u7EF4\u62A4\u4E0E\u9AD8\u7EA7",
+    settings_group_browse_filter: "\u{1F3AF} \u6D4F\u89C8\u8FC7\u6EE4",
+    settings_group_general: "\u2699\uFE0F \u901A\u7528\u4E0E\u515C\u5E95",
+    settings_group_advanced: "\u9AD8\u7EA7\u4E0E\u7EF4\u62A4",
+    // 工作模式与子模式
+    mode_full: "\u26A1 \u5168\u91CF",
+    mode_incremental: "\u{1F195} \u8FFD\u65B0",
+    mode_page: "\u{1F4DC} \u9875\u9762",
+    page_submode_visible: "\u5F53\u524D\u9875",
+    page_submode_on_scroll: "\u6EDA\u5230\u5373\u9886",
+    page_submode_auto_scroll: "\u81EA\u52A8\u7FFB\u9875",
+    exec_full_start: "\u26A1 \u5F00\u59CB\u5168\u91CF\u626B\u63CF",
+    exec_full_resume: "\u26A1 \u7EE7\u7EED\u5168\u91CF\u626B\u63CF",
+    exec_full_stop: "\u23F9 \u505C\u6B62\u5168\u91CF\u626B\u63CF",
+    exec_inc_start: "\u{1F195} \u5F00\u59CB\u8FFD\u65B0\u626B\u63CF",
+    exec_inc_stop: "\u23F9 \u505C\u6B62\u8FFD\u65B0\u626B\u63CF",
+    exec_page_visible: "\u{1F4DC} \u9886\u53D6\u5F53\u524D\u9875\u9762",
+    exec_page_on_scroll: "\u{1F4DC} \u5F00\u59CB\u6EDA\u5230\u5373\u9886",
+    exec_page_auto_scroll: "\u{1F4DC} \u5F00\u59CB\u81EA\u52A8\u7FFB\u9875",
+    exec_page_stop: "\u23F9 \u505C\u6B62\u5165\u5E93",
+    fast_full_idle_hint: "\u6309\u5F53\u524D\u7B5B\u9009\u591A\u8DEF\u5E76\u53D1\u626B\u5168\u91CF",
+    fast_full_checkpoint_ready: "\u26A1 \u6709\u672A\u5B8C\u65AD\u70B9 \xB7 \u70B9\u51FB\u7EE7\u7EED\u626B\u63CF",
+    fast_inc_idle_hint: "\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F \xB7 \u4FDD\u7559\u5F53\u524D\u7B5B\u9009",
+    fast_inc_running_status: "\u{1F195} \u8FFD\u65B0\u4E2D \xB7 \u5DF2\u626B {0} \u4EF6 \xB7 {1}/s \xB7 \u65B0\u9886 {2}",
+    fast_inc_completed_status: "\u{1F195} \u8FFD\u65B0\u5B8C\u6210 \xB7 \u5DF2\u626B {1} \u4EF6 \xB7 \u65B0\u9886 {0}",
+    reset_checkpoint: "\u91CD\u7F6E\u65AD\u70B9",
+    confirm_reset_checkpoint: "\u786E\u5B9A\u6E05\u9664\u5F53\u524D\u6781\u901F\u626B\u63CF\u65AD\u70B9\u5E76\u91CD\u65B0\u5F00\u59CB\u5417\uFF1F",
+    log_checkpoint_cleared: "\u5DF2\u6E05\u9664\u6781\u901F\u626B\u63CF\u65AD\u70B9\u3002",
+    setting_max_workers_desc_tooltip: "Bundle\u3001\u4EBA\u673A\u9A8C\u8BC1\u515C\u5E95\u4E0E\u9875\u9762\u6A21\u5F0F\u4F7F\u7528\u7684\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u6570\uFF081-15\uFF0C\u9ED8\u8BA4 7\uFF09",
+    setting_page_only_tooltip: "\u4EC5\u5728\u300C\u9875\u9762\u300D\u6A21\u5F0F\u4E0B\u751F\u6548",
+    tooltip_collapse_ui: "\u6536\u8D77\u9762\u677F",
+    tooltip_expand_ui: "\u5C55\u5F00\u9762\u677F",
+    log_work_mode_changed: "\u5DF2\u5207\u6362\u81F3\u300C{0}\u300D\u6A21\u5F0F\u3002",
+    log_page_submode_changed: "\u9875\u9762\u9886\u53D6\u65B9\u5F0F\u5DF2\u5207\u6362\u4E3A\u300C{0}\u300D\u3002",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "\u514D\u8D39",
@@ -922,6 +988,8 @@
       // 连续全已拥有页数早停阈值
       FAST_SCAN_CHECKPOINT: "fab_fast_scan_checkpoint_v1",
       // 极速扫描断点进度
+      UI_EXPANDED: "fab_ui_expanded_v1",
+      // 主面板展开/收起状态
       // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
       // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
       EVENT_LOG: "fab_event_log_v1"
@@ -1168,6 +1236,8 @@
     watchdogTimer: null,
     // UI-related state
     uiExpanded: true,
+    hasFastScanCheckpoint: false,
+    settingsAdvancedOpen: false,
     logs: [],
     valueChangeListeners: [],
     // runDomDependentPart 中创建的定时器句柄，供 beforeunload 时统一清理，避免泄漏
@@ -1195,8 +1265,14 @@
     // UI element references - populated by UI.create()
     UI: {
       container: null,
+      collapseBtn: null,
+      headerLiveBadge: null,
+      tabsContainer: null,
       tabs: {},
       tabContents: {},
+      modeButtons: {},
+      modePanels: {},
+      pageSubModeButtons: {},
       statusVisible: null,
       statusTodo: null,
       statusDone: null,
@@ -1205,15 +1281,22 @@
       execBtn: null,
       syncBtn: null,
       hideBtn: null,
+      resetCheckpointBtn: null,
       retryFailedBtn: null,
       maxWorkersInput: null,
       apiScanConcurrencyInput: null,
       incrementalStopPagesInput: null,
+      rememberPositionCheckbox: null,
+      debugModeCheckbox: null,
+      settingsAdvancedToggle: null,
+      settingsAdvancedBody: null,
       progressTrack: null,
       progressBar: null,
       statusKeepAlive: null,
       logPanel: null,
       savedPositionDisplay: null,
+      fastScanStatusDisplay: null,
+      incScanStatusDisplay: null,
       debugContent: null,
       historyContainer: null
     }
@@ -3597,6 +3680,11 @@
         )
       );
       State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
+      State.uiExpanded = Boolean(await Database._safeGet(Config.DB_KEYS.UI_EXPANDED, true));
+      const savedCheckpoint = await Database._safeGet(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null);
+      State.hasFastScanCheckpoint = Boolean(
+        savedCheckpoint && (Array.isArray(savedCheckpoint.slices) && savedCheckpoint.slices.some((s) => !s.done) || Array.isArray(savedCheckpoint.pendingUnknowns) && savedCheckpoint.pendingUnknowns.length > 0 || Array.isArray(savedCheckpoint.pendingClaims) && savedCheckpoint.pendingClaims.length > 0)
+      );
       State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
       State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
       State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
@@ -3647,6 +3735,7 @@
     saveApiScanConcurrencyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency), "saveApiScanConcurrencyPref"),
     saveIncrementalEarlyStopPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop), "saveIncrementalEarlyStopPref"),
     saveIncrementalStopPagesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages), "saveIncrementalStopPagesPref"),
+    saveUiExpandedPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.UI_EXPANDED, State.uiExpanded), "saveUiExpandedPref"),
     saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
@@ -3684,6 +3773,7 @@
         State.incrementalEarlyStop = false;
         State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
         State.fastScanStatus = null;
+        State.hasFastScanCheckpoint = false;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI3) {
           UI3.removeAllOverlays();
@@ -3748,7 +3838,7 @@
     getMaxRetry: /* @__PURE__ */ __name((reason) => {
       if (!reason) return 1;
       if (/人机验证|captcha|需要人工|verification/i.test(reason)) return 0;
-      if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可/i.test(reason)) return 0;
+      if (/(?:接口返回|HTTP)\s*(?:400|401|403|404)\b|未找到免费许可|服务端内部错误|500 Internal error|服务端返回错误提示/i.test(reason)) return 0;
       if (/超时|Watchdog|完成前关闭|closed before|Timeout|唤醒/i.test(reason)) return 3;
       return 1;
     }, "getMaxRetry"),
@@ -4217,6 +4307,24 @@
     }
     return false;
   }, "checkOwnedViaApi");
+  var ERROR_TOAST_SELECTOR = '.fabkit-Snackbar-root, div[class*="Toast-root"], [role="alert"]';
+  var ERROR_TOAST_PATTERNS = /ooops|an error occurred|something went wrong|try again later|发生错误|出错了|内部错误|请稍后再试/i;
+  var detectErrorToastOnPage = /* @__PURE__ */ __name((ctx) => {
+    const { doc, win, utils } = ctx;
+    const ownedSnacks = Config.OWNED_SUCCESS_CRITERIA?.snackbarText || [];
+    const nodes = doc?.querySelectorAll?.(ERROR_TOAST_SELECTOR) || [];
+    for (const el of nodes) {
+      const style = win && win.getComputedStyle ? win.getComputedStyle(el) : null;
+      if (style && (style.display === "none" || style.visibility === "hidden")) continue;
+      const text = utils.normalizeWhitespace(el.textContent || "");
+      if (!text) continue;
+      if (ownedSnacks.some((okText) => text.includes(okText))) continue;
+      if (ERROR_TOAST_PATTERNS.test(text)) {
+        return { found: true, text };
+      }
+    }
+    return { found: false };
+  }, "detectErrorToastOnPage");
   var detectOwnedOnPage = /* @__PURE__ */ __name((ctx) => {
     const { doc, utils } = ctx;
     const criteria = Config.OWNED_SUCCESS_CRITERIA;
@@ -4385,6 +4493,12 @@
           finish({ success: false, manualRequired: true });
           return;
         }
+        const errorToast = detectErrorToastOnPage(ctx);
+        if (errorToast.found) {
+          push(`Fab \u670D\u52A1\u7AEF\u8FD4\u56DE\u9519\u8BEF\u63D0\u793A\uFF0C\u65E0\u6CD5\u5165\u5E93: ${errorToast.text}`);
+          finish({ success: false, serverError: true });
+          return;
+        }
         const checkoutBtn = findCheckoutButton(ctx);
         if (checkoutBtn && !checkoutBtn.disabled) {
           const lastClickTime = parseInt(checkoutBtn.dataset?.lastClickTime || "0", 10);
@@ -4416,6 +4530,7 @@
     ctx.log = push;
     let success = false;
     let manualRequired = false;
+    let serverError = false;
     try {
       if (isCaptchaPresent(ctx.doc)) {
         push("\u68C0\u6D4B\u5230\u4EBA\u673A\u9A8C\u8BC1 / \u5B89\u5168\u68C0\u67E5\uFF0C\u9700\u8981\u4EBA\u5DE5\u5B8C\u6210\u9A8C\u8BC1");
@@ -4450,6 +4565,7 @@
         if (typeof uiResult === "object") {
           success = Boolean(uiResult.success);
           manualRequired = Boolean(uiResult.manualRequired);
+          serverError = Boolean(uiResult.serverError);
         } else {
           success = Boolean(uiResult);
         }
@@ -4462,7 +4578,7 @@
       push(`A critical error occurred: ${error.message}`);
       success = false;
     }
-    return { success, manualRequired, logs };
+    return { success, manualRequired, serverError, logs };
   }, "acquireOnDetailPage");
   async function claimViaUi(ctx, push) {
     const isItemOwned = /* @__PURE__ */ __name(() => detectOwnedOnPage(ctx), "isItemOwned");
@@ -4739,7 +4855,16 @@
         return { result: CLAIM_RESULT.FAILURE, reason: "\u63A5\u53E3\u8FD4\u56DE 400\uFF0C\u8BF7\u6C42\u4F53\u53EF\u80FD\u88AB\u62D2\u7EDD", retryable: false };
       }
       if (status >= 500) {
-        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true };
+        if (isFabInternalServerError(response)) {
+          return {
+            result: CLAIM_RESULT.FAILURE,
+            reason: "\u63A5\u53E3\u8FD4\u56DE 500 (Fab \u670D\u52A1\u7AEF\u5185\u90E8\u9519\u8BEF)",
+            retryable: true,
+            status,
+            serverInternalError: true
+          };
+        }
+        return { result: CLAIM_RESULT.FAILURE, reason: `\u63A5\u53E3\u8FD4\u56DE ${status}`, retryable: true, status };
       }
       return {
         result: CLAIM_RESULT.FAILURE,
@@ -4752,6 +4877,19 @@
   var setDomClaim = /* @__PURE__ */ __name((fn) => {
     domClaimImpl = fn;
   }, "setDomClaim");
+  var isFabInternalServerError = /* @__PURE__ */ __name((response) => {
+    if (!response || Number(response.status) !== 500) return false;
+    const text = String(response.responseText || "").trim();
+    if (!text) return false;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.detail === "string" && /internal error/i.test(parsed.detail)) {
+        return true;
+      }
+    } catch (_e) {
+    }
+    return /"detail"\s*:\s*"Internal error"/i.test(text);
+  }, "isFabInternalServerError");
   var normalizeClaimOutcome = /* @__PURE__ */ __name((raw) => {
     if (typeof raw === "boolean") {
       return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: "" };
@@ -5636,12 +5774,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       lastCheckpointAt = now;
       try {
         await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, buildCheckpointPayload());
+        getState().hasFastScanCheckpoint = true;
       } catch (_e) {
       }
     }, "saveCheckpoint");
     const clearCheckpoint = /* @__PURE__ */ __name(async () => {
       try {
         await gmDelete(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT);
+        getState().hasFastScanCheckpoint = false;
       } catch (_e) {
       }
     }, "clearCheckpoint");
@@ -5876,7 +6016,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
             lastClaimAt = nowFn();
           }
-          const outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+          let outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+          if (outcome.serverInternalError && task.offerId) {
+            outcome = await runClaimWithSlowPathGuard({ ...task, offerId: "" }, apiClaim);
+          }
           if (outcome.result === CLAIM_RESULT.SUCCESS) {
             noteSuccess();
             await db.markAsDone(task, { deferSave: true });
@@ -5899,6 +6042,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             task.isBundle = true;
             await routeToFallback(task);
             syncStatus();
+          } else if (outcome.serverInternalError) {
+            await db.markAsFailed(task, {
+              reason: "Fab \u670D\u52A1\u7AEF\u5185\u90E8\u9519\u8BEF (500 Internal error)\uFF0C\u5B98\u7F51\u6309\u94AE\u4EA6\u65E0\u6CD5\u5165\u5E93"
+            });
+            currentStats.failed += 1;
+            syncStatus(true);
           } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
             await routeToFallback(task);
             syncStatus();
@@ -6195,7 +6344,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const stopPages = Math.max(1, Math.min(50, Math.floor(
         Number.isFinite(options.incrementalStopPages) ? options.incrementalStopPages : Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5
       )));
-      const baseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+      const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+      const baseParams = incEnabled && rawBaseParams.sort_by !== "-firstPublishedAt" ? { ...rawBaseParams, sort_by: "-firstPublishedAt" } : rawBaseParams;
+      if (incEnabled && rawBaseParams.sort_by !== "-firstPublishedAt") {
+        logMsg("info", "[FastScanner] \u8FFD\u65B0\u6A21\u5F0F\u5DF2\u81EA\u52A8\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F (-firstPublishedAt) \u626B\u63CF\uFF08\u4FDD\u7559\u5F53\u524D\u7B5B\u9009\uFF09");
+      }
       currentQueryKey = buildQueryKey(baseParams);
       currentPhase = "calibrating";
       syncStatus(true);
@@ -6860,6 +7013,65 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (UI4) UI4.update();
       return safeVal;
     }, "setMaxWorkers"),
+    getWorkMode: /* @__PURE__ */ __name(() => {
+      if (!State.fastApiScan) return "page";
+      return State.incrementalEarlyStop ? "incremental" : "full";
+    }, "getWorkMode"),
+    setWorkMode: /* @__PURE__ */ __name(async (mode) => {
+      const validModes = ["full", "incremental", "page"];
+      if (!validModes.includes(mode)) return TaskRunner2.getWorkMode();
+      if (TaskRunner2.getWorkMode() === mode) {
+        if (UI4) UI4.update();
+        return mode;
+      }
+      if (State.isExecuting || FastScanner.isRunning()) {
+        if (FastScanner.isRunning()) {
+          await FastScanner.stop();
+        }
+        TaskRunner2.stop();
+      }
+      if (mode === "full") {
+        State.fastApiScan = true;
+        State.incrementalEarlyStop = false;
+      } else if (mode === "incremental") {
+        State.fastApiScan = true;
+        State.incrementalEarlyStop = true;
+      } else {
+        State.fastApiScan = false;
+      }
+      await Database.saveFastApiScanPref();
+      await Database.saveIncrementalEarlyStopPref();
+      Utils.logger("info", Utils.getText("log_work_mode_changed", Utils.getText(`mode_${mode}`)));
+      if (UI4) UI4.update();
+      return mode;
+    }, "setWorkMode"),
+    getPageSubMode: /* @__PURE__ */ __name(() => {
+      if (State.autoScroll) return "auto_scroll";
+      if (State.autoAddOnScroll) return "on_scroll";
+      return "visible";
+    }, "getPageSubMode"),
+    setPageSubMode: /* @__PURE__ */ __name(async (subMode) => {
+      const validSubModes = ["visible", "on_scroll", "auto_scroll"];
+      if (!validSubModes.includes(subMode)) return TaskRunner2.getPageSubMode();
+      if (subMode === "visible") {
+        State.autoAddOnScroll = false;
+        State.autoScroll = false;
+      } else if (subMode === "on_scroll") {
+        State.autoAddOnScroll = true;
+        State.autoScroll = false;
+      } else {
+        State.autoAddOnScroll = false;
+        State.autoScroll = true;
+        State.isEndOfSearchList = false;
+        State.autoScrollAttempts = 0;
+        State.hasReachedBottomToastShown = false;
+      }
+      await Database.saveAutoAddPref();
+      await Database.saveAutoScrollPref();
+      Utils.logger("info", Utils.getText("log_page_submode_changed", Utils.getText(`page_submode_${subMode}`)));
+      if (UI4) UI4.update();
+      return subMode;
+    }, "setPageSubMode"),
     toggleFastApiScan: /* @__PURE__ */ __name(async () => {
       if (State.isExecuting || FastScanner.isRunning()) {
         if (FastScanner.isRunning()) {
@@ -6914,6 +7126,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       State.isExecuting = false;
       Database.saveExecutingState();
       Database.saveTodo();
+      KeepAlive.stop();
       State.runningWorkers = {};
       State.activeWorkers = 0;
       State.executionTotalTasks = 0;
@@ -7702,7 +7915,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           }
         } else if (State.appStatus === "NORMAL" && State.hiddenThisPageCount > 0) {
           Utils.logger("debug", Utils.getText("page_status_hidden_no_visible", State.hiddenThisPageCount));
-          if (State.autoScroll || State.autoAddOnScroll) {
+          if (!State.fastApiScan && (State.autoScroll || State.autoAddOnScroll)) {
             TaskRunner2.attemptAutoScroll();
           }
         }
@@ -7792,7 +8005,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
-      if (FastScanner.isRunning()) return;
+      if (State.fastApiScan || FastScanner.isRunning()) return;
       if (!State.autoAddOnScroll && !State.autoScroll) return;
       if (!State.isAuthenticated) {
         if (State.debugMode) {
@@ -7905,7 +8118,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
           State.autoAddRetryTimer = setTimeout(() => {
             State.autoAddRetryTimer = null;
-            if (State.autoAddOnScroll || State.autoScroll) {
+            if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll)) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u91CD\u8BD5\u5931\u8D25: ${error.message}`));
             }
           }, 2e3);
@@ -8306,8 +8519,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (document.getElementById(Config.UI_CONTAINER_ID)) return true;
       const styles = `
             :root {
-                --bg-color: rgba(22, 22, 26, 0.88);
-                --card-bg: rgba(255, 255, 255, 0.04);
+                --bg-color: rgba(18, 19, 23, 0.90);
+                --card-bg: rgba(255, 255, 255, 0.045);
+                --card-bg-recessed: rgba(0, 0, 0, 0.28);
                 --card-border: rgba(255, 255, 255, 0.08);
                 --border-color: rgba(255, 255, 255, 0.12);
                 --text-color-primary: #f5f5f7;
@@ -8315,9 +8529,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 --radius-l: 14px;
                 --radius-m: 8px;
                 --radius-s: 6px;
-                --blue: #007aff; --pink: #ff2d55; --green: #34c759;
-                --orange: #ff9500; --gray: #8e8e93; --dark-gray: #3a3a3c;
-                --blue-bg: rgba(0, 122, 255, 0.2);
+                --blue: #0a84ff; --pink: #ff375f; --green: #30d158;
+                --orange: #ff9f0a; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                --blue-bg: rgba(10, 132, 255, 0.18);
             }
             #${Config.UI_CONTAINER_ID} {
                 position: fixed;
@@ -8331,12 +8545,83 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 border-radius: var(--radius-l);
                 color: var(--text-color-primary);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                width: 310px;
-                font-size: 13.5px;
-                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                width: 316px;
+                font-size: 13px;
+                font-variant-numeric: tabular-nums;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.09);
             }
             #${Config.UI_CONTAINER_ID} *, #${Config.UI_CONTAINER_ID} *::before, #${Config.UI_CONTAINER_ID} *::after {
                 box-sizing: border-box;
+            }
+            #${Config.UI_CONTAINER_ID} button:focus-visible,
+            #${Config.UI_CONTAINER_ID} input:focus-visible {
+                outline: 2px solid var(--blue);
+                outline-offset: 1px;
+            }
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-tabs,
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-tab-content {
+                display: none !important;
+            }
+            .fab-helper-header {
+                padding: 8px 12px;
+                border-bottom: 1px solid var(--border-color);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+            }
+            #${Config.UI_CONTAINER_ID}.fab-helper-collapsed .fab-helper-header {
+                border-bottom: none;
+            }
+            .fab-header-brand {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                min-width: 0;
+            }
+            .fab-header-version {
+                font-size: 11px;
+                color: var(--text-color-secondary);
+                background: rgba(255, 255, 255, 0.07);
+                padding: 1px 5px;
+                border-radius: var(--radius-s);
+            }
+            .fab-header-actions {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                flex-shrink: 0;
+            }
+            .fab-header-live-badge {
+                display: none;
+                font-size: 11px;
+                font-weight: 600;
+                color: var(--text-color-primary);
+                background: var(--blue-bg);
+                border: 1px solid rgba(10, 132, 255, 0.4);
+                padding: 2px 7px;
+                border-radius: 999px;
+                white-space: nowrap;
+            }
+            .fab-collapse-btn {
+                width: 24px;
+                height: 24px;
+                border-radius: var(--radius-s);
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
+                color: var(--text-color-secondary);
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                line-height: 1;
+                padding: 0;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-collapse-btn:hover {
+                background: rgba(255, 255, 255, 0.12);
+                color: var(--text-color-primary);
             }
             .fab-helper-tabs {
                 display: flex;
@@ -8344,8 +8629,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
             .fab-helper-tabs button {
                 flex: 1;
-                padding: 10px 0;
-                font-size: 14px;
+                padding: 8px 0;
+                font-size: 13px;
                 font-weight: 500;
                 cursor: pointer;
                 background: transparent;
@@ -8362,7 +8647,108 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 border-bottom: 2px solid var(--blue);
             }
             .fab-helper-tab-content {
-                padding: 12px;
+                padding: 10px 12px 12px;
+                max-height: min(72vh, 540px);
+                overflow-y: auto;
+                scrollbar-width: thin;
+                scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar {
+                width: 6px;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            .fab-helper-tab-content::-webkit-scrollbar-thumb {
+                background: rgba(255, 255, 255, 0.22);
+                border-radius: 3px;
+            }
+            .fab-mode-switcher {
+                display: flex;
+                gap: 3px;
+                padding: 3px;
+                background: var(--card-bg-recessed);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                margin-bottom: 8px;
+            }
+            .fab-mode-btn {
+                flex: 1;
+                min-width: 0;
+                padding: 6px 4px;
+                border: none;
+                border-radius: var(--radius-s);
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 12px;
+                font-weight: 500;
+                cursor: pointer;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-mode-btn:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-mode-btn.active {
+                background: var(--blue);
+                color: #fff;
+                font-weight: 600;
+                box-shadow: 0 1px 4px rgba(10, 132, 255, 0.35);
+            }
+            .fab-mode-panel {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                padding: 7px 9px;
+                margin-bottom: 8px;
+            }
+            .fab-mode-panel .fab-setting-row {
+                padding: 4px 0;
+            }
+            .fab-mode-telemetry {
+                font-size: 11.5px;
+                color: var(--text-color-secondary);
+                padding-top: 5px;
+                margin-top: 4px;
+                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .fab-submode-switcher {
+                display: flex;
+                gap: 3px;
+                padding: 2px;
+                background: var(--card-bg-recessed);
+                border: 1px solid rgba(255, 255, 255, 0.06);
+                border-radius: var(--radius-s);
+                margin-bottom: 5px;
+            }
+            .fab-submode-btn {
+                flex: 1;
+                min-width: 0;
+                padding: 4px 3px;
+                border: none;
+                border-radius: 4px;
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 11.5px;
+                font-weight: 500;
+                cursor: pointer;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                transition: background-color 0.15s, color 0.15s;
+            }
+            .fab-submode-btn:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-submode-btn.active {
+                background: rgba(10, 132, 255, 0.24);
+                color: #fff;
+                font-weight: 600;
             }
             .fab-helper-status-bar {
                 display: flex;
@@ -8373,7 +8759,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             .fab-helper-status-item {
                 background: var(--card-bg);
                 border: 1px solid var(--card-border);
-                padding: 7px 4px;
+                padding: 6px 4px;
                 border-radius: var(--radius-m);
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
@@ -8394,8 +8780,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 flex-basis: calc((100% - 6px) / 2);
             }
             .fab-helper-status-item.has-failed {
-                border-color: rgba(255, 45, 85, 0.5);
-                background: rgba(255, 45, 85, 0.08);
+                border-color: rgba(255, 55, 95, 0.5);
+                background: rgba(255, 55, 95, 0.08);
             }
             .fab-helper-status-label {
                 display: flex;
@@ -8407,38 +8793,38 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
             .fab-helper-status-item span {
                 display: block;
-                font-size: 17px;
+                font-size: 16px;
                 font-weight: 700;
                 color: #fff;
                 margin-top: 0;
                 font-variant-numeric: tabular-nums;
             }
             @keyframes fab-pulse-glow {
-                0% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0.45); }
-                70% { box-shadow: 0 0 0 8px rgba(255, 45, 85, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(255, 45, 85, 0); }
+                0% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0.45); }
+                70% { box-shadow: 0 0 0 8px rgba(255, 55, 95, 0); }
+                100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
                 width: 100%;
                 border: none;
                 border-radius: var(--radius-m);
-                padding: 12px 14px;
-                font-size: 16px;
+                padding: 10px 14px;
+                font-size: 14.5px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.25s ease;
+                transition: all 0.2s ease;
                 color: #fff;
                 background: var(--blue);
                 margin-bottom: 8px;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                gap: 8px;
-                box-shadow: 0 2px 10px rgba(0, 122, 255, 0.3);
+                gap: 6px;
+                box-shadow: 0 2px 10px rgba(10, 132, 255, 0.3);
             }
             .fab-helper-execute-btn.executing {
                 background: var(--pink);
-                box-shadow: 0 2px 12px rgba(255, 45, 85, 0.4);
+                box-shadow: 0 2px 12px rgba(255, 55, 95, 0.4);
                 animation: fab-pulse-glow 2s infinite;
             }
             .fab-progress-track {
@@ -8473,14 +8859,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 border: 1px solid var(--card-border);
                 border-radius: var(--radius-m);
                 color: var(--text-color-primary);
-                padding: 7px 4px;
+                padding: 7px 6px;
                 cursor: pointer;
                 transition: background-color 0.2s, border-color 0.2s;
                 white-space: nowrap;
-                font-size: 12.5px;
+                font-size: 12px;
                 font-weight: normal;
             }
-            .fab-helper-actions button:hover {
+            .fab-helper-actions button:hover:not(:disabled) {
                 background: rgba(255, 255, 255, 0.1);
                 border-color: rgba(255, 255, 255, 0.18);
             }
@@ -8489,12 +8875,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 cursor: not-allowed;
             }
             .fab-helper-position-container {
-                margin-bottom: 8px;
-                padding: 5px 8px;
-                background: var(--card-bg);
-                border: 1px solid var(--card-border);
+                margin-top: 4px;
+                padding: 4px 7px;
+                background: var(--card-bg-recessed);
+                border: 1px solid rgba(255, 255, 255, 0.06);
                 border-radius: var(--radius-s);
-                font-size: 12px;
+                font-size: 11.5px;
                 display: flex;
                 align-items: center;
                 gap: 4px;
@@ -8542,7 +8928,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 line-height: 1.4;
                 padding: 7px 8px;
                 border-radius: var(--radius-m);
-                max-height: 130px;
+                max-height: 120px;
                 overflow-y: auto;
                 min-height: 44px;
                 display: flex;
@@ -8567,6 +8953,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
+                gap: 8px;
                 padding: 6px 0;
                 border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             }
@@ -8574,7 +8961,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 border-bottom: none;
             }
             .fab-setting-label {
-                font-size: 13px;
+                font-size: 12.5px;
                 color: var(--text-color-primary);
             }
             .fab-card-group {
@@ -8592,6 +8979,33 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 font-weight: 600;
                 color: var(--text-color-secondary);
                 margin-bottom: 6px;
+            }
+            .fab-collapsible-card {
+                background: var(--card-bg);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                overflow: hidden;
+            }
+            .fab-collapsible-toggle {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 8px 10px;
+                border: none;
+                background: transparent;
+                color: var(--text-color-secondary);
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: left;
+            }
+            .fab-collapsible-toggle:hover {
+                color: var(--text-color-primary);
+            }
+            .fab-collapsible-body {
+                padding: 0 10px 8px;
+                border-top: 1px solid rgba(255, 255, 255, 0.05);
             }
             .fab-stepper-btn {
                 width: 24px;
@@ -8627,9 +9041,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             .fab-danger-btn {
                 width: 100%;
                 margin-top: 6px;
-                background-color: rgba(255, 45, 85, 0.18);
+                background-color: rgba(255, 55, 95, 0.16);
                 color: var(--pink);
-                border: 1px solid rgba(255, 45, 85, 0.4);
+                border: 1px solid rgba(255, 55, 95, 0.4);
                 padding: 7px 10px;
                 border-radius: var(--radius-m);
                 font-size: 12.5px;
@@ -8644,8 +9058,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             .fab-toggle-switch {
                 position: relative;
                 display: inline-block;
-                width: 44px;
-                height: 24px;
+                width: 40px;
+                height: 22px;
+                flex-shrink: 0;
             }
             .fab-toggle-switch input {
                 opacity: 0;
@@ -8660,25 +9075,25 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 right: 0;
                 bottom: 0;
                 background-color: var(--dark-gray);
-                transition: .4s;
-                border-radius: 24px;
+                transition: .25s;
+                border-radius: 22px;
             }
             .fab-toggle-slider:before {
                 position: absolute;
                 content: "";
-                height: 20px;
-                width: 20px;
+                height: 18px;
+                width: 18px;
                 left: 2px;
                 bottom: 2px;
                 background-color: white;
-                transition: .4s;
+                transition: .25s;
                 border-radius: 50%;
             }
             input:checked + .fab-toggle-slider {
                 background-color: var(--blue);
             }
             input:checked + .fab-toggle-slider:before {
-                transform: translateX(20px);
+                transform: translateX(18px);
             }
             .fab-debug-history-container {
                 scrollbar-width: thin;
@@ -8757,6 +9172,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                     opacity: 1;
                 }
             }
+            @media (prefers-reduced-motion: reduce) {
+                #${Config.UI_CONTAINER_ID} *,
+                .fab-helper-toast {
+                    animation: none !important;
+                    transition: none !important;
+                }
+            }
         `;
       const styleSheet = document.createElement("style");
       styleSheet.innerText = styles;
@@ -8764,221 +9186,19 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const container = document.createElement("div");
       container.id = Config.UI_CONTAINER_ID;
       State.UI.container = container;
-      const header = document.createElement("div");
-      header.style.cssText = "padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;";
-      const title = document.createElement("span");
-      title.textContent = Utils.getText("app_title");
-      title.style.fontWeight = "600";
-      const version = document.createElement("span");
-      version.textContent = `v${GM_info.script.version}`;
-      version.style.cssText = "font-size: 12px; color: var(--text-color-secondary); background: var(--dark-gray); padding: 2px 5px; border-radius: var(--radius-s);";
-      header.append(title, version);
-      container.appendChild(header);
-      const tabContainer = document.createElement("div");
-      tabContainer.className = "fab-helper-tabs";
-      const tabs = ["dashboard", "settings", "debug"];
-      tabs.forEach((tabName) => {
-        const btn = document.createElement("button");
-        btn.textContent = Utils.getText(`tab_${tabName}`);
-        btn.onclick = () => UI5.switchTab(tabName);
-        if (tabName === "dashboard") btn.classList.add("active");
-        tabContainer.appendChild(btn);
-        State.UI.tabs[tabName] = btn;
-      });
-      container.appendChild(tabContainer);
-      const dashboardContent = document.createElement("div");
-      dashboardContent.className = "fab-helper-tab-content";
-      dashboardContent.style.display = "block";
-      State.UI.tabContents.dashboard = dashboardContent;
-      const statusBar = document.createElement("div");
-      statusBar.className = "fab-helper-status-bar";
-      const createStatusItem = /* @__PURE__ */ __name((id, label, icon, gridClass = "grid-3") => {
-        const item = document.createElement("div");
-        item.className = `fab-helper-status-item ${gridClass}`;
-        item.innerHTML = `<div class="fab-helper-status-label">${icon} ${label}</div><span id="${id}">0</span>`;
-        return item;
-      }, "createStatusItem");
-      State.UI.statusTodo = createStatusItem("fab-status-todo", Utils.getText("todo"), "\u{1F4E5}", "grid-3");
-      State.UI.statusDone = createStatusItem("fab-status-done", Utils.getText("added"), "\u2705", "grid-3");
-      State.UI.statusFailed = createStatusItem("fab-status-failed", Utils.getText("failed"), "\u274C", "grid-3");
-      State.UI.statusFailed.style.cursor = "pointer";
-      State.UI.statusFailed.title = Utils.getText("tooltip_open_failed");
-      State.UI.statusFailed.onclick = () => {
-        if (State.db.failed.length === 0) {
-          Utils.logger("info", Utils.getText("failed_list_empty"));
-          return;
-        }
-        if (window.confirm(Utils.getText("confirm_open_failed", State.db.failed.length))) {
-          Utils.logger("info", Utils.getText("opening_failed_items", State.db.failed.length));
-          State.db.failed.forEach((task) => {
-            GM_openInTab(task.url, { active: false });
-          });
-        }
-      };
-      State.UI.statusVisible = createStatusItem("fab-status-visible", Utils.getText("visible"), "\u{1F441}\uFE0F", "grid-2");
-      State.UI.statusHidden = createStatusItem("fab-status-hidden", Utils.getText("hidden"), "\u{1F648}", "grid-2");
-      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
-      const progressTrack = document.createElement("div");
-      progressTrack.className = "fab-progress-track";
-      const progressBar = document.createElement("div");
-      progressBar.className = "fab-progress-bar";
-      progressTrack.appendChild(progressBar);
-      State.UI.progressTrack = progressTrack;
-      State.UI.progressBar = progressBar;
-      State.UI.statusKeepAlive = document.createElement("div");
-      State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
-      State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
-      State.UI.execBtn = document.createElement("button");
-      State.UI.execBtn.className = "fab-helper-execute-btn";
-      State.UI.execBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleExecution();
-      if (State.isExecuting) {
-        State.UI.execBtn.innerHTML = `<span>${Utils.getText("executing")}</span>`;
-        State.UI.execBtn.classList.add("executing");
-      } else {
-        State.UI.execBtn.textContent = Utils.getText("execute");
-        State.UI.execBtn.classList.remove("executing");
-      }
-      const actionButtons = document.createElement("div");
-      actionButtons.className = "fab-helper-actions";
-      State.UI.syncBtn = document.createElement("button");
-      State.UI.syncBtn.textContent = "\u{1F504} " + Utils.getText("sync");
-      State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
-      State.UI.hideBtn = document.createElement("button");
-      State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
-      State.UI.retryFailedBtn = document.createElement("button");
-      State.UI.retryFailedBtn.textContent = "\u{1F501} " + Utils.getText("retry_failed");
-      State.UI.retryFailedBtn.onclick = () => TaskRunner3 && TaskRunner3.retryFailedTasks();
-      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.retryFailedBtn);
-      const logContainer = document.createElement("div");
-      logContainer.className = "fab-log-container";
-      const logHeader = document.createElement("div");
-      logHeader.className = "fab-log-header";
-      const logTitle = document.createElement("span");
-      const toggleArrow = document.createElement("span");
-      toggleArrow.textContent = "\u25BE";
-      toggleArrow.style.transition = "transform 0.2s";
-      const logTitleText = document.createElement("span");
-      logTitleText.textContent = Utils.getText("operation_log");
-      logTitle.append(toggleArrow, logTitleText);
-      const logControls = document.createElement("div");
-      logControls.className = "fab-log-controls";
-      const copyLogBtn = document.createElement("button");
-      copyLogBtn.innerHTML = "\u{1F4C4}";
-      copyLogBtn.title = Utils.getText("copyLog");
-      copyLogBtn.onclick = (e) => {
-        e.stopPropagation();
-        navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
-          const originalText = copyLogBtn.textContent;
-          copyLogBtn.textContent = "\u2705";
-          setTimeout(() => {
-            copyLogBtn.textContent = originalText;
-          }, 1500);
-        }).catch((err) => Utils.logger("error", "Failed to copy log:", err));
-      };
-      const clearLogBtn = document.createElement("button");
-      clearLogBtn.innerHTML = "\u{1F5D1}\uFE0F";
-      clearLogBtn.title = Utils.getText("clearLog");
-      clearLogBtn.onclick = (e) => {
-        e.stopPropagation();
-        State.UI.logPanel.innerHTML = "";
-      };
-      logControls.append(copyLogBtn, clearLogBtn);
-      logHeader.append(logTitle, logControls);
-      State.UI.logPanel = document.createElement("div");
-      State.UI.logPanel.id = Config.UI_LOG_ID;
-      let isLogOpen = true;
-      logHeader.onclick = () => {
-        isLogOpen = !isLogOpen;
-        State.UI.logPanel.style.display = isLogOpen ? "flex" : "none";
-        toggleArrow.style.transform = isLogOpen ? "rotate(0deg)" : "rotate(-90deg)";
-      };
-      logContainer.append(logHeader, State.UI.logPanel);
-      const positionContainer = document.createElement("div");
-      positionContainer.className = "fab-helper-position-container";
-      const positionIcon = document.createElement("span");
-      positionIcon.textContent = Utils.getText("position_indicator");
-      positionIcon.style.marginRight = "4px";
-      const positionInfo = document.createElement("span");
-      positionInfo.textContent = Config.USE_API_PIPELINE ? UI5.getApiPositionText() : Utils.decodeCursor(State.savedCursor);
-      positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
-      State.UI.savedPositionDisplay = positionInfo;
-      positionContainer.appendChild(positionIcon);
-      positionContainer.appendChild(positionInfo);
-      const clearPositionBtn = document.createElement("button");
-      clearPositionBtn.textContent = "\u21BA";
-      clearPositionBtn.title = Utils.getText("clear_position_tooltip");
-      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);";
-      clearPositionBtn.onmouseover = () => {
-        clearPositionBtn.style.opacity = "1";
-      };
-      clearPositionBtn.onmouseout = () => {
-        clearPositionBtn.style.opacity = "0.7";
-      };
-      clearPositionBtn.onclick = async () => {
-        const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
-        let hasFastCheckpoint = false;
-        try {
-          hasFastCheckpoint = Boolean(await GM_getValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null));
-        } catch (_e) {
-        }
-        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor || hasFastCheckpoint || State.fastScanStatus) {
-          PagePatcher.lockCursorSaving();
-          if (confirm(Utils.getText("confirm_reset_position"))) {
-            await FastScanner.clearCheckpoint();
-            State.fastScanStatus = null;
-            await PagePatcher.clearSavedPosition("User UI Reset");
-            PagePatcher.armResetGuard();
-            try {
-              window.scrollTo(0, 0);
-            } catch (e) {
-            }
-            try {
-              const url = new URL(window.location.href);
-              if (url.searchParams.has("cursor")) {
-                url.searchParams.delete("cursor");
-                window.location.href = url.toString();
-                return;
-              }
-            } catch (e) {
-            }
-            window.location.reload();
-          } else {
-            PagePatcher.unlockCursorSaving();
-          }
-        } else {
-          Utils.logger("info", Utils.getText("no_position_to_reset"));
-        }
-      };
-      positionContainer.appendChild(clearPositionBtn);
-      dashboardContent.append(
-        State.UI.execBtn,
-        State.UI.progressTrack,
-        statusBar,
-        actionButtons,
-        positionContainer,
-        State.UI.statusKeepAlive,
-        logContainer
-      );
-      container.appendChild(dashboardContent);
-      const settingsContent = document.createElement("div");
-      settingsContent.className = "fab-helper-tab-content";
-      settingsContent.style.display = "none";
-      const createCardGroup = /* @__PURE__ */ __name((titleText) => {
-        const card = document.createElement("div");
-        card.className = "fab-card-group";
-        const cardTitle = document.createElement("div");
-        cardTitle.className = "fab-card-group-title";
-        cardTitle.textContent = titleText;
-        card.appendChild(cardTitle);
-        return card;
-      }, "createCardGroup");
-      const createSettingRow = /* @__PURE__ */ __name((labelText, stateKey, tooltip) => {
+      State.UI.i18nBindings = [];
+      const bindText = /* @__PURE__ */ __name((el, key, prefix = "", suffix = "") => {
+        State.UI.i18nBindings.push({ el, key, prefix, suffix });
+        el.textContent = `${prefix}${Utils.getText(key)}${suffix}`;
+        return el;
+      }, "bindText");
+      const createSettingRow = /* @__PURE__ */ __name((labelKey, stateKey, tooltipKey = null, uiRefKey = null) => {
         const row = document.createElement("div");
         row.className = "fab-setting-row";
-        if (tooltip) row.title = tooltip;
+        if (tooltipKey) row.title = Utils.getText(tooltipKey);
         const label = document.createElement("span");
         label.className = "fab-setting-label";
-        label.textContent = labelText;
+        bindText(label, labelKey);
         const switchContainer = document.createElement("label");
         switchContainer.className = "fab-toggle-switch";
         const input = document.createElement("input");
@@ -8997,7 +9217,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           } else if (stateKey === "autoScroll") {
             TaskRunner3.toggleAutoScroll();
           } else if (stateKey === "rememberScrollPosition") {
-            TaskRunner3.toggleRememberPosition();
+            await TaskRunner3.toggleRememberPosition();
           } else if (stateKey === "autoResumeAfter429") {
             TaskRunner3.toggleAutoResume();
           } else if (stateKey === "autoRefreshEmptyPage") {
@@ -9010,21 +9230,25 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             TaskRunner3.toggleBlockResources();
           }
           e.target.checked = Boolean(State[stateKey]);
+          UI5.update();
         };
         const slider = document.createElement("span");
         slider.className = "fab-toggle-slider";
+        if (uiRefKey) {
+          State.UI[uiRefKey] = input;
+        }
         switchContainer.append(input, slider);
         row.append(label, switchContainer);
         return row;
       }, "createSettingRow");
-      const createNumberSettingRow = /* @__PURE__ */ __name((labelText, stateKey, min, max, tooltip, options = {}) => {
+      const createNumberSettingRow = /* @__PURE__ */ __name((labelKey, stateKey, min, max, tooltipKey, options = {}) => {
         const { onChange, uiRefKey, defaultValue } = options;
         const row = document.createElement("div");
         row.className = "fab-setting-row";
-        if (tooltip) row.title = tooltip;
+        if (tooltipKey) row.title = Utils.getText(tooltipKey);
         const label = document.createElement("span");
         label.className = "fab-setting-label";
-        label.textContent = labelText;
+        bindText(label, labelKey);
         const controlContainer = document.createElement("div");
         controlContainer.style.cssText = "display: flex; align-items: center; gap: 6px;";
         const minusBtn = document.createElement("button");
@@ -9072,62 +9296,351 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         row.append(label, controlContainer);
         return row;
       }, "createNumberSettingRow");
-      const groupAutomation = createCardGroup(Utils.getText("settings_group_automation"));
-      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_fast_api_scan"), "fastApiScan", Utils.getText("setting_fast_api_scan_tooltip")));
-      groupAutomation.appendChild(createNumberSettingRow(
-        Utils.getText("setting_api_scan_concurrency"),
+      const createCardGroup = /* @__PURE__ */ __name((titleKey) => {
+        const card = document.createElement("div");
+        card.className = "fab-card-group";
+        const cardTitle = document.createElement("div");
+        cardTitle.className = "fab-card-group-title";
+        bindText(cardTitle, titleKey);
+        card.appendChild(cardTitle);
+        return card;
+      }, "createCardGroup");
+      const header = document.createElement("div");
+      header.className = "fab-helper-header";
+      const brand = document.createElement("div");
+      brand.className = "fab-header-brand";
+      const title = document.createElement("span");
+      bindText(title, "app_title");
+      title.style.fontWeight = "600";
+      const version = document.createElement("span");
+      version.className = "fab-header-version";
+      const scriptVersion = globalThis.GM_info?.script?.version || "";
+      version.textContent = scriptVersion ? `v${scriptVersion}` : "";
+      brand.append(title, version);
+      const headerActions = document.createElement("div");
+      headerActions.className = "fab-header-actions";
+      const headerLiveBadge = document.createElement("span");
+      headerLiveBadge.className = "fab-header-live-badge";
+      State.UI.headerLiveBadge = headerLiveBadge;
+      const collapseBtn = document.createElement("button");
+      collapseBtn.type = "button";
+      collapseBtn.className = "fab-collapse-btn";
+      collapseBtn.onclick = () => {
+        State.uiExpanded = !State.uiExpanded;
+        Database.saveUiExpandedPref();
+        UI5.update();
+      };
+      State.UI.collapseBtn = collapseBtn;
+      headerActions.append(headerLiveBadge, collapseBtn);
+      header.append(brand, headerActions);
+      container.appendChild(header);
+      const tabContainer = document.createElement("div");
+      tabContainer.className = "fab-helper-tabs";
+      State.UI.tabsContainer = tabContainer;
+      const tabs = ["dashboard", "settings", "debug"];
+      State.activeTab = State.activeTab || "dashboard";
+      tabs.forEach((tabName) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        bindText(btn, `tab_${tabName}`);
+        btn.onclick = () => UI5.switchTab(tabName);
+        if (tabName === State.activeTab) btn.classList.add("active");
+        tabContainer.appendChild(btn);
+        State.UI.tabs[tabName] = btn;
+      });
+      container.appendChild(tabContainer);
+      const dashboardContent = document.createElement("div");
+      dashboardContent.className = "fab-helper-tab-content";
+      dashboardContent.style.display = "block";
+      State.UI.tabContents.dashboard = dashboardContent;
+      const modeSwitcher = document.createElement("div");
+      modeSwitcher.className = "fab-mode-switcher";
+      State.UI.modeButtons = {};
+      ["full", "incremental", "page"].forEach((mode) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "fab-mode-btn";
+        btn.setAttribute("data-mode", mode);
+        bindText(btn, `mode_${mode}`);
+        btn.onclick = () => TaskRunner3 && TaskRunner3.setWorkMode(mode);
+        modeSwitcher.appendChild(btn);
+        State.UI.modeButtons[mode] = btn;
+      });
+      State.UI.modePanels = {};
+      const fullPanel = document.createElement("div");
+      fullPanel.className = "fab-mode-panel";
+      fullPanel.appendChild(createNumberSettingRow(
+        "setting_api_scan_concurrency",
         "apiScanConcurrency",
         1,
         Config.MAX_API_SCAN_CONCURRENCY || 6,
-        Utils.getText("setting_api_scan_concurrency_tooltip"),
+        "setting_api_scan_concurrency_tooltip",
         {
           onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setApiScanConcurrency(v), "onChange"),
           uiRefKey: "apiScanConcurrencyInput",
           defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
         }
       ));
-      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_incremental_early_stop"), "incrementalEarlyStop", Utils.getText("setting_incremental_early_stop_tooltip")));
-      groupAutomation.appendChild(createNumberSettingRow(
-        Utils.getText("setting_incremental_stop_pages"),
+      const fastScanStatusDisplay = document.createElement("div");
+      fastScanStatusDisplay.className = "fab-mode-telemetry";
+      State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
+      fullPanel.appendChild(fastScanStatusDisplay);
+      State.UI.modePanels.full = fullPanel;
+      const incPanel = document.createElement("div");
+      incPanel.className = "fab-mode-panel";
+      incPanel.appendChild(createNumberSettingRow(
+        "setting_incremental_stop_pages",
         "incrementalStopPages",
         1,
         50,
-        Utils.getText("setting_incremental_stop_pages_tooltip"),
+        "setting_incremental_stop_pages_tooltip",
         {
           onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setIncrementalStopPages(v), "onChange"),
           uiRefKey: "incrementalStopPagesInput",
           defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
         }
       ));
-      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll"));
-      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_scroll"), "autoScroll"));
-      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition"));
-      settingsContent.appendChild(groupAutomation);
-      const groupFilter = createCardGroup(Utils.getText("settings_group_filter"));
-      groupFilter.appendChild(createSettingRow(Utils.getText("setting_hide_discounted"), "hideDiscountedPaid"));
-      groupFilter.appendChild(createSettingRow(Utils.getText("setting_hide_paid"), "hidePaid"));
+      const incScanStatusDisplay = document.createElement("div");
+      incScanStatusDisplay.className = "fab-mode-telemetry";
+      State.UI.incScanStatusDisplay = incScanStatusDisplay;
+      incPanel.appendChild(incScanStatusDisplay);
+      State.UI.modePanels.incremental = incPanel;
+      const pagePanel = document.createElement("div");
+      pagePanel.className = "fab-mode-panel";
+      const subModeSwitcher = document.createElement("div");
+      subModeSwitcher.className = "fab-submode-switcher";
+      State.UI.pageSubModeButtons = {};
+      ["visible", "on_scroll", "auto_scroll"].forEach((subMode) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "fab-submode-btn";
+        btn.setAttribute("data-submode", subMode);
+        bindText(btn, `page_submode_${subMode}`);
+        btn.onclick = () => TaskRunner3 && TaskRunner3.setPageSubMode(subMode);
+        subModeSwitcher.appendChild(btn);
+        State.UI.pageSubModeButtons[subMode] = btn;
+      });
+      pagePanel.appendChild(subModeSwitcher);
+      pagePanel.appendChild(createSettingRow(
+        "setting_remember_position",
+        "rememberScrollPosition",
+        "setting_page_only_tooltip",
+        "rememberPositionCheckbox"
+      ));
+      const positionContainer = document.createElement("div");
+      positionContainer.className = "fab-helper-position-container";
+      const positionIcon = document.createElement("span");
+      positionIcon.textContent = Utils.getText("position_indicator");
+      positionIcon.style.marginRight = "2px";
+      const positionInfo = document.createElement("span");
+      positionInfo.textContent = Config.USE_API_PIPELINE ? UI5.getApiPositionText() : Utils.decodeCursor(State.savedCursor);
+      positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+      State.UI.savedPositionDisplay = positionInfo;
+      const clearPositionBtn = document.createElement("button");
+      clearPositionBtn.type = "button";
+      clearPositionBtn.textContent = "\u21BA";
+      clearPositionBtn.title = Utils.getText("clear_position_tooltip");
+      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);";
+      clearPositionBtn.onmouseover = () => {
+        clearPositionBtn.style.opacity = "1";
+      };
+      clearPositionBtn.onmouseout = () => {
+        clearPositionBtn.style.opacity = "0.7";
+      };
+      clearPositionBtn.onclick = async () => {
+        const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
+        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+          PagePatcher.lockCursorSaving();
+          if (confirm(Utils.getText("confirm_reset_position"))) {
+            await PagePatcher.clearSavedPosition("User UI Reset");
+            PagePatcher.armResetGuard();
+            try {
+              window.scrollTo(0, 0);
+            } catch (e) {
+            }
+            try {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has("cursor")) {
+                url.searchParams.delete("cursor");
+                window.location.href = url.toString();
+                return;
+              }
+            } catch (e) {
+            }
+            window.location.reload();
+          } else {
+            PagePatcher.unlockCursorSaving();
+          }
+        } else {
+          Utils.logger("info", Utils.getText("no_position_to_reset"));
+        }
+      };
+      positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
+      pagePanel.appendChild(positionContainer);
+      State.UI.modePanels.page = pagePanel;
+      State.UI.execBtn = document.createElement("button");
+      State.UI.execBtn.type = "button";
+      State.UI.execBtn.className = "fab-helper-execute-btn";
+      State.UI.execBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleExecution();
+      const progressTrack = document.createElement("div");
+      progressTrack.className = "fab-progress-track";
+      const progressBar = document.createElement("div");
+      progressBar.className = "fab-progress-bar";
+      progressTrack.appendChild(progressBar);
+      State.UI.progressTrack = progressTrack;
+      State.UI.progressBar = progressBar;
+      State.UI.statusKeepAlive = document.createElement("div");
+      State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
+      State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
+      const statusBar = document.createElement("div");
+      statusBar.className = "fab-helper-status-bar";
+      const createStatusItem = /* @__PURE__ */ __name((id, labelKey, icon, gridClass = "grid-3") => {
+        const item = document.createElement("div");
+        item.className = `fab-helper-status-item ${gridClass}`;
+        const labelDiv = document.createElement("div");
+        labelDiv.className = "fab-helper-status-label";
+        bindText(labelDiv, labelKey, `${icon} `);
+        const valSpan = document.createElement("span");
+        valSpan.id = id;
+        valSpan.textContent = "0";
+        item.append(labelDiv, valSpan);
+        item._valueEl = valSpan;
+        return item;
+      }, "createStatusItem");
+      State.UI.statusTodo = createStatusItem("fab-status-todo", "todo", "\u{1F4E5}", "grid-3");
+      State.UI.statusDone = createStatusItem("fab-status-done", "added", "\u2705", "grid-3");
+      State.UI.statusFailed = createStatusItem("fab-status-failed", "failed", "\u274C", "grid-3");
+      State.UI.statusFailed.style.cursor = "pointer";
+      State.UI.statusFailed.title = Utils.getText("tooltip_open_failed");
+      State.UI.statusFailed.onclick = () => {
+        if (State.db.failed.length === 0) {
+          Utils.logger("info", Utils.getText("failed_list_empty"));
+          return;
+        }
+        if (window.confirm(Utils.getText("confirm_open_failed", State.db.failed.length))) {
+          Utils.logger("info", Utils.getText("opening_failed_items", State.db.failed.length));
+          State.db.failed.forEach((task) => {
+            GM_openInTab(task.url, { active: false });
+          });
+        }
+      };
+      State.UI.statusVisible = createStatusItem("fab-status-visible", "visible", "\u{1F441}\uFE0F", "grid-2");
+      State.UI.statusHidden = createStatusItem("fab-status-hidden", "hidden", "\u{1F648}", "grid-2");
+      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+      const actionButtons = document.createElement("div");
+      actionButtons.className = "fab-helper-actions";
+      State.UI.syncBtn = document.createElement("button");
+      State.UI.syncBtn.type = "button";
+      bindText(State.UI.syncBtn, "sync", "\u{1F504} ");
+      State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
+      State.UI.hideBtn = document.createElement("button");
+      State.UI.hideBtn.type = "button";
+      State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
+      State.UI.resetCheckpointBtn = document.createElement("button");
+      State.UI.resetCheckpointBtn.type = "button";
+      bindText(State.UI.resetCheckpointBtn, "reset_checkpoint", "\u21BA ");
+      State.UI.resetCheckpointBtn.onclick = async () => {
+        if (State.isExecuting || FastScanner.isRunning()) return;
+        if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
+        if (window.confirm(Utils.getText("confirm_reset_checkpoint"))) {
+          await FastScanner.clearCheckpoint();
+          State.fastScanStatus = null;
+          State.hasFastScanCheckpoint = false;
+          Utils.logger("info", Utils.getText("log_checkpoint_cleared"));
+          UI5.update();
+        }
+      };
+      State.UI.retryFailedBtn = document.createElement("button");
+      State.UI.retryFailedBtn.type = "button";
+      State.UI.retryFailedBtn.onclick = () => TaskRunner3 && TaskRunner3.retryFailedTasks();
+      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.resetCheckpointBtn, State.UI.retryFailedBtn);
+      const logContainer = document.createElement("div");
+      logContainer.className = "fab-log-container";
+      const logHeader = document.createElement("div");
+      logHeader.className = "fab-log-header";
+      const logTitle = document.createElement("span");
+      const toggleArrow = document.createElement("span");
+      toggleArrow.textContent = "\u25BE";
+      toggleArrow.style.transition = "transform 0.2s";
+      const logTitleText = document.createElement("span");
+      bindText(logTitleText, "operation_log");
+      logTitle.append(toggleArrow, logTitleText);
+      const logControls = document.createElement("div");
+      logControls.className = "fab-log-controls";
+      const copyLogBtn = document.createElement("button");
+      copyLogBtn.type = "button";
+      copyLogBtn.textContent = "\u{1F4C4}";
+      copyLogBtn.title = Utils.getText("copyLog");
+      copyLogBtn.onclick = (e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
+          const originalText = copyLogBtn.textContent;
+          copyLogBtn.textContent = "\u2705";
+          setTimeout(() => {
+            copyLogBtn.textContent = originalText;
+          }, 1500);
+        }).catch((err) => Utils.logger("error", "Failed to copy log:", err));
+      };
+      const clearLogBtn = document.createElement("button");
+      clearLogBtn.type = "button";
+      clearLogBtn.textContent = "\u{1F5D1}\uFE0F";
+      clearLogBtn.title = Utils.getText("clearLog");
+      clearLogBtn.onclick = (e) => {
+        e.stopPropagation();
+        State.UI.logPanel.innerHTML = "";
+      };
+      logControls.append(copyLogBtn, clearLogBtn);
+      logHeader.append(logTitle, logControls);
+      State.UI.logPanel = document.createElement("div");
+      State.UI.logPanel.id = Config.UI_LOG_ID;
+      let isLogOpen = true;
+      logHeader.onclick = () => {
+        isLogOpen = !isLogOpen;
+        State.UI.logPanel.style.display = isLogOpen ? "flex" : "none";
+        toggleArrow.style.transform = isLogOpen ? "rotate(0deg)" : "rotate(-90deg)";
+      };
+      logContainer.append(logHeader, State.UI.logPanel);
+      dashboardContent.append(
+        modeSwitcher,
+        fullPanel,
+        incPanel,
+        pagePanel,
+        State.UI.execBtn,
+        State.UI.progressTrack,
+        State.UI.statusKeepAlive,
+        statusBar,
+        actionButtons,
+        logContainer
+      );
+      container.appendChild(dashboardContent);
+      const settingsContent = document.createElement("div");
+      settingsContent.className = "fab-helper-tab-content";
+      settingsContent.style.display = "none";
+      const groupFilter = createCardGroup("settings_group_browse_filter");
+      groupFilter.appendChild(createSettingRow("setting_hide_discounted", "hideDiscountedPaid"));
+      groupFilter.appendChild(createSettingRow("setting_hide_paid", "hidePaid"));
       settingsContent.appendChild(groupFilter);
-      const groupPerformance = createCardGroup(Utils.getText("settings_group_performance"));
-      const maxWorkersSetting = createNumberSettingRow(
-        Utils.getText("setting_max_workers"),
+      const groupGeneral = createCardGroup("settings_group_general");
+      groupGeneral.appendChild(createNumberSettingRow(
+        "setting_max_workers",
         "maxWorkers",
         1,
         15,
-        Utils.getText("setting_max_workers_tooltip"),
+        "setting_max_workers_desc_tooltip",
         {
           onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setMaxWorkers(v), "onChange"),
           uiRefKey: "maxWorkersInput",
           defaultValue: 7
         }
-      );
-      groupPerformance.appendChild(maxWorkersSetting);
-      groupPerformance.appendChild(createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources"));
+      ));
+      groupGeneral.appendChild(createSettingRow("setting_block_large_resources", "blockLargeResources"));
       const notificationRow = document.createElement("div");
       notificationRow.className = "fab-setting-row";
       const notificationLabel = document.createElement("span");
       notificationLabel.className = "fab-setting-label";
-      notificationLabel.textContent = Utils.getText("setting_verification_notify");
+      bindText(notificationLabel, "setting_verification_notify");
       const notificationButton = document.createElement("button");
+      notificationButton.type = "button";
       notificationButton.style.cssText = "padding: 4px 8px; font-size: 12px; cursor: pointer; border-radius: var(--radius-m); border: 1px solid var(--border-color); background: var(--dark-gray); color: var(--text-color-primary);";
       const renderNotificationPermission = /* @__PURE__ */ __name((permission = VerificationNotifications.permission()) => {
         const zh2 = State.lang === "zh";
@@ -9143,56 +9656,92 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (permission !== "granted") Utils.logger("warn", notificationButton.title);
       };
       notificationRow.append(notificationLabel, notificationButton);
-      groupPerformance.appendChild(notificationRow);
-      settingsContent.appendChild(groupPerformance);
-      const groupMaintenance = createCardGroup(Utils.getText("settings_group_maintenance"));
-      groupMaintenance.appendChild(createSettingRow(Utils.getText("setting_auto_resume_429"), "autoResumeAfter429"));
-      groupMaintenance.appendChild(createSettingRow(Utils.getText("setting_auto_refresh"), "autoRefreshEmptyPage"));
-      const debugModeRow = document.createElement("div");
-      debugModeRow.className = "fab-setting-row";
-      debugModeRow.title = Utils.getText("setting_debug_tooltip");
-      const debugLabel = document.createElement("span");
-      debugLabel.className = "fab-setting-label";
-      debugLabel.textContent = Utils.getText("debug_mode");
-      debugLabel.style.color = "#ff9800";
-      const debugSwitchContainer = document.createElement("label");
-      debugSwitchContainer.className = "fab-toggle-switch";
-      const debugInput = document.createElement("input");
-      debugInput.type = "checkbox";
-      debugInput.checked = State.debugMode;
-      debugInput.onchange = (e) => {
-        State.debugMode = e.target.checked;
-        debugModeRow.classList.toggle("active", State.debugMode);
-        Utils.logger("info", Utils.getText("log_debug_mode_toggle", State.debugMode ? Utils.getText("status_enabled") : Utils.getText("status_disabled")));
-        GM_setValue("fab_helper_debug_mode", State.debugMode);
-      };
-      const debugSlider = document.createElement("span");
-      debugSlider.className = "fab-toggle-slider";
-      debugSwitchContainer.append(debugInput, debugSlider);
-      debugModeRow.append(debugLabel, debugSwitchContainer);
-      debugModeRow.classList.toggle("active", State.debugMode);
-      groupMaintenance.appendChild(debugModeRow);
+      groupGeneral.appendChild(notificationRow);
+      settingsContent.appendChild(groupGeneral);
+      const advancedCard = document.createElement("div");
+      advancedCard.className = "fab-collapsible-card";
+      const advancedToggle = document.createElement("button");
+      advancedToggle.type = "button";
+      advancedToggle.className = "fab-collapsible-toggle";
+      const advancedTitle = document.createElement("span");
+      bindText(advancedTitle, "settings_group_advanced");
+      const advancedChevron = document.createElement("span");
+      advancedChevron.textContent = State.settingsAdvancedOpen ? "\u25BE" : "\u25B8";
+      advancedToggle.append(advancedTitle, advancedChevron);
+      advancedToggle.setAttribute("aria-expanded", State.settingsAdvancedOpen ? "true" : "false");
+      const advancedBody = document.createElement("div");
+      advancedBody.className = "fab-collapsible-body";
+      advancedBody.style.display = State.settingsAdvancedOpen ? "block" : "none";
+      advancedBody.appendChild(createSettingRow("setting_auto_resume_429", "autoResumeAfter429"));
+      advancedBody.appendChild(createSettingRow("setting_auto_refresh", "autoRefreshEmptyPage"));
       const resetButton = document.createElement("button");
+      resetButton.type = "button";
       resetButton.className = "fab-danger-btn";
-      resetButton.textContent = Utils.getText("clear_all_data");
+      bindText(resetButton, "clear_all_data");
       resetButton.onclick = Database.resetAllData;
-      groupMaintenance.appendChild(resetButton);
-      settingsContent.appendChild(groupMaintenance);
+      advancedBody.appendChild(resetButton);
+      advancedToggle.onclick = () => {
+        State.settingsAdvancedOpen = !State.settingsAdvancedOpen;
+        advancedBody.style.display = State.settingsAdvancedOpen ? "block" : "none";
+        advancedChevron.textContent = State.settingsAdvancedOpen ? "\u25BE" : "\u25B8";
+        advancedToggle.setAttribute("aria-expanded", State.settingsAdvancedOpen ? "true" : "false");
+      };
+      State.UI.settingsAdvancedToggle = advancedToggle;
+      State.UI.settingsAdvancedBody = advancedBody;
+      advancedCard.append(advancedToggle, advancedBody);
+      settingsContent.appendChild(advancedCard);
       State.UI.tabContents.settings = settingsContent;
       container.appendChild(settingsContent);
       const debugContent = document.createElement("div");
       debugContent.className = "fab-helper-tab-content";
       debugContent.style.display = "none";
       State.UI.debugContent = debugContent;
+      State.UI.tabContents.debug = debugContent;
+      const debugModeCard = document.createElement("div");
+      debugModeCard.className = "fab-card-group";
+      const debugModeRow = document.createElement("div");
+      debugModeRow.className = "fab-setting-row";
+      debugModeRow.title = Utils.getText("setting_debug_tooltip");
+      const debugLabel = document.createElement("span");
+      debugLabel.className = "fab-setting-label";
+      bindText(debugLabel, "debug_mode");
+      debugLabel.style.color = "#ff9f0a";
+      const debugSwitchContainer = document.createElement("label");
+      debugSwitchContainer.className = "fab-toggle-switch";
+      const debugInput = document.createElement("input");
+      debugInput.type = "checkbox";
+      debugInput.checked = Boolean(State.debugMode);
+      debugInput.onchange = (e) => {
+        State.debugMode = e.target.checked;
+        debugModeRow.classList.toggle("active", State.debugMode);
+        Utils.logger(
+          "info",
+          Utils.getText(
+            "log_debug_mode_toggled",
+            State.debugMode ? Utils.getText("status_enabled") : Utils.getText("status_disabled"),
+            State.debugMode ? Utils.getText("log_debug_mode_detail_info") : ""
+          )
+        );
+        GM_setValue("fab_helper_debug_mode", State.debugMode);
+      };
+      State.UI.debugModeCheckbox = debugInput;
+      const debugSlider = document.createElement("span");
+      debugSlider.className = "fab-toggle-slider";
+      debugSwitchContainer.append(debugInput, debugSlider);
+      debugModeRow.append(debugLabel, debugSwitchContainer);
+      debugModeRow.classList.toggle("active", Boolean(State.debugMode));
+      debugModeCard.appendChild(debugModeRow);
+      debugContent.appendChild(debugModeCard);
       const debugHeader = document.createElement("div");
       debugHeader.style.cssText = "display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px;";
       const debugTitle = document.createElement("h4");
-      debugTitle.textContent = Utils.getText("status_history");
+      bindText(debugTitle, "status_history");
       debugTitle.style.cssText = "margin: 0; font-size: 14px; white-space: nowrap;";
       const debugControls = document.createElement("div");
       debugControls.style.cssText = "display: flex; gap: 6px; flex-wrap: wrap;";
       const copyHistoryBtn = document.createElement("button");
-      copyHistoryBtn.textContent = Utils.getText("copy_btn");
+      copyHistoryBtn.type = "button";
+      bindText(copyHistoryBtn, "copy_btn");
       copyHistoryBtn.title = "\u590D\u5236\u8BE6\u7EC6\u5386\u53F2\u8BB0\u5F55";
       copyHistoryBtn.style.cssText = "background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;";
       copyHistoryBtn.onclick = () => {
@@ -9227,7 +9776,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }).catch((err) => Utils.logger("error", Utils.getText("log_copy_failed"), err));
       };
       const clearHistoryBtn = document.createElement("button");
-      clearHistoryBtn.textContent = Utils.getText("clear_btn");
+      clearHistoryBtn.type = "button";
+      bindText(clearHistoryBtn, "clear_btn");
       clearHistoryBtn.title = "\u6E05\u7A7A\u5386\u53F2\u8BB0\u5F55";
       clearHistoryBtn.style.cssText = "background: var(--dark-gray); border: 1px solid var(--border-color); color: var(--text-color-secondary); padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer;";
       clearHistoryBtn.onclick = async () => {
@@ -9246,15 +9796,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       };
       const diagnosisBtn = document.createElement("button");
-      diagnosisBtn.textContent = Utils.getText("page_diagnosis");
-      diagnosisBtn.style.cssText = "background: #2196F3; border: 1px solid #1976D2; color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;";
+      diagnosisBtn.type = "button";
+      bindText(diagnosisBtn, "page_diagnosis");
+      diagnosisBtn.style.cssText = "background: var(--blue); border: 1px solid rgba(255,255,255,0.18); color: white; padding: 4px 8px; border-radius: var(--radius-m); cursor: pointer; white-space: nowrap;";
       diagnosisBtn.onclick = () => {
         try {
           const report = PageDiagnostics.diagnoseDetailPage();
           PageDiagnostics.logDiagnosticReport(report);
-          Utils.logger("info", Utils.getText("page_diagnosis_complete"));
+          Utils.logger("info", Utils.getText("log_diagnosis_complete"));
         } catch (error) {
-          Utils.logger("error", Utils.getText("page_diagnosis_failed", error.message));
+          Utils.logger("error", Utils.getText("log_diagnosis_failed", error.message));
         }
       };
       debugControls.append(copyHistoryBtn, clearHistoryBtn, diagnosisBtn);
@@ -9264,54 +9815,131 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       historyListContainer.className = "fab-debug-history-container";
       State.UI.historyContainer = historyListContainer;
       debugContent.append(debugHeader, historyListContainer);
-      State.UI.tabContents.debug = debugContent;
       container.appendChild(debugContent);
       document.body.appendChild(container);
+      UI5.update();
       return true;
     }, "create"),
     update: /* @__PURE__ */ __name(() => {
       if (!State.UI.container) return;
-      const titleElement = State.UI.container.querySelector('span[style*="font-weight: 600"]');
-      if (titleElement) {
-        titleElement.textContent = Utils.getText("app_title");
+      if (Array.isArray(State.UI.i18nBindings)) {
+        State.UI.i18nBindings.forEach(({ el, key, prefix = "", suffix = "" }) => {
+          if (el) el.textContent = `${prefix}${Utils.getText(key)}${suffix}`;
+        });
       }
-      const tabs = ["dashboard", "settings", "debug"];
-      tabs.forEach((tabName) => {
-        const tabButton = State.UI.tabs[tabName];
-        if (tabButton) {
-          tabButton.textContent = Utils.getText(`tab_${tabName}`);
+      const mode = TaskRunner3?.getWorkMode ? TaskRunner3.getWorkMode() : !State.fastApiScan ? "page" : State.incrementalEarlyStop ? "incremental" : "full";
+      const pageSubMode = TaskRunner3?.getPageSubMode ? TaskRunner3.getPageSubMode() : State.autoScroll ? "auto_scroll" : State.autoAddOnScroll ? "on_scroll" : "visible";
+      const isRunning = Boolean(State.isExecuting || FastScanner.isRunning());
+      const fs = State.fastScanStatus;
+      const expanded = Boolean(State.uiExpanded);
+      State.UI.container.classList.toggle("fab-helper-collapsed", !expanded);
+      if (State.UI.tabsContainer) {
+        State.UI.tabsContainer.style.display = expanded ? "flex" : "none";
+      }
+      const activeTab = State.activeTab || "dashboard";
+      for (const name in State.UI.tabContents) {
+        if (State.UI.tabContents[name]) {
+          State.UI.tabContents[name].style.display = expanded && name === activeTab ? "block" : "none";
         }
-      });
-      if (State.UI.syncBtn) {
-        State.UI.syncBtn.textContent = "\u{1F504} " + Utils.getText("sync");
+      }
+      if (State.UI.collapseBtn) {
+        State.UI.collapseBtn.textContent = expanded ? "\u2212" : "+";
+        State.UI.collapseBtn.title = Utils.getText(expanded ? "tooltip_collapse_ui" : "tooltip_expand_ui");
+        State.UI.collapseBtn.setAttribute("aria-label", State.UI.collapseBtn.title);
+        State.UI.collapseBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+      }
+      if (State.UI.headerLiveBadge) {
+        let badgeText = "";
+        const fastRunning = FastScanner.isRunning() || Boolean(fs?.running);
+        if (!expanded) {
+          if (fastRunning && fs) {
+            if (mode === "full" && fs.totalEstimated > 0) {
+              const pct = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
+              badgeText = `\u26A1 ${pct}%`;
+            } else if (mode === "incremental") {
+              badgeText = `\u{1F195} ${fs.itemsScanned.toLocaleString()}`;
+            } else {
+              badgeText = `\u26A1 ${fs.itemsScanned.toLocaleString()}`;
+            }
+          } else if (isRunning) {
+            badgeText = State.executionTotalTasks > 0 ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}` : State.lang === "zh" ? "\u6267\u884C\u4E2D" : "Running";
+          } else if (mode === "full" && (State.hasFastScanCheckpoint || fs?.phase === "paused")) {
+            badgeText = State.lang === "zh" ? "\u26A1 \u65AD\u70B9" : "\u26A1 Paused";
+          }
+        }
+        State.UI.headerLiveBadge.textContent = badgeText;
+        State.UI.headerLiveBadge.style.display = badgeText ? "inline-flex" : "none";
+      }
+      for (const key in State.UI.modeButtons) {
+        const btn = State.UI.modeButtons[key];
+        if (!btn) continue;
+        const isActive = key === mode;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      }
+      for (const key in State.UI.modePanels) {
+        const panel = State.UI.modePanels[key];
+        if (panel) panel.style.display = key === mode ? "block" : "none";
+      }
+      for (const key in State.UI.pageSubModeButtons) {
+        const btn = State.UI.pageSubModeButtons[key];
+        if (!btn) continue;
+        const isActive = key === pageSubMode;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      }
+      if (State.UI.fastScanStatusDisplay) {
+        const zh2 = State.lang === "zh";
+        if (fs && fs.running && fs.mode !== "incremental") {
+          const totalStr = fs.totalEstimated > 0 ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
+          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
+          State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u26A1 ${fs.activeConcurrency}\u8DEF \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.activeConcurrency}x \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
+        } else if (fs && fs.phase === "paused" && fs.mode !== "incremental") {
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+            "fast_scan_status_paused",
+            fs.itemsScanned.toLocaleString(),
+            fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : "?"
+          );
+        } else if (fs && fs.phase === "completed" && fs.mode !== "incremental") {
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+            "fast_scan_status_completed",
+            fs.claimedDirect,
+            fs.itemsScanned.toLocaleString()
+          );
+        } else if (State.hasFastScanCheckpoint) {
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText("fast_full_checkpoint_ready");
+        } else {
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText("fast_full_idle_hint");
+        }
+      }
+      if (State.UI.incScanStatusDisplay) {
+        if (fs && fs.running && fs.mode === "incremental") {
+          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
+          State.UI.incScanStatusDisplay.textContent = Utils.getText(
+            "fast_inc_running_status",
+            fs.itemsScanned.toLocaleString(),
+            fs.itemsPerSec,
+            fs.claimedDirect
+          ) + rateTag;
+        } else if (fs && fs.phase === "completed" && fs.mode === "incremental") {
+          State.UI.incScanStatusDisplay.textContent = Utils.getText(
+            "fast_inc_completed_status",
+            fs.claimedDirect,
+            fs.itemsScanned.toLocaleString()
+          );
+        } else {
+          State.UI.incScanStatusDisplay.textContent = Utils.getText("fast_inc_idle_hint");
+        }
+      }
+      if (Config.USE_API_PIPELINE && State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = UI5.getApiPositionText();
+      } else if (mode === "page" && State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
       }
       const apiMode = Config.USE_API_PIPELINE;
       const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
       const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
       const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
-      if (apiMode && State.UI.savedPositionDisplay) {
-        State.UI.savedPositionDisplay.textContent = UI5.getApiPositionText();
-      } else if (State.fastApiScan && State.fastScanStatus && State.UI.savedPositionDisplay) {
-        const fs = State.fastScanStatus;
-        const zh2 = State.lang === "zh";
-        if (fs.running) {
-          const totalStr = fs.totalEstimated > 0 ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
-          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
-          State.UI.savedPositionDisplay.textContent = zh2 ? `\u26A1 ${fs.activeConcurrency}\u8DEF \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.activeConcurrency}x \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
-        } else if (fs.phase === "paused") {
-          State.UI.savedPositionDisplay.textContent = Utils.getText(
-            "fast_scan_status_paused",
-            fs.itemsScanned.toLocaleString(),
-            fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : "?"
-          );
-        } else if (fs.phase === "completed") {
-          State.UI.savedPositionDisplay.textContent = Utils.getText(
-            "fast_scan_status_completed",
-            fs.claimedDirect,
-            fs.itemsScanned.toLocaleString()
-          );
-        }
-      }
       const cardCounts = TaskRunner3?.getCardCounts ? TaskRunner3.getCardCounts() : {
         total: document.querySelectorAll(Config.SELECTORS.card).length,
         hidden: State.hiddenThisPageCount,
@@ -9319,32 +9947,30 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       };
       const hiddenCount = cardCounts.hidden;
       const visibleCount = cardCounts.visible;
-      if (State.UI.statusTodo) State.UI.statusTodo.querySelector("span").textContent = todoCount;
-      if (State.UI.statusDone) State.UI.statusDone.querySelector("span").textContent = doneCount;
-      if (State.UI.statusFailed) State.UI.statusFailed.querySelector("span").textContent = failedCount;
-      if (State.UI.statusHidden) State.UI.statusHidden.querySelector("span").textContent = hiddenCount;
-      if (State.UI.statusVisible) State.UI.statusVisible.querySelector("span").textContent = visibleCount;
+      const setStatusCount = /* @__PURE__ */ __name((item, val) => {
+        if (!item) return;
+        const span = item._valueEl || item.querySelector("span");
+        if (span) span.textContent = val;
+      }, "setStatusCount");
+      setStatusCount(State.UI.statusTodo, todoCount);
+      setStatusCount(State.UI.statusDone, doneCount);
+      setStatusCount(State.UI.statusFailed, failedCount);
+      setStatusCount(State.UI.statusHidden, hiddenCount);
+      setStatusCount(State.UI.statusVisible, visibleCount);
+      if (State.UI.statusVisible) State.UI.statusVisible.style.display = mode === "page" ? "" : "none";
+      if (State.UI.statusHidden) State.UI.statusHidden.style.display = mode === "page" ? "" : "none";
       if (State.UI.statusFailed) {
         State.UI.statusFailed.classList.toggle("has-failed", failedCount > 0);
       }
-      const statusLabelUpdates = [
-        { element: State.UI.statusVisible, icon: "\u{1F441}\uFE0F", key: "visible" },
-        { element: State.UI.statusTodo, icon: "\u{1F4E5}", key: "todo" },
-        { element: State.UI.statusDone, icon: "\u2705", key: "added" },
-        { element: State.UI.statusFailed, icon: "\u274C", key: "failed" },
-        { element: State.UI.statusHidden, icon: "\u{1F648}", key: "hidden" }
-      ];
-      statusLabelUpdates.forEach(({ element, icon, key }) => {
-        const labelDiv = element?.querySelector(".fab-helper-status-label");
-        if (labelDiv) {
-          labelDiv.textContent = `${icon} ${Utils.getText(key)}`;
-        }
-      });
       if (State.UI.execBtn) {
-        if (State.isExecuting) {
-          State.UI.execBtn.innerHTML = `<span>${Utils.getText("executing")}</span>`;
+        if (isRunning) {
+          const stopKey = mode === "full" ? "exec_full_stop" : mode === "incremental" ? "exec_inc_stop" : "exec_page_stop";
+          State.UI.execBtn.textContent = Utils.getText(stopKey);
           State.UI.execBtn.classList.add("executing");
-          if (State.executionTotalTasks > 0) {
+          if (mode === "full" && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
+            const percentage = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
+            State.UI.execBtn.title = Utils.getText("tooltip_executing_progress", fs.itemsScanned, fs.totalEstimated, percentage);
+          } else if (State.executionTotalTasks > 0) {
             const progress = State.executionCompletedTasks + State.executionFailedTasks;
             const percentage = Math.round(progress / State.executionTotalTasks * 100);
             State.UI.execBtn.title = Utils.getText("tooltip_executing_progress", progress, State.executionTotalTasks, percentage);
@@ -9352,13 +9978,21 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             State.UI.execBtn.title = Utils.getText("tooltip_executing");
           }
         } else {
-          State.UI.execBtn.textContent = Utils.getText("execute");
+          let startKey = "exec_full_start";
+          if (mode === "full") {
+            startKey = State.hasFastScanCheckpoint || fs?.phase === "paused" ? "exec_full_resume" : "exec_full_start";
+          } else if (mode === "incremental") {
+            startKey = "exec_inc_start";
+          } else {
+            startKey = `exec_page_${pageSubMode}`;
+          }
+          State.UI.execBtn.textContent = Utils.getText(startKey);
           State.UI.execBtn.classList.remove("executing");
           State.UI.execBtn.title = Utils.getText("tooltip_start_tasks");
         }
       }
       if (State.UI.statusKeepAlive) {
-        if (!State.isExecuting) {
+        if (!isRunning) {
           State.UI.statusKeepAlive.style.display = "none";
         } else {
           State.UI.statusKeepAlive.style.display = "";
@@ -9373,9 +10007,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       }
       if (State.UI.progressTrack && State.UI.progressBar) {
-        if (State.fastApiScan && State.fastScanStatus && State.fastScanStatus.running && State.fastScanStatus.totalEstimated > 0) {
+        if (State.fastApiScan && fs && fs.running && fs.totalEstimated > 0) {
           State.UI.progressTrack.style.display = "block";
-          const percentage = Math.min(100, Math.round(State.fastScanStatus.itemsScanned / State.fastScanStatus.totalEstimated * 100));
+          const percentage = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
           State.UI.progressBar.style.width = `${percentage}%`;
         } else if (State.isExecuting && State.executionTotalTasks > 0) {
           State.UI.progressTrack.style.display = "block";
@@ -9387,8 +10021,21 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           State.UI.progressBar.style.width = "0%";
         }
       }
+      if (State.UI.syncBtn) {
+        State.UI.syncBtn.style.display = mode === "page" ? "" : "none";
+      }
       if (State.UI.hideBtn) {
+        State.UI.hideBtn.style.display = mode === "page" ? "" : "none";
         State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
+      }
+      if (State.UI.resetCheckpointBtn) {
+        State.UI.resetCheckpointBtn.style.display = mode === "full" ? "" : "none";
+        State.UI.resetCheckpointBtn.disabled = isRunning || !State.hasFastScanCheckpoint && !State.fastScanStatus;
+      }
+      if (State.UI.retryFailedBtn) {
+        State.UI.retryFailedBtn.textContent = "\u{1F501} " + Utils.getText("retry_failed") + (failedCount > 0 ? ` (${failedCount})` : "");
+        State.UI.retryFailedBtn.disabled = failedCount === 0;
+        State.UI.retryFailedBtn.title = failedCount > 0 ? Utils.getText("retry_failed") + ` (${failedCount})` : Utils.getText("no_failed_tasks");
       }
       if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
         State.UI.maxWorkersInput.value = State.maxWorkers;
@@ -9399,22 +10046,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
         State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
       }
-      if (State.UI.retryFailedBtn) {
-        State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
-        State.UI.retryFailedBtn.title = State.db.failed.length > 0 ? Utils.getText("retry_failed") + ` (${State.db.failed.length})` : Utils.getText("no_failed_tasks");
+      if (State.UI.rememberPositionCheckbox) {
+        State.UI.rememberPositionCheckbox.checked = Boolean(State.rememberScrollPosition);
       }
-      const groupTitles = State.UI.container.querySelectorAll(".fab-card-group-title");
-      const groupKeys = [
-        "settings_group_automation",
-        "settings_group_filter",
-        "settings_group_performance",
-        "settings_group_maintenance"
-      ];
-      groupTitles.forEach((titleEl, idx) => {
-        if (groupKeys[idx]) {
-          titleEl.textContent = Utils.getText(groupKeys[idx]);
-        }
-      });
+      if (State.UI.debugModeCheckbox) {
+        State.UI.debugModeCheckbox.checked = Boolean(State.debugMode);
+      }
     }, "update"),
     removeAllOverlays: /* @__PURE__ */ __name(() => {
       document.querySelectorAll(Config.SELECTORS.card).forEach((card) => {
@@ -9465,13 +10102,23 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
     }, "showToast"),
     switchTab: /* @__PURE__ */ __name((tabName) => {
+      State.activeTab = tabName;
+      if (!State.uiExpanded) {
+        State.uiExpanded = true;
+        Database.saveUiExpandedPref();
+      }
       for (const name in State.UI.tabs) {
-        State.UI.tabs[name].classList.toggle("active", name === tabName);
-        State.UI.tabContents[name].style.display = name === tabName ? "block" : "none";
+        if (State.UI.tabs[name]) {
+          State.UI.tabs[name].classList.toggle("active", name === tabName);
+        }
+        if (State.UI.tabContents[name]) {
+          State.UI.tabContents[name].style.display = name === tabName ? "block" : "none";
+        }
       }
       if (tabName === "debug") {
         UI5.updateDebugTab();
       }
+      UI5.update();
     }, "switchTab"),
     updateDebugTab: /* @__PURE__ */ __name(() => {
       if (!State.UI.historyContainer) return;
@@ -11401,13 +12048,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (State.debugMode) {
             Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
           }
-          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || State.autoAddOnScroll || State.autoScroll || State.isExecuting || State.db.todo.length > 0;
+          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) || State.isExecuting || State.db.todo.length > 0;
           if (!shouldProcessNewCards) return;
           TaskRunner2.checkVisibleCardsStatus().then(() => {
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
+            if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -11437,7 +12084,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           }
         }, 1500);
       }
-    } else if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    } else if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -11495,7 +12142,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
             RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
           }
-        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
           const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
           if (actualHidden > 0) {
             Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
@@ -11753,7 +12400,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               Database.saveExecutingState();
             }
           }
-          const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("\u670D\u52A1\u7AEF") || log2.includes("500") || log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);

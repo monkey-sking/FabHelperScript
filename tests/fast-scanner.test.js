@@ -686,4 +686,169 @@ test('legacy scanAndAddTasks enriches queued tasks with cached offerId and TaskR
     assert.equal(await TaskRunner.setApiScanConcurrency(0), 1);
     assert.equal(await TaskRunner.setIncrementalStopPages(999), 50);
     assert.equal(await TaskRunner.setIncrementalStopPages(0), 1);
+
+    // When fastApiScan is active, DOM scroll scanning must not queue items even if autoAddOnScroll is true
+    const prevFastApi = State.fastApiScan;
+    State.fastApiScan = true;
+    State.db.todo = [];
+    t.after(() => { State.fastApiScan = prevFastApi; });
+    await TaskRunner.scanAndAddTasks([card]);
+    assert.equal(State.db.todo.length, 0);
+});
+
+test('incrementalEarlyStop auto-enforces -firstPublishedAt while keeping existing search filters', async (t) => {
+    setupMemoryDb(t);
+    const seenSearchUrls = [];
+    const baseMs = Date.UTC(2026, 0, 10);
+    const page0 = Array.from({ length: 24 }, (_, i) => mkItem(i, baseMs - i * 1000));
+    const page1 = Array.from({ length: 24 }, (_, i) => mkItem(100 + i, baseMs - (100 + i) * 1000));
+    page0.forEach((item) => Database.addDoneUrl(`https://www.fab.com/listings/${item.uid}`));
+    page1.forEach((item) => Database.addDoneUrl(`https://www.fab.com/listings/${item.uid}`));
+
+    const scanner = createFastScanner({
+        fetchImpl: async (url) => {
+            if (url.includes('aggregate_on=')) {
+                return { status: 200, responseText: JSON.stringify({ aggregations: { listingType: { buckets: { '3d-model': { docCount: 48 } } } } }) };
+            }
+            seenSearchUrls.push(url);
+            if (url.includes('cursor=p1')) {
+                return { status: 200, responseText: JSON.stringify({ results: page1, cursors: { next: 'p2' } }) };
+            }
+            return { status: 200, responseText: JSON.stringify({ results: page0, cursors: { next: 'p1' } }) };
+        },
+        apiClaim: { isAvailable: () => true, claim: async () => ({ result: CLAIM_RESULT.SUCCESS }) },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        getHref: () => 'https://www.fab.com/search?is_free=1&listing_types=3d-model&sort_by=relevance',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const summary = await scanner.start({ concurrency: 4, incrementalEarlyStop: true, incrementalStopPages: 2 });
+    assert.equal(summary.mode, 'incremental');
+    assert.equal(summary.earlyStopped, true);
+    assert.ok(seenSearchUrls.length >= 2);
+    seenSearchUrls.forEach((u) => {
+        const parsed = new URL(u);
+        assert.equal(parsed.searchParams.get('sort_by'), '-firstPublishedAt');
+        assert.equal(parsed.searchParams.get('is_free'), '1');
+        assert.equal(parsed.searchParams.get('listing_types'), '3d-model');
+    });
+});
+
+test('FastScanner fast-fails on Fab 500 Internal error after trying alternate offer and skips worker fallback', async (t) => {
+    setupMemoryDb(t);
+
+    const baseMs = Date.UTC(2026, 0, 10);
+    const itemBroken = mkItem(1, baseMs, { offerId: 'offer-broken-personal' });
+    const itemRecoverable = mkItem(2, baseMs - 1000, { offerId: 'offer-bad-search' });
+
+    const prevEndpoint = ApiClaim.endpoint;
+    const prevFetch = ApiClaim.fetchImpl;
+    const prevCookie = globalThis.document?.cookie;
+    const hadDoc = 'document' in globalThis;
+    if (!hadDoc) globalThis.document = { cookie: 'fab_csrftoken=csrf_123' };
+    else if (globalThis.document) globalThis.document.cookie = 'fab_csrftoken=csrf_123';
+
+    t.after(() => {
+        ApiClaim.endpoint = prevEndpoint;
+        ApiClaim.fetchImpl = prevFetch;
+        if (!hadDoc) delete globalThis.document;
+        else if (globalThis.document) globalThis.document.cookie = prevCookie;
+    });
+
+    const fallbackTasks = [];
+    let recoverAttempts = 0;
+    ApiClaim.configure({
+        endpoint: FAB_CLAIM_ENDPOINT,
+        fetchImpl: async ({ method, url, data }) => {
+            if (method === 'GET') {
+                if (url.includes(itemBroken.uid)) {
+                    return {
+                        status: 200,
+                        responseText: JSON.stringify({
+                            uid: itemBroken.uid,
+                            listingType: '3d-model',
+                            licenses: [
+                                { slug: 'personal', offerId: 'offer-broken-personal', priceTier: { price: 0 } },
+                                { slug: 'professional', offerId: 'offer-broken-pro', priceTier: { price: 0 } }
+                            ]
+                        })
+                    };
+                }
+                return {
+                    status: 200,
+                    responseText: JSON.stringify({
+                        uid: itemRecoverable.uid,
+                        listingType: '3d-model',
+                        licenses: [
+                            { slug: 'professional', offerId: 'offer-good-pro', priceTier: { price: 0 } }
+                        ]
+                    })
+                };
+            }
+            if (url.includes(itemBroken.uid)) {
+                return { status: 500, responseText: '{"detail":"Internal error"}' };
+            }
+            if (url.includes(itemRecoverable.uid)) {
+                recoverAttempts += 1;
+                if (String(data).includes('offer-good-pro')) {
+                    return { status: 204, responseText: '' };
+                }
+                return { status: 500, responseText: '{"detail":"Internal error"}' };
+            }
+            return { status: 204, responseText: '' };
+        }
+    });
+
+    const scanner = createFastScanner({
+        fetchImpl: async (url) => {
+            if (url.includes('aggregate_on=')) {
+                return { status: 200, responseText: JSON.stringify({ aggregations: { listingType: { buckets: { '3d-model': { docCount: 2 } } } } }) };
+            }
+            if (url.includes('/i/users/me/listings-states')) {
+                return {
+                    status: 200,
+                    responseText: JSON.stringify([
+                        { uid: itemBroken.uid, acquired: false },
+                        { uid: itemRecoverable.uid, acquired: false }
+                    ])
+                };
+            }
+            return { status: 200, responseText: JSON.stringify({ results: [itemBroken, itemRecoverable], cursors: { next: null } }) };
+        },
+        apiClaim: ApiClaim,
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        enqueueWorkerFallback: async (task) => { fallbackTasks.push(task); },
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const summary = await scanner.start({ concurrency: 1 });
+    assert.equal(fallbackTasks.length, 0, '500 Internal error must not spawn worker tabs');
+    assert.equal(recoverAttempts, 2, 'Search offer 500 retries alternate offer from detail JSON once');
+    assert.equal(summary.claimedDirect, 1);
+    assert.equal(summary.failed, 1);
+    assert.equal(State.db.todo.length, 0);
+    assert.equal(State.db.failed.length, 1);
+    assert.match(State.db.failed[0].failureReason, /500 Internal error/);
+    assert.equal(Database.getMaxRetry('Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库'), 0);
+    assert.equal(Database.getMaxRetry('Fab 服务端返回错误提示，无法入库: Ooops an error occurred'), 0);
 });

@@ -220,3 +220,28 @@ test('接口不可用（取不到 CSRF）时降级到 UI 判定，不抛错', as
     assert.equal(result.success, true);
     assert.ok(result.logs.some(l => l.includes('Falling back to UI-based check')), result.logs.join(' | '));
 });
+
+test('点击添加后若弹出 Fab 错误提示 Toast，立即快败而不空等 60 秒超时', async () => {
+    const addButton = makeNode({ text: 'Add to My Library' });
+    const promoBanner = makeNode({
+        classes: ['fabkit-Toast-root'],
+        text: 'Fab Friday Mega Sale is now live!'
+    });
+    const errorToast = makeNode({
+        classes: ['fabkit-Toast-root'],
+        text: 'Ooops an error occurred, please try again later!',
+        hidden: true
+    });
+    addButton.onClick = () => { errorToast.hidden = false; };
+
+    const h = makeHarness({ nodes: [makeNode({ tag: 'main' }), addButton, promoBanner, errorToast] });
+    const promise = acquireOnDetailPage(TASK, h.opts);
+    await h.flush();
+    await h.tick(1);
+    const result = await promise;
+
+    assert.equal(result.success, false);
+    assert.equal(result.serverError, true);
+    assert.equal(h.intervalCount(), 0);
+    assert.ok(result.logs.some(l => l.includes('Fab 服务端返回错误提示，无法入库')), result.logs.join(' | '));
+});
