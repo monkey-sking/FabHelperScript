@@ -20,6 +20,9 @@ export const Config = {
     USE_API_CLAIM: true,
     API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
+    DEFAULT_API_SCAN_CONCURRENCY: 4,
+    MAX_API_SCAN_CONCURRENCY: 6,
+    DEFAULT_INCREMENTAL_STOP_PAGES: 5,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
@@ -76,6 +79,11 @@ export const Config = {
         HIDE_PAID: 'fab_hidePaid_v8', // 隐藏所有付费商品
         BLOCK_RESOURCES: 'fab_block_resources_v1', // 禁用大资源设置键
         MAX_WORKERS: 'fab_max_workers_v1', // 并发工作标签页数量设置键
+        FAST_API_SCAN: 'fab_fast_api_scan_v1', // 极速 API 分片扫描开关
+        API_SCAN_CONCURRENCY: 'fab_api_scan_concurrency_v1', // API 扫描并发路数 (1-6)
+        INCREMENTAL_EARLY_STOP: 'fab_incremental_early_stop_v1', // 增量早停开关 (-firstPublishedAt)
+        INCREMENTAL_STOP_PAGES: 'fab_incremental_stop_pages_v1', // 连续全已拥有页数早停阈值
+        FAST_SCAN_CHECKPOINT: 'fab_fast_scan_checkpoint_v1', // 极速扫描断点进度
         // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
         // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
         EVENT_LOG: 'fab_event_log_v1',

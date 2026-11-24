@@ -136,6 +136,7 @@ import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.j
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
 import { createIframeAcquire } from './modules/iframe-claim.js';
+import { FastScanner } from './modules/fast-scanner.js';
 
 // API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下仅引入，不执行任何逻辑。
 import { Pipeline } from './modules/pipeline.js';
@@ -946,7 +947,7 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+                    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -977,8 +978,16 @@ async function runDomDependentPart() {
         }
     }
 
-    // 初始加载时，如果开启了自动添加或自动滚动，则扫描一次现有商品
-    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    // 初始加载时，若处于极速 API 扫描执行态则恢复极速扫描，否则走旧版初始扫描
+    if (State.fastApiScan && State.isExecuting && !isApiPipelineActive()) {
+        if (!State.manualVerificationPending && State.appStatus === 'NORMAL' && State.isAuthenticated) {
+            setTimeout(() => {
+                if (State.fastApiScan && State.isExecuting && !State.manualVerificationPending && State.appStatus === 'NORMAL') {
+                    TaskRunner.startFastScan().catch(error => Utils.logger('error', `[FastScanner] 自动恢复失败: ${error.message}`));
+                }
+            }, 1500);
+        }
+    } else if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1066,7 +1075,7 @@ async function runDomDependentPart() {
                         Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
                 }
             } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
-                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive()) {
+                && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
                 // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
                 // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
                 // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
@@ -1148,7 +1157,7 @@ export async function main() {
         await Database.saveTodo();
 
         // 仅在非自动滚动加任务模式，或者已经到达全站末尾时，才弹出“所有任务已处理完成”
-        if ((!State.autoAddOnScroll && !State.autoScroll) || State.isEndOfSearchList) {
+        if ((!State.autoAddOnScroll && !State.autoScroll) || State.isEndOfSearchList || State.fastApiScan) {
             Utils.logger('info', '所有任务已完成。');
             if (UI && typeof UI.showToast === 'function') {
                 UI.showToast(Utils.getText('toast_all_tasks_completed'), true);
@@ -1225,7 +1234,7 @@ export async function main() {
     KeepAlive.setTick(async () => {
         // 任何原因导致不再执行(手动停止/队列完成/登录失效等)时，心跳自我清理，
         // 一处兜底覆盖所有停止路径，避免 Worker/RTC 资源泄漏。
-        if (State.isWorkerTab || !State.isExecuting) {
+        if (State.isWorkerTab || (!State.isExecuting && !FastScanner.isRunning())) {
             KeepAlive.stop();
             return;
         }
@@ -1256,6 +1265,11 @@ export async function main() {
 
     // 加载持久化限速状态、检测休眠区间、启动活跃心跳（统一由 RateLimitManager.initStatus 处理）
     await RateLimitManager.initStatus();
+
+    // 保留未拦截的原生 fetch 给 FastScanner，避免被 PagePatcher/XHR 拦截器改写游标或误判列表末尾
+    if (!State.nativeFetch && typeof window !== 'undefined' && typeof window.fetch === 'function') {
+        State.nativeFetch = window.fetch.bind(window);
+    }
 
     // Initialize request interceptors
     setupRequestInterceptors();
@@ -1332,7 +1346,7 @@ export async function main() {
     }
 
     State.domIntervals.push(setInterval(() => {
-        if (State.appStatus === 'NORMAL' && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
+        if (State.appStatus === 'NORMAL' && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
             const inactiveTime = Date.now() - lastNetworkActivityTime;
             if (inactiveTime > 30000) {
                 Utils.logger('warn', `⚠️ 检测到在任务执行状态下已持续 ${Math.floor(inactiveTime / 1000)} 秒无网络活动，即将强制刷新页面以恢复任务...`);
@@ -1455,7 +1469,11 @@ export function registerWorkerDoneListener(workerId) {
             }
 
             if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-                if (State.autoScroll) {
+                if (FastScanner.isRunning()) {
+                    // FastScanner 仍在扫尾或扫描，完成后统一收尾
+                } else if (State.fastApiScan) {
+                    await TaskRunner.stopExecutionAndSettle();
+                } else if (State.autoScroll) {
                     TaskRunner.attemptAutoScroll();
                 } else {
                     await TaskRunner.stopExecutionAndSettle();
@@ -1473,6 +1491,10 @@ export function registerWorkerDoneListener(workerId) {
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
+    Database.flushSaveDone();
+    if (FastScanner.isRunning()) {
+        FastScanner.stop();
+    }
     // 清理 DOM 定时器与跨标签页值监听，避免页面卸载后残留定时器/回调泄漏
     if (State.domIntervals && State.domIntervals.length) {
         State.domIntervals.forEach(id => { try { clearInterval(id); } catch (e) { } });

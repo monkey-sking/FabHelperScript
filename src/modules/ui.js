@@ -18,6 +18,7 @@ import { KeepAlive } from './keepalive.js';
 import { EventLog } from './event-log.js';
 import { VerificationNotifications } from './verification-notifications.js';
 import { PagePatcher } from './page-patcher.js';
+import { FastScanner } from './fast-scanner.js';
 
 // Forward declaration for TaskRunner (will be set via dependency injection)
 let TaskRunner = null;
@@ -703,9 +704,15 @@ export const UI = {
         clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
         clearPositionBtn.onclick = async () => {
             const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
-            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+            let hasFastCheckpoint = false;
+            try {
+                hasFastCheckpoint = Boolean(await GM_getValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null));
+            } catch (_e) { /* ignore */ }
+            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor || hasFastCheckpoint || State.fastScanStatus) {
                 PagePatcher.lockCursorSaving();
                 if (confirm(Utils.getText('confirm_reset_position'))) {
+                    await FastScanner.clearCheckpoint();
+                    State.fastScanStatus = null;
                     await PagePatcher.clearSavedPosition('User UI Reset');
 
                     // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
@@ -761,9 +768,10 @@ export const UI = {
             return card;
         };
 
-        const createSettingRow = (labelText, stateKey) => {
+        const createSettingRow = (labelText, stateKey, tooltip) => {
             const row = document.createElement('div');
             row.className = 'fab-setting-row';
+            if (tooltip) row.title = tooltip;
 
             const label = document.createElement('span');
             label.className = 'fab-setting-label';
@@ -774,14 +782,18 @@ export const UI = {
 
             const input = document.createElement('input');
             input.type = 'checkbox';
-            input.checked = State[stateKey];
-            input.onchange = (e) => {
+            input.checked = Boolean(State[stateKey]);
+            input.onchange = async (e) => {
                 e.stopPropagation();
                 e.preventDefault();
 
                 if (!TaskRunner) return;
 
-                if (stateKey === 'autoAddOnScroll') {
+                if (stateKey === 'fastApiScan') {
+                    await TaskRunner.toggleFastApiScan();
+                } else if (stateKey === 'incrementalEarlyStop') {
+                    await TaskRunner.toggleIncrementalEarlyStop();
+                } else if (stateKey === 'autoAddOnScroll') {
                     TaskRunner.toggleAutoAdd();
                 } else if (stateKey === 'autoScroll') {
                     TaskRunner.toggleAutoScroll();
@@ -798,7 +810,7 @@ export const UI = {
                 } else if (stateKey === 'blockLargeResources') {
                     TaskRunner.toggleBlockResources();
                 }
-                e.target.checked = State[stateKey];
+                e.target.checked = Boolean(State[stateKey]);
             };
 
             const slider = document.createElement('span');
@@ -810,7 +822,8 @@ export const UI = {
             return row;
         };
 
-        const createNumberSettingRow = (labelText, stateKey, min, max, tooltip) => {
+        const createNumberSettingRow = (labelText, stateKey, min, max, tooltip, options = {}) => {
+            const { onChange, uiRefKey, defaultValue } = options;
             const row = document.createElement('div');
             row.className = 'fab-setting-row';
             if (tooltip) row.title = tooltip;
@@ -831,7 +844,7 @@ export const UI = {
             valueInput.type = 'number';
             valueInput.min = String(min);
             valueInput.max = String(max);
-            valueInput.value = State[stateKey] ?? 7;
+            valueInput.value = State[stateKey] ?? defaultValue ?? min;
             valueInput.className = 'fab-stepper-input';
 
             const plusBtn = document.createElement('button');
@@ -840,10 +853,11 @@ export const UI = {
             plusBtn.textContent = '+';
 
             const applyVal = async (val) => {
-                const target = Math.max(min, Math.min(max, val));
+                const parsed = Math.floor(Number(val));
+                const target = Math.max(min, Math.min(max, Number.isFinite(parsed) ? parsed : min));
                 valueInput.value = target;
-                if (TaskRunner && TaskRunner.setMaxWorkers) {
-                    await TaskRunner.setMaxWorkers(target);
+                if (typeof onChange === 'function') {
+                    await onChange(target);
                 } else {
                     State[stateKey] = target;
                 }
@@ -866,7 +880,9 @@ export const UI = {
                 applyVal(Number(e.target.value) || min);
             };
 
-            State.UI.maxWorkersInput = valueInput;
+            if (uiRefKey) {
+                State.UI[uiRefKey] = valueInput;
+            }
 
             controlContainer.append(minusBtn, valueInput, plusBtn);
             row.append(label, controlContainer);
@@ -875,6 +891,32 @@ export const UI = {
 
         // Group 1: 自动化
         const groupAutomation = createCardGroup(Utils.getText('settings_group_automation'));
+        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_fast_api_scan'), 'fastApiScan', Utils.getText('setting_fast_api_scan_tooltip')));
+        groupAutomation.appendChild(createNumberSettingRow(
+            Utils.getText('setting_api_scan_concurrency'),
+            'apiScanConcurrency',
+            1,
+            Config.MAX_API_SCAN_CONCURRENCY || 6,
+            Utils.getText('setting_api_scan_concurrency_tooltip'),
+            {
+                onChange: (v) => TaskRunner && TaskRunner.setApiScanConcurrency(v),
+                uiRefKey: 'apiScanConcurrencyInput',
+                defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
+            }
+        ));
+        groupAutomation.appendChild(createSettingRow(Utils.getText('setting_incremental_early_stop'), 'incrementalEarlyStop', Utils.getText('setting_incremental_early_stop_tooltip')));
+        groupAutomation.appendChild(createNumberSettingRow(
+            Utils.getText('setting_incremental_stop_pages'),
+            'incrementalStopPages',
+            1,
+            50,
+            Utils.getText('setting_incremental_stop_pages_tooltip'),
+            {
+                onChange: (v) => TaskRunner && TaskRunner.setIncrementalStopPages(v),
+                uiRefKey: 'incrementalStopPagesInput',
+                defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
+            }
+        ));
         groupAutomation.appendChild(createSettingRow(Utils.getText('setting_auto_add_scroll'), 'autoAddOnScroll'));
         groupAutomation.appendChild(createSettingRow(Utils.getText('setting_auto_scroll'), 'autoScroll'));
         groupAutomation.appendChild(createSettingRow(Utils.getText('setting_remember_position'), 'rememberScrollPosition'));
@@ -893,7 +935,12 @@ export const UI = {
             'maxWorkers',
             1,
             15,
-            Utils.getText('setting_max_workers_tooltip')
+            Utils.getText('setting_max_workers_tooltip'),
+            {
+                onChange: (v) => TaskRunner && TaskRunner.setMaxWorkers(v),
+                uiRefKey: 'maxWorkersInput',
+                defaultValue: 7
+            }
         );
         groupPerformance.appendChild(maxWorkersSetting);
         groupPerformance.appendChild(createSettingRow(Utils.getText('setting_block_large_resources'), 'blockLargeResources'));
@@ -1100,6 +1147,30 @@ export const UI = {
 
         if (apiMode && State.UI.savedPositionDisplay) {
             State.UI.savedPositionDisplay.textContent = UI.getApiPositionText();
+        } else if (State.fastApiScan && State.fastScanStatus && State.UI.savedPositionDisplay) {
+            const fs = State.fastScanStatus;
+            const zh = State.lang === 'zh';
+            if (fs.running) {
+                const totalStr = fs.totalEstimated > 0
+                    ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
+                    : '';
+                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
+                State.UI.savedPositionDisplay.textContent = zh
+                    ? `⚡ ${fs.activeConcurrency}路 · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 新领 ${fs.claimedDirect}${rateTag}`
+                    : `⚡ ${fs.activeConcurrency}x · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
+            } else if (fs.phase === 'paused') {
+                State.UI.savedPositionDisplay.textContent = Utils.getText(
+                    'fast_scan_status_paused',
+                    fs.itemsScanned.toLocaleString(),
+                    fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : '?'
+                );
+            } else if (fs.phase === 'completed') {
+                State.UI.savedPositionDisplay.textContent = Utils.getText(
+                    'fast_scan_status_completed',
+                    fs.claimedDirect,
+                    fs.itemsScanned.toLocaleString()
+                );
+            }
         }
 
         const cardCounts = TaskRunner?.getCardCounts
@@ -1174,7 +1245,11 @@ export const UI = {
         }
 
         if (State.UI.progressTrack && State.UI.progressBar) {
-            if (State.isExecuting && State.executionTotalTasks > 0) {
+            if (State.fastApiScan && State.fastScanStatus && State.fastScanStatus.running && State.fastScanStatus.totalEstimated > 0) {
+                State.UI.progressTrack.style.display = 'block';
+                const percentage = Math.min(100, Math.round((State.fastScanStatus.itemsScanned / State.fastScanStatus.totalEstimated) * 100));
+                State.UI.progressBar.style.width = `${percentage}%`;
+            } else if (State.isExecuting && State.executionTotalTasks > 0) {
                 State.UI.progressTrack.style.display = 'block';
                 const progress = State.executionCompletedTasks + State.executionFailedTasks;
                 const percentage = Math.min(100, Math.round((progress / State.executionTotalTasks) * 100));
@@ -1191,6 +1266,12 @@ export const UI = {
 
         if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
             State.UI.maxWorkersInput.value = State.maxWorkers;
+        }
+        if (State.UI.apiScanConcurrencyInput && document.activeElement !== State.UI.apiScanConcurrencyInput) {
+            State.UI.apiScanConcurrencyInput.value = State.apiScanConcurrency;
+        }
+        if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
+            State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
         }
 
         if (State.UI.retryFailedBtn) {

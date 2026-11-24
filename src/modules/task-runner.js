@@ -23,6 +23,24 @@ import { ApiClaim, CLAIM_RESULT } from './claim-strategy.js';
 import { acquireBundle, isBundleTask } from './bundle-claim.js';
 import { isCaptchaPresent } from './captcha-detection.js';
 import { VerificationNotifications } from './verification-notifications.js';
+import { FastScanner } from './fast-scanner.js';
+
+const enrichTaskFromCache = (uid, baseTask) => {
+    const cachedListing = uid ? DataCache.listings.get(uid) : null;
+    if (!cachedListing) return baseTask;
+    const cachedOfferId = cachedListing?.startingPrice?.offerId
+        || cachedListing?.startingPrice?.offer_id
+        || cachedListing?.offerId
+        || '';
+    const cachedListingType = typeof cachedListing?.listingType === 'string'
+        ? cachedListing.listingType
+        : '';
+    return {
+        ...baseTask,
+        ...(cachedOfferId ? { offerId: cachedOfferId } : {}),
+        ...(cachedListingType ? { listingType: cachedListingType } : {})
+    };
+};
 
 // 捕获真实 setTimeout 的值（注意：必须是「值」而非箭头闭包，否则调用时会重新解析到
 // 被测试 mock 的 globalThis.setTimeout）。自动滚动的分步延时需要真实定时器：
@@ -297,6 +315,70 @@ export const TaskRunner = {
     },
 
     // Toggle execution state
+    enqueueWorkerFallback: async (task) => {
+        if (!task || !task.uid) return false;
+        if (!Array.isArray(State.db.todo)) State.db.todo = [];
+        const cleanUrl = Database.normalizeListingUrl(task.url);
+        const alreadyTodo = State.db.todo.some(
+            t => t.uid === task.uid || Database.normalizeListingUrl(t.url) === cleanUrl
+        );
+        const alreadyRunning = Object.values(State.runningWorkers || {}).some(w => w?.task?.uid === task.uid);
+        if (alreadyTodo || alreadyRunning) return false;
+        State.db.todo.push(task);
+        await Database.saveTodo();
+        if (State.isExecuting && TaskRunner.hasDispatchSlot()) {
+            TaskRunner.executeBatch();
+        }
+        if (UI) UI.update();
+        return true;
+    },
+
+    startFastScan: async () => {
+        if (State.apiPipelineActive) return null;
+        if (typeof InstanceManager !== 'undefined' && InstanceManager.activate) {
+            InstanceManager.activate();
+        }
+        FastScanner.configure({
+            onUiUpdate: () => { if (UI) UI.update(); },
+            onToast: (msg, persist) => { if (UI && typeof UI.showToast === 'function') UI.showToast(msg, persist); },
+            onAuthFailure: () => {
+                Utils.notifyAuthFailure();
+                TaskRunner.stop();
+            },
+            enqueueWorkerFallback: (task) => TaskRunner.enqueueWorkerFallback(task)
+        });
+        KeepAlive.start();
+        State.isExecuting = true;
+        Database.saveExecutingState();
+        if (UI) UI.update();
+
+        try {
+            const summary = await FastScanner.start();
+            if (!State.isExecuting) return summary;
+            if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+                if (TaskRunner.hasDispatchSlot() && State.db.todo.length > 0) {
+                    TaskRunner.executeBatch();
+                }
+            } else {
+                State.isExecuting = false;
+                Database.saveExecutingState();
+                KeepAlive.stop();
+                await Database.flushSaveDone();
+            }
+            if (UI) UI.update();
+            return summary;
+        } catch (error) {
+            if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+                State.isExecuting = false;
+                Database.saveExecutingState();
+                KeepAlive.stop();
+            }
+            await Database.flushSaveDone();
+            if (UI) UI.update();
+            throw error;
+        }
+    },
+
     toggleExecution: async () => {
         if (!Utils.checkAuthentication()) return;
 
@@ -313,9 +395,14 @@ export const TaskRunner = {
             return;
         }
 
-        if (State.isExecuting) {
+        if (State.isExecuting || FastScanner.isRunning()) {
+            if (FastScanner.isRunning()) {
+                await FastScanner.stop();
+            }
             State.isExecuting = false;
             Database.saveExecutingState();
+            await Database.flushSaveDone();
+            KeepAlive.stop();
             State.runningWorkers = {};
             State.activeWorkers = 0;
             State.executionTotalTasks = 0;
@@ -341,6 +428,10 @@ export const TaskRunner = {
         if (!sessionOk) {
             Utils.notifyAuthFailure();
             return;
+        }
+
+        if (State.fastApiScan) {
+            return await TaskRunner.startFastScan();
         }
 
         if (State.autoAddOnScroll || State.autoScroll) {
@@ -392,7 +483,8 @@ export const TaskRunner = {
             const name = card.querySelector('a[aria-label*="创作的"]')?.textContent.trim() ||
                 card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() ||
                 Utils.getText('untitled');
-            newlyAddedList.push({ name, url, type: 'detail', uid: url.split('/').pop() });
+            const uid = url.split('/').pop();
+            newlyAddedList.push(enrichTaskFromCache(uid, { name, url, type: 'detail', uid }));
         });
 
         if (skippedCount > 0) {
@@ -613,7 +705,60 @@ export const TaskRunner = {
         return safeVal;
     },
 
+    toggleFastApiScan: async () => {
+        if (State.isExecuting || FastScanner.isRunning()) {
+            if (FastScanner.isRunning()) {
+                await FastScanner.stop();
+            }
+            TaskRunner.stop();
+        }
+        State.fastApiScan = !State.fastApiScan;
+        await Database.saveFastApiScanPref();
+        Utils.logger(
+            'info',
+            Utils.getText('log_fast_api_scan_toggle', State.fastApiScan ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
+        );
+        if (UI) UI.update();
+    },
+
+    setApiScanConcurrency: async (count) => {
+        const parsed = parseInt(count, 10);
+        const maxConc = Config.MAX_API_SCAN_CONCURRENCY || 6;
+        const defConc = Config.DEFAULT_API_SCAN_CONCURRENCY || 4;
+        const safeVal = Math.max(1, Math.min(maxConc, Number.isFinite(parsed) ? parsed : defConc));
+        State.apiScanConcurrency = safeVal;
+        await Database.saveApiScanConcurrencyPref();
+        FastScanner.setConcurrency(safeVal);
+        Utils.logger('info', Utils.getText('log_api_scan_concurrency_changed', safeVal));
+        if (UI) UI.update();
+        return safeVal;
+    },
+
+    toggleIncrementalEarlyStop: async () => {
+        State.incrementalEarlyStop = !State.incrementalEarlyStop;
+        await Database.saveIncrementalEarlyStopPref();
+        Utils.logger(
+            'info',
+            Utils.getText('log_incremental_early_stop_toggle', State.incrementalEarlyStop ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
+        );
+        if (UI) UI.update();
+    },
+
+    setIncrementalStopPages: async (pages) => {
+        const parsed = parseInt(pages, 10);
+        const defPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5;
+        const safeVal = Math.max(1, Math.min(50, Number.isFinite(parsed) ? parsed : defPages));
+        State.incrementalStopPages = safeVal;
+        await Database.saveIncrementalStopPagesPref();
+        Utils.logger('info', Utils.getText('log_incremental_stop_pages_changed', safeVal));
+        if (UI) UI.update();
+        return safeVal;
+    },
+
     stop: () => {
+        if (FastScanner.isRunning()) {
+            FastScanner.stop();
+        }
         if (!State.isExecuting) return;
         State.isExecuting = false;
         Database.saveExecutingState();
@@ -916,6 +1061,15 @@ export const TaskRunner = {
 
         try {
             if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+                if (FastScanner.isRunning()) {
+                    State.isDispatchingTasks = false;
+                    return;
+                }
+                if (State.fastApiScan) {
+                    await TaskRunner.stopExecutionAndSettle();
+                    State.isDispatchingTasks = false;
+                    return;
+                }
                 if (State.autoScroll) {
                     State.isDispatchingTasks = false;
                     TaskRunner.attemptAutoScroll();
@@ -1705,6 +1859,7 @@ export const TaskRunner = {
     },
 
     scanAndAddTasks: async (cards) => {
+        if (FastScanner.isRunning()) return;
         if (!State.autoAddOnScroll && !State.autoScroll) return;
 
         // 未登录或 session 已过期时，卡片上拿不到价格信息，isFreeCard 会把所有商品
@@ -1853,7 +2008,7 @@ export const TaskRunner = {
                 const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
                     card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() ||
                     Utils.getText('untitled');
-                newlyAddedList.push({ name, url, type: 'detail', uid });
+                newlyAddedList.push(enrichTaskFromCache(uid, { name, url, type: 'detail', uid }));
             });
 
             if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
@@ -2118,6 +2273,7 @@ export const TaskRunner = {
         if (State.manualVerificationPending) return;
         // 限速恢复期间不继续滚动触发分页；恢复后的定时检查会接续推进。
         if (State.appStatus === 'RATE_LIMITED') return;
+        if (FastScanner.isRunning()) return;
         if (State.apiPipelineActive) {
             Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧自动滚动请求。');
             return;

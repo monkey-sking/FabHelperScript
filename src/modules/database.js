@@ -29,6 +29,11 @@ export const Database = {
     // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
     // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
     _doneRef: null,
+    // 单独记录最近一次已就地 normalize 过的 State.db.done 引用，确保外部直接赋值未规范化数组后
+    // 首次写入时能做一次归一化，同时避免 5 万条数据下每次 addDoneUrl 重复 O(N) 重建。
+    _normalizedRef: null,
+    _saveDoneTimer: null,
+    _saveDoneDirty: false,
 
     // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
     _safeGet: async (key, def) => {
@@ -77,18 +82,56 @@ export const Database = {
             normalized.some((url, index) => url !== State.db.done[index]);
         State.db.done = normalized;
         Database.doneSet = new Set(normalized);
+        Database._doneRef = State.db.done;
+        Database._normalizedRef = State.db.done;
         return changed;
     },
 
     addDoneUrl: (url) => {
-        const normalizedChanged = Database.normalizeDoneList();
+        const normalizedChanged = Database._normalizedRef !== State.db.done ? Database.normalizeDoneList() : false;
         const cleanUrl = Database.normalizeListingUrl(url);
         if (!cleanUrl) return normalizedChanged;
-        if (Database.isDone(cleanUrl)) return normalizedChanged;
+        if (Database.doneSet.has(cleanUrl)) return normalizedChanged;
         State.db.done.push(cleanUrl);
         Database.doneSet.add(cleanUrl);
-        Database.seedDoneOwnedStatusCache();
+        const uid = Database.getListingUid(cleanUrl);
+        if (uid) {
+            DataCache.saveOwnedStatus([{
+                uid,
+                acquired: true,
+                lastUpdatedAt: new Date().toISOString()
+            }]);
+        }
         return true;
+    },
+
+    addDoneUrls: (urls) => {
+        const normalizedChanged = Database._normalizedRef !== State.db.done ? Database.normalizeDoneList() : false;
+        if (!Array.isArray(urls) || urls.length === 0) {
+            return { added: 0, changed: normalizedChanged };
+        }
+        const nowIso = new Date().toISOString();
+        const cacheUpdates = [];
+        let added = 0;
+        for (const rawUrl of urls) {
+            const cleanUrl = Database.normalizeListingUrl(rawUrl);
+            if (!cleanUrl || Database.doneSet.has(cleanUrl)) continue;
+            State.db.done.push(cleanUrl);
+            Database.doneSet.add(cleanUrl);
+            added += 1;
+            const uid = Database.getListingUid(cleanUrl);
+            if (uid) {
+                cacheUpdates.push({
+                    uid,
+                    acquired: true,
+                    lastUpdatedAt: nowIso
+                });
+            }
+        }
+        if (cacheUpdates.length > 0) {
+            DataCache.saveOwnedStatus(cacheUpdates);
+        }
+        return { added, changed: normalizedChanged || added > 0 };
     },
 
     load: async () => {
@@ -106,6 +149,30 @@ export const Database = {
         State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
         State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
         State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS); // 加载并发工作标签页设置
+        State.fastApiScan = Boolean(await Database._safeGet(Config.DB_KEYS.FAST_API_SCAN, true));
+        const loadedScanConc = Number(await Database._safeGet(
+            Config.DB_KEYS.API_SCAN_CONCURRENCY,
+            Config.DEFAULT_API_SCAN_CONCURRENCY
+        ));
+        State.apiScanConcurrency = Math.max(
+            1,
+            Math.min(
+                Config.MAX_API_SCAN_CONCURRENCY,
+                Number.isFinite(loadedScanConc) ? Math.floor(loadedScanConc) : Config.DEFAULT_API_SCAN_CONCURRENCY
+            )
+        );
+        State.incrementalEarlyStop = Boolean(await Database._safeGet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, false));
+        const loadedStopPages = Number(await Database._safeGet(
+            Config.DB_KEYS.INCREMENTAL_STOP_PAGES,
+            Config.DEFAULT_INCREMENTAL_STOP_PAGES
+        ));
+        State.incrementalStopPages = Math.max(
+            1,
+            Math.min(
+                50,
+                Number.isFinite(loadedStopPages) ? Math.floor(loadedStopPages) : Config.DEFAULT_INCREMENTAL_STOP_PAGES
+            )
+        );
         State.debugMode = await Database._safeGet('fab_helper_debug_mode', false); // 加载调试模式设置
         State.currentSortOption = await Database._safeGet('fab_helper_sort_option', 'title_desc'); // 加载排序设置
         State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
@@ -123,6 +190,22 @@ export const Database = {
     // 添加保存待办列表的方法
     saveTodo: () => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo),
     saveDone: () => Database._safeSet(Config.DB_KEYS.DONE, State.db.done),
+    scheduleSaveDone: (delayMs = 2000) => {
+        Database._saveDoneDirty = true;
+        if (Database._saveDoneTimer) return;
+        Database._saveDoneTimer = setTimeout(() => {
+            Database.flushSaveDone();
+        }, delayMs);
+    },
+    flushSaveDone: async () => {
+        if (Database._saveDoneTimer) {
+            clearTimeout(Database._saveDoneTimer);
+            Database._saveDoneTimer = null;
+        }
+        if (!Database._saveDoneDirty) return;
+        Database._saveDoneDirty = false;
+        return Database.saveDone();
+    },
     saveFailed: () => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed),
     saveHidePref: () => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved),
     saveAutoAddPref: () => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), // Save the setting
@@ -134,10 +217,19 @@ export const Database = {
     saveHidePaidPref: () => Database._safeSet(Config.DB_KEYS.HIDE_PAID, State.hidePaid), // 保存隐藏所有付费设置
     saveBlockResourcesPref: () => Database._safeSet(Config.DB_KEYS.BLOCK_RESOURCES, State.blockLargeResources), // 保存禁用大资源设置
     saveMaxWorkersPref: () => Database._safeSet(Config.DB_KEYS.MAX_WORKERS, State.maxWorkers), // 保存并发工作标签页设置
+    saveFastApiScanPref: () => Database._safeSet(Config.DB_KEYS.FAST_API_SCAN, State.fastApiScan),
+    saveApiScanConcurrencyPref: () => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency),
+    saveIncrementalEarlyStopPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop),
+    saveIncrementalStopPagesPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages),
     saveExecutingState: () => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
     resetAllData: async () => {
         if (window.confirm(Utils.getText('confirm_clear_data'))) {
+            if (Database._saveDoneTimer) {
+                clearTimeout(Database._saveDoneTimer);
+                Database._saveDoneTimer = null;
+            }
+            Database._saveDoneDirty = false;
             // 清除待办列表
             await GM_deleteValue(Config.DB_KEYS.TODO);
             await GM_deleteValue(Config.DB_KEYS.DONE);
@@ -150,14 +242,26 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
             await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS); // 清除并发工作标签页设置
+            await GM_deleteValue(Config.DB_KEYS.FAST_API_SCAN);
+            await GM_deleteValue(Config.DB_KEYS.API_SCAN_CONCURRENCY);
+            await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_EARLY_STOP);
+            await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_STOP_PAGES);
+            await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
             // 直接走模块实现：它会同时清掉内存游标、GM 键和 sessionStorage 恢复标记。
             await PagePatcher.clearSavedPosition('Reset all data');
             State.db.todo = [];
             State.db.done = [];
             Database.doneSet = new Set();
+            Database._doneRef = State.db.done;
+            Database._normalizedRef = State.db.done;
             State.db.failed = [];
             State.blockLargeResources = true;
             State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
+            State.fastApiScan = true;
+            State.apiScanConcurrency = Config.DEFAULT_API_SCAN_CONCURRENCY;
+            State.incrementalEarlyStop = false;
+            State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
+            State.fastScanStatus = null;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {
                 UI.removeAllOverlays();
@@ -188,7 +292,7 @@ export const Database = {
         const cleanUrl = Database.normalizeListingUrl(url);
         return State.db.todo.some(task => Database.normalizeListingUrl(task.url) === cleanUrl);
     },
-    markAsDone: async (task) => {
+    markAsDone: async (task, { deferSave = false } = {}) => {
         if (!task || !task.uid) {
             Utils.logger('error', '标记任务完成失败，收到无效任务:', JSON.stringify(task));
             return;
@@ -223,7 +327,11 @@ export const Database = {
         }
 
         if (changed) {
-            await Database.saveDone();
+            if (deferSave) {
+                Database.scheduleSaveDone();
+            } else {
+                await Database.saveDone();
+            }
         }
     },
     // 根据失败原因判定自动重试上限：

@@ -322,6 +322,7 @@ export const PagePatcher = {
             await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
             await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
             await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
+            await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
         } catch (e) {
             Utils.logger('warn', '[Cursor] Failed to delete stored cursor:', e);
         }

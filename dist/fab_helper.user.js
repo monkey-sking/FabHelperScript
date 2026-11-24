@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261113-0838
+// @version      3.5.27-20261124-1452
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -230,6 +230,14 @@
     setting_auto_refresh: "Auto Refresh Empty Page",
     setting_auto_add_scroll: "Auto Add on Scroll",
     setting_auto_scroll: "Auto Scroll Page",
+    setting_fast_api_scan: "Fast API Scan",
+    setting_fast_api_scan_tooltip: "Bypass DOM scrolling using parallel API shards & direct main-tab claiming",
+    setting_api_scan_concurrency: "API Concurrency",
+    setting_api_scan_concurrency_tooltip: "Parallel API scan shards (1-6, default 4)",
+    setting_incremental_early_stop: "Incremental Early Stop",
+    setting_incremental_early_stop_tooltip: "Active on -firstPublishedAt: stop after N consecutive all-owned pages",
+    setting_incremental_stop_pages: "Stop Threshold (Pages)",
+    setting_incremental_stop_pages_tooltip: "Consecutive all-owned pages before stopping incremental scan (1-50, default 5)",
     setting_remember_position: "Remember Position",
     setting_auto_resume_429: "Auto resume after 429 errors",
     setting_hide_discounted: "Filter Discounted Items",
@@ -239,6 +247,14 @@
     setting_max_workers_tooltip: "Concurrent worker tabs (default 7)",
     setting_verification_notify: "Verification Alert",
     log_max_workers_changed: "Concurrent worker tabs set to: %s",
+    log_fast_api_scan_toggle: "Fast API Scan {0}.",
+    log_api_scan_concurrency_changed: "API scan concurrency set to: {0}",
+    log_incremental_early_stop_toggle: "Incremental early stop {0}.",
+    log_incremental_stop_pages_changed: "Incremental stop threshold set to: {0} pages",
+    toast_fast_scan_completed: "\u26A1 Fast scan complete! Scanned {1} items, newly claimed {0}.",
+    toast_fast_scan_early_stop: "\u26A1 Incremental scan complete! Consecutive owned pages reached (scanned {1}, claimed {0}).",
+    fast_scan_status_paused: "\u26A1 Fast scan paused ({0}/{1} \xB7 checkpoint saved)",
+    fast_scan_status_completed: "\u26A1 Scan done \xB7 {1} scanned \xB7 {0} claimed",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
     status_enabled: "enabled",
@@ -610,6 +626,14 @@
     setting_auto_add_scroll: "\u6EDA\u52A8\u81EA\u52A8\u5165\u5E93",
     setting_auto_resume_429: "429\u540E\u81EA\u52A8\u6062\u590D\u5E76\u7EE7\u7EED",
     setting_auto_scroll: "\u81EA\u52A8\u5411\u4E0B\u7FFB\u9875",
+    setting_fast_api_scan: "\u6781\u901F API \u626B\u63CF",
+    setting_fast_api_scan_tooltip: "\u8DF3\u8FC7 DOM \u6EDA\u52A8\uFF0C\u76F4\u63A5\u5E76\u53D1\u62C9\u53D6\u63A5\u53E3\u4E0E\u4E3B\u6807\u7B7E\u76F4\u9886\uFF08\u63D0\u901F 20x+\uFF09",
+    setting_api_scan_concurrency: "API \u5E76\u53D1\u8DEF\u6570",
+    setting_api_scan_concurrency_tooltip: "API \u5206\u7247\u5E76\u884C\u641C\u7D22\u8DEF\u6570\uFF081-6\uFF0C\u9ED8\u8BA4 4\uFF09",
+    setting_incremental_early_stop: "\u8FFD\u65B0\u65E9\u505C",
+    setting_incremental_early_stop_tooltip: "\u4EC5\u5728\u300C\u6700\u65B0\u53D1\u5E03\u5012\u5E8F\u300D\u4E0B\u751F\u6548\uFF1A\u8FDE\u7EED N \u9875\u5168\u5DF2\u62E5\u6709\u5373\u505C\u6B62",
+    setting_incremental_stop_pages: "\u65E9\u505C\u9608\u503C(\u9875)",
+    setting_incremental_stop_pages_tooltip: "\u8FDE\u7EED\u591A\u5C11\u9875\u5168\u5DF2\u62E5\u6709\u540E\u505C\u6B62\u8FFD\u65B0\u626B\u63CF\uFF081-50\uFF0C\u9ED8\u8BA4 5\uFF09",
     setting_remember_position: "\u8BB0\u5FC6\u6D4F\u89C8\u4F4D\u7F6E",
     setting_hide_discounted: "\u8FC7\u6EE4\u6253\u6298\u5546\u54C1",
     setting_hide_paid: "\u8FC7\u6EE4\u4ED8\u8D39\u5546\u54C1",
@@ -618,6 +642,14 @@
     setting_max_workers_tooltip: "\u5E76\u53D1 worker \u6807\u7B7E\u9875\u6570\u91CF\uFF08\u9ED8\u8BA4 7\uFF09",
     setting_verification_notify: "\u4EBA\u673A\u9A8C\u8BC1\u901A\u77E5",
     log_max_workers_changed: "\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u9875\u6570\u91CF\u5DF2\u8BBE\u7F6E\u4E3A: %s",
+    log_fast_api_scan_toggle: "\u6781\u901F API \u626B\u63CF\u5DF2{0}\u3002",
+    log_api_scan_concurrency_changed: "API \u626B\u63CF\u5E76\u53D1\u8DEF\u6570\u5DF2\u8BBE\u7F6E\u4E3A: {0}",
+    log_incremental_early_stop_toggle: "\u5012\u5E8F\u8FFD\u65B0\u65E9\u505C\u5DF2{0}\u3002",
+    log_incremental_stop_pages_changed: "\u8FFD\u65B0\u65E9\u505C\u8FDE\u7EED\u5DF2\u62E5\u6709\u9875\u6570\u9608\u503C\u5DF2\u8BBE\u7F6E\u4E3A: {0}",
+    toast_fast_scan_completed: "\u26A1 \u6781\u901F\u626B\u63CF\u5B8C\u6210\uFF01\u5171\u626B\u63CF {1} \u4E2A\u5546\u54C1\uFF0C\u672C\u6B21\u65B0\u9886 {0} \u4E2A\u3002",
+    toast_fast_scan_early_stop: "\u26A1 \u589E\u91CF\u8FFD\u65B0\u5B8C\u6210\uFF01\u8FDE\u7EED\u591A\u9875\u5747\u5DF2\u5165\u5E93\uFF08\u626B\u63CF {1} \u4E2A\uFF0C\u65B0\u9886 {0} \u4E2A\uFF09\u3002",
+    fast_scan_status_paused: "\u26A1 \u6781\u901F\u626B\u63CF\u5DF2\u6682\u505C ({0}/{1} \xB7 \u65AD\u70B9\u5DF2\u5B58)",
+    fast_scan_status_completed: "\u26A1 \u626B\u63CF\u5B8C\u6210 \xB7 \u5171 {1} \u4EF6 \xB7 \u65B0\u9886 {0}",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
     status_enabled: "\u5F00\u542F",
@@ -803,6 +835,9 @@
     USE_API_CLAIM: true,
     API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
+    DEFAULT_API_SCAN_CONCURRENCY: 4,
+    MAX_API_SCAN_CONCURRENCY: 6,
+    DEFAULT_INCREMENTAL_STOP_PAGES: 5,
     // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
     // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
     // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
@@ -877,6 +912,16 @@
       // 禁用大资源设置键
       MAX_WORKERS: "fab_max_workers_v1",
       // 并发工作标签页数量设置键
+      FAST_API_SCAN: "fab_fast_api_scan_v1",
+      // 极速 API 分片扫描开关
+      API_SCAN_CONCURRENCY: "fab_api_scan_concurrency_v1",
+      // API 扫描并发路数 (1-6)
+      INCREMENTAL_EARLY_STOP: "fab_incremental_early_stop_v1",
+      // 增量早停开关 (-firstPublishedAt)
+      INCREMENTAL_STOP_PAGES: "fab_incremental_stop_pages_v1",
+      // 连续全已拥有页数早停阈值
+      FAST_SCAN_CHECKPOINT: "fab_fast_scan_checkpoint_v1",
+      // 极速扫描断点进度
       // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
       // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
       EVENT_LOG: "fab_event_log_v1"
@@ -1013,6 +1058,19 @@
     // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
     maxWorkers: 7,
     // 并发工作标签页数量（默认7）
+    // 极速 API 分片扫描：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
+    // 真实环境由 Database.load() 读取并默认开启。
+    fastApiScan: false,
+    apiScanConcurrency: 4,
+    // API 极速扫描并发路数（1-6）
+    incrementalEarlyStop: false,
+    // 倒序追新模式下连续 N 页全已拥有自动停止
+    incrementalStopPages: 5,
+    // 增量早停阈值（页）
+    fastScanStatus: null,
+    // 极速扫描实时遥测状态
+    nativeFetch: null,
+    // 页面未拦截前的原生 window.fetch 引用
     debugMode: false,
     // 是否启用调试模式
     lang: "zh",
@@ -1149,6 +1207,8 @@
       hideBtn: null,
       retryFailedBtn: null,
       maxWorkersInput: null,
+      apiScanConcurrencyInput: null,
+      incrementalStopPagesInput: null,
       progressTrack: null,
       progressBar: null,
       statusKeepAlive: null,
@@ -3045,6 +3105,7 @@
         await GM_deleteValue(Config.DB_KEYS.LAST_CURSOR);
         await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
         await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
+        await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
       } catch (e) {
         Utils.logger("warn", "[Cursor] Failed to delete stored cursor:", e);
       }
@@ -3401,6 +3462,11 @@
     // State.db.done 的数组引用，用于 O(1) 检测「直接重赋值」（测试/直接赋值加载），
     // 命中即从数组重建 doneSet；生产路径只经 normalizeDoneList/addDoneUrl 写入，无需重建。
     _doneRef: null,
+    // 单独记录最近一次已就地 normalize 过的 State.db.done 引用，确保外部直接赋值未规范化数组后
+    // 首次写入时能做一次归一化，同时避免 5 万条数据下每次 addDoneUrl 重复 O(N) 重建。
+    _normalizedRef: null,
+    _saveDoneTimer: null,
+    _saveDoneDirty: false,
     // 存储读写兜底：单个 GM_* 失败（如存储写满/序列化失败）不应中断主流程。
     _safeGet: /* @__PURE__ */ __name(async (key, def) => {
       try {
@@ -3443,18 +3509,55 @@
       const changed = normalized.length !== State.db.done.length || normalized.some((url, index) => url !== State.db.done[index]);
       State.db.done = normalized;
       Database.doneSet = new Set(normalized);
+      Database._doneRef = State.db.done;
+      Database._normalizedRef = State.db.done;
       return changed;
     }, "normalizeDoneList"),
     addDoneUrl: /* @__PURE__ */ __name((url) => {
-      const normalizedChanged = Database.normalizeDoneList();
+      const normalizedChanged = Database._normalizedRef !== State.db.done ? Database.normalizeDoneList() : false;
       const cleanUrl = Database.normalizeListingUrl(url);
       if (!cleanUrl) return normalizedChanged;
-      if (Database.isDone(cleanUrl)) return normalizedChanged;
+      if (Database.doneSet.has(cleanUrl)) return normalizedChanged;
       State.db.done.push(cleanUrl);
       Database.doneSet.add(cleanUrl);
-      Database.seedDoneOwnedStatusCache();
+      const uid = Database.getListingUid(cleanUrl);
+      if (uid) {
+        DataCache.saveOwnedStatus([{
+          uid,
+          acquired: true,
+          lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        }]);
+      }
       return true;
     }, "addDoneUrl"),
+    addDoneUrls: /* @__PURE__ */ __name((urls) => {
+      const normalizedChanged = Database._normalizedRef !== State.db.done ? Database.normalizeDoneList() : false;
+      if (!Array.isArray(urls) || urls.length === 0) {
+        return { added: 0, changed: normalizedChanged };
+      }
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const cacheUpdates = [];
+      let added = 0;
+      for (const rawUrl of urls) {
+        const cleanUrl = Database.normalizeListingUrl(rawUrl);
+        if (!cleanUrl || Database.doneSet.has(cleanUrl)) continue;
+        State.db.done.push(cleanUrl);
+        Database.doneSet.add(cleanUrl);
+        added += 1;
+        const uid = Database.getListingUid(cleanUrl);
+        if (uid) {
+          cacheUpdates.push({
+            uid,
+            acquired: true,
+            lastUpdatedAt: nowIso
+          });
+        }
+      }
+      if (cacheUpdates.length > 0) {
+        DataCache.saveOwnedStatus(cacheUpdates);
+      }
+      return { added, changed: normalizedChanged || added > 0 };
+    }, "addDoneUrls"),
     load: /* @__PURE__ */ __name(async () => {
       const rawTodo = await Database._safeGet(Config.DB_KEYS.TODO, []);
       State.db.todo = Array.isArray(rawTodo) ? rawTodo.filter((t) => t && Database.getListingUid(t.url)) : [];
@@ -3469,6 +3572,30 @@
       State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
       State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
       State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS);
+      State.fastApiScan = Boolean(await Database._safeGet(Config.DB_KEYS.FAST_API_SCAN, true));
+      const loadedScanConc = Number(await Database._safeGet(
+        Config.DB_KEYS.API_SCAN_CONCURRENCY,
+        Config.DEFAULT_API_SCAN_CONCURRENCY
+      ));
+      State.apiScanConcurrency = Math.max(
+        1,
+        Math.min(
+          Config.MAX_API_SCAN_CONCURRENCY,
+          Number.isFinite(loadedScanConc) ? Math.floor(loadedScanConc) : Config.DEFAULT_API_SCAN_CONCURRENCY
+        )
+      );
+      State.incrementalEarlyStop = Boolean(await Database._safeGet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, false));
+      const loadedStopPages = Number(await Database._safeGet(
+        Config.DB_KEYS.INCREMENTAL_STOP_PAGES,
+        Config.DEFAULT_INCREMENTAL_STOP_PAGES
+      ));
+      State.incrementalStopPages = Math.max(
+        1,
+        Math.min(
+          50,
+          Number.isFinite(loadedStopPages) ? Math.floor(loadedStopPages) : Config.DEFAULT_INCREMENTAL_STOP_PAGES
+        )
+      );
       State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
       State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
       State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
@@ -3482,6 +3609,22 @@
     // 添加保存待办列表的方法
     saveTodo: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.TODO, State.db.todo), "saveTodo"),
     saveDone: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.DONE, State.db.done), "saveDone"),
+    scheduleSaveDone: /* @__PURE__ */ __name((delayMs = 2e3) => {
+      Database._saveDoneDirty = true;
+      if (Database._saveDoneTimer) return;
+      Database._saveDoneTimer = setTimeout(() => {
+        Database.flushSaveDone();
+      }, delayMs);
+    }, "scheduleSaveDone"),
+    flushSaveDone: /* @__PURE__ */ __name(async () => {
+      if (Database._saveDoneTimer) {
+        clearTimeout(Database._saveDoneTimer);
+        Database._saveDoneTimer = null;
+      }
+      if (!Database._saveDoneDirty) return;
+      Database._saveDoneDirty = false;
+      return Database.saveDone();
+    }, "flushSaveDone"),
     saveFailed: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAILED, State.db.failed), "saveFailed"),
     saveHidePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.HIDE, State.hideSaved), "saveHidePref"),
     saveAutoAddPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_ADD, State.autoAddOnScroll), "saveAutoAddPref"),
@@ -3500,10 +3643,19 @@
     // 保存禁用大资源设置
     saveMaxWorkersPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.MAX_WORKERS, State.maxWorkers), "saveMaxWorkersPref"),
     // 保存并发工作标签页设置
+    saveFastApiScanPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAST_API_SCAN, State.fastApiScan), "saveFastApiScanPref"),
+    saveApiScanConcurrencyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency), "saveApiScanConcurrencyPref"),
+    saveIncrementalEarlyStopPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop), "saveIncrementalEarlyStopPref"),
+    saveIncrementalStopPagesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages), "saveIncrementalStopPagesPref"),
     saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
     resetAllData: /* @__PURE__ */ __name(async () => {
       if (window.confirm(Utils.getText("confirm_clear_data"))) {
+        if (Database._saveDoneTimer) {
+          clearTimeout(Database._saveDoneTimer);
+          Database._saveDoneTimer = null;
+        }
+        Database._saveDoneDirty = false;
         await GM_deleteValue(Config.DB_KEYS.TODO);
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
@@ -3513,13 +3665,25 @@
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
         await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
         await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS);
+        await GM_deleteValue(Config.DB_KEYS.FAST_API_SCAN);
+        await GM_deleteValue(Config.DB_KEYS.API_SCAN_CONCURRENCY);
+        await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_EARLY_STOP);
+        await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_STOP_PAGES);
+        await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
         await PagePatcher.clearSavedPosition("Reset all data");
         State.db.todo = [];
         State.db.done = [];
         Database.doneSet = /* @__PURE__ */ new Set();
+        Database._doneRef = State.db.done;
+        Database._normalizedRef = State.db.done;
         State.db.failed = [];
         State.blockLargeResources = true;
         State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
+        State.fastApiScan = true;
+        State.apiScanConcurrency = Config.DEFAULT_API_SCAN_CONCURRENCY;
+        State.incrementalEarlyStop = false;
+        State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
+        State.fastScanStatus = null;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI3) {
           UI3.removeAllOverlays();
@@ -3546,7 +3710,7 @@
       const cleanUrl = Database.normalizeListingUrl(url);
       return State.db.todo.some((task) => Database.normalizeListingUrl(task.url) === cleanUrl);
     }, "isTodo"),
-    markAsDone: /* @__PURE__ */ __name(async (task) => {
+    markAsDone: /* @__PURE__ */ __name(async (task, { deferSave = false } = {}) => {
       if (!task || !task.uid) {
         Utils.logger("error", "\u6807\u8BB0\u4EFB\u52A1\u5B8C\u6210\u5931\u8D25\uFF0C\u6536\u5230\u65E0\u6548\u4EFB\u52A1:", JSON.stringify(task));
         return;
@@ -3570,7 +3734,11 @@
         changed = true;
       }
       if (changed) {
-        await Database.saveDone();
+        if (deferSave) {
+          Database.scheduleSaveDone();
+        } else {
+          await Database.saveDone();
+        }
       }
     }, "markAsDone"),
     // 根据失败原因判定自动重试上限：
@@ -4729,7 +4897,1438 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     }, "show")
   };
 
+  // src/modules/listing-source.js
+  var SEARCH_PATH = "/i/listings/search";
+  var _SearchError = class _SearchError extends Error {
+    constructor(message, { status = 0, retryAfterMs = null, url = "" } = {}) {
+      super(message);
+      this.name = "SearchError";
+      this.status = status;
+      this.retryAfterMs = retryAfterMs;
+      this.url = url;
+    }
+  };
+  __name(_SearchError, "SearchError");
+  var SearchError = _SearchError;
+  var FREE_POLICY = {
+    // 只认服务端 isFree 标记。会漏掉 Personal/Professional 的 $0 商品。
+    FLAG_ONLY: "flag_only",
+    // 只认有效价格为 0。
+    PRICE_ONLY: "price_only",
+    // 并集：两者任一命中即视为可领取。与现行 DOM 判据行为最接近，默认采用。
+    FLAG_OR_PRICE: "flag_or_price"
+  };
+  var ListingSource = {
+    deps: {
+      // (url, { headers }) => Promise<{ status, responseText } | Response>
+      fetchImpl: null,
+      // 覆盖 URL 构造（测试或特殊页面用）
+      buildUrl: null,
+      // 覆盖基础查询参数，默认取下方 baseParams
+      getBaseParams: null,
+      // 覆盖请求头（默认带 cookie + csrf）
+      getHeaders: null
+    },
+    // 与抓包原文一致。若用户改了页面筛选条件，上层应覆盖 getBaseParams。
+    // 默认按首次发布时间倒序（-firstPublishedAt），与用户在页面上的实际筛选一致：
+    // 新发布的免费商品排在最前，便于增量领取（连续遇到已拥有即可停止）。
+    baseParams: { is_free: "1", sort_by: "-firstPublishedAt" },
+    freePolicy: FREE_POLICY.FLAG_OR_PRICE,
+    // 观测计数
+    stats: { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 },
+    configure: /* @__PURE__ */ __name(({ fetchImpl, buildUrl, getBaseParams, getHeaders, baseParams, freePolicy } = {}) => {
+      if (typeof fetchImpl === "function" || fetchImpl === null) ListingSource.deps.fetchImpl = fetchImpl;
+      if (typeof buildUrl === "function" || buildUrl === null) ListingSource.deps.buildUrl = buildUrl;
+      if (typeof getBaseParams === "function" || getBaseParams === null) ListingSource.deps.getBaseParams = getBaseParams;
+      if (typeof getHeaders === "function" || getHeaders === null) ListingSource.deps.getHeaders = getHeaders;
+      if (baseParams && typeof baseParams === "object") ListingSource.baseParams = { ...baseParams };
+      if (freePolicy) ListingSource.freePolicy = freePolicy;
+    }, "configure"),
+    reset: /* @__PURE__ */ __name(() => {
+      ListingSource.stats = { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 };
+    }, "reset"),
+    /**
+     * 折算实际应付价格：有折扣价时以折扣价为准。
+     * 返回 null 表示「价格未知」——未知绝不等于免费。
+     */
+    effectivePrice: /* @__PURE__ */ __name((item) => {
+      if (!item) return null;
+      if (Number.isFinite(item.discountedPrice)) return item.discountedPrice;
+      if (Number.isFinite(item.price)) return item.price;
+      return null;
+    }, "effectivePrice"),
+    /**
+     * 是否可领取（免费）。判据随策略而变，见 FREE_POLICY 注释。
+     * 注意：本方法只回答「是否免费」，不回答「是否已入库」——后者由事件日志负责。
+     */
+    isClaimable: /* @__PURE__ */ __name((item) => {
+      if (!item || !item.uid) return false;
+      const price = ListingSource.effectivePrice(item);
+      switch (ListingSource.freePolicy) {
+        case FREE_POLICY.FLAG_ONLY:
+          return item.isFreeFlag === true;
+        case FREE_POLICY.PRICE_ONLY:
+          return price === 0;
+        case FREE_POLICY.FLAG_OR_PRICE:
+        default:
+          return item.isFreeFlag === true || price === 0 || item.effectiveDiscountPercentage === 100;
+      }
+    }, "isClaimable"),
+    /**
+     * 单个商品 JSON → 规范化任务对象。
+     * 字段缺失一律降级为空值而不是抛错：Fab 的响应允许大量字段为 null，
+     * 一条脏数据不该让整页作废。
+     */
+    normalize: /* @__PURE__ */ __name((raw) => {
+      if (!raw || typeof raw !== "object" || !raw.uid) return null;
+      const uid = String(raw.uid).trim().toLowerCase();
+      if (!uid) return null;
+      const sp = raw.startingPrice && typeof raw.startingPrice === "object" ? raw.startingPrice : {};
+      const numOrNull = /* @__PURE__ */ __name((v) => typeof v === "number" && Number.isFinite(v) ? v : null, "numOrNull");
+      const licenses = Array.isArray(raw.licenses) ? raw.licenses : [];
+      const offerIds = [];
+      const pushOffer = /* @__PURE__ */ __name((v) => {
+        if (typeof v === "string" && v && !offerIds.includes(v)) offerIds.push(v);
+      }, "pushOffer");
+      pushOffer(sp.offerId);
+      pushOffer(raw.offerId);
+      licenses.forEach((l) => pushOffer(l && l.offerId));
+      return {
+        uid,
+        url: `https://www.fab.com/${raw.listingType === "bundle" ? "bundles" : "listings"}/${uid}`,
+        name: typeof raw.title === "string" ? raw.title : "",
+        offerId: offerIds[0] || "",
+        offerIds,
+        price: numOrNull(sp.price),
+        discountedPrice: numOrNull(sp.discountedPrice),
+        effectiveDiscountPercentage: numOrNull(sp.effectiveDiscountPercentage),
+        currency: typeof sp.currencyCode === "string" ? sp.currencyCode : "",
+        isFreeFlag: raw.isFree === true,
+        isDiscounted: raw.isDiscounted === true,
+        licenses: licenses.map((l) => ({
+          name: l && typeof l.name === "string" ? l.name : "",
+          isCc0: !!(l && l.isCc0),
+          uid: l && l.uid ? String(l.uid) : ""
+        })),
+        listingType: typeof raw.listingType === "string" ? raw.listingType : "",
+        seller: raw.user && typeof raw.user.sellerName === "string" ? raw.user.sellerName : ""
+      };
+    }, "normalize"),
+    /**
+     * 从完整 URL 中抠出 cursor 参数。
+     * 响应里 cursors.next 与顶层 next 同时存在，优先用前者；
+     * 但当 cursors 缺失时，这是唯一的翻页依据。
+     */
+    _cursorFromUrl: /* @__PURE__ */ __name((url) => {
+      try {
+        const u = new URL(String(url), "https://www.fab.com");
+        return u.searchParams.get("cursor");
+      } catch (e) {
+        return null;
+      }
+    }, "_cursorFromUrl"),
+    /**
+     * 解析一页响应。
+     * 「是否到底」的唯一权威信号是 cursors.next === null —— 与 index.js 中
+     * State.isEndOfSearchList 的判定口径保持一致，不靠本地猜。
+     */
+    parsePage: /* @__PURE__ */ __name((payload) => {
+      if (!payload || typeof payload !== "object") {
+        ListingSource.stats.malformedPages += 1;
+        return { items: [], nextCursor: null, isEnd: true, malformed: true };
+      }
+      const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload.results) ? payload.results : [];
+      const items = rawItems.map(ListingSource.normalize).filter(Boolean);
+      ListingSource.stats.itemsSeen += items.length;
+      let nextCursor = null;
+      if (payload.cursors && payload.cursors.next != null) {
+        nextCursor = String(payload.cursors.next);
+      } else if (payload.next != null) {
+        nextCursor = ListingSource._cursorFromUrl(payload.next);
+      }
+      return {
+        items,
+        nextCursor: nextCursor || null,
+        isEnd: !nextCursor,
+        malformed: false
+      };
+    }, "parsePage"),
+    /** 构造搜索 URL。cursor 为 null 时即为首页。 */
+    buildUrl: /* @__PURE__ */ __name((cursor = null) => {
+      const getBase = ListingSource.deps.getBaseParams;
+      const base = typeof getBase === "function" ? getBase() || {} : ListingSource.baseParams || {};
+      const params = new URLSearchParams();
+      Object.keys(base).forEach((k) => {
+        const v = base[k];
+        if (v !== null && v !== void 0 && v !== "") params.set(k, String(v));
+      });
+      if (cursor) params.set("cursor", cursor);
+      return `https://www.fab.com${SEARCH_PATH}?${params.toString()}`;
+    }, "buildUrl"),
+    _defaultHeaders: /* @__PURE__ */ __name(() => {
+      const headers = { "x-requested-with": "XMLHttpRequest", "accept": "application/json" };
+      try {
+        const token = Utils.getCookie("fab_csrftoken");
+        if (token) headers["x-csrftoken"] = token;
+      } catch (e) {
+      }
+      return headers;
+    }, "_defaultHeaders"),
+    /** Retry-After 优先取调用方给的毫秒数，其次解析响应头（秒 → 毫秒）。 */
+    _parseRetryAfter: /* @__PURE__ */ __name((res) => {
+      if (!res) return null;
+      if (Number.isFinite(res.retryAfterMs)) return res.retryAfterMs;
+      const match = String(res.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
+      return match ? Number(match[1]) * 1e3 : null;
+    }, "_parseRetryAfter"),
+    /**
+     * 拉取一页。失败抛 SearchError，由上层决定退避还是终止。
+     * 这里刻意不做重试 —— 重试节奏属于流水线与限速器的职责，
+     * 在每一层都加退避会导致实际等待时间成倍叠加。
+     */
+    fetchPage: /* @__PURE__ */ __name(async (cursor = null) => {
+      const fetchImpl = ListingSource.deps.fetchImpl;
+      if (typeof fetchImpl !== "function") {
+        throw new SearchError("\u672A\u914D\u7F6E fetchImpl", { status: 0 });
+      }
+      const buildUrl = ListingSource.deps.buildUrl || ListingSource.buildUrl;
+      const url = buildUrl(cursor);
+      const getHeaders = ListingSource.deps.getHeaders || ListingSource._defaultHeaders;
+      const res = await fetchImpl(url, { headers: getHeaders() });
+      if (!res) throw new SearchError("\u641C\u7D22\u63A5\u53E3\u65E0\u54CD\u5E94", { status: 0, url });
+      const status = Number(res.status) || 0;
+      if (status === 429) {
+        throw new SearchError("\u641C\u7D22\u63A5\u53E3\u9650\u901F", {
+          status,
+          retryAfterMs: ListingSource._parseRetryAfter(res),
+          url
+        });
+      }
+      if (status < 200 || status >= 300) {
+        throw new SearchError(`\u641C\u7D22\u63A5\u53E3\u8FD4\u56DE ${status}`, { status, url });
+      }
+      let text = res.responseText;
+      if (text === void 0 && typeof res.text === "function") text = await res.text();
+      let payload = null;
+      try {
+        payload = JSON.parse(text == null ? "" : text);
+      } catch (e) {
+        throw new SearchError("\u641C\u7D22\u54CD\u5E94\u4E0D\u662F\u5408\u6CD5 JSON", { status, url });
+      }
+      const page = ListingSource.parsePage(payload);
+      ListingSource.stats.pagesFetched += 1;
+      return { ...page, url };
+    }, "fetchPage")
+  };
+
+  // src/modules/fast-scanner.js
+  var DAY_MS = 24 * 60 * 60 * 1e3;
+  var SEARCH_PATH2 = "/i/listings/search";
+  var STATES_PATH = "/i/users/me/listings-states";
+  var STATES_MAX_IDS = 24;
+  var CHECKPOINT_INTERVAL_MS = 5e3;
+  var OVERLAP_MS = 1e3;
+  var defaultSleep = /* @__PURE__ */ __name((ms) => new Promise((resolve) => setTimeout(resolve, ms)), "defaultSleep");
+  var encodeBase64 = /* @__PURE__ */ __name((text) => {
+    if (typeof btoa === "function") return btoa(text);
+    if (typeof Buffer !== "undefined") return Buffer.from(text, "utf8").toString("base64");
+    throw new Error("Base64 encoder unavailable");
+  }, "encodeBase64");
+  var decodeBase64 = /* @__PURE__ */ __name((encoded) => {
+    if (typeof atob === "function") return atob(encoded);
+    if (typeof Buffer !== "undefined") return Buffer.from(encoded, "base64").toString("utf8");
+    throw new Error("Base64 decoder unavailable");
+  }, "decodeBase64");
+  var formatPlus0000Iso = /* @__PURE__ */ __name((ms) => {
+    const iso = new Date(ms).toISOString();
+    return iso.replace(/Z$/, "+00:00");
+  }, "formatPlus0000Iso");
+  var parseHeaderValue = /* @__PURE__ */ __name((res, name) => {
+    if (!res) return null;
+    if (typeof res.getResponseHeader === "function") {
+      const val = res.getResponseHeader(name);
+      if (val != null && val !== "") return val;
+    }
+    if (res.headers && typeof res.headers.get === "function") {
+      const val = res.headers.get(name);
+      if (val != null && val !== "") return val;
+    }
+    const rawHeaders = String(res.responseHeaders || "");
+    if (!rawHeaders) return null;
+    const escaped = String(name).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const match = rawHeaders.match(new RegExp(`^${escaped}:\\s*(.+)$`, "im"));
+    return match ? match[1].trim() : null;
+  }, "parseHeaderValue");
+  var parseRetryAfterMs2 = /* @__PURE__ */ __name((res) => {
+    if (!res) return null;
+    if (Number.isFinite(res.retryAfterMs)) return res.retryAfterMs;
+    const raw = parseHeaderValue(res, "retry-after");
+    if (raw == null || raw === "") return null;
+    const sec = Number(raw);
+    if (Number.isFinite(sec) && sec >= 0) return sec * 1e3;
+    const ts = Date.parse(raw);
+    if (Number.isFinite(ts)) return Math.max(0, ts - Date.now());
+    return null;
+  }, "parseRetryAfterMs");
+  var extractSearchParamsFromUrl = /* @__PURE__ */ __name((href) => {
+    const ignored = /* @__PURE__ */ new Set(["lang", "cursor", "workerId", "fab_claim_frame"]);
+    const params = {};
+    try {
+      const u = new URL(
+        href || "https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt",
+        "https://www.fab.com"
+      );
+      const keys = [];
+      for (const k of u.searchParams.keys()) {
+        if (ignored.has(k) || keys.includes(k)) continue;
+        keys.push(k);
+      }
+      for (const k of keys) {
+        const values = u.searchParams.getAll(k).filter((v) => v !== "");
+        if (values.length === 0) continue;
+        params[k] = values.length > 1 ? values : values[0];
+      }
+    } catch (_e) {
+    }
+    if (Object.keys(params).length === 0) {
+      return { is_free: "1", sort_by: "-firstPublishedAt" };
+    }
+    return params;
+  }, "extractSearchParamsFromUrl");
+  var buildQueryKey = /* @__PURE__ */ __name((params = {}) => {
+    const parts = [];
+    Object.keys(params || {}).sort().forEach((k) => {
+      const v = params[k];
+      if (v === null || v === void 0 || v === "") return;
+      if (Array.isArray(v)) {
+        [...v].map(String).sort().forEach((item) => {
+          parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(item)}`);
+        });
+      } else {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+      }
+    });
+    return parts.join("&");
+  }, "buildQueryKey");
+  var encodeTimeCursor = /* @__PURE__ */ __name((isoOrMs) => {
+    let ms;
+    if (typeof isoOrMs === "number") {
+      ms = isoOrMs;
+    } else if (isoOrMs instanceof Date) {
+      ms = isoOrMs.getTime();
+    } else {
+      ms = Date.parse(String(isoOrMs));
+    }
+    if (!Number.isFinite(ms)) {
+      throw new Error(`Invalid timestamp for cursor: ${isoOrMs}`);
+    }
+    const formatted = formatPlus0000Iso(ms);
+    return encodeBase64(`o=0&p=${encodeURIComponent(formatted)}`);
+  }, "encodeTimeCursor");
+  var decodeTimeCursorMs = /* @__PURE__ */ __name((cursor) => {
+    if (!cursor || typeof cursor !== "string") return null;
+    try {
+      const decoded = decodeBase64(cursor);
+      const match = decoded.match(/(?:^|&)p=([^&]+)/);
+      if (!match || !match[1]) return null;
+      const val = decodeURIComponent(match[1].replace(/\+/g, " "));
+      if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) return null;
+      const ts = Date.parse(val);
+      return Number.isFinite(ts) ? ts : null;
+    } catch (_e) {
+      return null;
+    }
+  }, "decodeTimeCursorMs");
+  var buildTimeSlices = /* @__PURE__ */ __name((newestMs, oldestMs, concurrency = 4, initialNextCursor = null) => {
+    if (!Number.isFinite(newestMs) || !Number.isFinite(oldestMs) || newestMs <= oldestMs) {
+      return [{
+        id: "time-0",
+        extraParams: null,
+        upperMs: Number.isFinite(newestMs) ? newestMs : null,
+        lowerMs: null,
+        cursor: initialNextCursor || null,
+        done: false,
+        pages: 0
+      }];
+    }
+    const minSlices = Math.max(12, Math.max(1, Number(concurrency) || 4) * 3);
+    const totalSpan = newestMs - oldestMs;
+    if (totalSpan < minSlices * 6e4) {
+      return [{
+        id: "time-0",
+        extraParams: null,
+        upperMs: newestMs,
+        lowerMs: null,
+        cursor: initialNextCursor || null,
+        done: false,
+        pages: 0
+      }];
+    }
+    const recentWindowMs = 912 * DAY_MS;
+    const recentFloorMs = Math.max(oldestMs, newestMs - recentWindowMs);
+    const boundaries = [newestMs];
+    if (recentFloorMs > oldestMs && totalSpan > 120 * DAY_MS) {
+      const recentSpan = newestMs - recentFloorMs;
+      const olderSpan = recentFloorMs - oldestMs;
+      const recentCount = Math.max(8, Math.ceil(minSlices * 0.7));
+      const olderCount = Math.max(4, minSlices - recentCount);
+      const recentStep = Math.max(6e4, Math.floor(recentSpan / recentCount));
+      for (let i = 1; i < recentCount; i++) {
+        boundaries.push(newestMs - i * recentStep);
+      }
+      boundaries.push(recentFloorMs);
+      const olderStep = Math.max(6e4, Math.floor(olderSpan / olderCount));
+      for (let i = 1; i < olderCount; i++) {
+        const b = recentFloorMs - i * olderStep;
+        if (b > oldestMs + 6e4) boundaries.push(b);
+      }
+    } else {
+      const step = Math.max(6e4, Math.floor(totalSpan / minSlices));
+      for (let i = 1; i < minSlices; i++) {
+        const b = newestMs - i * step;
+        if (b > oldestMs + 6e4) boundaries.push(b);
+      }
+    }
+    const unique = [];
+    for (const b of boundaries) {
+      if (unique.length === 0 || b < unique[unique.length - 1] - 1e3) {
+        unique.push(b);
+      }
+    }
+    const slices = [];
+    for (let i = 0; i < unique.length; i++) {
+      const upperMs = unique[i];
+      const lowerMs = i === unique.length - 1 ? null : unique[i + 1];
+      const cursor = i === 0 ? initialNextCursor || null : encodeTimeCursor(upperMs);
+      slices.push({
+        id: `time-${i}`,
+        extraParams: null,
+        upperMs,
+        lowerMs,
+        cursor,
+        done: false,
+        pages: 0
+      });
+    }
+    return slices;
+  }, "buildTimeSlices");
+  var defaultFetchPageImpl = /* @__PURE__ */ __name(async (url, { headers, rawFetch } = {}) => {
+    const fetchFn = typeof rawFetch === "function" ? rawFetch : typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
+    if (fetchFn) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = controller ? setTimeout(() => controller.abort(), 3e4) : null;
+      try {
+        const res2 = await fetchFn(url, {
+          method: "GET",
+          credentials: "include",
+          headers: { accept: "application/json", ...headers || {} },
+          ...controller ? { signal: controller.signal } : {}
+        });
+        const responseText = await res2.text();
+        return {
+          status: res2.status,
+          responseText,
+          getResponseHeader: /* @__PURE__ */ __name((name) => res2.headers?.get?.(name) ?? null, "getResponseHeader")
+        };
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    const res = await API.gmFetch({
+      method: "GET",
+      url,
+      timeout: 3e4,
+      headers: { accept: "application/json", ...headers || {} }
+    });
+    return {
+      status: res.status,
+      responseText: res.responseText,
+      responseHeaders: res.responseHeaders
+    };
+  }, "defaultFetchPageImpl");
+  var createFastScanner = /* @__PURE__ */ __name((deps = {}) => {
+    const getDatabase = /* @__PURE__ */ __name(() => deps.database || Database, "getDatabase");
+    const getApiClaim = /* @__PURE__ */ __name(() => deps.apiClaim || ApiClaim, "getApiClaim");
+    const getListingSource = /* @__PURE__ */ __name(() => deps.listingSource || ListingSource, "getListingSource");
+    const getDataCache = /* @__PURE__ */ __name(() => deps.dataCache || DataCache, "getDataCache");
+    const getState = /* @__PURE__ */ __name(() => deps.state || State, "getState");
+    const getConfig = /* @__PURE__ */ __name(() => deps.config || Config, "getConfig");
+    const getUtils = /* @__PURE__ */ __name(() => deps.utils || Utils, "getUtils");
+    const sleep = deps.sleep || defaultSleep;
+    const nowFn = deps.now || (() => Date.now());
+    const getHref = deps.getHref || (() => typeof window !== "undefined" && window.location ? window.location.href : "https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt");
+    const getHeaders = deps.getHeaders || (() => ListingSource._defaultHeaders());
+    let onUiUpdate = deps.onUiUpdate || (() => {
+    });
+    let onToast = deps.onToast || (() => {
+    });
+    let onAuthFailure = deps.onAuthFailure || (() => {
+    });
+    const onRecordNetwork = deps.onRecordNetwork || (() => {
+      try {
+        if (typeof window !== "undefined" && typeof window.recordNetworkActivity === "function") {
+          window.recordNetworkActivity();
+        }
+      } catch (_e) {
+      }
+    });
+    let enqueueFallbackFn = deps.enqueueWorkerFallback || null;
+    const gmGet = deps.gmGetValue || ((k, def) => typeof GM_getValue === "function" ? GM_getValue(k, def) : Promise.resolve(def));
+    const gmSet = deps.gmSetValue || ((k, v) => typeof GM_setValue === "function" ? GM_setValue(k, v) : Promise.resolve());
+    const gmDelete = deps.gmDeleteValue || ((k) => typeof GM_deleteValue === "function" ? GM_deleteValue(k) : Promise.resolve());
+    const claimIntervalMs = Number.isFinite(deps.claimIntervalMs) ? deps.claimIntervalMs : 400;
+    const rateLimitBaseBackoffMs = Number.isFinite(deps.rateLimitBaseBackoffMs) ? deps.rateLimitBaseBackoffMs : 15e3;
+    const checkpointIntervalMs = Number.isFinite(deps.checkpointIntervalMs) ? deps.checkpointIntervalMs : CHECKPOINT_INTERVAL_MS;
+    const claimWorkersCount = Number.isFinite(deps.claimWorkers) ? Math.max(1, deps.claimWorkers) : 2;
+    const uiThrottleMs = Number.isFinite(deps.uiThrottleMs) ? deps.uiThrottleMs : 200;
+    let running = false;
+    let stopped = false;
+    let authAborted = false;
+    let earlyStopped = false;
+    let activeRunPromise = null;
+    let configuredConcurrency = 4;
+    let activeConcurrency = 4;
+    let pauseUntil = 0;
+    let penaltyCount = 0;
+    let extraDelayMs = 0;
+    let cleanStreak = 0;
+    let currentQueryKey = "";
+    let currentMode = "sequential";
+    let currentSlices = [];
+    let currentStats = null;
+    let seenUids = /* @__PURE__ */ new Set();
+    let unknownBuffer = [];
+    let inFlightStateChunks = /* @__PURE__ */ new Set();
+    let statesFlushChain = Promise.resolve();
+    let claimQueue = [];
+    let inFlightClaimTasks = /* @__PURE__ */ new Set();
+    let claimWaiters = [];
+    let activeClaimsInFlight = 0;
+    let lastClaimAt = 0;
+    let slowPathLock = Promise.resolve();
+    let consecutiveOwnedPages = 0;
+    let lastUiAt = 0;
+    let lastCheckpointAt = 0;
+    let currentPhase = "idle";
+    let workerSlotWaiters = [];
+    const wakeWorkerSlots = /* @__PURE__ */ __name(() => {
+      while (workerSlotWaiters.length > 0) {
+        const resolve = workerSlotWaiters.shift();
+        resolve();
+      }
+    }, "wakeWorkerSlots");
+    const resetRunVars = /* @__PURE__ */ __name(() => {
+      stopped = false;
+      authAborted = false;
+      earlyStopped = false;
+      pauseUntil = 0;
+      penaltyCount = 0;
+      extraDelayMs = 0;
+      cleanStreak = 0;
+      currentQueryKey = "";
+      currentMode = "sequential";
+      currentSlices = [];
+      seenUids = /* @__PURE__ */ new Set();
+      unknownBuffer = [];
+      inFlightStateChunks = /* @__PURE__ */ new Set();
+      statesFlushChain = Promise.resolve();
+      claimQueue = [];
+      inFlightClaimTasks = /* @__PURE__ */ new Set();
+      claimWaiters = [];
+      activeClaimsInFlight = 0;
+      lastClaimAt = 0;
+      slowPathLock = Promise.resolve();
+      consecutiveOwnedPages = 0;
+      lastUiAt = 0;
+      lastCheckpointAt = 0;
+      currentPhase = "idle";
+      workerSlotWaiters = [];
+      currentStats = {
+        pagesFetched: 0,
+        itemsScanned: 0,
+        totalEstimated: 0,
+        skippedLocal: 0,
+        skippedNonFree: 0,
+        skippedFailed: 0,
+        confirmedOwnedServer: 0,
+        claimedDirect: 0,
+        queuedFallback: 0,
+        failed: 0,
+        pageErrors: 0,
+        startedAt: nowFn(),
+        finishedAt: null
+      };
+    }, "resetRunVars");
+    resetRunVars();
+    const doFetch = /* @__PURE__ */ __name(async (url) => {
+      onRecordNetwork();
+      const headers = getHeaders();
+      if (typeof deps.fetchImpl === "function") {
+        return deps.fetchImpl(url, { headers });
+      }
+      const rawFetch = getState().nativeFetch || null;
+      return defaultFetchPageImpl(url, { headers, rawFetch });
+    }, "doFetch");
+    const buildSnapshot = /* @__PURE__ */ __name(() => {
+      const now = nowFn();
+      const elapsedSec = Math.max(1e-3, ((currentStats.finishedAt || now) - currentStats.startedAt) / 1e3);
+      return {
+        running,
+        phase: currentPhase,
+        mode: currentMode,
+        configuredConcurrency,
+        activeConcurrency,
+        pagesFetched: currentStats.pagesFetched,
+        itemsScanned: currentStats.itemsScanned,
+        totalEstimated: currentStats.totalEstimated,
+        itemsPerSec: Math.round(currentStats.itemsScanned / elapsedSec),
+        skippedLocal: currentStats.skippedLocal,
+        confirmedOwnedServer: currentStats.confirmedOwnedServer,
+        claimedDirect: currentStats.claimedDirect,
+        queuedFallback: currentStats.queuedFallback,
+        failed: currentStats.failed,
+        consecutiveOwnedPages,
+        earlyStopped,
+        rateLimitedUntil: pauseUntil > now ? pauseUntil : 0,
+        startedAt: currentStats.startedAt,
+        finishedAt: currentStats.finishedAt
+      };
+    }, "buildSnapshot");
+    const syncStatus = /* @__PURE__ */ __name((force = false) => {
+      const now = nowFn();
+      getState().fastScanStatus = buildSnapshot();
+      if (force || now - lastUiAt >= uiThrottleMs) {
+        lastUiAt = now;
+        try {
+          onUiUpdate(getState().fastScanStatus);
+        } catch (_e) {
+        }
+      }
+    }, "syncStatus");
+    const logMsg = /* @__PURE__ */ __name((level, msg) => {
+      try {
+        getUtils().logger(level, msg);
+      } catch (_e) {
+      }
+    }, "logMsg");
+    const waitRateGate = /* @__PURE__ */ __name(async () => {
+      while (!stopped && !authAborted) {
+        const now = nowFn();
+        if (now < pauseUntil) {
+          currentPhase = "rate_limited";
+          syncStatus();
+          const waitMs = Math.min(250, Math.max(1, pauseUntil - now));
+          await sleep(waitMs);
+          continue;
+        }
+        if (currentPhase === "rate_limited") {
+          currentPhase = "scanning";
+          syncStatus(true);
+        }
+        if (extraDelayMs > 0) {
+          await sleep(extraDelayMs);
+        }
+        return true;
+      }
+      return false;
+    }, "waitRateGate");
+    const noteSuccess = /* @__PURE__ */ __name(() => {
+      cleanStreak += 1;
+      if (cleanStreak >= 40) {
+        cleanStreak = 0;
+        penaltyCount = 0;
+        if (extraDelayMs > 0) {
+          extraDelayMs = Math.max(0, extraDelayMs - 50);
+        }
+      }
+    }, "noteSuccess");
+    const handleRateLimit = /* @__PURE__ */ __name(async (retryAfterMs = null, source = "search") => {
+      const now = nowFn();
+      penaltyCount += 1;
+      cleanStreak = 0;
+      const backoffMs = retryAfterMs != null && Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? retryAfterMs : Math.min(6e5, rateLimitBaseBackoffMs * Math.pow(2, penaltyCount - 1));
+      const targetUntil = now + backoffMs;
+      const wasExtended = targetUntil > pauseUntil;
+      pauseUntil = Math.max(pauseUntil, targetUntil);
+      if (wasExtended) {
+        activeConcurrency = Math.max(1, activeConcurrency - 1);
+        extraDelayMs = Math.min(1e3, extraDelayMs + 150);
+        currentPhase = "rate_limited";
+        logMsg("warn", `[FastScanner] ${source} \u89E6\u53D1 429 \u9650\u901F\uFF0C\u5168\u8DEF\u6682\u505C ${Math.ceil(backoffMs / 1e3)}s\uFF0C\u5E76\u53D1\u964D\u81F3 ${activeConcurrency} \u8DEF\u3002`);
+        syncStatus(true);
+      }
+    }, "handleRateLimit");
+    const buildSearchUrl = /* @__PURE__ */ __name((baseParams, cursor = null, extraParams = null) => {
+      const merged = { ...baseParams || {}, ...extraParams || {} };
+      const sp = new URLSearchParams();
+      Object.keys(merged).forEach((k) => {
+        const v = merged[k];
+        if (v === null || v === void 0 || v === "") return;
+        if (Array.isArray(v)) {
+          v.forEach((item) => sp.append(k, String(item)));
+        } else {
+          sp.set(k, String(v));
+        }
+      });
+      if (cursor) sp.set("cursor", cursor);
+      return `https://www.fab.com${SEARCH_PATH2}?${sp.toString()}`;
+    }, "buildSearchUrl");
+    const toPendingClaimPayload = /* @__PURE__ */ __name((item) => ({
+      uid: item.uid,
+      url: item.url,
+      name: item.name || "Untitled",
+      offerId: item.offerId || "",
+      offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
+      listingType: item.listingType || "",
+      isBundle: Boolean(item.isBundle || item.listingType === "bundle")
+    }), "toPendingClaimPayload");
+    const dedupePending = /* @__PURE__ */ __name((items, mapFn) => {
+      const db = getDatabase();
+      const seen = /* @__PURE__ */ new Set();
+      const out = [];
+      for (const it of items) {
+        if (!it || !it.uid || seen.has(it.uid)) continue;
+        if (it.url && db.isDone(it.url)) continue;
+        seen.add(it.uid);
+        out.push(mapFn(it));
+      }
+      return out;
+    }, "dedupePending");
+    const buildCheckpointPayload = /* @__PURE__ */ __name(() => ({
+      version: 1,
+      queryKey: currentQueryKey,
+      mode: currentMode,
+      totalEstimated: currentStats.totalEstimated,
+      slices: currentSlices.map(({ inProgress, ...rest }) => rest),
+      pendingUnknowns: dedupePending(
+        [...Array.from(inFlightStateChunks).flat(), ...unknownBuffer],
+        (item) => ({
+          uid: item.uid,
+          url: item.url,
+          name: item.name || "Untitled",
+          offerId: item.offerId || "",
+          offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
+          listingType: item.listingType || ""
+        })
+      ),
+      pendingClaims: dedupePending(
+        [...Array.from(inFlightClaimTasks), ...claimQueue],
+        toPendingClaimPayload
+      ),
+      stats: {
+        pagesFetched: currentStats.pagesFetched,
+        itemsScanned: currentStats.itemsScanned,
+        totalEstimated: currentStats.totalEstimated,
+        skippedLocal: currentStats.skippedLocal,
+        skippedNonFree: currentStats.skippedNonFree,
+        skippedFailed: currentStats.skippedFailed,
+        confirmedOwnedServer: currentStats.confirmedOwnedServer,
+        claimedDirect: currentStats.claimedDirect,
+        queuedFallback: currentStats.queuedFallback,
+        failed: currentStats.failed
+      },
+      savedAt: nowFn()
+    }), "buildCheckpointPayload");
+    const saveCheckpoint = /* @__PURE__ */ __name(async (force = false) => {
+      if (currentMode === "incremental") return;
+      const now = nowFn();
+      if (!force && now - lastCheckpointAt < checkpointIntervalMs) return;
+      lastCheckpointAt = now;
+      try {
+        await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, buildCheckpointPayload());
+      } catch (_e) {
+      }
+    }, "saveCheckpoint");
+    const clearCheckpoint = /* @__PURE__ */ __name(async () => {
+      try {
+        await gmDelete(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT);
+      } catch (_e) {
+      }
+    }, "clearCheckpoint");
+    const wakeClaimWorkers = /* @__PURE__ */ __name(() => {
+      while (claimWaiters.length > 0) {
+        const resolve = claimWaiters.shift();
+        resolve();
+      }
+    }, "wakeClaimWorkers");
+    const enqueueClaim = /* @__PURE__ */ __name((item) => {
+      claimQueue.push({
+        uid: item.uid,
+        url: item.url,
+        name: item.name || "Untitled",
+        offerId: item.offerId || "",
+        offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
+        listingType: item.listingType || "",
+        isBundle: item.listingType === "bundle"
+      });
+      wakeClaimWorkers();
+    }, "enqueueClaim");
+    const routeToFallback = /* @__PURE__ */ __name(async (task) => {
+      currentStats.queuedFallback += 1;
+      if (typeof enqueueFallbackFn === "function") {
+        await enqueueFallbackFn(task);
+        return;
+      }
+      const db = getDatabase();
+      const st = getState();
+      if (!Array.isArray(st.db.todo)) st.db.todo = [];
+      const cleanTarget = db.normalizeListingUrl(task.url);
+      const alreadyTodo = st.db.todo.some((t) => t.uid === task.uid || db.normalizeListingUrl(t.url) === cleanTarget);
+      const alreadyRunning = Object.values(st.runningWorkers || {}).some((w) => w?.task?.uid === task.uid);
+      if (!alreadyTodo && !alreadyRunning) {
+        st.db.todo.push(task);
+        await db.saveTodo();
+      }
+    }, "routeToFallback");
+    const checkStatesChunk = /* @__PURE__ */ __name(async (chunk) => {
+      if (!chunk || chunk.length === 0) return { ownedCount: 0, unownedCount: 0 };
+      const db = getDatabase();
+      const u = new URL(`https://www.fab.com${STATES_PATH}`);
+      chunk.forEach((item) => u.searchParams.append("listing_ids", item.uid));
+      inFlightStateChunks.add(chunk);
+      try {
+        let attempts = 0;
+        while (!stopped && !authAborted) {
+          const okToRun = await waitRateGate();
+          if (!okToRun) {
+            unknownBuffer.unshift(...chunk);
+            return { ownedCount: 0, unownedCount: 0 };
+          }
+          attempts += 1;
+          let res;
+          try {
+            res = await doFetch(u.toString());
+          } catch (_err) {
+            if (stopped || authAborted) {
+              unknownBuffer.unshift(...chunk);
+              return { ownedCount: 0, unownedCount: 0 };
+            }
+            if (attempts < 2) {
+              await sleep(Math.min(500, rateLimitBaseBackoffMs));
+              continue;
+            }
+            chunk.forEach((item) => enqueueClaim(item));
+            return { ownedCount: 0, unownedCount: chunk.length };
+          }
+          if (stopped || authAborted) {
+            unknownBuffer.unshift(...chunk);
+            return { ownedCount: 0, unownedCount: 0 };
+          }
+          const status = Number(res?.status) || 0;
+          if (status === 429) {
+            await handleRateLimit(parseRetryAfterMs2(res), "listings-states");
+            continue;
+          }
+          if (status === 401 || status === 403) {
+            authAborted = true;
+            currentPhase = "error";
+            onAuthFailure();
+            return { ownedCount: 0, unownedCount: 0 };
+          }
+          if (status >= 200 && status < 300) {
+            noteSuccess();
+            let raw = null;
+            try {
+              raw = JSON.parse(res.responseText || "[]");
+            } catch (_e) {
+              raw = [];
+            }
+            const states = Array.isArray(raw) ? raw : API.extractStateData(raw, "FastScanner") || [];
+            const acquiredSet = new Set(
+              states.filter((s) => s && s.acquired && s.uid).map((s) => String(s.uid).toLowerCase())
+            );
+            const ownedUrls = [];
+            const unownedItems = [];
+            chunk.forEach((item) => {
+              if (acquiredSet.has(item.uid)) {
+                ownedUrls.push(item.url);
+              } else {
+                unownedItems.push(item);
+              }
+            });
+            if (ownedUrls.length > 0) {
+              db.addDoneUrls(ownedUrls);
+              db.scheduleSaveDone();
+              currentStats.confirmedOwnedServer += ownedUrls.length;
+            }
+            unownedItems.forEach((item) => enqueueClaim(item));
+            syncStatus();
+            return { ownedCount: ownedUrls.length, unownedCount: unownedItems.length };
+          }
+          if (attempts < 2) {
+            await sleep(Math.min(500, rateLimitBaseBackoffMs));
+            continue;
+          }
+          chunk.forEach((item) => enqueueClaim(item));
+          return { ownedCount: 0, unownedCount: chunk.length };
+        }
+        unknownBuffer.unshift(...chunk);
+        return { ownedCount: 0, unownedCount: 0 };
+      } finally {
+        inFlightStateChunks.delete(chunk);
+      }
+    }, "checkStatesChunk");
+    const flushUnknownBuffer = /* @__PURE__ */ __name((drainAll = false) => {
+      const job = /* @__PURE__ */ __name(async () => {
+        let ownedTotal = 0;
+        let unownedTotal = 0;
+        while (unknownBuffer.length > 0 && !stopped && !authAborted) {
+          if (!drainAll && unknownBuffer.length < STATES_MAX_IDS) break;
+          const chunk = unknownBuffer.splice(0, STATES_MAX_IDS);
+          const res = await checkStatesChunk(chunk);
+          ownedTotal += res.ownedCount;
+          unownedTotal += res.unownedCount;
+        }
+        return { ownedTotal, unownedTotal };
+      }, "job");
+      const next = statesFlushChain.then(job, job);
+      statesFlushChain = next.catch(() => ({ ownedTotal: 0, unownedTotal: 0 }));
+      return next;
+    }, "flushUnknownBuffer");
+    const processPageItems = /* @__PURE__ */ __name(async (items, { flushImmediately = false } = {}) => {
+      const db = getDatabase();
+      const ls = getListingSource();
+      const cache = getDataCache();
+      let addedToUnknown = 0;
+      for (const item of items || []) {
+        if (!item || !item.uid) continue;
+        if (seenUids.has(item.uid)) continue;
+        seenUids.add(item.uid);
+        currentStats.itemsScanned += 1;
+        if (!ls.isClaimable(item)) {
+          currentStats.skippedNonFree += 1;
+          continue;
+        }
+        if (db.isDone(item.url)) {
+          currentStats.skippedLocal += 1;
+          continue;
+        }
+        if (db.isFailed(item.url)) {
+          currentStats.skippedFailed += 1;
+          continue;
+        }
+        if (item.offerId) {
+          cache.offerListingUids.set(item.offerId, item.uid);
+        }
+        unknownBuffer.push(item);
+        addedToUnknown += 1;
+      }
+      if (flushImmediately) {
+        return flushUnknownBuffer(true);
+      }
+      if (unknownBuffer.length >= STATES_MAX_IDS) {
+        await flushUnknownBuffer(false);
+      } else if (addedToUnknown === 0) {
+        syncStatus();
+      }
+      return { ownedTotal: 0, unownedTotal: 0 };
+    }, "processPageItems");
+    const runClaimWithSlowPathGuard = /* @__PURE__ */ __name(async (task, apiClaim) => {
+      if (task.offerId) {
+        return apiClaim.claim(task);
+      }
+      const exec = /* @__PURE__ */ __name(() => apiClaim.claim(task), "exec");
+      const run = slowPathLock.then(exec, exec);
+      slowPathLock = run.catch(() => {
+      });
+      return run;
+    }, "runClaimWithSlowPathGuard");
+    const runClaimLoop = /* @__PURE__ */ __name(async (scanDoneRef) => {
+      const db = getDatabase();
+      const apiClaim = getApiClaim();
+      const cfg = getConfig();
+      const st = getState();
+      while (true) {
+        if (stopped || authAborted) break;
+        if (claimQueue.length === 0) {
+          if (scanDoneRef.done) break;
+          await new Promise((resolve) => {
+            claimWaiters.push(resolve);
+          });
+          continue;
+        }
+        const task = claimQueue.shift();
+        if (!task) continue;
+        if (db.isDone(task.url)) continue;
+        activeClaimsInFlight += 1;
+        inFlightClaimTasks.add(task);
+        try {
+          if (isConfirmedBundleTask(task)) {
+            await routeToFallback(task);
+            syncStatus();
+            continue;
+          }
+          const canApiClaim = Boolean(cfg.USE_API_CLAIM && typeof apiClaim.isAvailable === "function" && apiClaim.isAvailable());
+          if (!canApiClaim) {
+            await routeToFallback(task);
+            syncStatus();
+            continue;
+          }
+          const gateOk = await waitRateGate();
+          if (!gateOk) {
+            claimQueue.unshift(task);
+            break;
+          }
+          if (claimIntervalMs > 0) {
+            const sinceLast = nowFn() - lastClaimAt;
+            if (sinceLast < claimIntervalMs) {
+              await sleep(claimIntervalMs - sinceLast);
+            }
+            lastClaimAt = nowFn();
+          }
+          const outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+          if (outcome.result === CLAIM_RESULT.SUCCESS) {
+            noteSuccess();
+            await db.markAsDone(task, { deferSave: true });
+            st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
+            currentStats.claimedDirect += 1;
+            syncStatus(true);
+          } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
+            await handleRateLimit(outcome.retryAfterMs, "add-to-library");
+            const retries = (task._claimRateRetries || 0) + 1;
+            if (retries <= 5) {
+              task._claimRateRetries = retries;
+              claimQueue.push(task);
+            } else {
+              await db.markAsFailed(task, { reason: `\u8FDE\u7EED\u9650\u901F ${retries - 1} \u6B21\uFF0C\u653E\u5F03\u8BE5\u5546\u54C1` });
+              currentStats.failed += 1;
+              syncStatus(true);
+            }
+          } else if (outcome.isBundle) {
+            task.listingType = "bundle";
+            task.isBundle = true;
+            await routeToFallback(task);
+            syncStatus();
+          } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
+            await routeToFallback(task);
+            syncStatus();
+          } else {
+            const reason = outcome.reason || "\u9886\u53D6\u5931\u8D25";
+            if (/CSRF|401|未登录|会话/i.test(reason)) {
+              authAborted = true;
+              currentPhase = "error";
+              onAuthFailure();
+              break;
+            }
+            await db.markAsFailed(task, { reason });
+            currentStats.failed += 1;
+            syncStatus(true);
+          }
+        } finally {
+          inFlightClaimTasks.delete(task);
+          activeClaimsInFlight -= 1;
+        }
+      }
+    }, "runClaimLoop");
+    const fetchSearchPageRaw = /* @__PURE__ */ __name(async (url, label = "search") => {
+      let networkFailures = 0;
+      while (!stopped && !authAborted) {
+        const gateOk = await waitRateGate();
+        if (!gateOk) return { aborted: true };
+        let res;
+        try {
+          res = await doFetch(url);
+        } catch (err) {
+          networkFailures += 1;
+          currentStats.pageErrors += 1;
+          if (networkFailures >= 3) {
+            return { error: err };
+          }
+          await sleep(Math.min(2e3 * networkFailures, Math.max(50, rateLimitBaseBackoffMs)));
+          continue;
+        }
+        const status = Number(res?.status) || 0;
+        if (status === 429) {
+          await handleRateLimit(parseRetryAfterMs2(res), label);
+          continue;
+        }
+        if (status === 401 || status === 403) {
+          authAborted = true;
+          currentPhase = "error";
+          onAuthFailure();
+          return { aborted: true };
+        }
+        if (status >= 200 && status < 300) {
+          noteSuccess();
+          try {
+            const json = JSON.parse(res.responseText || "{}");
+            return { ok: true, json };
+          } catch (e) {
+            networkFailures += 1;
+            if (networkFailures >= 3) return { error: e };
+            await sleep(Math.min(500, rateLimitBaseBackoffMs));
+            continue;
+          }
+        }
+        networkFailures += 1;
+        currentStats.pageErrors += 1;
+        if (networkFailures >= 3) {
+          return { error: new Error(`Search HTTP ${status}`) };
+        }
+        await sleep(Math.min(1e3 * networkFailures, Math.max(50, rateLimitBaseBackoffMs)));
+      }
+      return { aborted: true };
+    }, "fetchSearchPageRaw");
+    const calibrateRun = /* @__PURE__ */ __name(async (baseParams, opts) => {
+      const ls = getListingSource();
+      const cfg = getConfig();
+      const incrementalMode = Boolean(opts.incrementalEarlyStop && baseParams.sort_by === "-firstPublishedAt");
+      const targetConcurrency = incrementalMode ? 1 : configuredConcurrency;
+      if (!incrementalMode && opts.resumeCheckpoint !== false) {
+        try {
+          const db = getDatabase();
+          const saved = await gmGet(cfg.DB_KEYS.FAST_SCAN_CHECKPOINT, null);
+          const pendingUnknowns = Array.isArray(saved?.pendingUnknowns) ? saved.pendingUnknowns : [];
+          const pendingClaims = Array.isArray(saved?.pendingClaims) ? saved.pendingClaims : [];
+          const hasUnfinishedSlices = Array.isArray(saved?.slices) && saved.slices.some((s) => !s.done);
+          if (saved && saved.queryKey === currentQueryKey && (hasUnfinishedSlices || pendingUnknowns.length > 0 || pendingClaims.length > 0)) {
+            currentMode = saved.mode || "time-shards";
+            currentSlices = Array.isArray(saved.slices) ? saved.slices.map((s) => ({ ...s, inProgress: false })) : [];
+            pendingUnknowns.forEach((item) => {
+              if (!item || !item.uid || seenUids.has(item.uid) || db.isDone(item.url)) return;
+              seenUids.add(item.uid);
+              unknownBuffer.push(item);
+            });
+            pendingClaims.forEach((task) => {
+              if (!task || !task.uid || seenUids.has(task.uid) || db.isDone(task.url)) return;
+              seenUids.add(task.uid);
+              claimQueue.push(toPendingClaimPayload(task));
+            });
+            if (saved.stats) {
+              currentStats.totalEstimated = saved.stats.totalEstimated || saved.totalEstimated || 0;
+              currentStats.pagesFetched = saved.stats.pagesFetched || 0;
+              currentStats.itemsScanned = saved.stats.itemsScanned || 0;
+              currentStats.skippedLocal = saved.stats.skippedLocal || 0;
+              currentStats.skippedNonFree = saved.stats.skippedNonFree || 0;
+              currentStats.skippedFailed = saved.stats.skippedFailed || 0;
+              currentStats.confirmedOwnedServer = saved.stats.confirmedOwnedServer || 0;
+              currentStats.claimedDirect = saved.stats.claimedDirect || 0;
+              currentStats.queuedFallback = saved.stats.queuedFallback || 0;
+              currentStats.failed = saved.stats.failed || 0;
+            }
+            logMsg("info", `[FastScanner] \u68C0\u6D4B\u5230\u672A\u5B8C\u6210\u7684\u65AD\u70B9\uFF0C\u6062\u590D\u626B\u63CF\uFF08\u5269\u4F59 ${currentSlices.filter((s) => !s.done).length} \u4E2A\u5206\u7247\uFF0C\u5F85\u5904\u7406 ${unknownBuffer.length + claimQueue.length} \u9879\uFF09\u3002`);
+            return;
+          }
+        } catch (_e) {
+        }
+      }
+      let listingTypes = [];
+      const aggUrl = buildSearchUrl(baseParams, null, { count: "0", aggregate_on: "listing_type" });
+      const aggRes = await fetchSearchPageRaw(aggUrl, "aggregate");
+      if (aggRes.aborted) return;
+      if (aggRes.ok && aggRes.json) {
+        const buckets = aggRes.json?.aggregations?.listingType?.buckets || aggRes.json?.aggregations?.listing_type?.buckets || {};
+        const entries = Object.entries(buckets).map(([type, info]) => ({ type, count: Number(info?.docCount ?? info?.doc_count) || 0 })).filter((e) => e.count > 0).sort((a, b) => b.count - a.count);
+        currentStats.totalEstimated = entries.reduce((sum, e) => sum + e.count, 0);
+        listingTypes = entries.map((e) => e.type);
+      }
+      if (incrementalMode) {
+        currentMode = "incremental";
+        currentSlices = [{
+          id: "inc-0",
+          extraParams: null,
+          upperMs: null,
+          lowerMs: null,
+          cursor: null,
+          done: false,
+          inProgress: false,
+          pages: 0
+        }];
+        return;
+      }
+      if (targetConcurrency > 1 && baseParams.sort_by === "-firstPublishedAt") {
+        const descUrl = buildSearchUrl(baseParams, null);
+        const ascUrl = buildSearchUrl({ ...baseParams, sort_by: "firstPublishedAt" }, null);
+        const [descRes, ascRes] = await Promise.all([
+          fetchSearchPageRaw(descUrl, "calibrate-desc"),
+          fetchSearchPageRaw(ascUrl, "calibrate-asc")
+        ]);
+        if (descRes.aborted || ascRes.aborted) return;
+        let descPage = null;
+        if (descRes.ok) {
+          descPage = ls.parsePage(descRes.json);
+          currentStats.pagesFetched += 1;
+          await processPageItems(descPage.items, { flushImmediately: false });
+        }
+        let ascPage = null;
+        if (ascRes.ok) {
+          ascPage = ls.parsePage(ascRes.json);
+          currentStats.pagesFetched += 1;
+          await processPageItems(ascPage.items, { flushImmediately: false });
+        }
+        if (descPage && !descPage.nextCursor) {
+          currentMode = "time-shards";
+          currentSlices = [];
+          return;
+        }
+        const topMs = decodeTimeCursorMs(descPage?.nextCursor);
+        const bottomMs = decodeTimeCursorMs(ascPage?.nextCursor);
+        if (topMs != null && bottomMs != null && topMs > bottomMs) {
+          currentMode = "time-shards";
+          currentSlices = buildTimeSlices(topMs, bottomMs, targetConcurrency, descPage.nextCursor).map((s) => ({ ...s, inProgress: false }));
+        } else {
+          currentMode = "sequential";
+          currentSlices = [{
+            id: "seq-0",
+            extraParams: null,
+            upperMs: topMs,
+            lowerMs: null,
+            cursor: descPage?.nextCursor || null,
+            done: false,
+            inProgress: false,
+            pages: 0
+          }];
+        }
+        return;
+      }
+      if (targetConcurrency > 1 && !baseParams.listing_types && listingTypes.length > 1) {
+        currentMode = "type-shards";
+        currentSlices = listingTypes.map((t) => ({
+          id: `type-${t}`,
+          extraParams: { listing_types: t },
+          upperMs: null,
+          lowerMs: null,
+          cursor: null,
+          done: false,
+          inProgress: false,
+          pages: 0
+        }));
+        return;
+      }
+      currentMode = "sequential";
+      currentSlices = [{
+        id: "seq-0",
+        extraParams: null,
+        upperMs: null,
+        lowerMs: null,
+        cursor: null,
+        done: false,
+        inProgress: false,
+        pages: 0
+      }];
+    }, "calibrateRun");
+    const runScanWorker = /* @__PURE__ */ __name(async (workerIdx, baseParams, stopPages) => {
+      const ls = getListingSource();
+      while (!stopped && !authAborted && !earlyStopped) {
+        if (workerIdx >= activeConcurrency) {
+          const remaining = currentSlices.some((s) => !s.done);
+          if (!remaining) break;
+          await new Promise((resolve) => {
+            workerSlotWaiters.push(resolve);
+          });
+          continue;
+        }
+        const slice = currentSlices.find((s) => !s.done && !s.inProgress);
+        if (!slice) {
+          const anyInProgress = currentSlices.some((s) => !s.done && s.inProgress);
+          if (!anyInProgress) break;
+          await new Promise((resolve) => {
+            workerSlotWaiters.push(resolve);
+          });
+          continue;
+        }
+        slice.inProgress = true;
+        try {
+          while (!stopped && !authAborted && !earlyStopped && !slice.done) {
+            if (workerIdx >= activeConcurrency) {
+              break;
+            }
+            const url = buildSearchUrl(baseParams, slice.cursor, slice.extraParams);
+            const res = await fetchSearchPageRaw(url, slice.id);
+            if (res.aborted || stopped || authAborted) break;
+            if (res.error) {
+              logMsg("warn", `[FastScanner] \u5206\u7247 ${slice.id} \u8BF7\u6C42\u8FDE\u7EED\u5931\u8D25\uFF0C\u5DF2\u7ED3\u675F\u8BE5\u5206\u7247: ${res.error.message}`);
+              slice.done = true;
+              break;
+            }
+            const page = ls.parsePage(res.json);
+            slice.pages += 1;
+            currentStats.pagesFetched += 1;
+            const isIncremental = currentMode === "incremental";
+            const pageResult = await processPageItems(page.items, { flushImmediately: isIncremental });
+            if (stopped || authAborted) break;
+            if (!page.nextCursor) {
+              slice.cursor = null;
+              slice.done = true;
+            } else if (slice.lowerMs != null) {
+              const nextMs = decodeTimeCursorMs(page.nextCursor);
+              if (nextMs != null && nextMs < slice.lowerMs - OVERLAP_MS) {
+                slice.cursor = null;
+                slice.done = true;
+              } else {
+                slice.cursor = page.nextCursor;
+              }
+            } else {
+              slice.cursor = page.nextCursor;
+            }
+            if (isIncremental && page.items.length > 0) {
+              if (pageResult.unownedTotal === 0) {
+                consecutiveOwnedPages += 1;
+              } else {
+                consecutiveOwnedPages = 0;
+              }
+              if (consecutiveOwnedPages >= stopPages) {
+                earlyStopped = true;
+                slice.done = true;
+              }
+            }
+            syncStatus();
+            await saveCheckpoint(false);
+          }
+        } finally {
+          slice.inProgress = false;
+          wakeWorkerSlots();
+        }
+      }
+    }, "runScanWorker");
+    const start = /* @__PURE__ */ __name(async (options = {}) => {
+      if (running && activeRunPromise) return activeRunPromise;
+      const st = getState();
+      const cfg = getConfig();
+      const db = getDatabase();
+      resetRunVars();
+      running = true;
+      const reqConc = Number.isFinite(options.concurrency) ? options.concurrency : Number(st.apiScanConcurrency) || cfg.DEFAULT_API_SCAN_CONCURRENCY || 4;
+      configuredConcurrency = Math.max(1, Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.floor(reqConc)));
+      activeConcurrency = configuredConcurrency;
+      const incEnabled = options.incrementalEarlyStop !== void 0 ? Boolean(options.incrementalEarlyStop) : Boolean(st.incrementalEarlyStop);
+      const stopPages = Math.max(1, Math.min(50, Math.floor(
+        Number.isFinite(options.incrementalStopPages) ? options.incrementalStopPages : Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5
+      )));
+      const baseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+      currentQueryKey = buildQueryKey(baseParams);
+      currentPhase = "calibrating";
+      syncStatus(true);
+      const runWork = /* @__PURE__ */ __name(async () => {
+        try {
+          await calibrateRun(baseParams, {
+            incrementalEarlyStop: incEnabled,
+            resumeCheckpoint: options.resumeCheckpoint
+          });
+          if (stopped || authAborted) {
+            return buildSnapshot();
+          }
+          currentPhase = "scanning";
+          logMsg(
+            "info",
+            `[FastScanner] \u5F00\u59CB\u6781\u901F\u626B\u63CF (${currentMode}, ${activeConcurrency} \u8DEF\u5E76\u53D1` + (currentStats.totalEstimated > 0 ? `, \u9884\u8BA1 ${currentStats.totalEstimated} \u4EF6` : "") + (incEnabled && currentMode === "incremental" ? `, \u8FDE\u7EED ${stopPages} \u9875\u5DF2\u62E5\u6709\u65E9\u505C` : "") + ")"
+          );
+          syncStatus(true);
+          const scanDoneRef = { done: false };
+          const spawnCount = currentMode === "incremental" ? 1 : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
+          const claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
+          if (currentSlices.some((s) => !s.done)) {
+            const scanWorkers = Array.from(
+              { length: spawnCount },
+              (_, idx) => runScanWorker(idx, baseParams, stopPages)
+            );
+            await Promise.all(scanWorkers);
+          }
+          if (!stopped && !authAborted) {
+            currentPhase = "draining";
+            syncStatus(true);
+            await flushUnknownBuffer(true);
+          }
+          scanDoneRef.done = true;
+          wakeClaimWorkers();
+          await Promise.all(claimLoops);
+          await db.flushSaveDone();
+          currentStats.finishedAt = nowFn();
+          if (stopped) {
+            currentPhase = "paused";
+            await saveCheckpoint(true);
+          } else if (authAborted) {
+            currentPhase = "error";
+            await saveCheckpoint(true);
+          } else {
+            currentPhase = "completed";
+            if (currentMode !== "incremental") {
+              await clearCheckpoint();
+            }
+            const summary = buildSnapshot();
+            const toastMsg = earlyStopped ? getUtils().getText("toast_fast_scan_early_stop", summary.claimedDirect, summary.itemsScanned) : getUtils().getText("toast_fast_scan_completed", summary.claimedDirect, summary.itemsScanned);
+            logMsg("info", `[FastScanner] ${toastMsg}`);
+            onToast(toastMsg, true);
+          }
+          syncStatus(true);
+          return buildSnapshot();
+        } catch (err) {
+          currentStats.finishedAt = nowFn();
+          currentPhase = "error";
+          logMsg("error", `[FastScanner] \u626B\u63CF\u5F02\u5E38: ${err.message}`);
+          await db.flushSaveDone();
+          await saveCheckpoint(true);
+          syncStatus(true);
+          throw err;
+        } finally {
+          running = false;
+          activeRunPromise = null;
+          syncStatus(true);
+        }
+      }, "runWork");
+      activeRunPromise = runWork();
+      return activeRunPromise;
+    }, "start");
+    const stop = /* @__PURE__ */ __name(async () => {
+      if (!running && !activeRunPromise) return;
+      stopped = true;
+      currentPhase = "paused";
+      wakeClaimWorkers();
+      wakeWorkerSlots();
+      syncStatus(true);
+      saveCheckpoint(true);
+      getDatabase().flushSaveDone();
+      if (activeRunPromise) {
+        try {
+          await activeRunPromise;
+        } catch (_e) {
+        }
+      }
+      await getDatabase().flushSaveDone();
+      await saveCheckpoint(true);
+    }, "stop");
+    const setConcurrency = /* @__PURE__ */ __name((count) => {
+      const cfg = getConfig();
+      const safe = Math.max(1, Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.floor(Number(count) || 4)));
+      configuredConcurrency = safe;
+      activeConcurrency = Math.min(activeConcurrency, safe) || safe;
+      if (currentMode !== "incremental") {
+        activeConcurrency = safe;
+      }
+      wakeWorkerSlots();
+      syncStatus(true);
+      return safe;
+    }, "setConcurrency");
+    const configure = /* @__PURE__ */ __name((nextDeps = {}) => {
+      if (typeof nextDeps.onUiUpdate === "function") onUiUpdate = nextDeps.onUiUpdate;
+      if (typeof nextDeps.onToast === "function") onToast = nextDeps.onToast;
+      if (typeof nextDeps.onAuthFailure === "function") onAuthFailure = nextDeps.onAuthFailure;
+      if (typeof nextDeps.enqueueWorkerFallback === "function") enqueueFallbackFn = nextDeps.enqueueWorkerFallback;
+    }, "configure");
+    return {
+      configure,
+      start,
+      stop,
+      clearCheckpoint,
+      setConcurrency,
+      isRunning: /* @__PURE__ */ __name(() => running, "isRunning"),
+      getStatus: /* @__PURE__ */ __name(() => buildSnapshot(), "getStatus")
+    };
+  }, "createFastScanner");
+  var FastScanner = createFastScanner();
+
   // src/modules/task-runner.js
+  var enrichTaskFromCache = /* @__PURE__ */ __name((uid, baseTask) => {
+    const cachedListing = uid ? DataCache.listings.get(uid) : null;
+    if (!cachedListing) return baseTask;
+    const cachedOfferId = cachedListing?.startingPrice?.offerId || cachedListing?.startingPrice?.offer_id || cachedListing?.offerId || "";
+    const cachedListingType = typeof cachedListing?.listingType === "string" ? cachedListing.listingType : "";
+    return {
+      ...baseTask,
+      ...cachedOfferId ? { offerId: cachedOfferId } : {},
+      ...cachedListingType ? { listingType: cachedListingType } : {}
+    };
+  }, "enrichTaskFromCache");
   var _realSetTimeout = typeof setTimeout === "function" ? setTimeout : (cb) => {
     try {
       cb();
@@ -4923,6 +6522,71 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       return TaskRunner2.hasPositivePriceText(cardText);
     }, "isDiscountedPaidCard"),
     // Toggle execution state
+    enqueueWorkerFallback: /* @__PURE__ */ __name(async (task) => {
+      if (!task || !task.uid) return false;
+      if (!Array.isArray(State.db.todo)) State.db.todo = [];
+      const cleanUrl = Database.normalizeListingUrl(task.url);
+      const alreadyTodo = State.db.todo.some(
+        (t) => t.uid === task.uid || Database.normalizeListingUrl(t.url) === cleanUrl
+      );
+      const alreadyRunning = Object.values(State.runningWorkers || {}).some((w) => w?.task?.uid === task.uid);
+      if (alreadyTodo || alreadyRunning) return false;
+      State.db.todo.push(task);
+      await Database.saveTodo();
+      if (State.isExecuting && TaskRunner2.hasDispatchSlot()) {
+        TaskRunner2.executeBatch();
+      }
+      if (UI4) UI4.update();
+      return true;
+    }, "enqueueWorkerFallback"),
+    startFastScan: /* @__PURE__ */ __name(async () => {
+      if (State.apiPipelineActive) return null;
+      if (typeof InstanceManager !== "undefined" && InstanceManager.activate) {
+        InstanceManager.activate();
+      }
+      FastScanner.configure({
+        onUiUpdate: /* @__PURE__ */ __name(() => {
+          if (UI4) UI4.update();
+        }, "onUiUpdate"),
+        onToast: /* @__PURE__ */ __name((msg, persist) => {
+          if (UI4 && typeof UI4.showToast === "function") UI4.showToast(msg, persist);
+        }, "onToast"),
+        onAuthFailure: /* @__PURE__ */ __name(() => {
+          Utils.notifyAuthFailure();
+          TaskRunner2.stop();
+        }, "onAuthFailure"),
+        enqueueWorkerFallback: /* @__PURE__ */ __name((task) => TaskRunner2.enqueueWorkerFallback(task), "enqueueWorkerFallback")
+      });
+      KeepAlive.start();
+      State.isExecuting = true;
+      Database.saveExecutingState();
+      if (UI4) UI4.update();
+      try {
+        const summary = await FastScanner.start();
+        if (!State.isExecuting) return summary;
+        if (State.db.todo.length > 0 || State.activeWorkers > 0) {
+          if (TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {
+            TaskRunner2.executeBatch();
+          }
+        } else {
+          State.isExecuting = false;
+          Database.saveExecutingState();
+          KeepAlive.stop();
+          await Database.flushSaveDone();
+        }
+        if (UI4) UI4.update();
+        return summary;
+      } catch (error) {
+        if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
+          State.isExecuting = false;
+          Database.saveExecutingState();
+          KeepAlive.stop();
+        }
+        await Database.flushSaveDone();
+        if (UI4) UI4.update();
+        throw error;
+      }
+    }, "startFastScan"),
     toggleExecution: /* @__PURE__ */ __name(async () => {
       if (!Utils.checkAuthentication()) return;
       if (State.apiPipelineActive) {
@@ -4932,9 +6596,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (UI4) UI4.update();
         return;
       }
-      if (State.isExecuting) {
+      if (State.isExecuting || FastScanner.isRunning()) {
+        if (FastScanner.isRunning()) {
+          await FastScanner.stop();
+        }
         State.isExecuting = false;
         Database.saveExecutingState();
+        await Database.flushSaveDone();
+        KeepAlive.stop();
         State.runningWorkers = {};
         State.activeWorkers = 0;
         State.executionTotalTasks = 0;
@@ -4954,6 +6623,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (!sessionOk) {
         Utils.notifyAuthFailure();
         return;
+      }
+      if (State.fastApiScan) {
+        return await TaskRunner2.startFastScan();
       }
       if (State.autoAddOnScroll || State.autoScroll) {
         Utils.logger("info", Utils.getText("log_auto_add_enabled"));
@@ -4993,7 +6665,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
         if (!TaskRunner2.isFreeCard(card)) return;
         const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"]')?.textContent.trim() || card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() || Utils.getText("untitled");
-        newlyAddedList.push({ name, url, type: "detail", uid: url.split("/").pop() });
+        const uid = url.split("/").pop();
+        newlyAddedList.push(enrichTaskFromCache(uid, { name, url, type: "detail", uid }));
       });
       if (skippedCount > 0) {
         Utils.logger("debug", Utils.getText("log_skipped_unsettled", skippedCount));
@@ -5187,7 +6860,56 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (UI4) UI4.update();
       return safeVal;
     }, "setMaxWorkers"),
+    toggleFastApiScan: /* @__PURE__ */ __name(async () => {
+      if (State.isExecuting || FastScanner.isRunning()) {
+        if (FastScanner.isRunning()) {
+          await FastScanner.stop();
+        }
+        TaskRunner2.stop();
+      }
+      State.fastApiScan = !State.fastApiScan;
+      await Database.saveFastApiScanPref();
+      Utils.logger(
+        "info",
+        Utils.getText("log_fast_api_scan_toggle", State.fastApiScan ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
+      );
+      if (UI4) UI4.update();
+    }, "toggleFastApiScan"),
+    setApiScanConcurrency: /* @__PURE__ */ __name(async (count) => {
+      const parsed = parseInt(count, 10);
+      const maxConc = Config.MAX_API_SCAN_CONCURRENCY || 6;
+      const defConc = Config.DEFAULT_API_SCAN_CONCURRENCY || 4;
+      const safeVal = Math.max(1, Math.min(maxConc, Number.isFinite(parsed) ? parsed : defConc));
+      State.apiScanConcurrency = safeVal;
+      await Database.saveApiScanConcurrencyPref();
+      FastScanner.setConcurrency(safeVal);
+      Utils.logger("info", Utils.getText("log_api_scan_concurrency_changed", safeVal));
+      if (UI4) UI4.update();
+      return safeVal;
+    }, "setApiScanConcurrency"),
+    toggleIncrementalEarlyStop: /* @__PURE__ */ __name(async () => {
+      State.incrementalEarlyStop = !State.incrementalEarlyStop;
+      await Database.saveIncrementalEarlyStopPref();
+      Utils.logger(
+        "info",
+        Utils.getText("log_incremental_early_stop_toggle", State.incrementalEarlyStop ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
+      );
+      if (UI4) UI4.update();
+    }, "toggleIncrementalEarlyStop"),
+    setIncrementalStopPages: /* @__PURE__ */ __name(async (pages) => {
+      const parsed = parseInt(pages, 10);
+      const defPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5;
+      const safeVal = Math.max(1, Math.min(50, Number.isFinite(parsed) ? parsed : defPages));
+      State.incrementalStopPages = safeVal;
+      await Database.saveIncrementalStopPagesPref();
+      Utils.logger("info", Utils.getText("log_incremental_stop_pages_changed", safeVal));
+      if (UI4) UI4.update();
+      return safeVal;
+    }, "setIncrementalStopPages"),
     stop: /* @__PURE__ */ __name(() => {
+      if (FastScanner.isRunning()) {
+        FastScanner.stop();
+      }
       if (!State.isExecuting) return;
       State.isExecuting = false;
       Database.saveExecutingState();
@@ -5430,6 +7152,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       State.isDispatchingTasks = true;
       try {
         if (State.db.todo.length === 0 && State.activeWorkers === 0) {
+          if (FastScanner.isRunning()) {
+            State.isDispatchingTasks = false;
+            return;
+          }
+          if (State.fastApiScan) {
+            await TaskRunner2.stopExecutionAndSettle();
+            State.isDispatchingTasks = false;
+            return;
+          }
           if (State.autoScroll) {
             State.isDispatchingTasks = false;
             TaskRunner2.attemptAutoScroll();
@@ -6061,6 +7792,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
     }, "checkVisibleCardsStatus"),
     scanAndAddTasks: /* @__PURE__ */ __name(async (cards) => {
+      if (FastScanner.isRunning()) return;
       if (!State.autoAddOnScroll && !State.autoScroll) return;
       if (!State.isAuthenticated) {
         if (State.debugMode) {
@@ -6168,7 +7900,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           }
           if (!TaskRunner2.isFreeCard(card)) return;
           const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || card.querySelector(Config.SELECTORS.cardLink)?.textContent.trim() || Utils.getText("untitled");
-          newlyAddedList.push({ name, url, type: "detail", uid });
+          newlyAddedList.push(enrichTaskFromCache(uid, { name, url, type: "detail", uid }));
         });
         if (skippedUnsettled > 0 && !State.autoAddRetryTimer) {
           State.autoAddRetryTimer = setTimeout(() => {
@@ -6397,6 +8129,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     attemptAutoScroll: /* @__PURE__ */ __name(async () => {
       if (State.manualVerificationPending) return;
       if (State.appStatus === "RATE_LIMITED") return;
+      if (FastScanner.isRunning()) return;
       if (State.apiPipelineActive) {
         Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7\u81EA\u52A8\u6EDA\u52A8\u8BF7\u6C42\u3002");
         return;
@@ -7183,9 +8916,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       };
       clearPositionBtn.onclick = async () => {
         const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
-        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+        let hasFastCheckpoint = false;
+        try {
+          hasFastCheckpoint = Boolean(await GM_getValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null));
+        } catch (_e) {
+        }
+        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor || hasFastCheckpoint || State.fastScanStatus) {
           PagePatcher.lockCursorSaving();
           if (confirm(Utils.getText("confirm_reset_position"))) {
+            await FastScanner.clearCheckpoint();
+            State.fastScanStatus = null;
             await PagePatcher.clearSavedPosition("User UI Reset");
             PagePatcher.armResetGuard();
             try {
@@ -7232,9 +8972,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         card.appendChild(cardTitle);
         return card;
       }, "createCardGroup");
-      const createSettingRow = /* @__PURE__ */ __name((labelText, stateKey) => {
+      const createSettingRow = /* @__PURE__ */ __name((labelText, stateKey, tooltip) => {
         const row = document.createElement("div");
         row.className = "fab-setting-row";
+        if (tooltip) row.title = tooltip;
         const label = document.createElement("span");
         label.className = "fab-setting-label";
         label.textContent = labelText;
@@ -7242,12 +8983,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         switchContainer.className = "fab-toggle-switch";
         const input = document.createElement("input");
         input.type = "checkbox";
-        input.checked = State[stateKey];
-        input.onchange = (e) => {
+        input.checked = Boolean(State[stateKey]);
+        input.onchange = async (e) => {
           e.stopPropagation();
           e.preventDefault();
           if (!TaskRunner3) return;
-          if (stateKey === "autoAddOnScroll") {
+          if (stateKey === "fastApiScan") {
+            await TaskRunner3.toggleFastApiScan();
+          } else if (stateKey === "incrementalEarlyStop") {
+            await TaskRunner3.toggleIncrementalEarlyStop();
+          } else if (stateKey === "autoAddOnScroll") {
             TaskRunner3.toggleAutoAdd();
           } else if (stateKey === "autoScroll") {
             TaskRunner3.toggleAutoScroll();
@@ -7264,7 +9009,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           } else if (stateKey === "blockLargeResources") {
             TaskRunner3.toggleBlockResources();
           }
-          e.target.checked = State[stateKey];
+          e.target.checked = Boolean(State[stateKey]);
         };
         const slider = document.createElement("span");
         slider.className = "fab-toggle-slider";
@@ -7272,7 +9017,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         row.append(label, switchContainer);
         return row;
       }, "createSettingRow");
-      const createNumberSettingRow = /* @__PURE__ */ __name((labelText, stateKey, min, max, tooltip) => {
+      const createNumberSettingRow = /* @__PURE__ */ __name((labelText, stateKey, min, max, tooltip, options = {}) => {
+        const { onChange, uiRefKey, defaultValue } = options;
         const row = document.createElement("div");
         row.className = "fab-setting-row";
         if (tooltip) row.title = tooltip;
@@ -7289,17 +9035,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         valueInput.type = "number";
         valueInput.min = String(min);
         valueInput.max = String(max);
-        valueInput.value = State[stateKey] ?? 7;
+        valueInput.value = State[stateKey] ?? defaultValue ?? min;
         valueInput.className = "fab-stepper-input";
         const plusBtn = document.createElement("button");
         plusBtn.type = "button";
         plusBtn.className = "fab-stepper-btn";
         plusBtn.textContent = "+";
         const applyVal = /* @__PURE__ */ __name(async (val) => {
-          const target = Math.max(min, Math.min(max, val));
+          const parsed = Math.floor(Number(val));
+          const target = Math.max(min, Math.min(max, Number.isFinite(parsed) ? parsed : min));
           valueInput.value = target;
-          if (TaskRunner3 && TaskRunner3.setMaxWorkers) {
-            await TaskRunner3.setMaxWorkers(target);
+          if (typeof onChange === "function") {
+            await onChange(target);
           } else {
             State[stateKey] = target;
           }
@@ -7318,12 +9065,40 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           e.stopPropagation();
           applyVal(Number(e.target.value) || min);
         };
-        State.UI.maxWorkersInput = valueInput;
+        if (uiRefKey) {
+          State.UI[uiRefKey] = valueInput;
+        }
         controlContainer.append(minusBtn, valueInput, plusBtn);
         row.append(label, controlContainer);
         return row;
       }, "createNumberSettingRow");
       const groupAutomation = createCardGroup(Utils.getText("settings_group_automation"));
+      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_fast_api_scan"), "fastApiScan", Utils.getText("setting_fast_api_scan_tooltip")));
+      groupAutomation.appendChild(createNumberSettingRow(
+        Utils.getText("setting_api_scan_concurrency"),
+        "apiScanConcurrency",
+        1,
+        Config.MAX_API_SCAN_CONCURRENCY || 6,
+        Utils.getText("setting_api_scan_concurrency_tooltip"),
+        {
+          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setApiScanConcurrency(v), "onChange"),
+          uiRefKey: "apiScanConcurrencyInput",
+          defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
+        }
+      ));
+      groupAutomation.appendChild(createSettingRow(Utils.getText("setting_incremental_early_stop"), "incrementalEarlyStop", Utils.getText("setting_incremental_early_stop_tooltip")));
+      groupAutomation.appendChild(createNumberSettingRow(
+        Utils.getText("setting_incremental_stop_pages"),
+        "incrementalStopPages",
+        1,
+        50,
+        Utils.getText("setting_incremental_stop_pages_tooltip"),
+        {
+          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setIncrementalStopPages(v), "onChange"),
+          uiRefKey: "incrementalStopPagesInput",
+          defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
+        }
+      ));
       groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_add_scroll"), "autoAddOnScroll"));
       groupAutomation.appendChild(createSettingRow(Utils.getText("setting_auto_scroll"), "autoScroll"));
       groupAutomation.appendChild(createSettingRow(Utils.getText("setting_remember_position"), "rememberScrollPosition"));
@@ -7338,7 +9113,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         "maxWorkers",
         1,
         15,
-        Utils.getText("setting_max_workers_tooltip")
+        Utils.getText("setting_max_workers_tooltip"),
+        {
+          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setMaxWorkers(v), "onChange"),
+          uiRefKey: "maxWorkersInput",
+          defaultValue: 7
+        }
       );
       groupPerformance.appendChild(maxWorkersSetting);
       groupPerformance.appendChild(createSettingRow(Utils.getText("setting_block_large_resources"), "blockLargeResources"));
@@ -7511,6 +9291,26 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
       if (apiMode && State.UI.savedPositionDisplay) {
         State.UI.savedPositionDisplay.textContent = UI5.getApiPositionText();
+      } else if (State.fastApiScan && State.fastScanStatus && State.UI.savedPositionDisplay) {
+        const fs = State.fastScanStatus;
+        const zh2 = State.lang === "zh";
+        if (fs.running) {
+          const totalStr = fs.totalEstimated > 0 ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
+          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
+          State.UI.savedPositionDisplay.textContent = zh2 ? `\u26A1 ${fs.activeConcurrency}\u8DEF \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.activeConcurrency}x \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
+        } else if (fs.phase === "paused") {
+          State.UI.savedPositionDisplay.textContent = Utils.getText(
+            "fast_scan_status_paused",
+            fs.itemsScanned.toLocaleString(),
+            fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : "?"
+          );
+        } else if (fs.phase === "completed") {
+          State.UI.savedPositionDisplay.textContent = Utils.getText(
+            "fast_scan_status_completed",
+            fs.claimedDirect,
+            fs.itemsScanned.toLocaleString()
+          );
+        }
       }
       const cardCounts = TaskRunner3?.getCardCounts ? TaskRunner3.getCardCounts() : {
         total: document.querySelectorAll(Config.SELECTORS.card).length,
@@ -7573,7 +9373,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       }
       if (State.UI.progressTrack && State.UI.progressBar) {
-        if (State.isExecuting && State.executionTotalTasks > 0) {
+        if (State.fastApiScan && State.fastScanStatus && State.fastScanStatus.running && State.fastScanStatus.totalEstimated > 0) {
+          State.UI.progressTrack.style.display = "block";
+          const percentage = Math.min(100, Math.round(State.fastScanStatus.itemsScanned / State.fastScanStatus.totalEstimated * 100));
+          State.UI.progressBar.style.width = `${percentage}%`;
+        } else if (State.isExecuting && State.executionTotalTasks > 0) {
           State.UI.progressTrack.style.display = "block";
           const progress = State.executionCompletedTasks + State.executionFailedTasks;
           const percentage = Math.min(100, Math.round(progress / State.executionTotalTasks * 100));
@@ -7588,6 +9392,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
       if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
         State.UI.maxWorkersInput.value = State.maxWorkers;
+      }
+      if (State.UI.apiScanConcurrencyInput && document.activeElement !== State.UI.apiScanConcurrencyInput) {
+        State.UI.apiScanConcurrencyInput.value = State.apiScanConcurrency;
+      }
+      if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
+        State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
       }
       if (State.UI.retryFailedBtn) {
         State.UI.retryFailedBtn.disabled = State.db.failed.length === 0;
@@ -8546,230 +10356,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }), "status")
     };
   }, "createPipelineScheduler");
-
-  // src/modules/listing-source.js
-  var SEARCH_PATH = "/i/listings/search";
-  var _SearchError = class _SearchError extends Error {
-    constructor(message, { status = 0, retryAfterMs = null, url = "" } = {}) {
-      super(message);
-      this.name = "SearchError";
-      this.status = status;
-      this.retryAfterMs = retryAfterMs;
-      this.url = url;
-    }
-  };
-  __name(_SearchError, "SearchError");
-  var SearchError = _SearchError;
-  var FREE_POLICY = {
-    // 只认服务端 isFree 标记。会漏掉 Personal/Professional 的 $0 商品。
-    FLAG_ONLY: "flag_only",
-    // 只认有效价格为 0。
-    PRICE_ONLY: "price_only",
-    // 并集：两者任一命中即视为可领取。与现行 DOM 判据行为最接近，默认采用。
-    FLAG_OR_PRICE: "flag_or_price"
-  };
-  var ListingSource = {
-    deps: {
-      // (url, { headers }) => Promise<{ status, responseText } | Response>
-      fetchImpl: null,
-      // 覆盖 URL 构造（测试或特殊页面用）
-      buildUrl: null,
-      // 覆盖基础查询参数，默认取下方 baseParams
-      getBaseParams: null,
-      // 覆盖请求头（默认带 cookie + csrf）
-      getHeaders: null
-    },
-    // 与抓包原文一致。若用户改了页面筛选条件，上层应覆盖 getBaseParams。
-    // 默认按首次发布时间倒序（-firstPublishedAt），与用户在页面上的实际筛选一致：
-    // 新发布的免费商品排在最前，便于增量领取（连续遇到已拥有即可停止）。
-    baseParams: { is_free: "1", sort_by: "-firstPublishedAt" },
-    freePolicy: FREE_POLICY.FLAG_OR_PRICE,
-    // 观测计数
-    stats: { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 },
-    configure: /* @__PURE__ */ __name(({ fetchImpl, buildUrl, getBaseParams, getHeaders, baseParams, freePolicy } = {}) => {
-      if (typeof fetchImpl === "function" || fetchImpl === null) ListingSource.deps.fetchImpl = fetchImpl;
-      if (typeof buildUrl === "function" || buildUrl === null) ListingSource.deps.buildUrl = buildUrl;
-      if (typeof getBaseParams === "function" || getBaseParams === null) ListingSource.deps.getBaseParams = getBaseParams;
-      if (typeof getHeaders === "function" || getHeaders === null) ListingSource.deps.getHeaders = getHeaders;
-      if (baseParams && typeof baseParams === "object") ListingSource.baseParams = { ...baseParams };
-      if (freePolicy) ListingSource.freePolicy = freePolicy;
-    }, "configure"),
-    reset: /* @__PURE__ */ __name(() => {
-      ListingSource.stats = { pagesFetched: 0, itemsSeen: 0, malformedPages: 0 };
-    }, "reset"),
-    /**
-     * 折算实际应付价格：有折扣价时以折扣价为准。
-     * 返回 null 表示「价格未知」——未知绝不等于免费。
-     */
-    effectivePrice: /* @__PURE__ */ __name((item) => {
-      if (!item) return null;
-      if (Number.isFinite(item.discountedPrice)) return item.discountedPrice;
-      if (Number.isFinite(item.price)) return item.price;
-      return null;
-    }, "effectivePrice"),
-    /**
-     * 是否可领取（免费）。判据随策略而变，见 FREE_POLICY 注释。
-     * 注意：本方法只回答「是否免费」，不回答「是否已入库」——后者由事件日志负责。
-     */
-    isClaimable: /* @__PURE__ */ __name((item) => {
-      if (!item || !item.uid) return false;
-      const price = ListingSource.effectivePrice(item);
-      switch (ListingSource.freePolicy) {
-        case FREE_POLICY.FLAG_ONLY:
-          return item.isFreeFlag === true;
-        case FREE_POLICY.PRICE_ONLY:
-          return price === 0;
-        case FREE_POLICY.FLAG_OR_PRICE:
-        default:
-          return item.isFreeFlag === true || price === 0 || item.effectiveDiscountPercentage === 100;
-      }
-    }, "isClaimable"),
-    /**
-     * 单个商品 JSON → 规范化任务对象。
-     * 字段缺失一律降级为空值而不是抛错：Fab 的响应允许大量字段为 null，
-     * 一条脏数据不该让整页作废。
-     */
-    normalize: /* @__PURE__ */ __name((raw) => {
-      if (!raw || typeof raw !== "object" || !raw.uid) return null;
-      const uid = String(raw.uid).trim().toLowerCase();
-      if (!uid) return null;
-      const sp = raw.startingPrice && typeof raw.startingPrice === "object" ? raw.startingPrice : {};
-      const numOrNull = /* @__PURE__ */ __name((v) => typeof v === "number" && Number.isFinite(v) ? v : null, "numOrNull");
-      const licenses = Array.isArray(raw.licenses) ? raw.licenses : [];
-      const offerIds = [];
-      const pushOffer = /* @__PURE__ */ __name((v) => {
-        if (typeof v === "string" && v && !offerIds.includes(v)) offerIds.push(v);
-      }, "pushOffer");
-      pushOffer(sp.offerId);
-      pushOffer(raw.offerId);
-      licenses.forEach((l) => pushOffer(l && l.offerId));
-      return {
-        uid,
-        url: `https://www.fab.com/${raw.listingType === "bundle" ? "bundles" : "listings"}/${uid}`,
-        name: typeof raw.title === "string" ? raw.title : "",
-        offerId: offerIds[0] || "",
-        offerIds,
-        price: numOrNull(sp.price),
-        discountedPrice: numOrNull(sp.discountedPrice),
-        effectiveDiscountPercentage: numOrNull(sp.effectiveDiscountPercentage),
-        currency: typeof sp.currencyCode === "string" ? sp.currencyCode : "",
-        isFreeFlag: raw.isFree === true,
-        isDiscounted: raw.isDiscounted === true,
-        licenses: licenses.map((l) => ({
-          name: l && typeof l.name === "string" ? l.name : "",
-          isCc0: !!(l && l.isCc0),
-          uid: l && l.uid ? String(l.uid) : ""
-        })),
-        listingType: typeof raw.listingType === "string" ? raw.listingType : "",
-        seller: raw.user && typeof raw.user.sellerName === "string" ? raw.user.sellerName : ""
-      };
-    }, "normalize"),
-    /**
-     * 从完整 URL 中抠出 cursor 参数。
-     * 响应里 cursors.next 与顶层 next 同时存在，优先用前者；
-     * 但当 cursors 缺失时，这是唯一的翻页依据。
-     */
-    _cursorFromUrl: /* @__PURE__ */ __name((url) => {
-      try {
-        const u = new URL(String(url), "https://www.fab.com");
-        return u.searchParams.get("cursor");
-      } catch (e) {
-        return null;
-      }
-    }, "_cursorFromUrl"),
-    /**
-     * 解析一页响应。
-     * 「是否到底」的唯一权威信号是 cursors.next === null —— 与 index.js 中
-     * State.isEndOfSearchList 的判定口径保持一致，不靠本地猜。
-     */
-    parsePage: /* @__PURE__ */ __name((payload) => {
-      if (!payload || typeof payload !== "object") {
-        ListingSource.stats.malformedPages += 1;
-        return { items: [], nextCursor: null, isEnd: true, malformed: true };
-      }
-      const rawItems = Array.isArray(payload) ? payload : Array.isArray(payload.results) ? payload.results : [];
-      const items = rawItems.map(ListingSource.normalize).filter(Boolean);
-      ListingSource.stats.itemsSeen += items.length;
-      let nextCursor = null;
-      if (payload.cursors && payload.cursors.next != null) {
-        nextCursor = String(payload.cursors.next);
-      } else if (payload.next != null) {
-        nextCursor = ListingSource._cursorFromUrl(payload.next);
-      }
-      return {
-        items,
-        nextCursor: nextCursor || null,
-        isEnd: !nextCursor,
-        malformed: false
-      };
-    }, "parsePage"),
-    /** 构造搜索 URL。cursor 为 null 时即为首页。 */
-    buildUrl: /* @__PURE__ */ __name((cursor = null) => {
-      const getBase = ListingSource.deps.getBaseParams;
-      const base = typeof getBase === "function" ? getBase() || {} : ListingSource.baseParams || {};
-      const params = new URLSearchParams();
-      Object.keys(base).forEach((k) => {
-        const v = base[k];
-        if (v !== null && v !== void 0 && v !== "") params.set(k, String(v));
-      });
-      if (cursor) params.set("cursor", cursor);
-      return `https://www.fab.com${SEARCH_PATH}?${params.toString()}`;
-    }, "buildUrl"),
-    _defaultHeaders: /* @__PURE__ */ __name(() => {
-      const headers = { "x-requested-with": "XMLHttpRequest", "accept": "application/json" };
-      try {
-        const token = Utils.getCookie("fab_csrftoken");
-        if (token) headers["x-csrftoken"] = token;
-      } catch (e) {
-      }
-      return headers;
-    }, "_defaultHeaders"),
-    /** Retry-After 优先取调用方给的毫秒数，其次解析响应头（秒 → 毫秒）。 */
-    _parseRetryAfter: /* @__PURE__ */ __name((res) => {
-      if (!res) return null;
-      if (Number.isFinite(res.retryAfterMs)) return res.retryAfterMs;
-      const match = String(res.responseHeaders || "").match(/retry-after:\s*(\d+)/i);
-      return match ? Number(match[1]) * 1e3 : null;
-    }, "_parseRetryAfter"),
-    /**
-     * 拉取一页。失败抛 SearchError，由上层决定退避还是终止。
-     * 这里刻意不做重试 —— 重试节奏属于流水线与限速器的职责，
-     * 在每一层都加退避会导致实际等待时间成倍叠加。
-     */
-    fetchPage: /* @__PURE__ */ __name(async (cursor = null) => {
-      const fetchImpl = ListingSource.deps.fetchImpl;
-      if (typeof fetchImpl !== "function") {
-        throw new SearchError("\u672A\u914D\u7F6E fetchImpl", { status: 0 });
-      }
-      const buildUrl = ListingSource.deps.buildUrl || ListingSource.buildUrl;
-      const url = buildUrl(cursor);
-      const getHeaders = ListingSource.deps.getHeaders || ListingSource._defaultHeaders;
-      const res = await fetchImpl(url, { headers: getHeaders() });
-      if (!res) throw new SearchError("\u641C\u7D22\u63A5\u53E3\u65E0\u54CD\u5E94", { status: 0, url });
-      const status = Number(res.status) || 0;
-      if (status === 429) {
-        throw new SearchError("\u641C\u7D22\u63A5\u53E3\u9650\u901F", {
-          status,
-          retryAfterMs: ListingSource._parseRetryAfter(res),
-          url
-        });
-      }
-      if (status < 200 || status >= 300) {
-        throw new SearchError(`\u641C\u7D22\u63A5\u53E3\u8FD4\u56DE ${status}`, { status, url });
-      }
-      let text = res.responseText;
-      if (text === void 0 && typeof res.text === "function") text = await res.text();
-      let payload = null;
-      try {
-        payload = JSON.parse(text == null ? "" : text);
-      } catch (e) {
-        throw new SearchError("\u641C\u7D22\u54CD\u5E94\u4E0D\u662F\u5408\u6CD5 JSON", { status, url });
-      }
-      const page = ListingSource.parsePage(payload);
-      ListingSource.stats.pagesFetched += 1;
-      return { ...page, url };
-    }, "fetchPage")
-  };
 
   // src/modules/pipeline-adapter.js
   var EVENT_LOG_MAX = 3e3;
@@ -9821,7 +11407,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+            if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -9843,7 +11429,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25\uFF0C\u5DF2\u56DE\u9000\u65E7\u8DEF\u5F84: ${e.message}`);
       }
     }
-    if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    if (State.fastApiScan && State.isExecuting && !isApiPipelineActive()) {
+      if (!State.manualVerificationPending && State.appStatus === "NORMAL" && State.isAuthenticated) {
+        setTimeout(() => {
+          if (State.fastApiScan && State.isExecuting && !State.manualVerificationPending && State.appStatus === "NORMAL") {
+            TaskRunner2.startFastScan().catch((error) => Utils.logger("error", `[FastScanner] \u81EA\u52A8\u6062\u590D\u5931\u8D25: ${error.message}`));
+          }
+        }, 1500);
+      }
+    } else if ((State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -9901,7 +11495,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
             RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
           }
-        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive()) {
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
           const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
           if (actualHidden > 0) {
             Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
@@ -9965,7 +11559,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       State.isExecuting = false;
       Database.saveExecutingState();
       await Database.saveTodo();
-      if (!State.autoAddOnScroll && !State.autoScroll || State.isEndOfSearchList) {
+      if (!State.autoAddOnScroll && !State.autoScroll || State.isEndOfSearchList || State.fastApiScan) {
         Utils.logger("info", "\u6240\u6709\u4EFB\u52A1\u5DF2\u5B8C\u6210\u3002");
         if (UI5 && typeof UI5.showToast === "function") {
           UI5.showToast(Utils.getText("toast_all_tasks_completed"), true);
@@ -10014,7 +11608,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     await InstanceManager.init();
     await Database.load();
     KeepAlive.setTick(async () => {
-      if (State.isWorkerTab || !State.isExecuting) {
+      if (State.isWorkerTab || !State.isExecuting && !FastScanner.isRunning()) {
         KeepAlive.stop();
         return;
       }
@@ -10039,6 +11633,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       State.isExecuting = storedExecutingState;
     }
     await RateLimitManager.initStatus();
+    if (!State.nativeFetch && typeof window !== "undefined" && typeof window.fetch === "function") {
+      State.nativeFetch = window.fetch.bind(window);
+    }
     setupRequestInterceptors();
     await PagePatcher.init();
     const tempTasks = await GM_getValue("temp_todo_tasks", null);
@@ -10092,7 +11689,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       });
     }
     State.domIntervals.push(setInterval(() => {
-      if (State.appStatus === "NORMAL" && State.isExecuting && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
+      if (State.appStatus === "NORMAL" && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
         const inactiveTime = Date.now() - lastNetworkActivityTime;
         if (inactiveTime > 3e4) {
           Utils.logger("warn", `\u26A0\uFE0F \u68C0\u6D4B\u5230\u5728\u4EFB\u52A1\u6267\u884C\u72B6\u6001\u4E0B\u5DF2\u6301\u7EED ${Math.floor(inactiveTime / 1e3)} \u79D2\u65E0\u7F51\u7EDC\u6D3B\u52A8\uFF0C\u5373\u5C06\u5F3A\u5236\u5237\u65B0\u9875\u9762\u4EE5\u6062\u590D\u4EFB\u52A1...`);
@@ -10183,7 +11780,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           setTimeout(() => TaskRunner2.executeBatch(), 200);
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
-          if (State.autoScroll) {
+          if (FastScanner.isRunning()) {
+          } else if (State.fastApiScan) {
+            await TaskRunner2.stopExecutionAndSettle();
+          } else if (State.autoScroll) {
             TaskRunner2.attemptAutoScroll();
           } else {
             await TaskRunner2.stopExecutionAndSettle();
@@ -10198,6 +11798,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
   }
   __name(registerWorkerDoneListener2, "registerWorkerDoneListener");
   window.addEventListener("beforeunload", () => {
+    Database.flushSaveDone();
+    if (FastScanner.isRunning()) {
+      FastScanner.stop();
+    }
     if (State.domIntervals && State.domIntervals.length) {
       State.domIntervals.forEach((id) => {
         try {

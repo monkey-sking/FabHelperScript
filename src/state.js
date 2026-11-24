@@ -20,6 +20,14 @@ export const State = {
     hidePaid: false, // 是否隐藏所有付费商品
     blockLargeResources: true, // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
     maxWorkers: 7, // 并发工作标签页数量（默认7）
+    // 极速 API 分片扫描：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
+    // 真实环境由 Database.load() 读取并默认开启。
+    fastApiScan: false,
+    apiScanConcurrency: 4, // API 极速扫描并发路数（1-6）
+    incrementalEarlyStop: false, // 倒序追新模式下连续 N 页全已拥有自动停止
+    incrementalStopPages: 5, // 增量早停阈值（页）
+    fastScanStatus: null, // 极速扫描实时遥测状态
+    nativeFetch: null, // 页面未拦截前的原生 window.fetch 引用
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务
@@ -126,6 +134,8 @@ export const State = {
         hideBtn: null,
         retryFailedBtn: null,
         maxWorkersInput: null,
+        apiScanConcurrencyInput: null,
+        incrementalStopPagesInput: null,
         progressTrack: null,
         progressBar: null,
         statusKeepAlive: null,
