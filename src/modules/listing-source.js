@@ -143,6 +143,9 @@ export const ListingSource = {
         // license.uid 是许可身份，不是 add-to-library 的 offer_id
         licenses.forEach(l => pushOffer(l && l.offerId));
 
+        const rawPublishedAt = raw.firstPublishedAt || raw.publishedAt;
+        const parsedTs = rawPublishedAt ? Date.parse(String(rawPublishedAt)) : NaN;
+
         return {
             uid,
             url: `https://www.fab.com/${raw.listingType === 'bundle' ? 'bundles' : 'listings'}/${uid}`,
@@ -155,6 +158,7 @@ export const ListingSource = {
             currency: typeof sp.currencyCode === 'string' ? sp.currencyCode : '',
             isFreeFlag: raw.isFree === true,
             isDiscounted: raw.isDiscounted === true,
+            publishedAtMs: Number.isFinite(parsedTs) ? parsedTs : null,
             licenses: licenses.map(l => ({
                 name: (l && typeof l.name === 'string') ? l.name : '',
                 isCc0: !!(l && l.isCc0),

@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261124-1623
+// @version      3.5.27-20261125-1023
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -286,7 +286,9 @@
     log_incremental_stop_pages_changed: "Incremental stop threshold set to: {0} pages",
     toast_fast_scan_completed: "\u26A1 Fast scan complete! Scanned {1} items, newly claimed {0}.",
     toast_fast_scan_early_stop: "\u26A1 Incremental scan complete! Consecutive owned pages reached (scanned {1}, claimed {0}).",
+    toast_fast_scan_partial: "\u26A0\uFE0F Fast scan incomplete: scanned {1}, claimed {0}, {2} shard(s) failed. Checkpoint kept for resume.",
     fast_scan_status_paused: "\u26A1 Fast scan paused ({0}/{1} \xB7 checkpoint saved)",
+    fast_scan_status_partial: "\u26A1 Incomplete \xB7 {1} scanned \xB7 {0} claimed \xB7 {2} failed shards (checkpoint saved)",
     fast_scan_status_completed: "\u26A1 Scan done \xB7 {1} scanned \xB7 {0} claimed",
     setting_debug_tooltip: "Enable detailed logging for troubleshooting",
     // 状态文本
@@ -714,7 +716,9 @@
     log_incremental_stop_pages_changed: "\u8FFD\u65B0\u65E9\u505C\u8FDE\u7EED\u5DF2\u62E5\u6709\u9875\u6570\u9608\u503C\u5DF2\u8BBE\u7F6E\u4E3A: {0}",
     toast_fast_scan_completed: "\u26A1 \u6781\u901F\u626B\u63CF\u5B8C\u6210\uFF01\u5171\u626B\u63CF {1} \u4E2A\u5546\u54C1\uFF0C\u672C\u6B21\u65B0\u9886 {0} \u4E2A\u3002",
     toast_fast_scan_early_stop: "\u26A1 \u589E\u91CF\u8FFD\u65B0\u5B8C\u6210\uFF01\u8FDE\u7EED\u591A\u9875\u5747\u5DF2\u5165\u5E93\uFF08\u626B\u63CF {1} \u4E2A\uFF0C\u65B0\u9886 {0} \u4E2A\uFF09\u3002",
+    toast_fast_scan_partial: "\u26A0\uFE0F \u6781\u901F\u626B\u63CF\u672A\u5B8C\u6574\uFF1A\u5171\u626B\u63CF {1} \u4E2A\u5546\u54C1\uFF0C\u65B0\u9886 {0} \u4E2A\uFF0C\u6709 {2} \u4E2A\u5206\u7247\u8BF7\u6C42\u5931\u8D25\uFF0C\u5DF2\u4FDD\u7559\u65AD\u70B9\uFF0C\u70B9\u51FB\u53EF\u7EE7\u7EED\u8865\u626B\u3002",
     fast_scan_status_paused: "\u26A1 \u6781\u901F\u626B\u63CF\u5DF2\u6682\u505C ({0}/{1} \xB7 \u65AD\u70B9\u5DF2\u5B58)",
+    fast_scan_status_partial: "\u26A1 \u626B\u63CF\u672A\u5B8C\u6574 \xB7 \u5171 {1} \u4EF6 \xB7 \u65B0\u9886 {0} \xB7 {2} \u5206\u7247\u5931\u8D25(\u5DF2\u5B58\u65AD\u70B9)",
     fast_scan_status_completed: "\u26A1 \u626B\u63CF\u5B8C\u6210 \xB7 \u5171 {1} \u4EF6 \xB7 \u65B0\u9886 {0}",
     setting_debug_tooltip: "\u542F\u7528\u8BE6\u7EC6\u65E5\u5FD7\u8BB0\u5F55\uFF0C\u7528\u4E8E\u6392\u67E5\u95EE\u9898",
     // 状态文本
@@ -5131,6 +5135,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       pushOffer(sp.offerId);
       pushOffer(raw.offerId);
       licenses.forEach((l) => pushOffer(l && l.offerId));
+      const rawPublishedAt = raw.firstPublishedAt || raw.publishedAt;
+      const parsedTs = rawPublishedAt ? Date.parse(String(rawPublishedAt)) : NaN;
       return {
         uid,
         url: `https://www.fab.com/${raw.listingType === "bundle" ? "bundles" : "listings"}/${uid}`,
@@ -5143,6 +5149,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         currency: typeof sp.currencyCode === "string" ? sp.currencyCode : "",
         isFreeFlag: raw.isFree === true,
         isDiscounted: raw.isDiscounted === true,
+        publishedAtMs: Number.isFinite(parsedTs) ? parsedTs : null,
         licenses: licenses.map((l) => ({
           name: l && typeof l.name === "string" ? l.name : "",
           isCc0: !!(l && l.isCc0),
@@ -5531,6 +5538,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     let extraDelayMs = 0;
     let cleanStreak = 0;
     let currentQueryKey = "";
+    let currentBaseParams = {};
+    let currentHeadUpperMs = null;
+    let resumedFromCheckpoint = false;
     let currentMode = "sequential";
     let currentSlices = [];
     let currentStats = null;
@@ -5555,6 +5565,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         resolve();
       }
     }, "wakeWorkerSlots");
+    const noteHeadTimestamp = /* @__PURE__ */ __name((ms) => {
+      if (Number.isFinite(ms)) {
+        currentHeadUpperMs = currentHeadUpperMs == null ? ms : Math.max(currentHeadUpperMs, ms);
+      }
+    }, "noteHeadTimestamp");
     const resetRunVars = /* @__PURE__ */ __name(() => {
       stopped = false;
       authAborted = false;
@@ -5564,6 +5579,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       extraDelayMs = 0;
       cleanStreak = 0;
       currentQueryKey = "";
+      currentBaseParams = {};
+      currentHeadUpperMs = null;
+      resumedFromCheckpoint = false;
       currentMode = "sequential";
       currentSlices = [];
       seenUids = /* @__PURE__ */ new Set();
@@ -5593,6 +5611,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         queuedFallback: 0,
         failed: 0,
         pageErrors: 0,
+        failedSlices: 0,
         startedAt: nowFn(),
         finishedAt: null
       };
@@ -5621,10 +5640,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         totalEstimated: currentStats.totalEstimated,
         itemsPerSec: Math.round(currentStats.itemsScanned / elapsedSec),
         skippedLocal: currentStats.skippedLocal,
+        skippedNonFree: currentStats.skippedNonFree,
+        skippedFailed: currentStats.skippedFailed,
         confirmedOwnedServer: currentStats.confirmedOwnedServer,
         claimedDirect: currentStats.claimedDirect,
         queuedFallback: currentStats.queuedFallback,
         failed: currentStats.failed,
+        pageErrors: currentStats.pageErrors,
+        incompleteSlices: currentSlices.filter((s) => !s.done).length,
+        resumedFromCheckpoint,
         consecutiveOwnedPages,
         earlyStopped,
         rateLimitedUntil: pauseUntil > now ? pauseUntil : 0,
@@ -5718,7 +5742,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       offerId: item.offerId || "",
       offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
       listingType: item.listingType || "",
-      isBundle: Boolean(item.isBundle || item.listingType === "bundle")
+      isBundle: Boolean(item.isBundle || item.listingType === "bundle"),
+      needsDiscountVerify: Boolean(item.needsDiscountVerify)
     }), "toPendingClaimPayload");
     const dedupePending = /* @__PURE__ */ __name((items, mapFn) => {
       const db = getDatabase();
@@ -5736,8 +5761,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       version: 1,
       queryKey: currentQueryKey,
       mode: currentMode,
+      headUpperMs: currentHeadUpperMs,
       totalEstimated: currentStats.totalEstimated,
-      slices: currentSlices.map(({ inProgress, ...rest }) => rest),
+      slices: currentSlices.map(({ inProgress, failedThisRun, ...rest }) => rest),
       pendingUnknowns: dedupePending(
         [...Array.from(inFlightStateChunks).flat(), ...unknownBuffer],
         (item) => ({
@@ -5746,7 +5772,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           name: item.name || "Untitled",
           offerId: item.offerId || "",
           offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
-          listingType: item.listingType || ""
+          listingType: item.listingType || "",
+          needsDiscountVerify: Boolean(item.needsDiscountVerify)
         })
       ),
       pendingClaims: dedupePending(
@@ -5799,7 +5826,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         offerId: item.offerId || "",
         offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
         listingType: item.listingType || "",
-        isBundle: item.listingType === "bundle"
+        isBundle: item.listingType === "bundle",
+        needsDiscountVerify: Boolean(item.needsDiscountVerify)
       });
       wakeClaimWorkers();
     }, "enqueueClaim");
@@ -5929,15 +5957,25 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const db = getDatabase();
       const ls = getListingSource();
       const cache = getDataCache();
+      const isFreeQuery = String(currentBaseParams?.is_free || "") === "1";
+      const isTimeDesc = currentBaseParams?.sort_by === "-firstPublishedAt";
       let addedToUnknown = 0;
       for (const item of items || []) {
         if (!item || !item.uid) continue;
+        if (isTimeDesc && Number.isFinite(item.publishedAtMs)) {
+          noteHeadTimestamp(item.publishedAtMs);
+        }
         if (seenUids.has(item.uid)) continue;
         seenUids.add(item.uid);
         currentStats.itemsScanned += 1;
+        let queueItem = item;
         if (!ls.isClaimable(item)) {
-          currentStats.skippedNonFree += 1;
-          continue;
+          const maybeDiscountedFree = isFreeQuery && item.isDiscounted === true && item.discountedPrice == null && item.effectiveDiscountPercentage == null;
+          if (!maybeDiscountedFree) {
+            currentStats.skippedNonFree += 1;
+            continue;
+          }
+          queueItem = { ...item, offerId: "", needsDiscountVerify: true };
         }
         if (db.isDone(item.url)) {
           currentStats.skippedLocal += 1;
@@ -5947,10 +5985,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           currentStats.skippedFailed += 1;
           continue;
         }
-        if (item.offerId) {
-          cache.offerListingUids.set(item.offerId, item.uid);
+        if (queueItem.offerId) {
+          cache.offerListingUids.set(queueItem.offerId, queueItem.uid);
         }
-        unknownBuffer.push(item);
+        unknownBuffer.push(queueItem);
         addedToUnknown += 1;
       }
       if (flushImmediately) {
@@ -6033,8 +6071,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               task._claimRateRetries = retries;
               claimQueue.push(task);
             } else {
-              await db.markAsFailed(task, { reason: `\u8FDE\u7EED\u9650\u901F ${retries - 1} \u6B21\uFF0C\u653E\u5F03\u8BE5\u5546\u54C1` });
-              currentStats.failed += 1;
+              const reason = `\u8FDE\u7EED\u9650\u901F ${retries - 1} \u6B21\uFF0C\u653E\u5F03\u8BE5\u5546\u54C1`;
+              logMsg("warn", `[FastScanner] \u9886\u53D6\u5931\u8D25 (${task.name || task.uid}): ${reason}`);
+              const failRes = await db.markAsFailed(task, { reason });
+              if (failRes && failRes.retried) {
+                currentStats.queuedFallback += 1;
+              } else {
+                currentStats.failed += 1;
+              }
               syncStatus(true);
             }
           } else if (outcome.isBundle) {
@@ -6043,10 +6087,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             await routeToFallback(task);
             syncStatus();
           } else if (outcome.serverInternalError) {
-            await db.markAsFailed(task, {
-              reason: "Fab \u670D\u52A1\u7AEF\u5185\u90E8\u9519\u8BEF (500 Internal error)\uFF0C\u5B98\u7F51\u6309\u94AE\u4EA6\u65E0\u6CD5\u5165\u5E93"
-            });
-            currentStats.failed += 1;
+            const reason = "Fab \u670D\u52A1\u7AEF\u5185\u90E8\u9519\u8BEF (500 Internal error)\uFF0C\u5B98\u7F51\u6309\u94AE\u4EA6\u65E0\u6CD5\u5165\u5E93";
+            logMsg("warn", `[FastScanner] \u9886\u53D6\u5931\u8D25 (${task.name || task.uid}): ${reason}`);
+            const failRes = await db.markAsFailed(task, { reason });
+            if (failRes && failRes.retried) {
+              currentStats.queuedFallback += 1;
+            } else {
+              currentStats.failed += 1;
+            }
             syncStatus(true);
           } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
             await routeToFallback(task);
@@ -6059,8 +6107,19 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               onAuthFailure();
               break;
             }
-            await db.markAsFailed(task, { reason });
-            currentStats.failed += 1;
+            if (task.needsDiscountVerify && /未找到免费许可/.test(reason)) {
+              currentStats.skippedNonFree += 1;
+              logMsg("debug", `[FastScanner] \u6298\u6263\u5546\u54C1\u590D\u6838\u975E 100% \u514D\u8D39\uFF0C\u5DF2\u8DF3\u8FC7 (${task.name || task.uid})`);
+              syncStatus();
+              continue;
+            }
+            logMsg("warn", `[FastScanner] \u9886\u53D6\u5931\u8D25 (${task.name || task.uid}): ${reason}`);
+            const failRes = await db.markAsFailed(task, { reason });
+            if (failRes && failRes.retried) {
+              currentStats.queuedFallback += 1;
+            } else {
+              currentStats.failed += 1;
+            }
             syncStatus(true);
           }
         } finally {
@@ -6131,8 +6190,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           const pendingClaims = Array.isArray(saved?.pendingClaims) ? saved.pendingClaims : [];
           const hasUnfinishedSlices = Array.isArray(saved?.slices) && saved.slices.some((s) => !s.done);
           if (saved && saved.queryKey === currentQueryKey && (hasUnfinishedSlices || pendingUnknowns.length > 0 || pendingClaims.length > 0)) {
+            resumedFromCheckpoint = true;
             currentMode = saved.mode || "time-shards";
-            currentSlices = Array.isArray(saved.slices) ? saved.slices.map((s) => ({ ...s, inProgress: false })) : [];
+            currentSlices = Array.isArray(saved.slices) ? saved.slices.map((s) => ({ ...s, inProgress: false, failedThisRun: false })) : [];
             pendingUnknowns.forEach((item) => {
               if (!item || !item.uid || seenUids.has(item.uid) || db.isDone(item.url)) return;
               seenUids.add(item.uid);
@@ -6155,7 +6215,41 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               currentStats.queuedFallback = saved.stats.queuedFallback || 0;
               currentStats.failed = saved.stats.failed || 0;
             }
-            logMsg("info", `[FastScanner] \u68C0\u6D4B\u5230\u672A\u5B8C\u6210\u7684\u65AD\u70B9\uFF0C\u6062\u590D\u626B\u63CF\uFF08\u5269\u4F59 ${currentSlices.filter((s) => !s.done).length} \u4E2A\u5206\u7247\uFF0C\u5F85\u5904\u7406 ${unknownBuffer.length + claimQueue.length} \u9879\uFF09\u3002`);
+            let prevHeadMs = Number.isFinite(saved.headUpperMs) ? saved.headUpperMs : null;
+            if (prevHeadMs == null) {
+              for (const s of currentSlices) {
+                if (Number.isFinite(s?.upperMs)) {
+                  prevHeadMs = prevHeadMs == null ? s.upperMs : Math.max(prevHeadMs, s.upperMs);
+                }
+                const cMs = decodeTimeCursorMs(s?.cursor);
+                if (Number.isFinite(cMs)) {
+                  prevHeadMs = prevHeadMs == null ? cMs : Math.max(prevHeadMs, cMs);
+                }
+              }
+            }
+            if (prevHeadMs == null && Number.isFinite(saved.savedAt)) {
+              prevHeadMs = saved.savedAt;
+            }
+            let addedHeadSlice = false;
+            if (baseParams.sort_by === "-firstPublishedAt" && Number.isFinite(prevHeadMs)) {
+              currentHeadUpperMs = prevHeadMs;
+              currentSlices.unshift({
+                id: `time-head-${nowFn()}`,
+                extraParams: null,
+                upperMs: null,
+                lowerMs: prevHeadMs,
+                cursor: null,
+                done: false,
+                inProgress: false,
+                failedThisRun: false,
+                pages: 0
+              });
+              addedHeadSlice = true;
+            }
+            logMsg(
+              "info",
+              `[FastScanner] \u68C0\u6D4B\u5230\u672A\u5B8C\u6210\u7684\u65AD\u70B9\uFF0C\u6062\u590D\u626B\u63CF\uFF08\u5269\u4F59 ${currentSlices.filter((s) => !s.done).length} \u4E2A\u5206\u7247\uFF0C\u5F85\u5904\u7406 ${unknownBuffer.length + claimQueue.length} \u9879` + (addedHeadSlice ? "\uFF0C\u5DF2\u8FFD\u52A0\u5934\u90E8\u8865\u626B\u5206\u7247\u8986\u76D6\u65AD\u70B9\u671F\u95F4\u65B0\u54C1" : "") + "\uFF09\u3002"
+            );
             return;
           }
         } catch (_e) {
@@ -6212,9 +6306,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
         const topMs = decodeTimeCursorMs(descPage?.nextCursor);
         const bottomMs = decodeTimeCursorMs(ascPage?.nextCursor);
+        noteHeadTimestamp(topMs);
         if (topMs != null && bottomMs != null && topMs > bottomMs) {
           currentMode = "time-shards";
-          currentSlices = buildTimeSlices(topMs, bottomMs, targetConcurrency, descPage.nextCursor).map((s) => ({ ...s, inProgress: false }));
+          currentSlices = buildTimeSlices(topMs, bottomMs, targetConcurrency, descPage.nextCursor).map((s) => ({ ...s, inProgress: false, failedThisRun: false }));
         } else {
           currentMode = "sequential";
           currentSlices = [{
@@ -6225,14 +6320,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             cursor: descPage?.nextCursor || null,
             done: false,
             inProgress: false,
+            failedThisRun: false,
             pages: 0
           }];
         }
         return;
       }
-      if (targetConcurrency > 1 && !baseParams.listing_types && listingTypes.length > 1) {
+      const shardableTypes = listingTypes.filter((t) => t !== "bundle");
+      if (targetConcurrency > 1 && !baseParams.listing_types && shardableTypes.length > 1) {
         currentMode = "type-shards";
-        currentSlices = listingTypes.map((t) => ({
+        currentSlices = shardableTypes.map((t) => ({
           id: `type-${t}`,
           extraParams: { listing_types: t },
           upperMs: null,
@@ -6240,6 +6337,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           cursor: null,
           done: false,
           inProgress: false,
+          failedThisRun: false,
           pages: 0
         }));
         return;
@@ -6253,6 +6351,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         cursor: null,
         done: false,
         inProgress: false,
+        failedThisRun: false,
         pages: 0
       }];
     }, "calibrateRun");
@@ -6260,16 +6359,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const ls = getListingSource();
       while (!stopped && !authAborted && !earlyStopped) {
         if (workerIdx >= activeConcurrency) {
-          const remaining = currentSlices.some((s) => !s.done);
+          const remaining = currentSlices.some((s) => !s.done && !s.failedThisRun);
           if (!remaining) break;
           await new Promise((resolve) => {
             workerSlotWaiters.push(resolve);
           });
           continue;
         }
-        const slice = currentSlices.find((s) => !s.done && !s.inProgress);
+        const slice = currentSlices.find((s) => !s.done && !s.inProgress && !s.failedThisRun);
         if (!slice) {
-          const anyInProgress = currentSlices.some((s) => !s.done && s.inProgress);
+          const anyInProgress = currentSlices.some((s) => !s.done && !s.failedThisRun && s.inProgress);
           if (!anyInProgress) break;
           await new Promise((resolve) => {
             workerSlotWaiters.push(resolve);
@@ -6278,7 +6377,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
         slice.inProgress = true;
         try {
-          while (!stopped && !authAborted && !earlyStopped && !slice.done) {
+          while (!stopped && !authAborted && !earlyStopped && !slice.done && !slice.failedThisRun) {
             if (workerIdx >= activeConcurrency) {
               break;
             }
@@ -6286,8 +6385,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             const res = await fetchSearchPageRaw(url, slice.id);
             if (res.aborted || stopped || authAborted) break;
             if (res.error) {
-              logMsg("warn", `[FastScanner] \u5206\u7247 ${slice.id} \u8BF7\u6C42\u8FDE\u7EED\u5931\u8D25\uFF0C\u5DF2\u7ED3\u675F\u8BE5\u5206\u7247: ${res.error.message}`);
-              slice.done = true;
+              logMsg("warn", `[FastScanner] \u5206\u7247 ${slice.id} \u8BF7\u6C42\u8FDE\u7EED\u5931\u8D25\uFF0C\u4FDD\u7559\u65AD\u70B9\u5F85\u7EED\u626B: ${res.error.message}`);
+              slice.failedThisRun = true;
+              slice.lastError = res.error.message || "Search error";
+              currentStats.failedSlices += 1;
               break;
             }
             const page = ls.parsePage(res.json);
@@ -6296,6 +6397,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             const isIncremental = currentMode === "incremental";
             const pageResult = await processPageItems(page.items, { flushImmediately: isIncremental });
             if (stopped || authAborted) break;
+            if (baseParams.sort_by === "-firstPublishedAt" && page.nextCursor) {
+              noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
+            }
             if (!page.nextCursor) {
               slice.cursor = null;
               slice.done = true;
@@ -6345,10 +6449,19 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         Number.isFinite(options.incrementalStopPages) ? options.incrementalStopPages : Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5
       )));
       const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
-      const baseParams = incEnabled && rawBaseParams.sort_by !== "-firstPublishedAt" ? { ...rawBaseParams, sort_by: "-firstPublishedAt" } : rawBaseParams;
-      if (incEnabled && rawBaseParams.sort_by !== "-firstPublishedAt") {
-        logMsg("info", "[FastScanner] \u8FFD\u65B0\u6A21\u5F0F\u5DF2\u81EA\u52A8\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F (-firstPublishedAt) \u626B\u63CF\uFF08\u4FDD\u7559\u5F53\u524D\u7B5B\u9009\uFF09");
+      const baseParams = { ...rawBaseParams };
+      if (!options.preserveQuery && baseParams.is_free === void 0) {
+        baseParams.is_free = "1";
+        logMsg("info", "[FastScanner] \u5F53\u524D\u9875\u9762\u672A\u643A\u5E26 is_free=1\uFF0C\u5DF2\u81EA\u52A8\u9650\u5B9A\u4EC5\u626B\u63CF\u514D\u8D39\u5546\u54C1\u3002");
       }
+      if (!options.preserveSort && baseParams.sort_by !== "-firstPublishedAt") {
+        baseParams.sort_by = "-firstPublishedAt";
+        logMsg(
+          "info",
+          incEnabled ? "[FastScanner] \u8FFD\u65B0\u6A21\u5F0F\u5DF2\u81EA\u52A8\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F (-firstPublishedAt) \u626B\u63CF\uFF08\u4FDD\u7559\u5F53\u524D\u7B5B\u9009\uFF09" : "[FastScanner] \u5168\u91CF\u626B\u63CF\u5DF2\u81EA\u52A8\u5207\u6362\u4E3A\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F (-firstPublishedAt) \u65F6\u95F4\u5206\u7247\uFF08\u907F\u514D\u9ED8\u8BA4\u6392\u5E8F\u89E6\u53D1 Fab \u4E07\u6761\u5206\u9875\u4E0A\u9650\uFF09"
+        );
+      }
+      currentBaseParams = baseParams;
       currentQueryKey = buildQueryKey(baseParams);
       currentPhase = "calibrating";
       syncStatus(true);
@@ -6387,12 +6500,28 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           await Promise.all(claimLoops);
           await db.flushSaveDone();
           currentStats.finishedAt = nowFn();
+          const incompleteSlices = currentSlices.filter((s) => !s.done).length;
           if (stopped) {
             currentPhase = "paused";
             await saveCheckpoint(true);
           } else if (authAborted) {
             currentPhase = "error";
             await saveCheckpoint(true);
+          } else if (!earlyStopped && incompleteSlices > 0) {
+            currentPhase = "partial";
+            await saveCheckpoint(true);
+            const summary = buildSnapshot();
+            const toastMsg = getUtils().getText(
+              "toast_fast_scan_partial",
+              summary.claimedDirect,
+              summary.itemsScanned,
+              incompleteSlices
+            );
+            logMsg(
+              "warn",
+              `[FastScanner] \u626B\u63CF\u672A\u5B8C\u6574\uFF08${incompleteSlices} \u4E2A\u5206\u7247\u5931\u8D25\u5DF2\u4FDD\u7559\u65AD\u70B9\uFF09\uFF1A\u626B\u63CF ${summary.itemsScanned}\uFF0C\u65B0\u9886 ${summary.claimedDirect}\uFF0C\u672C\u5730\u5DF2\u9886\u8DF3\u8FC7 ${summary.skippedLocal}\uFF0C\u670D\u52A1\u7AEF\u5DF2\u62E5\u6709 ${summary.confirmedOwnedServer}\uFF0C\u975E\u514D\u8D39\u8DF3\u8FC7 ${summary.skippedNonFree}\uFF0C\u5931\u8D25\u5217\u8868\u8DF3\u8FC7 ${summary.skippedFailed}\uFF0C\u8F6C\u540E\u53F0\u961F\u5217 ${summary.queuedFallback}\uFF0C\u9886\u53D6\u5931\u8D25 ${summary.failed}`
+            );
+            onToast(toastMsg, true);
           } else {
             currentPhase = "completed";
             if (currentMode !== "incremental") {
@@ -6400,7 +6529,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
             const summary = buildSnapshot();
             const toastMsg = earlyStopped ? getUtils().getText("toast_fast_scan_early_stop", summary.claimedDirect, summary.itemsScanned) : getUtils().getText("toast_fast_scan_completed", summary.claimedDirect, summary.itemsScanned);
-            logMsg("info", `[FastScanner] ${toastMsg}`);
+            logMsg(
+              "info",
+              `[FastScanner] ${toastMsg}\uFF08\u660E\u7EC6\uFF1A\u672C\u5730\u8DF3\u8FC7 ${summary.skippedLocal}\uFF0C\u670D\u52A1\u7AEF\u5DF2\u62E5\u6709 ${summary.confirmedOwnedServer}\uFF0C\u975E\u514D\u8D39\u8DF3\u8FC7 ${summary.skippedNonFree}\uFF0C\u5931\u8D25\u5217\u8868\u8DF3\u8FC7 ${summary.skippedFailed}\uFF0C\u8F6C\u540E\u53F0\u961F\u5217 ${summary.queuedFallback}\uFF0C\u9886\u53D6\u5931\u8D25 ${summary.failed}\uFF09`
+            );
             onToast(toastMsg, true);
           }
           syncStatus(true);
@@ -9863,7 +9995,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             }
           } else if (isRunning) {
             badgeText = State.executionTotalTasks > 0 ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}` : State.lang === "zh" ? "\u6267\u884C\u4E2D" : "Running";
-          } else if (mode === "full" && (State.hasFastScanCheckpoint || fs?.phase === "paused")) {
+          } else if (mode === "full" && (State.hasFastScanCheckpoint || fs?.phase === "paused" || fs?.phase === "partial")) {
             badgeText = State.lang === "zh" ? "\u26A1 \u65AD\u70B9" : "\u26A1 Paused";
           }
         }
@@ -9900,12 +10032,26 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             fs.itemsScanned.toLocaleString(),
             fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : "?"
           );
-        } else if (fs && fs.phase === "completed" && fs.mode !== "incremental") {
+        } else if (fs && fs.phase === "partial" && fs.mode !== "incremental") {
           State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+            "fast_scan_status_partial",
+            fs.claimedDirect,
+            fs.itemsScanned.toLocaleString(),
+            fs.incompleteSlices || 1
+          );
+        } else if (fs && fs.phase === "completed" && fs.mode !== "incremental") {
+          let text = Utils.getText(
             "fast_scan_status_completed",
             fs.claimedDirect,
             fs.itemsScanned.toLocaleString()
           );
+          if (fs.queuedFallback > 0) {
+            text += zh2 ? ` \xB7 \u5F85\u9886 ${fs.queuedFallback}` : ` \xB7 ${fs.queuedFallback} queued`;
+          }
+          if (fs.failed > 0) {
+            text += zh2 ? ` \xB7 \u5931\u8D25 ${fs.failed}` : ` \xB7 ${fs.failed} failed`;
+          }
+          State.UI.fastScanStatusDisplay.textContent = text;
         } else if (State.hasFastScanCheckpoint) {
           State.UI.fastScanStatusDisplay.textContent = Utils.getText("fast_full_checkpoint_ready");
         } else {
@@ -9980,7 +10126,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         } else {
           let startKey = "exec_full_start";
           if (mode === "full") {
-            startKey = State.hasFastScanCheckpoint || fs?.phase === "paused" ? "exec_full_resume" : "exec_full_start";
+            startKey = State.hasFastScanCheckpoint || fs?.phase === "paused" || fs?.phase === "partial" ? "exec_full_resume" : "exec_full_start";
           } else if (mode === "incremental") {
             startKey = "exec_inc_start";
           } else {

@@ -1528,7 +1528,7 @@ export const UI = {
                     badgeText = State.executionTotalTasks > 0
                         ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`
                         : (State.lang === 'zh' ? '执行中' : 'Running');
-                } else if (mode === 'full' && (State.hasFastScanCheckpoint || fs?.phase === 'paused')) {
+                } else if (mode === 'full' && (State.hasFastScanCheckpoint || fs?.phase === 'paused' || fs?.phase === 'partial')) {
                     badgeText = State.lang === 'zh' ? '⚡ 断点' : '⚡ Paused';
                 }
             }
@@ -1573,12 +1573,26 @@ export const UI = {
                     fs.itemsScanned.toLocaleString(),
                     fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : '?'
                 );
-            } else if (fs && fs.phase === 'completed' && fs.mode !== 'incremental') {
+            } else if (fs && fs.phase === 'partial' && fs.mode !== 'incremental') {
                 State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                    'fast_scan_status_partial',
+                    fs.claimedDirect,
+                    fs.itemsScanned.toLocaleString(),
+                    fs.incompleteSlices || 1
+                );
+            } else if (fs && fs.phase === 'completed' && fs.mode !== 'incremental') {
+                let text = Utils.getText(
                     'fast_scan_status_completed',
                     fs.claimedDirect,
                     fs.itemsScanned.toLocaleString()
                 );
+                if (fs.queuedFallback > 0) {
+                    text += zh ? ` · 待领 ${fs.queuedFallback}` : ` · ${fs.queuedFallback} queued`;
+                }
+                if (fs.failed > 0) {
+                    text += zh ? ` · 失败 ${fs.failed}` : ` · ${fs.failed} failed`;
+                }
+                State.UI.fastScanStatusDisplay.textContent = text;
             } else if (State.hasFastScanCheckpoint) {
                 State.UI.fastScanStatusDisplay.textContent = Utils.getText('fast_full_checkpoint_ready');
             } else {
@@ -1666,7 +1680,7 @@ export const UI = {
             } else {
                 let startKey = 'exec_full_start';
                 if (mode === 'full') {
-                    startKey = (State.hasFastScanCheckpoint || fs?.phase === 'paused') ? 'exec_full_resume' : 'exec_full_start';
+                    startKey = (State.hasFastScanCheckpoint || fs?.phase === 'paused' || fs?.phase === 'partial') ? 'exec_full_resume' : 'exec_full_start';
                 } else if (mode === 'incremental') {
                     startKey = 'exec_inc_start';
                 } else {

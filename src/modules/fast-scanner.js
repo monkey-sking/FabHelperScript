@@ -337,6 +337,9 @@ export const createFastScanner = (deps = {}) => {
     let cleanStreak = 0;
 
     let currentQueryKey = '';
+    let currentBaseParams = {};
+    let currentHeadUpperMs = null;
+    let resumedFromCheckpoint = false;
     let currentMode = 'sequential';
     let currentSlices = [];
     let currentStats = null;
@@ -363,6 +366,12 @@ export const createFastScanner = (deps = {}) => {
         }
     };
 
+    const noteHeadTimestamp = (ms) => {
+        if (Number.isFinite(ms)) {
+            currentHeadUpperMs = currentHeadUpperMs == null ? ms : Math.max(currentHeadUpperMs, ms);
+        }
+    };
+
     const resetRunVars = () => {
         stopped = false;
         authAborted = false;
@@ -372,6 +381,9 @@ export const createFastScanner = (deps = {}) => {
         extraDelayMs = 0;
         cleanStreak = 0;
         currentQueryKey = '';
+        currentBaseParams = {};
+        currentHeadUpperMs = null;
+        resumedFromCheckpoint = false;
         currentMode = 'sequential';
         currentSlices = [];
         seenUids = new Set();
@@ -401,6 +413,7 @@ export const createFastScanner = (deps = {}) => {
             queuedFallback: 0,
             failed: 0,
             pageErrors: 0,
+            failedSlices: 0,
             startedAt: nowFn(),
             finishedAt: null
         };
@@ -431,10 +444,15 @@ export const createFastScanner = (deps = {}) => {
             totalEstimated: currentStats.totalEstimated,
             itemsPerSec: Math.round(currentStats.itemsScanned / elapsedSec),
             skippedLocal: currentStats.skippedLocal,
+            skippedNonFree: currentStats.skippedNonFree,
+            skippedFailed: currentStats.skippedFailed,
             confirmedOwnedServer: currentStats.confirmedOwnedServer,
             claimedDirect: currentStats.claimedDirect,
             queuedFallback: currentStats.queuedFallback,
             failed: currentStats.failed,
+            pageErrors: currentStats.pageErrors,
+            incompleteSlices: currentSlices.filter((s) => !s.done).length,
+            resumedFromCheckpoint,
             consecutiveOwnedPages,
             earlyStopped,
             rateLimitedUntil: pauseUntil > now ? pauseUntil : 0,
@@ -531,7 +549,8 @@ export const createFastScanner = (deps = {}) => {
         offerId: item.offerId || '',
         offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
         listingType: item.listingType || '',
-        isBundle: Boolean(item.isBundle || item.listingType === 'bundle')
+        isBundle: Boolean(item.isBundle || item.listingType === 'bundle'),
+        needsDiscountVerify: Boolean(item.needsDiscountVerify)
     });
 
     const dedupePending = (items, mapFn) => {
@@ -551,8 +570,9 @@ export const createFastScanner = (deps = {}) => {
         version: 1,
         queryKey: currentQueryKey,
         mode: currentMode,
+        headUpperMs: currentHeadUpperMs,
         totalEstimated: currentStats.totalEstimated,
-        slices: currentSlices.map(({ inProgress, ...rest }) => rest),
+        slices: currentSlices.map(({ inProgress, failedThisRun, ...rest }) => rest),
         pendingUnknowns: dedupePending(
             [...Array.from(inFlightStateChunks).flat(), ...unknownBuffer],
             (item) => ({
@@ -561,7 +581,8 @@ export const createFastScanner = (deps = {}) => {
                 name: item.name || 'Untitled',
                 offerId: item.offerId || '',
                 offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
-                listingType: item.listingType || ''
+                listingType: item.listingType || '',
+                needsDiscountVerify: Boolean(item.needsDiscountVerify)
             })
         ),
         pendingClaims: dedupePending(
@@ -616,7 +637,8 @@ export const createFastScanner = (deps = {}) => {
             offerId: item.offerId || '',
             offerIds: Array.isArray(item.offerIds) ? item.offerIds : [],
             listingType: item.listingType || '',
-            isBundle: item.listingType === 'bundle'
+            isBundle: item.listingType === 'bundle',
+            needsDiscountVerify: Boolean(item.needsDiscountVerify)
         });
         wakeClaimWorkers();
     };
@@ -752,18 +774,33 @@ export const createFastScanner = (deps = {}) => {
         const db = getDatabase();
         const ls = getListingSource();
         const cache = getDataCache();
+        const isFreeQuery = String(currentBaseParams?.is_free || '') === '1';
+        const isTimeDesc = currentBaseParams?.sort_by === '-firstPublishedAt';
         let addedToUnknown = 0;
 
         for (const item of (items || [])) {
             if (!item || !item.uid) continue;
+            if (isTimeDesc && Number.isFinite(item.publishedAtMs)) {
+                noteHeadTimestamp(item.publishedAtMs);
+            }
             if (seenUids.has(item.uid)) continue;
             seenUids.add(item.uid);
 
             currentStats.itemsScanned += 1;
 
+            let queueItem = item;
             if (!ls.isClaimable(item)) {
-                currentStats.skippedNonFree += 1;
-                continue;
+                // 搜索结果里 100% 限时折扣商品的 startingPrice 可能仍标原价且缺 discountedPrice，
+                // 在 is_free=1 下交给 ApiClaim 慢路径查详情 licenses 再判是否真正免费。
+                const maybeDiscountedFree = isFreeQuery
+                    && item.isDiscounted === true
+                    && item.discountedPrice == null
+                    && item.effectiveDiscountPercentage == null;
+                if (!maybeDiscountedFree) {
+                    currentStats.skippedNonFree += 1;
+                    continue;
+                }
+                queueItem = { ...item, offerId: '', needsDiscountVerify: true };
             }
             if (db.isDone(item.url)) {
                 currentStats.skippedLocal += 1;
@@ -775,11 +812,11 @@ export const createFastScanner = (deps = {}) => {
             }
 
             // 缓存 offerId 映射，供可能走传统详情页或价格拦截的路径复用
-            if (item.offerId) {
-                cache.offerListingUids.set(item.offerId, item.uid);
+            if (queueItem.offerId) {
+                cache.offerListingUids.set(queueItem.offerId, queueItem.uid);
             }
 
-            unknownBuffer.push(item);
+            unknownBuffer.push(queueItem);
             addedToUnknown += 1;
         }
 
@@ -876,8 +913,14 @@ export const createFastScanner = (deps = {}) => {
                         task._claimRateRetries = retries;
                         claimQueue.push(task);
                     } else {
-                        await db.markAsFailed(task, { reason: `连续限速 ${retries - 1} 次，放弃该商品` });
-                        currentStats.failed += 1;
+                        const reason = `连续限速 ${retries - 1} 次，放弃该商品`;
+                        logMsg('warn', `[FastScanner] 领取失败 (${task.name || task.uid}): ${reason}`);
+                        const failRes = await db.markAsFailed(task, { reason });
+                        if (failRes && failRes.retried) {
+                            currentStats.queuedFallback += 1;
+                        } else {
+                            currentStats.failed += 1;
+                        }
                         syncStatus(true);
                     }
                 } else if (outcome.isBundle) {
@@ -886,10 +929,14 @@ export const createFastScanner = (deps = {}) => {
                     await routeToFallback(task);
                     syncStatus();
                 } else if (outcome.serverInternalError) {
-                    await db.markAsFailed(task, {
-                        reason: 'Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库'
-                    });
-                    currentStats.failed += 1;
+                    const reason = 'Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库';
+                    logMsg('warn', `[FastScanner] 领取失败 (${task.name || task.uid}): ${reason}`);
+                    const failRes = await db.markAsFailed(task, { reason });
+                    if (failRes && failRes.retried) {
+                        currentStats.queuedFallback += 1;
+                    } else {
+                        currentStats.failed += 1;
+                    }
                     syncStatus(true);
                 } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
                     await routeToFallback(task);
@@ -902,8 +949,19 @@ export const createFastScanner = (deps = {}) => {
                         onAuthFailure();
                         break;
                     }
-                    await db.markAsFailed(task, { reason });
-                    currentStats.failed += 1;
+                    if (task.needsDiscountVerify && /未找到免费许可/.test(reason)) {
+                        currentStats.skippedNonFree += 1;
+                        logMsg('debug', `[FastScanner] 折扣商品复核非 100% 免费，已跳过 (${task.name || task.uid})`);
+                        syncStatus();
+                        continue;
+                    }
+                    logMsg('warn', `[FastScanner] 领取失败 (${task.name || task.uid}): ${reason}`);
+                    const failRes = await db.markAsFailed(task, { reason });
+                    if (failRes && failRes.retried) {
+                        currentStats.queuedFallback += 1;
+                    } else {
+                        currentStats.failed += 1;
+                    }
                     syncStatus(true);
                 }
             } finally {
@@ -981,8 +1039,11 @@ export const createFastScanner = (deps = {}) => {
                 const pendingClaims = Array.isArray(saved?.pendingClaims) ? saved.pendingClaims : [];
                 const hasUnfinishedSlices = Array.isArray(saved?.slices) && saved.slices.some((s) => !s.done);
                 if (saved && saved.queryKey === currentQueryKey && (hasUnfinishedSlices || pendingUnknowns.length > 0 || pendingClaims.length > 0)) {
+                    resumedFromCheckpoint = true;
                     currentMode = saved.mode || 'time-shards';
-                    currentSlices = Array.isArray(saved.slices) ? saved.slices.map((s) => ({ ...s, inProgress: false })) : [];
+                    currentSlices = Array.isArray(saved.slices)
+                        ? saved.slices.map((s) => ({ ...s, inProgress: false, failedThisRun: false }))
+                        : [];
                     pendingUnknowns.forEach((item) => {
                         if (!item || !item.uid || seenUids.has(item.uid) || db.isDone(item.url)) return;
                         seenUids.add(item.uid);
@@ -1005,7 +1066,46 @@ export const createFastScanner = (deps = {}) => {
                         currentStats.queuedFallback = saved.stats.queuedFallback || 0;
                         currentStats.failed = saved.stats.failed || 0;
                     }
-                    logMsg('info', `[FastScanner] 检测到未完成的断点，恢复扫描（剩余 ${currentSlices.filter((s) => !s.done).length} 个分片，待处理 ${unknownBuffer.length + claimQueue.length} 项）。`);
+
+                    // 续扫前先从最新头部向下补扫到上次断点的顶部时间戳，避免中断期间新上架商品被永久跳过
+                    let prevHeadMs = Number.isFinite(saved.headUpperMs) ? saved.headUpperMs : null;
+                    if (prevHeadMs == null) {
+                        for (const s of currentSlices) {
+                            if (Number.isFinite(s?.upperMs)) {
+                                prevHeadMs = prevHeadMs == null ? s.upperMs : Math.max(prevHeadMs, s.upperMs);
+                            }
+                            const cMs = decodeTimeCursorMs(s?.cursor);
+                            if (Number.isFinite(cMs)) {
+                                prevHeadMs = prevHeadMs == null ? cMs : Math.max(prevHeadMs, cMs);
+                            }
+                        }
+                    }
+                    if (prevHeadMs == null && Number.isFinite(saved.savedAt)) {
+                        prevHeadMs = saved.savedAt;
+                    }
+                    let addedHeadSlice = false;
+                    if (baseParams.sort_by === '-firstPublishedAt' && Number.isFinite(prevHeadMs)) {
+                        currentHeadUpperMs = prevHeadMs;
+                        currentSlices.unshift({
+                            id: `time-head-${nowFn()}`,
+                            extraParams: null,
+                            upperMs: null,
+                            lowerMs: prevHeadMs,
+                            cursor: null,
+                            done: false,
+                            inProgress: false,
+                            failedThisRun: false,
+                            pages: 0
+                        });
+                        addedHeadSlice = true;
+                    }
+
+                    logMsg(
+                        'info',
+                        `[FastScanner] 检测到未完成的断点，恢复扫描（剩余 ${currentSlices.filter((s) => !s.done).length} 个分片，待处理 ${unknownBuffer.length + claimQueue.length} 项` +
+                        (addedHeadSlice ? '，已追加头部补扫分片覆盖断点期间新品' : '') +
+                        '）。'
+                    );
                     return;
                 }
             } catch (_e) { /* ignore */ }
@@ -1074,10 +1174,11 @@ export const createFastScanner = (deps = {}) => {
 
             const topMs = decodeTimeCursorMs(descPage?.nextCursor);
             const bottomMs = decodeTimeCursorMs(ascPage?.nextCursor);
+            noteHeadTimestamp(topMs);
             if (topMs != null && bottomMs != null && topMs > bottomMs) {
                 currentMode = 'time-shards';
                 currentSlices = buildTimeSlices(topMs, bottomMs, targetConcurrency, descPage.nextCursor)
-                    .map((s) => ({ ...s, inProgress: false }));
+                    .map((s) => ({ ...s, inProgress: false, failedThisRun: false }));
             } else {
                 currentMode = 'sequential';
                 currentSlices = [{
@@ -1088,15 +1189,17 @@ export const createFastScanner = (deps = {}) => {
                     cursor: descPage?.nextCursor || null,
                     done: false,
                     inProgress: false,
+                    failedThisRun: false,
                     pages: 0
                 }];
             }
             return;
         }
 
-        if (targetConcurrency > 1 && !baseParams.listing_types && listingTypes.length > 1) {
+        const shardableTypes = listingTypes.filter((t) => t !== 'bundle');
+        if (targetConcurrency > 1 && !baseParams.listing_types && shardableTypes.length > 1) {
             currentMode = 'type-shards';
-            currentSlices = listingTypes.map((t) => ({
+            currentSlices = shardableTypes.map((t) => ({
                 id: `type-${t}`,
                 extraParams: { listing_types: t },
                 upperMs: null,
@@ -1104,6 +1207,7 @@ export const createFastScanner = (deps = {}) => {
                 cursor: null,
                 done: false,
                 inProgress: false,
+                failedThisRun: false,
                 pages: 0
             }));
             return;
@@ -1118,6 +1222,7 @@ export const createFastScanner = (deps = {}) => {
             cursor: null,
             done: false,
             inProgress: false,
+            failedThisRun: false,
             pages: 0
         }];
     };
@@ -1126,15 +1231,15 @@ export const createFastScanner = (deps = {}) => {
         const ls = getListingSource();
         while (!stopped && !authAborted && !earlyStopped) {
             if (workerIdx >= activeConcurrency) {
-                const remaining = currentSlices.some((s) => !s.done);
+                const remaining = currentSlices.some((s) => !s.done && !s.failedThisRun);
                 if (!remaining) break;
                 await new Promise((resolve) => { workerSlotWaiters.push(resolve); });
                 continue;
             }
 
-            const slice = currentSlices.find((s) => !s.done && !s.inProgress);
+            const slice = currentSlices.find((s) => !s.done && !s.inProgress && !s.failedThisRun);
             if (!slice) {
-                const anyInProgress = currentSlices.some((s) => !s.done && s.inProgress);
+                const anyInProgress = currentSlices.some((s) => !s.done && !s.failedThisRun && s.inProgress);
                 if (!anyInProgress) break;
                 await new Promise((resolve) => { workerSlotWaiters.push(resolve); });
                 continue;
@@ -1142,7 +1247,7 @@ export const createFastScanner = (deps = {}) => {
 
             slice.inProgress = true;
             try {
-                while (!stopped && !authAborted && !earlyStopped && !slice.done) {
+                while (!stopped && !authAborted && !earlyStopped && !slice.done && !slice.failedThisRun) {
                     if (workerIdx >= activeConcurrency) {
                         break; // 降并发时让出当前分片（cursor 保留，供活跃 worker 接力）
                     }
@@ -1151,8 +1256,10 @@ export const createFastScanner = (deps = {}) => {
                     const res = await fetchSearchPageRaw(url, slice.id);
                     if (res.aborted || stopped || authAborted) break;
                     if (res.error) {
-                        logMsg('warn', `[FastScanner] 分片 ${slice.id} 请求连续失败，已结束该分片: ${res.error.message}`);
-                        slice.done = true;
+                        logMsg('warn', `[FastScanner] 分片 ${slice.id} 请求连续失败，保留断点待续扫: ${res.error.message}`);
+                        slice.failedThisRun = true;
+                        slice.lastError = res.error.message || 'Search error';
+                        currentStats.failedSlices += 1;
                         break;
                     }
 
@@ -1163,6 +1270,10 @@ export const createFastScanner = (deps = {}) => {
                     const isIncremental = currentMode === 'incremental';
                     const pageResult = await processPageItems(page.items, { flushImmediately: isIncremental });
                     if (stopped || authAborted) break;
+
+                    if (baseParams.sort_by === '-firstPublishedAt' && page.nextCursor) {
+                        noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
+                    }
 
                     if (!page.nextCursor) {
                         slice.cursor = null;
@@ -1227,12 +1338,21 @@ export const createFastScanner = (deps = {}) => {
         )));
 
         const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
-        const baseParams = (incEnabled && rawBaseParams.sort_by !== '-firstPublishedAt')
-            ? { ...rawBaseParams, sort_by: '-firstPublishedAt' }
-            : rawBaseParams;
-        if (incEnabled && rawBaseParams.sort_by !== '-firstPublishedAt') {
-            logMsg('info', '[FastScanner] 追新模式已自动按最新发布倒序 (-firstPublishedAt) 扫描（保留当前筛选）');
+        const baseParams = { ...rawBaseParams };
+        if (!options.preserveQuery && baseParams.is_free === undefined) {
+            baseParams.is_free = '1';
+            logMsg('info', '[FastScanner] 当前页面未携带 is_free=1，已自动限定仅扫描免费商品。');
         }
+        if (!options.preserveSort && baseParams.sort_by !== '-firstPublishedAt') {
+            baseParams.sort_by = '-firstPublishedAt';
+            logMsg(
+                'info',
+                incEnabled
+                    ? '[FastScanner] 追新模式已自动按最新发布倒序 (-firstPublishedAt) 扫描（保留当前筛选）'
+                    : '[FastScanner] 全量扫描已自动切换为按最新发布倒序 (-firstPublishedAt) 时间分片（避免默认排序触发 Fab 万条分页上限）'
+            );
+        }
+        currentBaseParams = baseParams;
         currentQueryKey = buildQueryKey(baseParams);
 
         currentPhase = 'calibrating';
@@ -1286,12 +1406,28 @@ export const createFastScanner = (deps = {}) => {
                 await db.flushSaveDone();
 
                 currentStats.finishedAt = nowFn();
+                const incompleteSlices = currentSlices.filter((s) => !s.done).length;
                 if (stopped) {
                     currentPhase = 'paused';
                     await saveCheckpoint(true);
                 } else if (authAborted) {
                     currentPhase = 'error';
                     await saveCheckpoint(true);
+                } else if (!earlyStopped && incompleteSlices > 0) {
+                    currentPhase = 'partial';
+                    await saveCheckpoint(true);
+                    const summary = buildSnapshot();
+                    const toastMsg = getUtils().getText(
+                        'toast_fast_scan_partial',
+                        summary.claimedDirect,
+                        summary.itemsScanned,
+                        incompleteSlices
+                    );
+                    logMsg(
+                        'warn',
+                        `[FastScanner] 扫描未完整（${incompleteSlices} 个分片失败已保留断点）：扫描 ${summary.itemsScanned}，新领 ${summary.claimedDirect}，本地已领跳过 ${summary.skippedLocal}，服务端已拥有 ${summary.confirmedOwnedServer}，非免费跳过 ${summary.skippedNonFree}，失败列表跳过 ${summary.skippedFailed}，转后台队列 ${summary.queuedFallback}，领取失败 ${summary.failed}`
+                    );
+                    onToast(toastMsg, true);
                 } else {
                     currentPhase = 'completed';
                     if (currentMode !== 'incremental') {
@@ -1301,7 +1437,10 @@ export const createFastScanner = (deps = {}) => {
                     const toastMsg = earlyStopped
                         ? getUtils().getText('toast_fast_scan_early_stop', summary.claimedDirect, summary.itemsScanned)
                         : getUtils().getText('toast_fast_scan_completed', summary.claimedDirect, summary.itemsScanned);
-                    logMsg('info', `[FastScanner] ${toastMsg}`);
+                    logMsg(
+                        'info',
+                        `[FastScanner] ${toastMsg}（明细：本地跳过 ${summary.skippedLocal}，服务端已拥有 ${summary.confirmedOwnedServer}，非免费跳过 ${summary.skippedNonFree}，失败列表跳过 ${summary.skippedFailed}，转后台队列 ${summary.queuedFallback}，领取失败 ${summary.failed}）`
+                    );
                     onToast(toastMsg, true);
                 }
 

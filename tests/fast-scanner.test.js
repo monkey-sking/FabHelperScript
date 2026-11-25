@@ -292,18 +292,25 @@ test('multi-shard time-cursor full scan covers all items including boundary ties
     assert.equal(gmStore.has(Config.DB_KEYS.FAST_SCAN_CHECKPOINT), false, 'Completed full scan clears checkpoint');
 });
 
-test('non-time-desc sort falls back to listing_types sharding when concurrency > 1', async (t) => {
+test('non-time-desc sort falls back to listing_types sharding when concurrency > 1 and excludes bundle', async (t) => {
     const baseMs = Date.parse('2026-05-01T00:00:00.000Z');
     const items = [
         ...Array.from({ length: 30 }, (_, i) => mkItem(i, baseMs + i * 1000, { listingType: '3d-model' })),
-        ...Array.from({ length: 15 }, (_, i) => mkItem(100 + i, baseMs + i * 1000, { listingType: 'material' }))
+        ...Array.from({ length: 15 }, (_, i) => mkItem(100 + i, baseMs + i * 1000, { listingType: 'material' })),
+        mkItem(999, baseMs + 20000, { listingType: 'bundle' })
     ];
     setupMemoryDb(t);
 
     const { fetchImpl, requestLog } = setupMockServer(items, new Set());
+    const wrappedFetch = async (url) => {
+        if (url.includes('listing_types=bundle')) {
+            return { status: 400, responseText: '{"detail":"Invalid listing_types"}' };
+        }
+        return fetchImpl(url);
+    };
     const claimed = [];
     const scanner = createFastScanner({
-        fetchImpl,
+        fetchImpl: wrappedFetch,
         apiClaim: {
             isAvailable: () => true,
             claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
@@ -322,13 +329,14 @@ test('non-time-desc sort falls back to listing_types sharding when concurrency >
         gmDeleteValue: async () => {}
     });
 
-    const summary = await scanner.start({ concurrency: 4 });
+    const summary = await scanner.start({ concurrency: 4, preserveSort: true });
     assert.equal(summary.mode, 'type-shards');
     assert.equal(summary.itemsScanned, 45);
     assert.equal(summary.claimedDirect, 45);
     assert.equal(claimed.length, 45);
     assert.ok(requestLog.searchUrls.some((u) => u.includes('listing_types=3d-model')));
     assert.ok(requestLog.searchUrls.some((u) => u.includes('listing_types=material')));
+    assert.ok(!requestLog.searchUrls.some((u) => u.includes('listing_types=bundle')));
 });
 
 test('direct main-tab ApiClaim uses offerId fast path (1 POST), routes bundles & retryables to fallback, and stops on 401', async (t) => {
@@ -851,4 +859,315 @@ test('FastScanner fast-fails on Fab 500 Internal error after trying alternate of
     assert.match(State.db.failed[0].failureReason, /500 Internal error/);
     assert.equal(Database.getMaxRetry('Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库'), 0);
     assert.equal(Database.getMaxRetry('Fab 服务端返回错误提示，无法入库: Ooops an error occurred'), 0);
+});
+
+test('stale checkpoint resume prepends head catch-up slice and claims newly published items without re-aggregating', async (t) => {
+    const baseMs = Date.parse('2026-01-01T00:00:00.000Z');
+    const oldItemsDesc = Array.from({ length: 96 }, (_, i) => mkItem(i, baseMs + (96 - i) * 3600 * 1000));
+    setupMemoryDb(t);
+
+    let activeItemsDesc = oldItemsDesc;
+    const gmStore = new Map();
+    const claimed = [];
+    let pagesBeforeStop = 0;
+    let scannerRef = null;
+    let aggCalls = 0;
+
+    const dynamicFetch = async (url) => {
+        if (url.includes('aggregate_on=')) aggCalls += 1;
+        const { fetchImpl } = setupMockServer(activeItemsDesc, new Set());
+        const res = await fetchImpl(url);
+        const u = new URL(url, 'https://www.fab.com');
+        if (u.pathname === '/i/listings/search' && u.searchParams.get('count') !== '0' && scannerRef && pagesBeforeStop !== -1) {
+            pagesBeforeStop += 1;
+            if (pagesBeforeStop >= 2) {
+                pagesBeforeStop = -1;
+                scannerRef.stop();
+            }
+        }
+        return res;
+    };
+
+    const scanner1 = createFastScanner({
+        fetchImpl: dynamicFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+    scannerRef = scanner1;
+    const paused = await scanner1.start({ concurrency: 1 });
+    assert.equal(paused.phase, 'paused');
+
+    // Prepend 30 brand-new items published strictly after the checkpoint head
+    const newItemsDesc = Array.from({ length: 30 }, (_, i) =>
+        mkItem(1000 + i, baseMs + (200 - i) * 3600 * 1000)
+    );
+    activeItemsDesc = [...newItemsDesc, ...oldItemsDesc];
+    aggCalls = 0;
+    scannerRef = null;
+
+    const scanner2 = createFastScanner({
+        fetchImpl: dynamicFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+    const resumed = await scanner2.start({ concurrency: 2 });
+    assert.equal(aggCalls, 0, 'Resume must not repeat aggregate query');
+    assert.equal(resumed.phase, 'completed');
+    assert.equal(resumed.resumedFromCheckpoint, true);
+    const uniqueClaimed = new Set(claimed);
+    assert.equal(uniqueClaimed.size, 126, 'Must claim all 30 new items plus all 96 original items');
+    assert.ok(newItemsDesc.every((it) => uniqueClaimed.has(it.uid)));
+});
+
+test('Full scan auto-enforces is_free=1 and sort_by=-firstPublishedAt to use time-shards on default Chrome URLs', async (t) => {
+    const baseMs = Date.parse('2026-01-01T00:00:00.000Z');
+    const itemsDesc = Array.from({ length: 70 }, (_, i) => mkItem(i, baseMs + (70 - i) * 30 * 86400 * 1000));
+    setupMemoryDb(t);
+
+    for (const href of [
+        'https://www.fab.com/search?is_free=1',
+        'https://www.fab.com/search?sort_by=-firstPublishedAt'
+    ]) {
+        const { fetchImpl, requestLog } = setupMockServer(itemsDesc, new Set());
+        const claimed = [];
+        const scanner = createFastScanner({
+            fetchImpl,
+            apiClaim: {
+                isAvailable: () => true,
+                claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+            },
+            database: Database,
+            dataCache: DataCache,
+            state: State,
+            config: Config,
+            utils: Utils,
+            sleep: async () => {},
+            claimIntervalMs: 0,
+            getHref: () => href,
+            getHeaders: () => ({}),
+            gmGetValue: async (_, def) => def,
+            gmSetValue: async () => {},
+            gmDeleteValue: async () => {}
+        });
+        // Reset local done between runs
+        State.db.done = [];
+        Database.normalizeDoneList();
+
+        const summary = await scanner.start({ concurrency: 4 });
+        assert.equal(summary.mode, 'time-shards', `Expected time-shards for ${href}`);
+        assert.equal(summary.claimedDirect, 70);
+        assert.ok(requestLog.searchUrls.every((u) => {
+            const sp = new URL(u, 'https://www.fab.com').searchParams;
+            const sort = sp.get('sort_by');
+            return sp.get('is_free') === '1' && (sort === '-firstPublishedAt' || sort === 'firstPublishedAt');
+        }));
+        assert.equal(
+            requestLog.searchUrls.filter((u) => new URL(u, 'https://www.fab.com').searchParams.get('sort_by') === 'firstPublishedAt').length,
+            1,
+            'Only the single asc calibration request uses firstPublishedAt'
+        );
+    }
+});
+
+test('100%-off discounted items missing discountedPrice in search verify via ApiClaim detail slow path without dropping or falsely failing', async (t) => {
+    const baseMs = Date.parse('2026-11-24T00:00:00.000Z');
+    const discFreeItem = {
+        ...mkItem(1, baseMs, { isFree: false, price: 65.99, offerId: 'paid_looking_offer' }),
+        isDiscounted: true
+    };
+    const disc50Item = {
+        ...mkItem(2, baseMs - 1000, { isFree: false, price: 39.99, offerId: 'half_off_offer' }),
+        isDiscounted: true
+    };
+    const regularPaidItem = {
+        ...mkItem(3, baseMs - 2000, { isFree: false, price: 19.99, offerId: 'regular_paid_offer' }),
+        isDiscounted: false
+    };
+    setupMemoryDb(t);
+
+    const { fetchImpl } = setupMockServer([discFreeItem, disc50Item, regularPaidItem], new Set());
+    const claimedTasks = [];
+    const scanner = createFastScanner({
+        fetchImpl,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => {
+                claimedTasks.push({ uid: task.uid, offerId: task.offerId, needsDiscountVerify: task.needsDiscountVerify });
+                if (task.uid === discFreeItem.uid) {
+                    return { result: CLAIM_RESULT.SUCCESS };
+                }
+                return { result: CLAIM_RESULT.FAILURE, reason: '未找到免费许可的 offer_id', retryable: false };
+            }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const summary = await scanner.start({ concurrency: 1 });
+    assert.equal(claimedTasks.length, 2, 'Regular non-discounted paid item is skipped; both discounted items are verified');
+    assert.equal(claimedTasks[0].offerId, '', 'Discounted verify task clears search offerId to force detail license lookup');
+    assert.equal(claimedTasks[0].needsDiscountVerify, true);
+    assert.equal(summary.claimedDirect, 1);
+    assert.equal(summary.skippedNonFree, 2, 'Regular paid + non-100%-off discounted item both count as skippedNonFree');
+    assert.equal(summary.failed, 0, 'Non-100%-off discounted item must not pollute failed list');
+    assert.equal(State.db.failed.length, 0);
+});
+
+test('slice failure preserves checkpoint as phase=partial and subsequent resume finishes remaining slice', async (t) => {
+    const baseMs = Date.parse('2024-01-01T00:00:00.000Z');
+    const itemsDesc = Array.from({ length: 120 }, (_, i) => mkItem(i, baseMs + (120 - i) * 3 * 86400 * 1000));
+    setupMemoryDb(t);
+
+    const { fetchImpl } = setupMockServer(itemsDesc, new Set());
+    const gmStore = new Map();
+    const claimed = [];
+    let failMiddleSlice = true;
+    let targetFailedCursor = null;
+
+    const flakyFetch = async (url) => {
+        const u = new URL(url, 'https://www.fab.com');
+        const cur = u.searchParams.get('cursor');
+        if (failMiddleSlice && cur && u.pathname === '/i/listings/search' && u.searchParams.get('count') !== '0' && u.searchParams.get('sort_by') === '-firstPublishedAt') {
+            if (!targetFailedCursor) {
+                const ms = decodeTimeCursorMs(cur);
+                if (ms != null && ms < baseMs + 100 * 3 * 86400 * 1000) {
+                    targetFailedCursor = cur;
+                }
+            }
+            if (cur === targetFailedCursor) {
+                return { status: 502, responseText: 'Bad Gateway' };
+            }
+        }
+        return fetchImpl(url);
+    };
+
+    const scanner1 = createFastScanner({
+        fetchImpl: flakyFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        rateLimitBaseBackoffMs: 1,
+        claimIntervalMs: 0,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+
+    const partial = await scanner1.start({ concurrency: 4 });
+    assert.equal(partial.phase, 'partial');
+    assert.ok(partial.incompleteSlices >= 1);
+    assert.ok(partial.pageErrors >= 3);
+    assert.ok('skippedNonFree' in partial && 'skippedFailed' in partial);
+    const savedCp = gmStore.get(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
+    assert.ok(savedCp, 'Partial run must keep checkpoint for resume');
+    assert.equal(savedCp.slices.some((s) => !s.done), true);
+    assert.equal(savedCp.slices.every((s) => !('failedThisRun' in s)), true);
+
+    failMiddleSlice = false;
+    const scanner2 = createFastScanner({
+        fetchImpl: flakyFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+    const completed = await scanner2.start({ concurrency: 4 });
+    assert.equal(completed.phase, 'completed');
+    assert.equal(completed.incompleteSlices, 0);
+    assert.equal(new Set(claimed).size, 120);
+    assert.equal(gmStore.has(Config.DB_KEYS.FAST_SCAN_CHECKPOINT), false);
+});
+
+test('retried markAsFailed tasks increment queuedFallback rather than failed', async (t) => {
+    const baseMs = Date.parse('2026-06-01T00:00:00.000Z');
+    const items = [mkItem(1, baseMs, { offerId: 'off_1' })];
+    setupMemoryDb(t);
+    const { fetchImpl } = setupMockServer(items, new Set());
+
+    const scanner = createFastScanner({
+        fetchImpl,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async () => ({ result: CLAIM_RESULT.FAILURE, reason: '请求超时 Timeout', retryable: false })
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const summary = await scanner.start({ concurrency: 1 });
+    assert.equal(summary.failed, 0);
+    assert.equal(summary.queuedFallback, 1);
+    assert.equal(State.db.todo.length, 1);
+    assert.equal(State.db.failed.length, 0);
 });

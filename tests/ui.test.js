@@ -370,3 +370,39 @@ test('Collapse button hides panel body, shows live badge when active, and persis
     assert.equal(State.UI.tabContents.dashboard.style.display, 'block');
     assert.equal(State.UI.headerLiveBadge.style.display, 'none');
 });
+
+test('UI shows partial scan status and resume CTA when FastScanner finishes with incomplete slices', (t) => {
+    createFakeDomEnv(t);
+    UI.create();
+
+    State.hasFastScanCheckpoint = true;
+    State.fastScanStatus = {
+        running: false,
+        phase: 'partial',
+        mode: 'time-shards',
+        itemsScanned: 47097,
+        claimedDirect: 3,
+        incompleteSlices: 2,
+        queuedFallback: 0,
+        failed: 0
+    };
+    UI.update();
+
+    assert.equal(State.UI.execBtn.textContent, '⚡ 继续全量扫描');
+    assert.equal(State.UI.fastScanStatusDisplay.textContent, '⚡ 扫描未完整 · 共 47,097 件 · 新领 3 · 2 分片失败(已存断点)');
+
+    State.fastScanStatus = {
+        running: false,
+        phase: 'completed',
+        mode: 'time-shards',
+        itemsScanned: 47710,
+        claimedDirect: 616,
+        incompleteSlices: 0,
+        queuedFallback: 2,
+        failed: 1
+    };
+    State.hasFastScanCheckpoint = false;
+    UI.update();
+
+    assert.equal(State.UI.fastScanStatusDisplay.textContent, '⚡ 扫描完成 · 共 47,710 件 · 新领 616 · 待领 2 · 失败 1');
+});

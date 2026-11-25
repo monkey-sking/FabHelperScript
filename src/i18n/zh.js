@@ -274,7 +274,9 @@ export const zh = {
     log_incremental_stop_pages_changed: '追新早停连续已拥有页数阈值已设置为: {0}',
     toast_fast_scan_completed: '⚡ 极速扫描完成！共扫描 {1} 个商品，本次新领 {0} 个。',
     toast_fast_scan_early_stop: '⚡ 增量追新完成！连续多页均已入库（扫描 {1} 个，新领 {0} 个）。',
+    toast_fast_scan_partial: '⚠️ 极速扫描未完整：共扫描 {1} 个商品，新领 {0} 个，有 {2} 个分片请求失败，已保留断点，点击可继续补扫。',
     fast_scan_status_paused: '⚡ 极速扫描已暂停 ({0}/{1} · 断点已存)',
+    fast_scan_status_partial: '⚡ 扫描未完整 · 共 {1} 件 · 新领 {0} · {2} 分片失败(已存断点)',
     fast_scan_status_completed: '⚡ 扫描完成 · 共 {1} 件 · 新领 {0}',
     setting_debug_tooltip: '启用详细日志记录，用于排查问题',
 

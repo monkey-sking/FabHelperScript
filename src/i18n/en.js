@@ -272,7 +272,9 @@ export const en = {
     log_incremental_stop_pages_changed: 'Incremental stop threshold set to: {0} pages',
     toast_fast_scan_completed: '⚡ Fast scan complete! Scanned {1} items, newly claimed {0}.',
     toast_fast_scan_early_stop: '⚡ Incremental scan complete! Consecutive owned pages reached (scanned {1}, claimed {0}).',
+    toast_fast_scan_partial: '⚠️ Fast scan incomplete: scanned {1}, claimed {0}, {2} shard(s) failed. Checkpoint kept for resume.',
     fast_scan_status_paused: '⚡ Fast scan paused ({0}/{1} · checkpoint saved)',
+    fast_scan_status_partial: '⚡ Incomplete · {1} scanned · {0} claimed · {2} failed shards (checkpoint saved)',
     fast_scan_status_completed: '⚡ Scan done · {1} scanned · {0} claimed',
     setting_debug_tooltip: 'Enable detailed logging for troubleshooting',
 
