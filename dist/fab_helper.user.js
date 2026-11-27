@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.6.0-20261127-1407
+// @version      3.6.2-20261127-1523
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -37,15 +37,15 @@
     execute: "Auto Claim",
     executing: "Stop Claim",
     stopExecute: "Stop Claim",
-    retry_failed: "Retry Failed",
+    retry_failed: "Retry",
     added: "Done",
     failed: "Failed",
     todo: "To-Do",
     hidden: "Filtered",
     visible: "Visible",
-    clearLog: "Clear Log",
-    copyLog: "Copy Log",
-    copied: "Copied!",
+    clearLog: "Clear",
+    copyLog: "Copy",
+    copied: "Copied",
     tab_dashboard: "Dashboard",
     tab_settings: "Settings",
     tab_debug: "Debug",
@@ -53,43 +53,43 @@
     toast_reached_bottom: "\u{1F3C1} Reached the bottom of the list, all items scanned!",
     close: "Close",
     // 设置分组
-    settings_group_general_filter: "\u{1F3AF} General & Filters",
+    settings_group_general_filter: "General & Filters",
     settings_group_advanced_fallback: "Advanced & Fallback",
     // Mode-free dashboard strings
-    exec_full_start: "\u{1F680} Scan All Free Items",
-    exec_full_resume: "\u25B6 Resume Scan",
-    exec_full_resume_pct: "\u25B6 Resume Scan ({0}%)",
-    exec_full_stop: "\u25A0 Stop Scan",
-    exec_fallback_start: "\u{1F4DC} Scroll Scan (Fallback)",
-    exec_fallback_stop: "\u25A0 Stop Scroll Scan",
-    reset_checkpoint: "\u21BA Restart",
+    exec_full_start: "Scan All Free Items",
+    exec_full_resume: "Resume Scan",
+    exec_full_resume_pct: "Resume Scan \xB7 {0}%",
+    exec_full_stop: "Stop Scan",
+    exec_fallback_start: "Scroll Scan (Fallback)",
+    exec_fallback_stop: "Stop Scroll Scan",
+    reset_checkpoint: "Restart",
     confirm_reset_checkpoint: "Clear the saved scan checkpoint and start over?",
     log_checkpoint_cleared: "Scan checkpoint cleared.",
-    status_idle_auto: "Auto-claiming visible free items \xB7 Click above to scan all 48k+",
-    status_idle_manual: "Click above to claim visible items & scan all 48k+ free items",
+    status_idle_auto: "Auto-claiming visible free items",
+    status_idle_manual: "Click above to scan all free items",
     status_idle_fallback: "Fallback DOM scroll mode is active",
-    status_checkpoint_pct: "Paused at {0}% ({1} / {2}) \xB7 Resume or restart",
-    status_checkpoint_generic: "Unfinished scan checkpoint \xB7 Resume or restart",
-    status_scan_done: "\u2705 Scan done \xB7 {1} checked \xB7 +{0} claimed",
-    status_scan_partial: "\u26A0\uFE0F Incomplete ({2} shards left) \xB7 {1} checked \xB7 +{0} claimed",
-    pill_auto_claim: "\u26A1 Auto-Claim",
-    pill_hide_saved: "\u{1F648} Hide Owned",
-    pill_hide_paid: "\u{1F4B2} Hide Paid",
+    status_checkpoint_pct: "Saved {1} / {2}",
+    status_checkpoint_generic: "Unfinished scan checkpoint",
+    status_scan_done: "Scan complete \xB7 {1} items",
+    status_scan_partial: "Incomplete ({2} shards left) \xB7 {1} items",
+    pill_auto_claim: "Auto-Claim",
+    pill_hide_saved: "Hide Owned",
+    pill_hide_paid: "Hide Paid",
     setting_dom_fallback: "DOM Scroll Fallback (if API fails)",
     setting_dom_fallback_tooltip: "Use fast API by default; enable only if API fails to fall back to DOM auto-scroll",
     setting_max_workers_desc_tooltip: "Worker tabs for bundles, CAPTCHA fallback, and DOM fallback mode (1-15, default 7)",
     setting_page_only_tooltip: "Only applies in DOM scroll fallback mode",
     tooltip_collapse_ui: "Collapse panel",
     tooltip_expand_ui: "Expand panel",
-    log_auto_claim_visible_toggle: "Browse auto-claim {0}.",
+    log_auto_claim_visible_toggle: "Auto-claim {0}.",
     log_dom_fallback_toggle: "DOM scroll fallback mode {0}.",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "Free",
-    operation_log: "\u{1F4DD} Operation Log",
+    operation_log: "Activity Log",
     position_indicator: "\u{1F4CD} ",
     // 按钮文本
-    clear_all_data: "\u{1F5D1}\uFE0F Clear All Data",
+    clear_all_data: "Clear All Local Data",
     debug_mode: "Debug Mode",
     page_diagnosis: "Page Diagnosis",
     copy_btn: "Copy",
@@ -456,7 +456,7 @@
     execute: "\u4E00\u952E\u5165\u5E93",
     executing: "\u505C\u6B62\u5165\u5E93",
     stopExecute: "\u505C\u6B62\u5165\u5E93",
-    retry_failed: "\u91CD\u8BD5\u5931\u8D25",
+    retry_failed: "\u91CD\u8BD5",
     hideDiscounted: "\u9690\u85CF\u6253\u6298",
     showDiscounted: "\u663E\u793A\u6253\u6298",
     hidePaid: "\u9690\u85CF\u4ED8\u8D39",
@@ -466,9 +466,9 @@
     todo: "\u5F85\u5165\u5E93",
     hidden: "\u5DF2\u6EE4",
     visible: "\u53EF\u89C1",
-    clearLog: "\u6E05\u7A7A\u65E5\u5FD7",
-    copyLog: "\u590D\u5236\u65E5\u5FD7",
-    copied: "\u5DF2\u590D\u5236!",
+    clearLog: "\u6E05\u7A7A",
+    copyLog: "\u590D\u5236",
+    copied: "\u5DF2\u590D\u5236",
     tab_dashboard: "\u4EEA\u8868\u76D8",
     tab_settings: "\u8BBE\u5B9A",
     tab_debug: "\u8C03\u8BD5",
@@ -476,43 +476,43 @@
     toast_reached_bottom: "\u{1F3C1} \u5DF2\u5230\u8FBE\u5546\u54C1\u5217\u8868\u5E95\u90E8\uFF0C\u5168\u90E8\u5546\u54C1\u626B\u63CF\u5B8C\u6BD5\uFF01",
     close: "\u5173\u95ED",
     // 设置分组
-    settings_group_general_filter: "\u{1F3AF} \u5E38\u89C4\u4E0E\u8FC7\u6EE4",
+    settings_group_general_filter: "\u5E38\u89C4\u4E0E\u8FC7\u6EE4",
     settings_group_advanced_fallback: "\u9AD8\u7EA7\u4E0E\u5907\u7528\u65B9\u6848",
     // 零模式工作台文案
-    exec_full_start: "\u{1F680} \u5168\u7AD9\u626B\u63CF\u5165\u5E93",
-    exec_full_resume: "\u25B6 \u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF",
-    exec_full_resume_pct: "\u25B6 \u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF ({0}%)",
-    exec_full_stop: "\u25A0 \u505C\u6B62\u626B\u63CF",
-    exec_fallback_start: "\u{1F4DC} \u5F00\u59CB\u6EDA\u9875\u626B\u63CF (\u5907\u7528)",
-    exec_fallback_stop: "\u25A0 \u505C\u6B62\u6EDA\u9875\u626B\u63CF",
-    reset_checkpoint: "\u21BA \u91CD\u626B",
+    exec_full_start: "\u5168\u7AD9\u626B\u63CF\u5165\u5E93",
+    exec_full_resume: "\u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF",
+    exec_full_resume_pct: "\u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF \xB7 {0}%",
+    exec_full_stop: "\u505C\u6B62\u626B\u63CF",
+    exec_fallback_start: "\u5F00\u59CB\u6EDA\u9875\u626B\u63CF (\u5907\u7528)",
+    exec_fallback_stop: "\u505C\u6B62\u6EDA\u9875\u626B\u63CF",
+    reset_checkpoint: "\u91CD\u626B",
     confirm_reset_checkpoint: "\u786E\u5B9A\u6E05\u9664\u4E0A\u6B21\u626B\u63CF\u65AD\u70B9\u5E76\u4ECE\u5934\u5F00\u59CB\u5417\uFF1F",
     log_checkpoint_cleared: "\u5DF2\u6E05\u9664\u626B\u63CF\u65AD\u70B9\u3002",
-    status_idle_auto: "\u5DF2\u5F00\u542F\u773C\u524D\u514D\u8D39\u81EA\u52A8\u9886 \xB7 \u70B9\u4E0A\u65B9\u53EF\u626B\u5168\u7AD9 4.8\u4E07+ \u67E5\u6F0F",
-    status_idle_manual: "\u70B9\u4E0A\u65B9\u4E00\u952E\u9886\u773C\u524D\u9875\u5E76\u626B\u5168\u7AD9 4.8\u4E07+ \u514D\u8D39\u5546\u54C1",
+    status_idle_auto: "\u773C\u524D\u514D\u8D39\u81EA\u52A8\u9886\u8FD0\u884C\u4E2D",
+    status_idle_manual: "\u70B9\u51FB\u4E0A\u65B9\u6309\u94AE\u5168\u7AD9\u626B\u63CF\u5165\u5E93",
     status_idle_fallback: "\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u5DF2\u542F\u7528",
-    status_checkpoint_pct: "\u4E0A\u6B21\u505C\u5728 {0}%\uFF08{1} / {2}\uFF09\xB7 \u53EF\u7EE7\u7EED\u6216\u91CD\u626B",
-    status_checkpoint_generic: "\u6709\u672A\u5B8C\u6210\u65AD\u70B9 \xB7 \u53EF\u7EE7\u7EED\u6216\u91CD\u626B",
-    status_scan_done: "\u2705 \u626B\u63CF\u5B8C\u6210 \xB7 \u6838\u5BF9 {1} \u4EF6 \xB7 \u672C\u6B21\u65B0\u9886 {0}",
-    status_scan_partial: "\u26A0\uFE0F \u672A\u5B8C\u6574\uFF08{2} \u5206\u7247\u5F85\u8865\uFF09\xB7 \u6838\u5BF9 {1} \u4EF6 \xB7 \u672C\u6B21\u65B0\u9886 {0}",
-    pill_auto_claim: "\u26A1 \u6D4F\u89C8\u81EA\u52A8\u9886",
-    pill_hide_saved: "\u{1F648} \u9690\u85CF\u5DF2\u5F97",
-    pill_hide_paid: "\u{1F4B2} \u9690\u85CF\u4ED8\u8D39",
+    status_checkpoint_pct: "\u4E0A\u6B21\u8FDB\u5EA6 {1} / {2}",
+    status_checkpoint_generic: "\u5B58\u5728\u672A\u5B8C\u6210\u65AD\u70B9",
+    status_scan_done: "\u626B\u63CF\u5B8C\u6210 \xB7 {1} \u4EF6",
+    status_scan_partial: "\u672A\u5B8C\u6574\uFF08\u5269 {2} \u5206\u7247\uFF09\xB7 {1} \u4EF6",
+    pill_auto_claim: "\u81EA\u52A8\u9886\u672C\u9875",
+    pill_hide_saved: "\u9690\u85CF\u5DF2\u62E5\u6709",
+    pill_hide_paid: "\u9690\u85CF\u4ED8\u8D39",
     setting_dom_fallback: "\u5E94\u6025\u6EDA\u9875\u6A21\u5F0F\uFF08API \u5931\u6548\u5907\u7528\uFF09",
     setting_dom_fallback_tooltip: "\u9ED8\u8BA4\u8D70\u6781\u901F API\uFF1B\u4EC5\u5F53\u63A5\u53E3\u5931\u6548\u65F6\u5F00\u542F\uFF0C\u5207\u56DE\u65E7\u7248\u7F51\u9875\u81EA\u52A8\u6EDA\u9875 + \u8BE6\u60C5\u6807\u7B7E\u515C\u5E95",
     setting_max_workers_desc_tooltip: "Bundle\u3001\u4EBA\u673A\u9A8C\u8BC1\u515C\u5E95\u4E0E\u5E94\u6025\u6EDA\u9875\u6A21\u5F0F\u4F7F\u7528\u7684\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u6570\uFF081-15\uFF0C\u9ED8\u8BA4 7\uFF09",
     setting_page_only_tooltip: "\u4EC5\u5728\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u4E0B\u751F\u6548",
     tooltip_collapse_ui: "\u6536\u8D77\u9762\u677F",
     tooltip_expand_ui: "\u5C55\u5F00\u9762\u677F",
-    log_auto_claim_visible_toggle: "\u6D4F\u89C8\u81EA\u52A8\u9886\u5DF2{0}\u3002",
+    log_auto_claim_visible_toggle: "\u81EA\u52A8\u9886\u672C\u9875\u5DF2{0}\u3002",
     log_dom_fallback_toggle: "\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u5DF2{0}\u3002",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "\u514D\u8D39",
-    operation_log: "\u{1F4DD} \u64CD\u4F5C\u65E5\u5FD7",
+    operation_log: "\u8FD0\u884C\u65E5\u5FD7",
     position_indicator: "\u{1F4CD} ",
     // 按钮文本
-    clear_all_data: "\u{1F5D1}\uFE0F \u6E05\u7A7A\u6240\u6709\u5B58\u6863",
+    clear_all_data: "\u6E05\u7A7A\u6240\u6709\u672C\u5730\u5B58\u6863",
     debug_mode: "\u8C03\u8BD5\u6A21\u5F0F",
     page_diagnosis: "\u9875\u9762\u8BCA\u65AD",
     copy_btn: "\u590D\u5236",
@@ -6544,7 +6544,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
               claimed += 1;
               notifyItemClaimed(task, "claimed");
-              logMsg("info", `[\u6D4F\u89C8\u81EA\u52A8\u9886] \u2705 ${task.name}`);
+              logMsg("info", `\u2713 \u81EA\u52A8\u5165\u5E93 \xB7 ${task.name}`);
             } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
               await handleRateLimit(outcome.retryAfterMs, "visible-claim");
               const retries = (task._sightRateRetries || 0) + 1;
@@ -8748,18 +8748,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (document.getElementById(Config.UI_CONTAINER_ID)) return true;
       const styles = `
             :root {
-                --bg-color: rgba(18, 19, 23, 0.90);
-                --card-bg: rgba(255, 255, 255, 0.045);
+                --bg-color: rgba(20, 21, 26, 0.92);
+                --card-bg: rgba(255, 255, 255, 0.04);
                 --card-bg-recessed: rgba(0, 0, 0, 0.28);
-                --card-border: rgba(255, 255, 255, 0.08);
-                --border-color: rgba(255, 255, 255, 0.12);
+                --card-border: rgba(255, 255, 255, 0.075);
+                --border-color: rgba(255, 255, 255, 0.11);
                 --text-color-primary: #f5f5f7;
-                --text-color-secondary: #98989f;
+                --text-color-secondary: #8e8e96;
                 --radius-l: 14px;
-                --radius-m: 8px;
+                --radius-m: 9px;
                 --radius-s: 6px;
-                --blue: #0a84ff; --pink: #ff375f; --green: #30d158;
-                --orange: #ff9f0a; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                --blue: #0a84ff; --pink: #ff453a; --green: #32d74b;
+                --orange: #ffd60a; --gray: #8e8e93; --dark-gray: #3a3a3c;
                 --blue-bg: rgba(10, 132, 255, 0.18);
             }
             #${Config.UI_CONTAINER_ID} {
@@ -8774,7 +8774,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 border-radius: var(--radius-l);
                 color: var(--text-color-primary);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                width: 316px;
+                width: 336px;
+                max-width: calc(100vw - 24px);
                 font-size: 13px;
                 font-variant-numeric: tabular-nums;
                 box-shadow: 0 12px 40px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.09);
@@ -8905,11 +8906,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 display: flex;
                 gap: 6px;
                 align-items: stretch;
-                margin-bottom: 6px;
+                margin-bottom: 9px;
             }
             .fab-reset-checkpoint-btn {
                 flex: 0 0 auto;
-                padding: 0 11px;
+                padding: 0 12px;
                 border-radius: var(--radius-m);
                 border: 1px solid var(--card-border);
                 background: var(--card-bg);
@@ -8921,34 +8922,78 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 transition: background-color 0.15s, border-color 0.15s;
             }
             .fab-reset-checkpoint-btn:hover:not(:disabled) {
-                background: rgba(255, 255, 255, 0.12);
-                border-color: rgba(255, 255, 255, 0.22);
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
             }
             .fab-reset-checkpoint-btn:disabled {
                 opacity: 0.45;
                 cursor: not-allowed;
             }
-            .fab-status-telemetry {
+            .fab-progress-card {
+                background: rgba(255, 255, 255, 0.035);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                padding: 9px 11px;
+                margin-bottom: 9px;
+            }
+            .fab-progress-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 8px;
+            }
+            .fab-progress-title {
+                font-size: 12px;
+                font-weight: 500;
+                color: var(--text-color-primary);
+                font-variant-numeric: tabular-nums;
+            }
+            .fab-progress-pct {
+                font-size: 13px;
+                font-weight: 700;
+                color: #fff;
+                font-variant-numeric: tabular-nums;
+                flex-shrink: 0;
+            }
+            .fab-progress-pct.is-success {
+                color: var(--green);
+            }
+            .fab-progress-meta {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
-                margin-bottom: 6px;
-                padding: 0 2px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                margin-top: 2px;
+            }
+            .fab-progress-meta-left.is-warn {
+                color: var(--orange);
+                font-weight: 500;
+            }
+            .fab-progress-meta-right {
+                font-variant-numeric: tabular-nums;
+            }
+            .fab-progress-meta-right.is-success {
+                color: var(--green);
+                font-weight: 600;
             }
             .fab-quick-pills {
                 display: flex;
-                gap: 5px;
-                margin-bottom: 8px;
+                gap: 6px;
+                margin-bottom: 10px;
             }
             .fab-pill-btn {
                 flex: 1;
                 min-width: 0;
-                padding: 6px 4px;
-                border-radius: 999px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                padding: 7px 6px;
+                border-radius: var(--radius-m);
                 border: 1px solid var(--card-border);
-                background: var(--card-bg);
+                background: rgba(255, 255, 255, 0.025);
                 color: var(--text-color-secondary);
                 font-size: 11.5px;
                 font-weight: 500;
@@ -8956,54 +9001,71 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                text-align: center;
-                transition: all 0.15s ease;
+                transition: background-color 0.15s, border-color 0.15s, color 0.15s;
             }
             .fab-pill-btn:hover {
                 color: var(--text-color-primary);
-                background: rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.07);
             }
             .fab-pill-btn.active {
-                background: rgba(10, 132, 255, 0.22);
-                border-color: rgba(10, 132, 255, 0.6);
-                color: #fff;
+                background: rgba(255, 255, 255, 0.085);
+                border-color: rgba(255, 255, 255, 0.18);
+                color: var(--text-color-primary);
                 font-weight: 600;
             }
-            .fab-retry-banner-btn {
-                width: 100%;
-                margin-bottom: 8px;
-                padding: 6px 10px;
-                border-radius: var(--radius-m);
-                border: 1px solid rgba(255, 55, 95, 0.45);
-                background: rgba(255, 55, 95, 0.12);
-                color: #ff6987;
-                font-size: 12px;
+            .fab-pill-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.22);
+                flex-shrink: 0;
+                transition: background-color 0.15s, box-shadow 0.15s;
+            }
+            .fab-pill-btn.active .fab-pill-dot {
+                background: var(--green);
+                box-shadow: 0 0 6px rgba(50, 215, 75, 0.65);
+            }
+            .fab-pill-text {
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .fab-retry-inline-btn {
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 1px 6px;
+                border-radius: 999px;
+                border: 1px solid rgba(255, 69, 58, 0.38);
+                background: rgba(255, 69, 58, 0.18);
+                color: #ff6961;
+                font-size: 10.5px;
                 font-weight: 600;
+                line-height: 1.3;
                 cursor: pointer;
-                text-align: center;
+                flex-shrink: 0;
                 transition: background-color 0.15s;
             }
-            .fab-retry-banner-btn:hover {
-                background: rgba(255, 55, 95, 0.2);
+            .fab-retry-inline-btn:hover {
+                background: rgba(255, 69, 58, 0.3);
             }
             .fab-helper-status-bar {
                 display: flex;
                 flex-wrap: wrap;
                 gap: 6px;
-                margin-bottom: 8px;
+                margin-bottom: 9px;
             }
             .fab-helper-status-item {
                 background: var(--card-bg);
                 border: 1px solid var(--card-border);
-                padding: 6px 4px;
+                padding: 8px 10px;
                 border-radius: var(--radius-m);
-                font-size: 11.5px;
+                font-size: 11px;
                 color: var(--text-color-secondary);
                 display: flex;
                 flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                gap: 2px;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 4px;
                 min-width: 0;
                 transition: border-color 0.2s, background-color 0.2s;
             }
@@ -9016,69 +9078,84 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 flex-basis: calc((100% - 6px) / 2);
             }
             .fab-helper-status-item.has-failed {
-                border-color: rgba(255, 55, 95, 0.5);
-                background: rgba(255, 55, 95, 0.08);
+                border-color: rgba(255, 69, 58, 0.36);
+                background: rgba(255, 69, 58, 0.07);
+            }
+            .fab-status-head {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 4px;
             }
             .fab-helper-status-label {
                 display: flex;
                 align-items: center;
-                justify-content: center;
-                gap: 3px;
+                gap: 4px;
                 white-space: nowrap;
                 font-size: 11px;
+                color: var(--text-color-secondary);
             }
-            .fab-helper-status-item span {
+            .fab-helper-status-item > span {
                 display: block;
-                font-size: 16px;
-                font-weight: 700;
+                font-size: 17px;
+                font-weight: 650;
                 color: #fff;
-                margin-top: 0;
+                line-height: 1.15;
                 font-variant-numeric: tabular-nums;
-            }
-            @keyframes fab-pulse-glow {
-                0% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0.45); }
-                70% { box-shadow: 0 0 0 8px rgba(255, 55, 95, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
                 flex: 1;
                 min-width: 0;
-                border: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: var(--radius-m);
-                padding: 10px 14px;
-                font-size: 14px;
+                padding: 9px 14px;
+                font-size: 13.5px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.2s ease;
+                transition: background-color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
                 color: #fff;
-                background: var(--blue);
+                background: linear-gradient(180deg, #1f8fff 0%, #0071e3 100%);
                 margin-bottom: 0;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                gap: 6px;
-                box-shadow: 0 2px 10px rgba(10, 132, 255, 0.3);
+                gap: 7px;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 8px rgba(0, 113, 227, 0.28);
+            }
+            .fab-helper-execute-btn:hover {
+                filter: brightness(1.06);
             }
             .fab-helper-execute-btn.executing {
-                background: var(--pink);
-                box-shadow: 0 2px 12px rgba(255, 55, 95, 0.4);
-                animation: fab-pulse-glow 2s infinite;
+                background: rgba(255, 69, 58, 0.14);
+                border-color: rgba(255, 69, 58, 0.38);
+                color: #ff6961;
+                box-shadow: none;
+                animation: none;
+            }
+            .fab-helper-execute-btn.executing::before {
+                content: '';
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: #ff6961;
+                flex-shrink: 0;
             }
             .fab-progress-track {
                 width: 100%;
-                height: 4px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 2px;
-                margin-bottom: 8px;
+                height: 5px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 999px;
+                margin: 7px 0 6px;
                 overflow: hidden;
                 display: none;
             }
             .fab-progress-bar {
                 height: 100%;
-                background: linear-gradient(90deg, var(--blue), #5ac8fa);
+                background: linear-gradient(90deg, #0a84ff, #32ade6);
                 width: 0%;
                 transition: width 0.3s ease;
-                border-radius: 2px;
+                border-radius: 999px;
             }
             .fab-helper-actions {
                 display: flex;
@@ -9149,14 +9226,25 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 align-items: center;
                 gap: 4px;
             }
+            .fab-log-controls {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
             .fab-log-controls button {
                 background: transparent;
                 border: none;
                 color: var(--text-color-secondary);
                 cursor: pointer;
-                padding: 2px 4px;
-                font-size: 14px;
-                line-height: 1;
+                padding: 2px 5px;
+                border-radius: 4px;
+                font-size: 11px;
+                line-height: 1.2;
+                transition: color 0.15s, background-color 0.15s;
+            }
+            .fab-log-controls button:hover {
+                color: var(--text-color-primary);
+                background: rgba(255, 255, 255, 0.08);
             }
             #${Config.UI_LOG_ID} {
                 background: rgba(10, 10, 12, 0.85);
@@ -9612,6 +9700,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       };
       primaryRow.append(State.UI.execBtn, State.UI.resetCheckpointBtn);
+      const progressCard = document.createElement("div");
+      progressCard.className = "fab-progress-card";
+      progressCard.style.display = "none";
+      const progressHead = document.createElement("div");
+      progressHead.className = "fab-progress-head";
+      const progressTitle = document.createElement("span");
+      progressTitle.className = "fab-progress-title";
+      const progressPct = document.createElement("span");
+      progressPct.className = "fab-progress-pct";
+      progressHead.append(progressTitle, progressPct);
       const progressTrack = document.createElement("div");
       progressTrack.className = "fab-progress-track";
       const progressBar = document.createElement("div");
@@ -9619,30 +9717,44 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       progressTrack.appendChild(progressBar);
       State.UI.progressTrack = progressTrack;
       State.UI.progressBar = progressBar;
-      const fastScanStatusDisplay = document.createElement("div");
-      fastScanStatusDisplay.className = "fab-status-telemetry";
-      State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
+      const progressMeta = document.createElement("div");
+      progressMeta.className = "fab-progress-meta";
+      const progressMetaLeft = document.createElement("span");
+      progressMetaLeft.className = "fab-progress-meta-left";
+      const progressMetaRight = document.createElement("span");
+      progressMetaRight.className = "fab-progress-meta-right";
+      progressMeta.append(progressMetaLeft, progressMetaRight);
+      progressCard.append(progressHead, progressTrack, progressMeta);
+      progressCard._titleEl = progressTitle;
+      progressCard._pctEl = progressPct;
+      progressCard._metaLeftEl = progressMetaLeft;
+      progressCard._metaRightEl = progressMetaRight;
+      State.UI.fastScanStatusDisplay = progressCard;
       State.UI.statusKeepAlive = document.createElement("div");
       State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
       State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
       const statusBar = document.createElement("div");
       statusBar.className = "fab-helper-status-bar";
-      const createStatusItem = /* @__PURE__ */ __name((id, labelKey, icon, gridClass = "grid-3") => {
+      const createStatusItem = /* @__PURE__ */ __name((id, labelKey, gridClass = "grid-3") => {
         const item = document.createElement("div");
         item.className = `fab-helper-status-item ${gridClass}`;
+        const headDiv = document.createElement("div");
+        headDiv.className = "fab-status-head";
         const labelDiv = document.createElement("div");
         labelDiv.className = "fab-helper-status-label";
-        bindText(labelDiv, labelKey, `${icon} `);
+        bindText(labelDiv, labelKey);
+        headDiv.appendChild(labelDiv);
         const valSpan = document.createElement("span");
         valSpan.id = id;
         valSpan.textContent = "0";
-        item.append(labelDiv, valSpan);
+        item.append(headDiv, valSpan);
+        item._headEl = headDiv;
         item._valueEl = valSpan;
         return item;
       }, "createStatusItem");
-      State.UI.statusTodo = createStatusItem("fab-status-todo", "todo", "\u{1F4E5}", "grid-3");
-      State.UI.statusDone = createStatusItem("fab-status-done", "added", "\u2705", "grid-3");
-      State.UI.statusFailed = createStatusItem("fab-status-failed", "failed", "\u274C", "grid-3");
+      State.UI.statusTodo = createStatusItem("fab-status-todo", "todo", "grid-3");
+      State.UI.statusDone = createStatusItem("fab-status-done", "added", "grid-3");
+      State.UI.statusFailed = createStatusItem("fab-status-failed", "failed", "grid-3");
       State.UI.statusFailed.style.cursor = "pointer";
       State.UI.statusFailed.title = Utils.getText("tooltip_open_failed");
       State.UI.statusFailed.onclick = () => {
@@ -9657,19 +9769,30 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           });
         }
       };
-      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
       State.UI.retryFailedBtn = document.createElement("button");
       State.UI.retryFailedBtn.type = "button";
-      State.UI.retryFailedBtn.className = "fab-retry-banner-btn";
+      State.UI.retryFailedBtn.className = "fab-retry-inline-btn";
       State.UI.retryFailedBtn.style.display = "none";
-      State.UI.retryFailedBtn.onclick = () => TaskRunner3 && TaskRunner3.retryFailedTasks();
+      bindText(State.UI.retryFailedBtn, "retry_failed");
+      State.UI.retryFailedBtn.onclick = (e) => {
+        if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+        if (TaskRunner3) TaskRunner3.retryFailedTasks();
+      };
+      State.UI.statusFailed._headEl.appendChild(State.UI.retryFailedBtn);
+      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
       const quickPills = document.createElement("div");
       quickPills.className = "fab-quick-pills";
       const makeQuickPill = /* @__PURE__ */ __name((labelKey, onClick) => {
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className = "fab-pill-btn";
-        bindText(btn, labelKey);
+        const dot = document.createElement("span");
+        dot.className = "fab-pill-dot";
+        const textSpan = document.createElement("span");
+        textSpan.className = "fab-pill-text";
+        bindText(textSpan, labelKey);
+        btn.append(dot, textSpan);
+        btn._textEl = textSpan;
         btn.onclick = onClick;
         return btn;
       }, "makeQuickPill");
@@ -9692,21 +9815,20 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       logControls.className = "fab-log-controls";
       const copyLogBtn = document.createElement("button");
       copyLogBtn.type = "button";
-      copyLogBtn.textContent = "\u{1F4C4}";
+      bindText(copyLogBtn, "copyLog");
       copyLogBtn.title = Utils.getText("copyLog");
       copyLogBtn.onclick = (e) => {
         e.stopPropagation();
         navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
-          const originalText = copyLogBtn.textContent;
-          copyLogBtn.textContent = "\u2705";
+          copyLogBtn.textContent = Utils.getText("copied");
           setTimeout(() => {
-            copyLogBtn.textContent = originalText;
+            copyLogBtn.textContent = Utils.getText("copyLog");
           }, 1500);
         }).catch((err) => Utils.logger("error", "Failed to copy log:", err));
       };
       const clearLogBtn = document.createElement("button");
       clearLogBtn.type = "button";
-      clearLogBtn.textContent = "\u{1F5D1}\uFE0F";
+      bindText(clearLogBtn, "clearLog");
       clearLogBtn.title = Utils.getText("clearLog");
       clearLogBtn.onclick = (e) => {
         e.stopPropagation();
@@ -9725,11 +9847,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       logContainer.append(logHeader, State.UI.logPanel);
       dashboardContent.append(
         primaryRow,
-        State.UI.progressTrack,
-        fastScanStatusDisplay,
+        progressCard,
         State.UI.statusKeepAlive,
         statusBar,
-        State.UI.retryFailedBtn,
         quickPills,
         logContainer
       );
@@ -10077,55 +10197,103 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         State.UI.headerLiveBadge.style.display = badgeText ? "inline-flex" : "none";
       }
       if (State.UI.fastScanStatusDisplay) {
+        const card = State.UI.fastScanStatusDisplay;
+        const titleEl = card._titleEl;
+        const pctEl = card._pctEl;
+        const metaLeftEl = card._metaLeftEl;
+        const metaRightEl = card._metaRightEl;
         const zh2 = State.lang === "zh";
+        const setTrack = /* @__PURE__ */ __name((show, pct) => {
+          if (!State.UI.progressTrack || !State.UI.progressBar) return;
+          State.UI.progressTrack.style.display = show ? "block" : "none";
+          State.UI.progressBar.style.width = show ? `${Math.min(100, Math.max(0, pct || 0))}%` : "0%";
+        }, "setTrack");
+        const setClaimedMeta = /* @__PURE__ */ __name((claimedCount) => {
+          if (!metaRightEl) return;
+          const n = Number(claimedCount) || 0;
+          metaRightEl.textContent = zh2 ? n > 0 ? `\u65B0\u5165\u5E93 +${n}` : "\u65B0\u5165\u5E93 0" : n > 0 ? `+${n} claimed` : "0 claimed";
+          metaRightEl.classList.toggle("is-success", n > 0);
+        }, "setClaimedMeta");
+        if (pctEl) pctEl.classList.remove("is-success");
+        if (metaLeftEl) metaLeftEl.classList.remove("is-warn");
+        if (metaRightEl) metaRightEl.classList.remove("is-success");
         if (isFallback) {
-          if (isRunning && State.executionTotalTasks > 0) {
-            const done = State.executionCompletedTasks + State.executionFailedTasks;
-            State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u{1F4DC} \u6EDA\u9875\u5907\u7528\u8FD0\u884C\u4E2D \xB7 ${done}/${State.executionTotalTasks}` : `\u{1F4DC} Fallback running \xB7 ${done}/${State.executionTotalTasks}`;
+          card.style.display = "block";
+          const total = State.executionTotalTasks;
+          const done = State.executionCompletedTasks + State.executionFailedTasks;
+          if (isRunning && total > 0) {
+            const pct = Math.min(100, Math.round(done / total * 100));
+            if (titleEl) titleEl.textContent = `${done.toLocaleString()} / ${total.toLocaleString()}`;
+            if (pctEl) pctEl.textContent = `${pct}%`;
+            setTrack(true, pct);
           } else if (isRunning) {
-            State.UI.fastScanStatusDisplay.textContent = zh2 ? "\u{1F4DC} \u6B63\u5728\u6EDA\u9875\u626B\u63CF\u5F53\u524D\u5217\u8868..." : "\u{1F4DC} Scrolling list in fallback mode...";
+            if (titleEl) titleEl.textContent = zh2 ? "\u6B63\u5728\u6EDA\u9875\u626B\u63CF\u5F53\u524D\u5217\u8868" : "Scrolling list";
+            if (pctEl) pctEl.textContent = "";
+            setTrack(false, 0);
           } else {
-            State.UI.fastScanStatusDisplay.textContent = Utils.getText("status_idle_fallback");
+            if (titleEl) titleEl.textContent = Utils.getText("status_idle_fallback");
+            if (pctEl) pctEl.textContent = "";
+            setTrack(false, 0);
           }
+          if (metaLeftEl) metaLeftEl.textContent = zh2 ? "\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F" : "DOM scroll fallback";
+          if (metaRightEl) metaRightEl.textContent = "";
         } else if (fs && fs.running) {
-          const totalStr = fs.totalEstimated > 0 ? ` / ${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
-          const rateTag = fs.rateLimitedUntil > Date.now() ? zh2 ? " \xB7 \u23F3\u9650\u901F\u7B49\u5F85\u4E2D" : " \xB7 \u23F3429" : "";
-          State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u26A1 \u5DF2\u6838\u5BF9 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u672C\u6B21\u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
-        } else if (fs && fs.phase === "completed") {
-          let text = Utils.getText(
-            "status_scan_done",
-            fs.claimedDirect,
-            fs.itemsScanned.toLocaleString()
-          );
-          if (fs.failed > 0) {
-            text += zh2 ? ` \xB7 \u5931\u8D25 ${fs.failed}` : ` \xB7 ${fs.failed} failed`;
+          card.style.display = "block";
+          const hasTotal = fs.totalEstimated > 0;
+          const pct = hasTotal ? Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100)) : null;
+          if (titleEl) {
+            titleEl.textContent = hasTotal ? `${fs.itemsScanned.toLocaleString()} / ${fs.totalEstimated.toLocaleString()}` : fs.itemsScanned.toLocaleString();
           }
-          State.UI.fastScanStatusDisplay.textContent = text;
+          if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : "";
+          setTrack(pct != null, pct || 0);
+          const rateLimited = fs.rateLimitedUntil > Date.now();
+          if (metaLeftEl) {
+            metaLeftEl.textContent = rateLimited ? zh2 ? "\u9650\u901F\u7B49\u5F85\u4E2D" : "Rate limited" : zh2 ? `${fs.itemsPerSec} \u4EF6/\u79D2` : `${fs.itemsPerSec}/s`;
+            metaLeftEl.classList.toggle("is-warn", rateLimited);
+          }
+          setClaimedMeta(fs.claimedDirect);
+        } else if (fs && fs.phase === "completed") {
+          card.style.display = "block";
+          if (titleEl) titleEl.textContent = Utils.getText("status_scan_done", fs.claimedDirect, fs.itemsScanned.toLocaleString());
+          if (pctEl) {
+            pctEl.textContent = "100%";
+            pctEl.classList.add("is-success");
+          }
+          setTrack(true, 100);
+          if (metaLeftEl) {
+            metaLeftEl.textContent = fs.failed > 0 ? zh2 ? `\u5931\u8D25 ${fs.failed} \u9879` : `${fs.failed} failed` : zh2 ? "\u5168\u90E8\u6838\u5BF9\u5B8C\u6BD5" : "All verified";
+          }
+          setClaimedMeta(fs.claimedDirect);
         } else if (fs && fs.phase === "partial") {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-            "status_scan_partial",
-            fs.claimedDirect,
-            fs.itemsScanned.toLocaleString(),
-            fs.incompleteSlices || 1
-          );
+          card.style.display = "block";
+          const pct = getCheckpointPct();
+          if (titleEl) {
+            titleEl.textContent = Utils.getText(
+              "status_scan_partial",
+              fs.claimedDirect,
+              fs.itemsScanned.toLocaleString(),
+              fs.incompleteSlices || 1
+            );
+          }
+          if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : "";
+          setTrack(pct != null, pct || 0);
+          if (metaLeftEl) metaLeftEl.textContent = zh2 ? "\u5DF2\u4FDD\u5B58\u65AD\u70B9\uFF0C\u53EF\u7EE7\u7EED\u8865\u626B" : "Checkpoint saved";
+          setClaimedMeta(fs.claimedDirect);
         } else if (hasCheckpoint) {
+          card.style.display = "block";
           const pct = getCheckpointPct();
           const scanned = fs?.itemsScanned ?? State.fastScanCheckpointMeta?.itemsScanned ?? 0;
           const total = fs?.totalEstimated ?? State.fastScanCheckpointMeta?.totalEstimated ?? 0;
-          if (pct != null && total > 0) {
-            State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-              "status_checkpoint_pct",
-              pct,
-              Number(scanned).toLocaleString(),
-              Number(total).toLocaleString()
-            );
-          } else {
-            State.UI.fastScanStatusDisplay.textContent = Utils.getText("status_checkpoint_generic");
+          if (titleEl) {
+            titleEl.textContent = total > 0 ? Utils.getText("status_checkpoint_pct", pct || 0, Number(scanned).toLocaleString(), Number(total).toLocaleString()) : Utils.getText("status_checkpoint_generic");
           }
+          if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : "";
+          setTrack(pct != null, pct || 0);
+          if (metaLeftEl) metaLeftEl.textContent = zh2 ? "\u53EF\u7EE7\u7EED\u6216\u70B9\u53F3\u4FA7\u91CD\u626B" : "Resume or restart";
+          if (metaRightEl) metaRightEl.textContent = "";
         } else {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-            State.autoClaimVisible ? "status_idle_auto" : "status_idle_manual"
-          );
+          card.style.display = "none";
+          setTrack(false, 0);
         }
       }
       const todoCount = State.db.todo.length + (fs && fs.running ? fs.pendingCount || 0 : 0);
@@ -10134,7 +10302,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const setStatusCount = /* @__PURE__ */ __name((item, val) => {
         if (!item) return;
         const span = item._valueEl || item.querySelector("span");
-        if (span) span.textContent = String(val);
+        if (span) span.textContent = Number(val || 0).toLocaleString();
       }, "setStatusCount");
       setStatusCount(State.UI.statusTodo, todoCount);
       setStatusCount(State.UI.statusDone, doneCount);
@@ -10189,26 +10357,11 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           }
         }
       }
-      if (State.UI.progressTrack && State.UI.progressBar) {
-        if (!isFallback && fs && fs.running && fs.totalEstimated > 0) {
-          State.UI.progressTrack.style.display = "block";
-          const percentage = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
-          State.UI.progressBar.style.width = `${percentage}%`;
-        } else if (State.isExecuting && State.executionTotalTasks > 0) {
-          State.UI.progressTrack.style.display = "block";
-          const progress = State.executionCompletedTasks + State.executionFailedTasks;
-          const percentage = Math.min(100, Math.round(progress / State.executionTotalTasks * 100));
-          State.UI.progressBar.style.width = `${percentage}%`;
-        } else {
-          State.UI.progressTrack.style.display = "none";
-          State.UI.progressBar.style.width = "0%";
-        }
-      }
       if (State.UI.retryFailedBtn) {
-        State.UI.retryFailedBtn.style.display = failedCount > 0 ? "" : "none";
-        State.UI.retryFailedBtn.textContent = "\u{1F501} " + Utils.getText("retry_failed") + (failedCount > 0 ? ` (${failedCount})` : "");
+        State.UI.retryFailedBtn.style.display = failedCount > 0 ? "inline-flex" : "none";
+        State.UI.retryFailedBtn.textContent = Utils.getText("retry_failed");
         State.UI.retryFailedBtn.disabled = failedCount === 0;
-        State.UI.retryFailedBtn.title = failedCount > 0 ? Utils.getText("retry_failed") + ` (${failedCount})` : Utils.getText("no_failed_tasks");
+        State.UI.retryFailedBtn.title = failedCount > 0 ? `${Utils.getText("retry_failed")} (${failedCount})` : Utils.getText("no_failed_tasks");
       }
       const syncPill = /* @__PURE__ */ __name((btn, active) => {
         if (!btn) return;

@@ -54,18 +54,18 @@ export const UI = {
         // Style Injection
         const styles = `
             :root {
-                --bg-color: rgba(18, 19, 23, 0.90);
-                --card-bg: rgba(255, 255, 255, 0.045);
+                --bg-color: rgba(20, 21, 26, 0.92);
+                --card-bg: rgba(255, 255, 255, 0.04);
                 --card-bg-recessed: rgba(0, 0, 0, 0.28);
-                --card-border: rgba(255, 255, 255, 0.08);
-                --border-color: rgba(255, 255, 255, 0.12);
+                --card-border: rgba(255, 255, 255, 0.075);
+                --border-color: rgba(255, 255, 255, 0.11);
                 --text-color-primary: #f5f5f7;
-                --text-color-secondary: #98989f;
+                --text-color-secondary: #8e8e96;
                 --radius-l: 14px;
-                --radius-m: 8px;
+                --radius-m: 9px;
                 --radius-s: 6px;
-                --blue: #0a84ff; --pink: #ff375f; --green: #30d158;
-                --orange: #ff9f0a; --gray: #8e8e93; --dark-gray: #3a3a3c;
+                --blue: #0a84ff; --pink: #ff453a; --green: #32d74b;
+                --orange: #ffd60a; --gray: #8e8e93; --dark-gray: #3a3a3c;
                 --blue-bg: rgba(10, 132, 255, 0.18);
             }
             #${Config.UI_CONTAINER_ID} {
@@ -80,7 +80,8 @@ export const UI = {
                 border-radius: var(--radius-l);
                 color: var(--text-color-primary);
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-                width: 316px;
+                width: 336px;
+                max-width: calc(100vw - 24px);
                 font-size: 13px;
                 font-variant-numeric: tabular-nums;
                 box-shadow: 0 12px 40px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.09);
@@ -211,11 +212,11 @@ export const UI = {
                 display: flex;
                 gap: 6px;
                 align-items: stretch;
-                margin-bottom: 6px;
+                margin-bottom: 9px;
             }
             .fab-reset-checkpoint-btn {
                 flex: 0 0 auto;
-                padding: 0 11px;
+                padding: 0 12px;
                 border-radius: var(--radius-m);
                 border: 1px solid var(--card-border);
                 background: var(--card-bg);
@@ -227,34 +228,78 @@ export const UI = {
                 transition: background-color 0.15s, border-color 0.15s;
             }
             .fab-reset-checkpoint-btn:hover:not(:disabled) {
-                background: rgba(255, 255, 255, 0.12);
-                border-color: rgba(255, 255, 255, 0.22);
+                background: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.2);
             }
             .fab-reset-checkpoint-btn:disabled {
                 opacity: 0.45;
                 cursor: not-allowed;
             }
-            .fab-status-telemetry {
+            .fab-progress-card {
+                background: rgba(255, 255, 255, 0.035);
+                border: 1px solid var(--card-border);
+                border-radius: var(--radius-m);
+                padding: 9px 11px;
+                margin-bottom: 9px;
+            }
+            .fab-progress-head {
+                display: flex;
+                justify-content: space-between;
+                align-items: baseline;
+                gap: 8px;
+            }
+            .fab-progress-title {
+                font-size: 12px;
+                font-weight: 500;
+                color: var(--text-color-primary);
+                font-variant-numeric: tabular-nums;
+            }
+            .fab-progress-pct {
+                font-size: 13px;
+                font-weight: 700;
+                color: #fff;
+                font-variant-numeric: tabular-nums;
+                flex-shrink: 0;
+            }
+            .fab-progress-pct.is-success {
+                color: var(--green);
+            }
+            .fab-progress-meta {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
-                margin-bottom: 6px;
-                padding: 0 2px;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+                margin-top: 2px;
+            }
+            .fab-progress-meta-left.is-warn {
+                color: var(--orange);
+                font-weight: 500;
+            }
+            .fab-progress-meta-right {
+                font-variant-numeric: tabular-nums;
+            }
+            .fab-progress-meta-right.is-success {
+                color: var(--green);
+                font-weight: 600;
             }
             .fab-quick-pills {
                 display: flex;
-                gap: 5px;
-                margin-bottom: 8px;
+                gap: 6px;
+                margin-bottom: 10px;
             }
             .fab-pill-btn {
                 flex: 1;
                 min-width: 0;
-                padding: 6px 4px;
-                border-radius: 999px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                padding: 7px 6px;
+                border-radius: var(--radius-m);
                 border: 1px solid var(--card-border);
-                background: var(--card-bg);
+                background: rgba(255, 255, 255, 0.025);
                 color: var(--text-color-secondary);
                 font-size: 11.5px;
                 font-weight: 500;
@@ -262,54 +307,71 @@ export const UI = {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                text-align: center;
-                transition: all 0.15s ease;
+                transition: background-color 0.15s, border-color 0.15s, color 0.15s;
             }
             .fab-pill-btn:hover {
                 color: var(--text-color-primary);
-                background: rgba(255, 255, 255, 0.08);
+                background: rgba(255, 255, 255, 0.07);
             }
             .fab-pill-btn.active {
-                background: rgba(10, 132, 255, 0.22);
-                border-color: rgba(10, 132, 255, 0.6);
-                color: #fff;
+                background: rgba(255, 255, 255, 0.085);
+                border-color: rgba(255, 255, 255, 0.18);
+                color: var(--text-color-primary);
                 font-weight: 600;
             }
-            .fab-retry-banner-btn {
-                width: 100%;
-                margin-bottom: 8px;
-                padding: 6px 10px;
-                border-radius: var(--radius-m);
-                border: 1px solid rgba(255, 55, 95, 0.45);
-                background: rgba(255, 55, 95, 0.12);
-                color: #ff6987;
-                font-size: 12px;
+            .fab-pill-dot {
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: rgba(255, 255, 255, 0.22);
+                flex-shrink: 0;
+                transition: background-color 0.15s, box-shadow 0.15s;
+            }
+            .fab-pill-btn.active .fab-pill-dot {
+                background: var(--green);
+                box-shadow: 0 0 6px rgba(50, 215, 75, 0.65);
+            }
+            .fab-pill-text {
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .fab-retry-inline-btn {
+                display: none;
+                align-items: center;
+                justify-content: center;
+                padding: 1px 6px;
+                border-radius: 999px;
+                border: 1px solid rgba(255, 69, 58, 0.38);
+                background: rgba(255, 69, 58, 0.18);
+                color: #ff6961;
+                font-size: 10.5px;
                 font-weight: 600;
+                line-height: 1.3;
                 cursor: pointer;
-                text-align: center;
+                flex-shrink: 0;
                 transition: background-color 0.15s;
             }
-            .fab-retry-banner-btn:hover {
-                background: rgba(255, 55, 95, 0.2);
+            .fab-retry-inline-btn:hover {
+                background: rgba(255, 69, 58, 0.3);
             }
             .fab-helper-status-bar {
                 display: flex;
                 flex-wrap: wrap;
                 gap: 6px;
-                margin-bottom: 8px;
+                margin-bottom: 9px;
             }
             .fab-helper-status-item {
                 background: var(--card-bg);
                 border: 1px solid var(--card-border);
-                padding: 6px 4px;
+                padding: 8px 10px;
                 border-radius: var(--radius-m);
-                font-size: 11.5px;
+                font-size: 11px;
                 color: var(--text-color-secondary);
                 display: flex;
                 flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                gap: 2px;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 4px;
                 min-width: 0;
                 transition: border-color 0.2s, background-color 0.2s;
             }
@@ -322,69 +384,84 @@ export const UI = {
                 flex-basis: calc((100% - 6px) / 2);
             }
             .fab-helper-status-item.has-failed {
-                border-color: rgba(255, 55, 95, 0.5);
-                background: rgba(255, 55, 95, 0.08);
+                border-color: rgba(255, 69, 58, 0.36);
+                background: rgba(255, 69, 58, 0.07);
+            }
+            .fab-status-head {
+                width: 100%;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 4px;
             }
             .fab-helper-status-label {
                 display: flex;
                 align-items: center;
-                justify-content: center;
-                gap: 3px;
+                gap: 4px;
                 white-space: nowrap;
                 font-size: 11px;
+                color: var(--text-color-secondary);
             }
-            .fab-helper-status-item span {
+            .fab-helper-status-item > span {
                 display: block;
-                font-size: 16px;
-                font-weight: 700;
+                font-size: 17px;
+                font-weight: 650;
                 color: #fff;
-                margin-top: 0;
+                line-height: 1.15;
                 font-variant-numeric: tabular-nums;
-            }
-            @keyframes fab-pulse-glow {
-                0% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0.45); }
-                70% { box-shadow: 0 0 0 8px rgba(255, 55, 95, 0); }
-                100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
                 flex: 1;
                 min-width: 0;
-                border: none;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: var(--radius-m);
-                padding: 10px 14px;
-                font-size: 14px;
+                padding: 9px 14px;
+                font-size: 13.5px;
                 font-weight: 600;
                 cursor: pointer;
-                transition: all 0.2s ease;
+                transition: background-color 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
                 color: #fff;
-                background: var(--blue);
+                background: linear-gradient(180deg, #1f8fff 0%, #0071e3 100%);
                 margin-bottom: 0;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                gap: 6px;
-                box-shadow: 0 2px 10px rgba(10, 132, 255, 0.3);
+                gap: 7px;
+                box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 2px 8px rgba(0, 113, 227, 0.28);
+            }
+            .fab-helper-execute-btn:hover {
+                filter: brightness(1.06);
             }
             .fab-helper-execute-btn.executing {
-                background: var(--pink);
-                box-shadow: 0 2px 12px rgba(255, 55, 95, 0.4);
-                animation: fab-pulse-glow 2s infinite;
+                background: rgba(255, 69, 58, 0.14);
+                border-color: rgba(255, 69, 58, 0.38);
+                color: #ff6961;
+                box-shadow: none;
+                animation: none;
+            }
+            .fab-helper-execute-btn.executing::before {
+                content: '';
+                width: 7px;
+                height: 7px;
+                border-radius: 50%;
+                background: #ff6961;
+                flex-shrink: 0;
             }
             .fab-progress-track {
                 width: 100%;
-                height: 4px;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 2px;
-                margin-bottom: 8px;
+                height: 5px;
+                background: rgba(255, 255, 255, 0.08);
+                border-radius: 999px;
+                margin: 7px 0 6px;
                 overflow: hidden;
                 display: none;
             }
             .fab-progress-bar {
                 height: 100%;
-                background: linear-gradient(90deg, var(--blue), #5ac8fa);
+                background: linear-gradient(90deg, #0a84ff, #32ade6);
                 width: 0%;
                 transition: width 0.3s ease;
-                border-radius: 2px;
+                border-radius: 999px;
             }
             .fab-helper-actions {
                 display: flex;
@@ -455,14 +532,25 @@ export const UI = {
                 align-items: center;
                 gap: 4px;
             }
+            .fab-log-controls {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
             .fab-log-controls button {
                 background: transparent;
                 border: none;
                 color: var(--text-color-secondary);
                 cursor: pointer;
-                padding: 2px 4px;
-                font-size: 14px;
-                line-height: 1;
+                padding: 2px 5px;
+                border-radius: 4px;
+                font-size: 11px;
+                line-height: 1.2;
+                transition: color 0.15s, background-color 0.15s;
+            }
+            .fab-log-controls button:hover {
+                color: var(--text-color-primary);
+                background: rgba(255, 255, 255, 0.08);
             }
             #${Config.UI_LOG_ID} {
                 background: rgba(10, 10, 12, 0.85);
@@ -961,7 +1049,19 @@ export const UI = {
 
         primaryRow.append(State.UI.execBtn, State.UI.resetCheckpointBtn);
 
-        // 2. Micro progress bar, readable telemetry, & Keep-alive status
+        // 2. Structured Progress Card (hidden cleanly when idle without checkpoint)
+        const progressCard = document.createElement('div');
+        progressCard.className = 'fab-progress-card';
+        progressCard.style.display = 'none';
+
+        const progressHead = document.createElement('div');
+        progressHead.className = 'fab-progress-head';
+        const progressTitle = document.createElement('span');
+        progressTitle.className = 'fab-progress-title';
+        const progressPct = document.createElement('span');
+        progressPct.className = 'fab-progress-pct';
+        progressHead.append(progressTitle, progressPct);
+
         const progressTrack = document.createElement('div');
         progressTrack.className = 'fab-progress-track';
         const progressBar = document.createElement('div');
@@ -970,35 +1070,50 @@ export const UI = {
         State.UI.progressTrack = progressTrack;
         State.UI.progressBar = progressBar;
 
-        const fastScanStatusDisplay = document.createElement('div');
-        fastScanStatusDisplay.className = 'fab-status-telemetry';
-        State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
+        const progressMeta = document.createElement('div');
+        progressMeta.className = 'fab-progress-meta';
+        const progressMetaLeft = document.createElement('span');
+        progressMetaLeft.className = 'fab-progress-meta-left';
+        const progressMetaRight = document.createElement('span');
+        progressMetaRight.className = 'fab-progress-meta-right';
+        progressMeta.append(progressMetaLeft, progressMetaRight);
+
+        progressCard.append(progressHead, progressTrack, progressMeta);
+        progressCard._titleEl = progressTitle;
+        progressCard._pctEl = progressPct;
+        progressCard._metaLeftEl = progressMetaLeft;
+        progressCard._metaRightEl = progressMetaRight;
+        State.UI.fastScanStatusDisplay = progressCard;
 
         State.UI.statusKeepAlive = document.createElement('div');
         State.UI.statusKeepAlive.className = 'fab-helper-keepalive-status';
         State.UI.statusKeepAlive.title = '后台保活：♥心跳(Worker,不被节流) + ❄️防冻结(WebRTC)。后台/锁屏时应持续刷新；若显示未启动说明 Worker 被页面 CSP 拦截';
 
-        // 3. Unified 3-Metric Status Bar (待入库 / 已入库 / 失败)
+        // 3. Unified 3-Metric Status Bar (待入库 / 已入库 / 失败 + 内联重试)
         const statusBar = document.createElement('div');
         statusBar.className = 'fab-helper-status-bar';
 
-        const createStatusItem = (id, labelKey, icon, gridClass = 'grid-3') => {
+        const createStatusItem = (id, labelKey, gridClass = 'grid-3') => {
             const item = document.createElement('div');
             item.className = `fab-helper-status-item ${gridClass}`;
+            const headDiv = document.createElement('div');
+            headDiv.className = 'fab-status-head';
             const labelDiv = document.createElement('div');
             labelDiv.className = 'fab-helper-status-label';
-            bindText(labelDiv, labelKey, `${icon} `);
+            bindText(labelDiv, labelKey);
+            headDiv.appendChild(labelDiv);
             const valSpan = document.createElement('span');
             valSpan.id = id;
             valSpan.textContent = '0';
-            item.append(labelDiv, valSpan);
+            item.append(headDiv, valSpan);
+            item._headEl = headDiv;
             item._valueEl = valSpan;
             return item;
         };
 
-        State.UI.statusTodo = createStatusItem('fab-status-todo', 'todo', '📥', 'grid-3');
-        State.UI.statusDone = createStatusItem('fab-status-done', 'added', '✅', 'grid-3');
-        State.UI.statusFailed = createStatusItem('fab-status-failed', 'failed', '❌', 'grid-3');
+        State.UI.statusTodo = createStatusItem('fab-status-todo', 'todo', 'grid-3');
+        State.UI.statusDone = createStatusItem('fab-status-done', 'added', 'grid-3');
+        State.UI.statusFailed = createStatusItem('fab-status-failed', 'failed', 'grid-3');
         State.UI.statusFailed.style.cursor = 'pointer';
         State.UI.statusFailed.title = Utils.getText('tooltip_open_failed');
         State.UI.statusFailed.onclick = () => {
@@ -1013,16 +1128,21 @@ export const UI = {
                 });
             }
         };
-        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
 
-        // 4. Conditional Retry Failed Banner Button (only shown when failedCount > 0)
         State.UI.retryFailedBtn = document.createElement('button');
         State.UI.retryFailedBtn.type = 'button';
-        State.UI.retryFailedBtn.className = 'fab-retry-banner-btn';
+        State.UI.retryFailedBtn.className = 'fab-retry-inline-btn';
         State.UI.retryFailedBtn.style.display = 'none';
-        State.UI.retryFailedBtn.onclick = () => TaskRunner && TaskRunner.retryFailedTasks();
+        bindText(State.UI.retryFailedBtn, 'retry_failed');
+        State.UI.retryFailedBtn.onclick = (e) => {
+            if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+            if (TaskRunner) TaskRunner.retryFailedTasks();
+        };
+        State.UI.statusFailed._headEl.appendChild(State.UI.retryFailedBtn);
 
-        // 5. Quick Pills Row (Auto-Claim Visible / Hide Owned / Hide Paid)
+        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
+
+        // 4. Quick LED Switches Row (Auto-Claim / Hide Owned / Hide Paid)
         const quickPills = document.createElement('div');
         quickPills.className = 'fab-quick-pills';
 
@@ -1030,7 +1150,13 @@ export const UI = {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'fab-pill-btn';
-            bindText(btn, labelKey);
+            const dot = document.createElement('span');
+            dot.className = 'fab-pill-dot';
+            const textSpan = document.createElement('span');
+            textSpan.className = 'fab-pill-text';
+            bindText(textSpan, labelKey);
+            btn.append(dot, textSpan);
+            btn._textEl = textSpan;
             btn.onclick = onClick;
             return btn;
         };
@@ -1040,7 +1166,7 @@ export const UI = {
         State.UI.quickHidePaidBtn = makeQuickPill('pill_hide_paid', () => TaskRunner && TaskRunner.toggleHidePaid());
         quickPills.append(State.UI.quickAutoClaimBtn, State.UI.quickHideSavedBtn, State.UI.quickHidePaidBtn);
 
-        // 6. Collapsible Operation Log Panel
+        // 5. Collapsible Operation Log Panel
         const logContainer = document.createElement('div');
         logContainer.className = 'fab-log-container';
 
@@ -1058,20 +1184,19 @@ export const UI = {
 
         const copyLogBtn = document.createElement('button');
         copyLogBtn.type = 'button';
-        copyLogBtn.textContent = '📄';
+        bindText(copyLogBtn, 'copyLog');
         copyLogBtn.title = Utils.getText('copyLog');
         copyLogBtn.onclick = (e) => {
             e.stopPropagation();
             navigator.clipboard.writeText(State.UI.logPanel.innerText).then(() => {
-                const originalText = copyLogBtn.textContent;
-                copyLogBtn.textContent = '✅';
-                setTimeout(() => { copyLogBtn.textContent = originalText; }, 1500);
+                copyLogBtn.textContent = Utils.getText('copied');
+                setTimeout(() => { copyLogBtn.textContent = Utils.getText('copyLog'); }, 1500);
             }).catch(err => Utils.logger('error', 'Failed to copy log:', err));
         };
 
         const clearLogBtn = document.createElement('button');
         clearLogBtn.type = 'button';
-        clearLogBtn.textContent = '🗑️';
+        bindText(clearLogBtn, 'clearLog');
         clearLogBtn.title = Utils.getText('clearLog');
         clearLogBtn.onclick = (e) => {
             e.stopPropagation();
@@ -1095,11 +1220,9 @@ export const UI = {
 
         dashboardContent.append(
             primaryRow,
-            State.UI.progressTrack,
-            fastScanStatusDisplay,
+            progressCard,
             State.UI.statusKeepAlive,
             statusBar,
-            State.UI.retryFailedBtn,
             quickPills,
             logContainer
         );
@@ -1493,67 +1616,119 @@ export const UI = {
             State.UI.headerLiveBadge.style.display = badgeText ? 'inline-flex' : 'none';
         }
 
-        // Single-line readable status telemetry
+        // Structured progress micro-card (hidden cleanly when idle without checkpoint)
         if (State.UI.fastScanStatusDisplay) {
+            const card = State.UI.fastScanStatusDisplay;
+            const titleEl = card._titleEl;
+            const pctEl = card._pctEl;
+            const metaLeftEl = card._metaLeftEl;
+            const metaRightEl = card._metaRightEl;
             const zh = State.lang === 'zh';
+
+            const setTrack = (show, pct) => {
+                if (!State.UI.progressTrack || !State.UI.progressBar) return;
+                State.UI.progressTrack.style.display = show ? 'block' : 'none';
+                State.UI.progressBar.style.width = show ? `${Math.min(100, Math.max(0, pct || 0))}%` : '0%';
+            };
+
+            const setClaimedMeta = (claimedCount) => {
+                if (!metaRightEl) return;
+                const n = Number(claimedCount) || 0;
+                metaRightEl.textContent = zh
+                    ? (n > 0 ? `新入库 +${n}` : '新入库 0')
+                    : (n > 0 ? `+${n} claimed` : '0 claimed');
+                metaRightEl.classList.toggle('is-success', n > 0);
+            };
+
+            if (pctEl) pctEl.classList.remove('is-success');
+            if (metaLeftEl) metaLeftEl.classList.remove('is-warn');
+            if (metaRightEl) metaRightEl.classList.remove('is-success');
+
             if (isFallback) {
-                if (isRunning && State.executionTotalTasks > 0) {
-                    const done = State.executionCompletedTasks + State.executionFailedTasks;
-                    State.UI.fastScanStatusDisplay.textContent = zh
-                        ? `📜 滚页备用运行中 · ${done}/${State.executionTotalTasks}`
-                        : `📜 Fallback running · ${done}/${State.executionTotalTasks}`;
+                card.style.display = 'block';
+                const total = State.executionTotalTasks;
+                const done = State.executionCompletedTasks + State.executionFailedTasks;
+                if (isRunning && total > 0) {
+                    const pct = Math.min(100, Math.round((done / total) * 100));
+                    if (titleEl) titleEl.textContent = `${done.toLocaleString()} / ${total.toLocaleString()}`;
+                    if (pctEl) pctEl.textContent = `${pct}%`;
+                    setTrack(true, pct);
                 } else if (isRunning) {
-                    State.UI.fastScanStatusDisplay.textContent = zh
-                        ? '📜 正在滚页扫描当前列表...'
-                        : '📜 Scrolling list in fallback mode...';
+                    if (titleEl) titleEl.textContent = zh ? '正在滚页扫描当前列表' : 'Scrolling list';
+                    if (pctEl) pctEl.textContent = '';
+                    setTrack(false, 0);
                 } else {
-                    State.UI.fastScanStatusDisplay.textContent = Utils.getText('status_idle_fallback');
+                    if (titleEl) titleEl.textContent = Utils.getText('status_idle_fallback');
+                    if (pctEl) pctEl.textContent = '';
+                    setTrack(false, 0);
                 }
+                if (metaLeftEl) metaLeftEl.textContent = zh ? '应急滚页备用模式' : 'DOM scroll fallback';
+                if (metaRightEl) metaRightEl.textContent = '';
             } else if (fs && fs.running) {
-                const totalStr = fs.totalEstimated > 0
-                    ? ` / ${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
-                    : '';
-                const rateTag = fs.rateLimitedUntil > Date.now()
-                    ? (zh ? ' · ⏳限速等待中' : ' · ⏳429')
-                    : '';
-                State.UI.fastScanStatusDisplay.textContent = zh
-                    ? `⚡ 已核对 ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 本次新领 ${fs.claimedDirect}${rateTag}`
-                    : `⚡ ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
-            } else if (fs && fs.phase === 'completed') {
-                let text = Utils.getText(
-                    'status_scan_done',
-                    fs.claimedDirect,
-                    fs.itemsScanned.toLocaleString()
-                );
-                if (fs.failed > 0) {
-                    text += zh ? ` · 失败 ${fs.failed}` : ` · ${fs.failed} failed`;
+                card.style.display = 'block';
+                const hasTotal = fs.totalEstimated > 0;
+                const pct = hasTotal ? Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100)) : null;
+                if (titleEl) {
+                    titleEl.textContent = hasTotal
+                        ? `${fs.itemsScanned.toLocaleString()} / ${fs.totalEstimated.toLocaleString()}`
+                        : fs.itemsScanned.toLocaleString();
                 }
-                State.UI.fastScanStatusDisplay.textContent = text;
+                if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : '';
+                setTrack(pct != null, pct || 0);
+                const rateLimited = fs.rateLimitedUntil > Date.now();
+                if (metaLeftEl) {
+                    metaLeftEl.textContent = rateLimited
+                        ? (zh ? '限速等待中' : 'Rate limited')
+                        : (zh ? `${fs.itemsPerSec} 件/秒` : `${fs.itemsPerSec}/s`);
+                    metaLeftEl.classList.toggle('is-warn', rateLimited);
+                }
+                setClaimedMeta(fs.claimedDirect);
+            } else if (fs && fs.phase === 'completed') {
+                card.style.display = 'block';
+                if (titleEl) titleEl.textContent = Utils.getText('status_scan_done', fs.claimedDirect, fs.itemsScanned.toLocaleString());
+                if (pctEl) {
+                    pctEl.textContent = '100%';
+                    pctEl.classList.add('is-success');
+                }
+                setTrack(true, 100);
+                if (metaLeftEl) {
+                    metaLeftEl.textContent = fs.failed > 0
+                        ? (zh ? `失败 ${fs.failed} 项` : `${fs.failed} failed`)
+                        : (zh ? '全部核对完毕' : 'All verified');
+                }
+                setClaimedMeta(fs.claimedDirect);
             } else if (fs && fs.phase === 'partial') {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-                    'status_scan_partial',
-                    fs.claimedDirect,
-                    fs.itemsScanned.toLocaleString(),
-                    fs.incompleteSlices || 1
-                );
+                card.style.display = 'block';
+                const pct = getCheckpointPct();
+                if (titleEl) {
+                    titleEl.textContent = Utils.getText(
+                        'status_scan_partial',
+                        fs.claimedDirect,
+                        fs.itemsScanned.toLocaleString(),
+                        fs.incompleteSlices || 1
+                    );
+                }
+                if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : '';
+                setTrack(pct != null, pct || 0);
+                if (metaLeftEl) metaLeftEl.textContent = zh ? '已保存断点，可继续补扫' : 'Checkpoint saved';
+                setClaimedMeta(fs.claimedDirect);
             } else if (hasCheckpoint) {
+                card.style.display = 'block';
                 const pct = getCheckpointPct();
                 const scanned = fs?.itemsScanned ?? State.fastScanCheckpointMeta?.itemsScanned ?? 0;
                 const total = fs?.totalEstimated ?? State.fastScanCheckpointMeta?.totalEstimated ?? 0;
-                if (pct != null && total > 0) {
-                    State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-                        'status_checkpoint_pct',
-                        pct,
-                        Number(scanned).toLocaleString(),
-                        Number(total).toLocaleString()
-                    );
-                } else {
-                    State.UI.fastScanStatusDisplay.textContent = Utils.getText('status_checkpoint_generic');
+                if (titleEl) {
+                    titleEl.textContent = total > 0
+                        ? Utils.getText('status_checkpoint_pct', pct || 0, Number(scanned).toLocaleString(), Number(total).toLocaleString())
+                        : Utils.getText('status_checkpoint_generic');
                 }
+                if (pctEl) pctEl.textContent = pct != null ? `${pct}%` : '';
+                setTrack(pct != null, pct || 0);
+                if (metaLeftEl) metaLeftEl.textContent = zh ? '可继续或点右侧重扫' : 'Resume or restart';
+                if (metaRightEl) metaRightEl.textContent = '';
             } else {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-                    State.autoClaimVisible ? 'status_idle_auto' : 'status_idle_manual'
-                );
+                card.style.display = 'none';
+                setTrack(false, 0);
             }
         }
 
@@ -1565,7 +1740,7 @@ export const UI = {
         const setStatusCount = (item, val) => {
             if (!item) return;
             const span = item._valueEl || item.querySelector('span');
-            if (span) span.textContent = String(val);
+            if (span) span.textContent = Number(val || 0).toLocaleString();
         };
         setStatusCount(State.UI.statusTodo, todoCount);
         setStatusCount(State.UI.statusDone, doneCount);
@@ -1629,29 +1804,13 @@ export const UI = {
             }
         }
 
-        if (State.UI.progressTrack && State.UI.progressBar) {
-            if (!isFallback && fs && fs.running && fs.totalEstimated > 0) {
-                State.UI.progressTrack.style.display = 'block';
-                const percentage = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
-                State.UI.progressBar.style.width = `${percentage}%`;
-            } else if (State.isExecuting && State.executionTotalTasks > 0) {
-                State.UI.progressTrack.style.display = 'block';
-                const progress = State.executionCompletedTasks + State.executionFailedTasks;
-                const percentage = Math.min(100, Math.round((progress / State.executionTotalTasks) * 100));
-                State.UI.progressBar.style.width = `${percentage}%`;
-            } else {
-                State.UI.progressTrack.style.display = 'none';
-                State.UI.progressBar.style.width = '0%';
-            }
-        }
-
-        // Conditional retry button
+        // Conditional inline retry pill inside Failed metric card
         if (State.UI.retryFailedBtn) {
-            State.UI.retryFailedBtn.style.display = failedCount > 0 ? '' : 'none';
-            State.UI.retryFailedBtn.textContent = '🔁 ' + Utils.getText('retry_failed') + (failedCount > 0 ? ` (${failedCount})` : '');
+            State.UI.retryFailedBtn.style.display = failedCount > 0 ? 'inline-flex' : 'none';
+            State.UI.retryFailedBtn.textContent = Utils.getText('retry_failed');
             State.UI.retryFailedBtn.disabled = failedCount === 0;
             State.UI.retryFailedBtn.title = failedCount > 0
-                ? Utils.getText('retry_failed') + ` (${failedCount})`
+                ? `${Utils.getText('retry_failed')} (${failedCount})`
                 : Utils.getText('no_failed_tasks');
         }
 

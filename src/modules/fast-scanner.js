@@ -1734,7 +1734,7 @@ export const createFastScanner = (deps = {}) => {
                         st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
                         claimed += 1;
                         notifyItemClaimed(task, 'claimed');
-                        logMsg('info', `[浏览自动领] ✅ ${task.name}`);
+                        logMsg('info', `✓ 自动入库 · ${task.name}`);
                     } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
                         await handleRateLimit(outcome.retryAfterMs, 'visible-claim');
                         const retries = (task._sightRateRetries || 0) + 1;
