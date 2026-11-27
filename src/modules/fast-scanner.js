@@ -323,12 +323,19 @@ export const createFastScanner = (deps = {}) => {
     const checkpointIntervalMs = Number.isFinite(deps.checkpointIntervalMs) ? deps.checkpointIntervalMs : CHECKPOINT_INTERVAL_MS;
     const claimWorkersCount = Number.isFinite(deps.claimWorkers) ? Math.max(1, deps.claimWorkers) : 2;
     const uiThrottleMs = Number.isFinite(deps.uiThrottleMs) ? deps.uiThrottleMs : 200;
+    const unknownFlushDelayMs = Number.isFinite(deps.unknownFlushDelayMs) ? Math.max(0, deps.unknownFlushDelayMs) : 300;
+    const quickHeadPages = Number.isFinite(deps.quickHeadPages) ? Math.max(0, Math.floor(deps.quickHeadPages)) : 3;
+    const quickDiscountedMaxPages = Number.isFinite(deps.quickDiscountedMaxPages) ? Math.max(0, Math.floor(deps.quickDiscountedMaxPages)) : 10;
 
     let running = false;
     let stopped = false;
+    let hardStopped = false;
+    let drainingBeforeStop = false;
     let authAborted = false;
     let earlyStopped = false;
+    let calibratedDescPrefetched = false;
     let activeRunPromise = null;
+    let unknownFlushTimer = null;
 
     let configuredConcurrency = 4;
     let activeConcurrency = 4;
@@ -382,10 +389,23 @@ export const createFastScanner = (deps = {}) => {
         }
     };
 
+    const clearUnknownFlushTimer = () => {
+        if (unknownFlushTimer !== null) {
+            clearTimeout(unknownFlushTimer);
+            unknownFlushTimer = null;
+        }
+    };
+
+    const isClaimAborted = () => hardStopped || authAborted || (stopped && !drainingBeforeStop);
+
     const resetRunVars = () => {
+        clearUnknownFlushTimer();
         stopped = false;
+        hardStopped = false;
+        drainingBeforeStop = false;
         authAborted = false;
         earlyStopped = false;
+        calibratedDescPrefetched = false;
         pauseUntil = 0;
         penaltyCount = 0;
         extraDelayMs = 0;
@@ -487,10 +507,16 @@ export const createFastScanner = (deps = {}) => {
         try { getUtils().logger(level, msg); } catch (_e) { /* ignore */ }
     };
 
-    const waitRateGate = async () => {
-        while (!stopped && !authAborted) {
+    const waitRateGate = async ({ allowDrain = false } = {}) => {
+        const shouldAbort = () => (allowDrain ? isClaimAborted() : (stopped || authAborted));
+        while (!shouldAbort()) {
             const now = nowFn();
             if (now < pauseUntil) {
+                if (allowDrain && drainingBeforeStop) {
+                    hardStopped = true;
+                    drainingBeforeStop = false;
+                    return false;
+                }
                 currentPhase = 'rate_limited';
                 syncStatus();
                 const waitMs = Math.min(250, Math.max(1, pauseUntil - now));
@@ -694,8 +720,8 @@ export const createFastScanner = (deps = {}) => {
         inFlightStateChunks.add(chunk);
         try {
             let attempts = 0;
-            while (!stopped && !authAborted) {
-                const okToRun = await waitRateGate();
+            while (!isClaimAborted()) {
+                const okToRun = await waitRateGate({ allowDrain: true });
                 if (!okToRun) {
                     unknownBuffer.unshift(...chunk);
                     return { ownedCount: 0, unownedCount: 0 };
@@ -706,7 +732,7 @@ export const createFastScanner = (deps = {}) => {
                 try {
                     res = await doFetch(u.toString());
                 } catch (_err) {
-                    if (stopped || authAborted) {
+                    if (isClaimAborted()) {
                         unknownBuffer.unshift(...chunk);
                         return { ownedCount: 0, unownedCount: 0 };
                     }
@@ -718,7 +744,7 @@ export const createFastScanner = (deps = {}) => {
                     return { ownedCount: 0, unownedCount: chunk.length };
                 }
 
-                if (stopped || authAborted) {
+                if (isClaimAborted()) {
                     unknownBuffer.unshift(...chunk);
                     return { ownedCount: 0, unownedCount: 0 };
                 }
@@ -779,16 +805,40 @@ export const createFastScanner = (deps = {}) => {
         }
     };
 
+    const scheduleUnknownFlush = () => {
+        if (isClaimAborted() || stopped || unknownBuffer.length === 0) return;
+        if (unknownFlushDelayMs <= 0) {
+            flushUnknownBuffer(true);
+            return;
+        }
+        if (unknownFlushTimer !== null) return;
+        unknownFlushTimer = setTimeout(() => {
+            unknownFlushTimer = null;
+            if (!isClaimAborted() && unknownBuffer.length > 0) {
+                flushUnknownBuffer(true);
+            }
+        }, unknownFlushDelayMs);
+        unknownFlushTimer?.unref?.();
+    };
+
     const flushUnknownBuffer = (drainAll = false) => {
+        if (drainAll) {
+            clearUnknownFlushTimer();
+        }
         const job = async () => {
             let ownedTotal = 0;
             let unownedTotal = 0;
-            while (unknownBuffer.length > 0 && !stopped && !authAborted) {
+            while (unknownBuffer.length > 0 && !isClaimAborted()) {
                 if (!drainAll && unknownBuffer.length < STATES_MAX_IDS) break;
                 const chunk = unknownBuffer.splice(0, STATES_MAX_IDS);
                 const res = await checkStatesChunk(chunk);
                 ownedTotal += res.ownedCount;
                 unownedTotal += res.unownedCount;
+            }
+            if (unknownBuffer.length === 0) {
+                clearUnknownFlushTimer();
+            } else if (!stopped && !isClaimAborted()) {
+                scheduleUnknownFlush();
             }
             return { ownedTotal, unownedTotal };
         };
@@ -797,7 +847,7 @@ export const createFastScanner = (deps = {}) => {
         return next;
     };
 
-    const processPageItems = async (items, { flushImmediately = false } = {}) => {
+    const processPageItems = async (items, { flushImmediately = false, trackHeadTimestamp = true } = {}) => {
         const db = getDatabase();
         const ls = getListingSource();
         const cache = getDataCache();
@@ -807,7 +857,7 @@ export const createFastScanner = (deps = {}) => {
 
         for (const item of (items || [])) {
             if (!item || !item.uid) continue;
-            if (isTimeDesc && Number.isFinite(item.publishedAtMs)) {
+            if (trackHeadTimestamp && isTimeDesc && Number.isFinite(item.publishedAtMs)) {
                 noteHeadTimestamp(item.publishedAtMs);
             }
             if (seenUids.has(item.uid)) continue;
@@ -852,6 +902,12 @@ export const createFastScanner = (deps = {}) => {
         }
         if (unknownBuffer.length >= STATES_MAX_IDS) {
             await flushUnknownBuffer(false);
+            if (unknownBuffer.length > 0 && !stopped) {
+                scheduleUnknownFlush();
+            }
+        } else if (unknownBuffer.length > 0 && !stopped) {
+            scheduleUnknownFlush();
+            syncStatus();
         } else if (addedToUnknown === 0) {
             syncStatus();
         }
@@ -876,7 +932,7 @@ export const createFastScanner = (deps = {}) => {
         const st = getState();
 
         while (true) {
-            if (stopped || authAborted) break;
+            if (isClaimAborted()) break;
 
             if (claimQueue.length === 0) {
                 if (scanDoneRef.done) break;
@@ -906,7 +962,7 @@ export const createFastScanner = (deps = {}) => {
                     continue;
                 }
 
-                const gateOk = await waitRateGate();
+                const gateOk = await waitRateGate({ allowDrain: true });
                 if (!gateOk) {
                     claimQueue.unshift(task);
                     break;
@@ -1183,6 +1239,7 @@ export const createFastScanner = (deps = {}) => {
 
             let descPage = null;
             if (descRes.ok) {
+                calibratedDescPrefetched = true;
                 descPage = ls.parsePage(descRes.json);
                 currentStats.pagesFetched += 1;
                 await processPageItems(descPage.items, { flushImmediately: false });
@@ -1255,8 +1312,94 @@ export const createFastScanner = (deps = {}) => {
         }];
     };
 
-    const runScanWorker = async (workerIdx, baseParams, stopPages) => {
+    const stepSlicePage = async (slice, baseParams, { flushImmediately = false } = {}) => {
         const ls = getListingSource();
+        const url = buildSearchUrl(baseParams, slice.cursor, slice.extraParams);
+        const res = await fetchSearchPageRaw(url, slice.id);
+        if (res.aborted || stopped || authAborted) return { aborted: true };
+        if (res.error) {
+            logMsg('warn', `[FastScanner] 分片 ${slice.id} 请求连续失败，保留断点待续扫: ${res.error.message}`);
+            slice.failedThisRun = true;
+            slice.lastError = res.error.message || 'Search error';
+            currentStats.failedSlices += 1;
+            return { error: res.error };
+        }
+
+        const page = ls.parsePage(res.json);
+        slice.pages += 1;
+        currentStats.pagesFetched += 1;
+
+        const pageResult = await processPageItems(page.items, { flushImmediately });
+        if (stopped || authAborted) return { aborted: true };
+
+        if (baseParams.sort_by === '-firstPublishedAt' && page.nextCursor) {
+            noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
+        }
+
+        if (!page.nextCursor) {
+            slice.cursor = null;
+            slice.done = true;
+        } else if (slice.lowerMs != null) {
+            const nextMs = decodeTimeCursorMs(page.nextCursor);
+            if (nextMs != null && nextMs < slice.lowerMs - OVERLAP_MS) {
+                slice.cursor = null;
+                slice.done = true;
+            } else {
+                slice.cursor = page.nextCursor;
+            }
+        } else {
+            slice.cursor = page.nextCursor;
+        }
+
+        return { ok: true, page, pageResult };
+    };
+
+    const runQuickPrepass = async (baseParams) => {
+        if (String(baseParams?.is_discounted || '') !== '1' && quickDiscountedMaxPages > 0) {
+            let pageIdx = 0;
+            let discCursor = null;
+            while (pageIdx < quickDiscountedMaxPages && !stopped && !authAborted) {
+                const discUrl = buildSearchUrl(baseParams, discCursor, {
+                    is_free: '1',
+                    is_discounted: '1',
+                    sort_by: '-firstPublishedAt'
+                });
+                const res = await fetchSearchPageRaw(discUrl, 'prepass-discounted');
+                if (res.aborted || res.error || stopped || authAborted) break;
+
+                const page = getListingSource().parsePage(res.json);
+                currentStats.pagesFetched += 1;
+                pageIdx += 1;
+                await processPageItems(page.items, { flushImmediately: true, trackHeadTimestamp: false });
+                syncStatus();
+                if (!page.nextCursor) break;
+                discCursor = page.nextCursor;
+            }
+        }
+
+        if (stopped || authAborted) return;
+        await flushUnknownBuffer(true);
+
+        const headSteps = Math.max(0, quickHeadPages - (calibratedDescPrefetched ? 1 : 0));
+        if (headSteps > 0 && currentSlices.length > 0 && (currentMode === 'time-shards' || currentMode === 'sequential')) {
+            const headSlice = currentSlices[0];
+            for (let i = 0; i < headSteps && !stopped && !authAborted && !headSlice.done && !headSlice.failedThisRun; i += 1) {
+                const stepRes = await stepSlicePage(headSlice, baseParams, { flushImmediately: true });
+                if (stepRes.aborted || stepRes.error) break;
+                syncStatus();
+                await saveCheckpoint(false);
+            }
+        }
+
+        if (!isClaimAborted()) {
+            await flushUnknownBuffer(true);
+            while (!isClaimAborted() && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+                await sleep(20);
+            }
+        }
+    };
+
+    const runScanWorker = async (workerIdx, baseParams, stopPages) => {
         while (!stopped && !authAborted && !earlyStopped) {
             if (workerIdx >= activeConcurrency) {
                 const remaining = currentSlices.some((s) => !s.done && !s.failedThisRun);
@@ -1280,44 +1423,11 @@ export const createFastScanner = (deps = {}) => {
                         break; // 降并发时让出当前分片（cursor 保留，供活跃 worker 接力）
                     }
 
-                    const url = buildSearchUrl(baseParams, slice.cursor, slice.extraParams);
-                    const res = await fetchSearchPageRaw(url, slice.id);
-                    if (res.aborted || stopped || authAborted) break;
-                    if (res.error) {
-                        logMsg('warn', `[FastScanner] 分片 ${slice.id} 请求连续失败，保留断点待续扫: ${res.error.message}`);
-                        slice.failedThisRun = true;
-                        slice.lastError = res.error.message || 'Search error';
-                        currentStats.failedSlices += 1;
-                        break;
-                    }
-
-                    const page = ls.parsePage(res.json);
-                    slice.pages += 1;
-                    currentStats.pagesFetched += 1;
-
                     const isIncremental = currentMode === 'incremental';
-                    const pageResult = await processPageItems(page.items, { flushImmediately: isIncremental });
-                    if (stopped || authAborted) break;
+                    const stepRes = await stepSlicePage(slice, baseParams, { flushImmediately: isIncremental });
+                    if (stepRes.aborted || stepRes.error || stopped || authAborted) break;
 
-                    if (baseParams.sort_by === '-firstPublishedAt' && page.nextCursor) {
-                        noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
-                    }
-
-                    if (!page.nextCursor) {
-                        slice.cursor = null;
-                        slice.done = true;
-                    } else if (slice.lowerMs != null) {
-                        const nextMs = decodeTimeCursorMs(page.nextCursor);
-                        if (nextMs != null && nextMs < slice.lowerMs - OVERLAP_MS) {
-                            slice.cursor = null;
-                            slice.done = true;
-                        } else {
-                            slice.cursor = page.nextCursor;
-                        }
-                    } else {
-                        slice.cursor = page.nextCursor;
-                    }
-
+                    const { page, pageResult } = stepRes;
                     if (isIncremental && page.items.length > 0) {
                         if (pageResult.unownedTotal === 0) {
                             consecutiveOwnedPages += 1;
@@ -1392,25 +1502,6 @@ export const createFastScanner = (deps = {}) => {
             const scanDoneRef = { done: false };
             let claimLoops = [];
             try {
-                await calibrateRun(baseParams, {
-                    incrementalEarlyStop: incEnabled,
-                    resumeCheckpoint: options.resumeCheckpoint
-                });
-
-                if (stopped || authAborted) {
-                    return buildSnapshot();
-                }
-
-                currentPhase = 'scanning';
-                logMsg(
-                    'info',
-                    `[FastScanner] 开始极速扫描 (${currentMode}, ${activeConcurrency} 路并发` +
-                    (currentStats.totalEstimated > 0 ? `, 预计 ${currentStats.totalEstimated} 件` : '') +
-                    (incEnabled && currentMode === 'incremental' ? `, 连续 ${stopPages} 页已拥有早停` : '') +
-                    ')'
-                );
-                syncStatus(true);
-
                 claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
 
                 if (Array.isArray(options.priorityItems) && options.priorityItems.length > 0) {
@@ -1418,10 +1509,46 @@ export const createFastScanner = (deps = {}) => {
                     if (addedPriority > 0) {
                         logMsg('info', `[FastScanner] 优先核验并领取当前页面可见免费商品 (${addedPriority} 项)...`);
                         await flushUnknownBuffer(true);
-                        while (!stopped && !authAborted && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+                        while (!isClaimAborted() && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
                             await sleep(20);
                         }
                     }
+                }
+
+                await calibrateRun(baseParams, {
+                    incrementalEarlyStop: incEnabled,
+                    resumeCheckpoint: options.resumeCheckpoint
+                });
+
+                if (stopped || authAborted) {
+                    scanDoneRef.done = true;
+                    wakeClaimWorkers();
+                    await Promise.all(claimLoops);
+                    return buildSnapshot();
+                }
+
+                const quickPrepassEnabled = !incEnabled && (
+                    options.quickPrepass !== undefined
+                        ? Boolean(options.quickPrepass)
+                        : Boolean(options.globalFreeScan)
+                );
+                if (quickPrepassEnabled) {
+                    currentPhase = 'prepass';
+                    syncStatus(true);
+                    logMsg('info', '[FastScanner] 前置快筛：优先核验全站限免折扣池与最新上架免费品...');
+                    await runQuickPrepass(baseParams);
+                }
+
+                if (!stopped && !authAborted) {
+                    currentPhase = 'scanning';
+                    logMsg(
+                        'info',
+                        `[FastScanner] 开始极速扫描 (${currentMode}, ${activeConcurrency} 路并发` +
+                        (currentStats.totalEstimated > 0 ? `, 预计 ${currentStats.totalEstimated} 件` : '') +
+                        (incEnabled && currentMode === 'incremental' ? `, 连续 ${stopPages} 页已拥有早停` : '') +
+                        ')'
+                    );
+                    syncStatus(true);
                 }
 
                 if (!stopped && !authAborted && currentSlices.some((s) => !s.done)) {
@@ -1436,8 +1563,8 @@ export const createFastScanner = (deps = {}) => {
                 }
 
                 // 扫尾：冲刷最后不足 24 条的待核验队列，并等待主标签页领取队列排空
-                if (!stopped && !authAborted) {
-                    currentPhase = 'draining';
+                if ((!stopped || drainingBeforeStop) && !hardStopped && !authAborted) {
+                    currentPhase = stopped ? 'paused' : 'draining';
                     syncStatus(true);
                     await flushUnknownBuffer(true);
                 }
@@ -1445,6 +1572,7 @@ export const createFastScanner = (deps = {}) => {
                 scanDoneRef.done = true;
                 wakeClaimWorkers();
                 await Promise.all(claimLoops);
+                drainingBeforeStop = false;
                 await db.flushSaveDone();
 
                 currentStats.finishedAt = nowFn();
@@ -1497,6 +1625,8 @@ export const createFastScanner = (deps = {}) => {
                 syncStatus(true);
                 throw err;
             } finally {
+                clearUnknownFlushTimer();
+                drainingBeforeStop = false;
                 scanDoneRef.done = true;
                 wakeClaimWorkers();
                 if (claimLoops.length > 0) {
@@ -1512,16 +1642,28 @@ export const createFastScanner = (deps = {}) => {
         return activeRunPromise;
     };
 
-    const stop = async () => {
+    const stop = async (opts = {}) => {
         if (!running && !activeRunPromise) return;
+        clearUnknownFlushTimer();
+        const pendingCount = unknownBuffer.length + claimQueue.length + activeClaimsInFlight + inFlightStateChunks.size;
+        const canDrain = Boolean(opts?.drainDiscovered)
+            && !stopped
+            && !authAborted
+            && nowFn() >= pauseUntil
+            && (unknownBuffer.length + claimQueue.length) <= STATES_MAX_IDS
+            && pendingCount > 0;
         stopped = true;
+        drainingBeforeStop = canDrain;
+        hardStopped = !canDrain;
         currentPhase = 'paused';
         wakeClaimWorkers();
         wakeWorkerSlots();
         syncStatus(true);
         // 同步先触发一次落盘保存（供 beforeunload 等不等待异步完成的调用方保底）
-        saveCheckpoint(true);
-        getDatabase().flushSaveDone();
+        if (!canDrain) {
+            saveCheckpoint(true);
+            getDatabase().flushSaveDone();
+        }
         if (activeRunPromise) {
             try { await activeRunPromise; } catch (_e) { /* ignore */ }
         }

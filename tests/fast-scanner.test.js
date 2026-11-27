@@ -80,6 +80,9 @@ const setupMockServer = (itemsDesc, ownedSet = new Set()) => {
             if (typeFilter) {
                 source = source.filter((it) => it.listingType === typeFilter);
             }
+            if (u.searchParams.get('is_discounted') === '1') {
+                source = source.filter((it) => Boolean(it.isDiscounted));
+            }
 
             let startIdx = 0;
             if (cursor) {
@@ -1310,4 +1313,202 @@ test('claimVisibleItems claims visible items without touching checkpoint and tri
         { uid: uidOwned, source: 'server-owned' },
         { uid: uidFree, source: 'claimed' }
     ]);
+});
+
+test('sparse <24 unknowns flush eagerly mid-scan without waiting for scan end, and stop({ drainDiscovered: true }) finishes buffered claims', async (t) => {
+    const baseMs = Date.parse('2025-01-01T00:00:00.000Z');
+    // 60 items across 60 days so multi-shard creates >=12 slices
+    const itemsDesc = Array.from({ length: 60 }, (_, i) => mkItem(i, baseMs + (60 - i) * 86400 * 1000));
+    // First 2 items unowned (found in calibrate desc page); rest locally done
+    const localDone = itemsDesc.slice(2).map((it) => `https://www.fab.com/listings/${it.uid}`);
+    setupMemoryDb(t, localDone);
+
+    const { fetchImpl } = setupMockServer(itemsDesc, new Set());
+    let releaseShardGate;
+    const shardGate = new Promise((resolve) => { releaseShardGate = resolve; });
+    let hitSecondaryShard = false;
+    let secondaryStartedResolve;
+    const secondaryStarted = new Promise((resolve) => { secondaryStartedResolve = resolve; });
+
+    const gatedFetch = async (url) => {
+        const u = new URL(url, 'https://www.fab.com');
+        if (
+            u.pathname === '/i/listings/search'
+            && u.searchParams.get('count') !== '0'
+            && u.searchParams.get('sort_by') === '-firstPublishedAt'
+            && u.searchParams.get('cursor')
+            && !hitSecondaryShard
+        ) {
+            hitSecondaryShard = true;
+            secondaryStartedResolve();
+            await shardGate;
+        }
+        return fetchImpl(url);
+    };
+
+    const claimed = [];
+    const scanner1 = createFastScanner({
+        fetchImpl: gatedFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        unknownFlushDelayMs: 15,
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const scanPromise = scanner1.start({ concurrency: 2 });
+    await secondaryStarted;
+    // Wait long enough for the 15ms timer flush + states + claim to finish while shardGate is still held
+    for (let i = 0; i < 40 && claimed.length < 2; i += 1) {
+        await new Promise((r) => setTimeout(r, 10));
+    }
+    assert.equal(scanner1.isRunning(), true, 'Scanner must still be running while shard gate is blocked');
+    assert.deepEqual(new Set(claimed), new Set([itemsDesc[0].uid, itemsDesc[1].uid]), 'Sparse <24 unknowns must claim mid-scan');
+
+    releaseShardGate();
+    const summary1 = await scanPromise;
+    assert.equal(summary1.phase, 'completed');
+    assert.equal(claimed.length, 2, 'No duplicate claims after full scan finishes');
+
+    // Part 2: stop({ drainDiscovered: true }) finishes <24 buffered unknowns immediately when delay hasn't fired
+    const itemsDesc2 = Array.from({ length: 80 }, (_, i) => mkItem(200 + i, baseMs + (80 - i) * 86400 * 1000));
+    const localDone2 = itemsDesc2.slice(2).map((it) => `https://www.fab.com/listings/${it.uid}`);
+    setupMemoryDb(t, localDone2);
+
+    const { fetchImpl: fetchImpl2 } = setupMockServer(itemsDesc2, new Set());
+    let releasePage2Gate;
+    const page2Gate = new Promise((resolve) => { releasePage2Gate = resolve; });
+    let page2EnteredResolve;
+    const page2Entered = new Promise((resolve) => { page2EnteredResolve = resolve; });
+    let extraSearchesAfterStop = 0;
+    let stopIssued = false;
+    const claimed2 = [];
+
+    const stopDrainFetch = async (url) => {
+        const u = new URL(url, 'https://www.fab.com');
+        if (u.pathname === '/i/listings/search' && u.searchParams.get('cursor')) {
+            if (stopIssued) {
+                extraSearchesAfterStop += 1;
+            } else {
+                page2EnteredResolve();
+                await page2Gate;
+            }
+        }
+        return fetchImpl2(url);
+    };
+
+    const gmStore = new Map();
+    const scanner2 = createFastScanner({
+        fetchImpl: stopDrainFetch,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => { claimed2.push(task.uid); return { result: CLAIM_RESULT.SUCCESS }; }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        unknownFlushDelayMs: 60000,
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+
+    const p2 = scanner2.start({ concurrency: 1 });
+    await page2Entered;
+    stopIssued = true;
+    const stopPromise = scanner2.stop({ drainDiscovered: true });
+    releasePage2Gate();
+    await stopPromise;
+    const summary2 = await p2;
+
+    assert.equal(summary2.phase, 'paused');
+    assert.deepEqual(new Set(claimed2), new Set([itemsDesc2[0].uid, itemsDesc2[1].uid]));
+    assert.equal(extraSearchesAfterStop, 0, 'Manual stop with drainDiscovered must not fetch new search pages');
+});
+
+test('globalFreeScan quickPrepass claims old is_discounted=1 items and newest head pages before background shards with 0 double-counting', async (t) => {
+    const baseMs = Date.parse('2020-01-01T00:00:00.000Z');
+    const itemsDesc = Array.from({ length: 160 }, (_, i) => {
+        const tsMs = baseMs + (160 - i) * 14 * 86400 * 1000;
+        if (i === 155) {
+            return { ...mkItem(i, tsMs), isDiscounted: true };
+        }
+        return mkItem(i, tsMs);
+    });
+
+    // Mark 157 items locally done; leave #30 (page 2 of head), #95 (middle shard), #155 (2020 discounted item)
+    const unownedIndices = new Set([30, 95, 155]);
+    const localDone = itemsDesc
+        .filter((_, idx) => !unownedIndices.has(idx))
+        .map((it) => `https://www.fab.com/listings/${it.uid}`);
+    setupMemoryDb(t, localDone);
+
+    const events = [];
+    const { fetchImpl: baseFetch } = setupMockServer(itemsDesc, new Set());
+    const fetchImpl = async (url) => {
+        const u = new URL(url, 'https://www.fab.com');
+        if (u.pathname === '/i/listings/search' && u.searchParams.get('count') !== '0') {
+            events.push({ type: 'search', url });
+        }
+        return baseFetch(url);
+    };
+
+    const claimed = [];
+    const scanner = createFastScanner({
+        fetchImpl,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => {
+                claimed.push(task.uid);
+                events.push({ type: 'claim', uid: task.uid });
+                return { result: CLAIM_RESULT.SUCCESS };
+            }
+        },
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?is_free=1&sort_by=-firstPublishedAt',
+        getHeaders: () => ({}),
+        gmGetValue: async (_, def) => def,
+        gmSetValue: async () => {},
+        gmDeleteValue: async () => {}
+    });
+
+    const summary = await scanner.start({ concurrency: 3, globalFreeScan: true });
+
+    const discSearchIdx = events.findIndex((e) => e.type === 'search' && e.url.includes('is_discounted=1'));
+    const claim30Idx = events.findIndex((e) => e.type === 'claim' && e.uid === itemsDesc[30].uid);
+    const claim95Idx = events.findIndex((e) => e.type === 'claim' && e.uid === itemsDesc[95].uid);
+    const claim155Idx = events.findIndex((e) => e.type === 'claim' && e.uid === itemsDesc[155].uid);
+
+    assert.ok(discSearchIdx !== -1, 'Prepass must query is_discounted=1 pool');
+    assert.ok(claim155Idx !== -1 && claim30Idx !== -1 && claim95Idx !== -1, 'All 3 unowned items must be claimed');
+    assert.ok(claim155Idx < claim95Idx, 'Old 2020 discounted item must be claimed before middle background shard');
+    assert.ok(claim30Idx < claim95Idx, 'Newest head page item must be claimed before middle background shard');
+    assert.equal(claimed.length, 3);
+    assert.equal(summary.claimedDirect, 3);
+    assert.equal(summary.itemsScanned, 160, 'Prepass overlap must not double-count itemsScanned');
 });

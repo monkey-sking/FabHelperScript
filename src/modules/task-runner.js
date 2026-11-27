@@ -551,7 +551,7 @@ export const TaskRunner = {
 
         if (State.isExecuting || FastScanner.isRunning()) {
             if (FastScanner.isRunning()) {
-                await FastScanner.stop();
+                await FastScanner.stop({ drainDiscovered: true });
             }
             State.isExecuting = false;
             Database.saveExecutingState();

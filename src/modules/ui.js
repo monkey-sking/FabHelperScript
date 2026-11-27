@@ -1679,7 +1679,9 @@ export const UI = {
                 if (metaLeftEl) {
                     metaLeftEl.textContent = rateLimited
                         ? (zh ? '限速等待中' : 'Rate limited')
-                        : (zh ? `${fs.itemsPerSec} 件/秒` : `${fs.itemsPerSec}/s`);
+                        : (fs.phase === 'prepass'
+                            ? (zh ? '前置快筛中' : 'Quick pre-scan')
+                            : (zh ? `${fs.itemsPerSec} 件/秒` : `${fs.itemsPerSec}/s`));
                     metaLeftEl.classList.toggle('is-warn', rateLimited);
                 }
                 setClaimedMeta(fs.claimedDirect);

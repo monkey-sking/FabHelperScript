@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.6.2-20261127-1523
+// @version      3.6.3-20261127-1551
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -5257,11 +5257,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     const checkpointIntervalMs = Number.isFinite(deps.checkpointIntervalMs) ? deps.checkpointIntervalMs : CHECKPOINT_INTERVAL_MS;
     const claimWorkersCount = Number.isFinite(deps.claimWorkers) ? Math.max(1, deps.claimWorkers) : 2;
     const uiThrottleMs = Number.isFinite(deps.uiThrottleMs) ? deps.uiThrottleMs : 200;
+    const unknownFlushDelayMs = Number.isFinite(deps.unknownFlushDelayMs) ? Math.max(0, deps.unknownFlushDelayMs) : 300;
+    const quickHeadPages = Number.isFinite(deps.quickHeadPages) ? Math.max(0, Math.floor(deps.quickHeadPages)) : 3;
+    const quickDiscountedMaxPages = Number.isFinite(deps.quickDiscountedMaxPages) ? Math.max(0, Math.floor(deps.quickDiscountedMaxPages)) : 10;
     let running = false;
     let stopped = false;
+    let hardStopped = false;
+    let drainingBeforeStop = false;
     let authAborted = false;
     let earlyStopped = false;
+    let calibratedDescPrefetched = false;
     let activeRunPromise = null;
+    let unknownFlushTimer = null;
     let configuredConcurrency = 4;
     let activeConcurrency = 4;
     let pauseUntil = 0;
@@ -5310,10 +5317,21 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         currentHeadUpperMs = currentHeadUpperMs == null ? ms : Math.max(currentHeadUpperMs, ms);
       }
     }, "noteHeadTimestamp");
+    const clearUnknownFlushTimer = /* @__PURE__ */ __name(() => {
+      if (unknownFlushTimer !== null) {
+        clearTimeout(unknownFlushTimer);
+        unknownFlushTimer = null;
+      }
+    }, "clearUnknownFlushTimer");
+    const isClaimAborted = /* @__PURE__ */ __name(() => hardStopped || authAborted || stopped && !drainingBeforeStop, "isClaimAborted");
     const resetRunVars = /* @__PURE__ */ __name(() => {
+      clearUnknownFlushTimer();
       stopped = false;
+      hardStopped = false;
+      drainingBeforeStop = false;
       authAborted = false;
       earlyStopped = false;
+      calibratedDescPrefetched = false;
       pauseUntil = 0;
       penaltyCount = 0;
       extraDelayMs = 0;
@@ -5416,10 +5434,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       } catch (_e) {
       }
     }, "logMsg");
-    const waitRateGate = /* @__PURE__ */ __name(async () => {
-      while (!stopped && !authAborted) {
+    const waitRateGate = /* @__PURE__ */ __name(async ({ allowDrain = false } = {}) => {
+      const shouldAbort = /* @__PURE__ */ __name(() => allowDrain ? isClaimAborted() : stopped || authAborted, "shouldAbort");
+      while (!shouldAbort()) {
         const now = nowFn();
         if (now < pauseUntil) {
+          if (allowDrain && drainingBeforeStop) {
+            hardStopped = true;
+            drainingBeforeStop = false;
+            return false;
+          }
           currentPhase = "rate_limited";
           syncStatus();
           const waitMs = Math.min(250, Math.max(1, pauseUntil - now));
@@ -5610,8 +5634,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       inFlightStateChunks.add(chunk);
       try {
         let attempts = 0;
-        while (!stopped && !authAborted) {
-          const okToRun = await waitRateGate();
+        while (!isClaimAborted()) {
+          const okToRun = await waitRateGate({ allowDrain: true });
           if (!okToRun) {
             unknownBuffer.unshift(...chunk);
             return { ownedCount: 0, unownedCount: 0 };
@@ -5621,7 +5645,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           try {
             res = await doFetch(u.toString());
           } catch (_err) {
-            if (stopped || authAborted) {
+            if (isClaimAborted()) {
               unknownBuffer.unshift(...chunk);
               return { ownedCount: 0, unownedCount: 0 };
             }
@@ -5632,7 +5656,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             chunk.forEach((item) => enqueueClaim(item));
             return { ownedCount: 0, unownedCount: chunk.length };
           }
-          if (stopped || authAborted) {
+          if (isClaimAborted()) {
             unknownBuffer.unshift(...chunk);
             return { ownedCount: 0, unownedCount: 0 };
           }
@@ -5693,16 +5717,39 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         inFlightStateChunks.delete(chunk);
       }
     }, "checkStatesChunk");
+    const scheduleUnknownFlush = /* @__PURE__ */ __name(() => {
+      if (isClaimAborted() || stopped || unknownBuffer.length === 0) return;
+      if (unknownFlushDelayMs <= 0) {
+        flushUnknownBuffer(true);
+        return;
+      }
+      if (unknownFlushTimer !== null) return;
+      unknownFlushTimer = setTimeout(() => {
+        unknownFlushTimer = null;
+        if (!isClaimAborted() && unknownBuffer.length > 0) {
+          flushUnknownBuffer(true);
+        }
+      }, unknownFlushDelayMs);
+      unknownFlushTimer?.unref?.();
+    }, "scheduleUnknownFlush");
     const flushUnknownBuffer = /* @__PURE__ */ __name((drainAll = false) => {
+      if (drainAll) {
+        clearUnknownFlushTimer();
+      }
       const job = /* @__PURE__ */ __name(async () => {
         let ownedTotal = 0;
         let unownedTotal = 0;
-        while (unknownBuffer.length > 0 && !stopped && !authAborted) {
+        while (unknownBuffer.length > 0 && !isClaimAborted()) {
           if (!drainAll && unknownBuffer.length < STATES_MAX_IDS) break;
           const chunk = unknownBuffer.splice(0, STATES_MAX_IDS);
           const res = await checkStatesChunk(chunk);
           ownedTotal += res.ownedCount;
           unownedTotal += res.unownedCount;
+        }
+        if (unknownBuffer.length === 0) {
+          clearUnknownFlushTimer();
+        } else if (!stopped && !isClaimAborted()) {
+          scheduleUnknownFlush();
         }
         return { ownedTotal, unownedTotal };
       }, "job");
@@ -5710,7 +5757,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       statesFlushChain = next.catch(() => ({ ownedTotal: 0, unownedTotal: 0 }));
       return next;
     }, "flushUnknownBuffer");
-    const processPageItems = /* @__PURE__ */ __name(async (items, { flushImmediately = false } = {}) => {
+    const processPageItems = /* @__PURE__ */ __name(async (items, { flushImmediately = false, trackHeadTimestamp = true } = {}) => {
       const db = getDatabase();
       const ls = getListingSource();
       const cache = getDataCache();
@@ -5719,7 +5766,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       let addedToUnknown = 0;
       for (const item of items || []) {
         if (!item || !item.uid) continue;
-        if (isTimeDesc && Number.isFinite(item.publishedAtMs)) {
+        if (trackHeadTimestamp && isTimeDesc && Number.isFinite(item.publishedAtMs)) {
           noteHeadTimestamp(item.publishedAtMs);
         }
         if (seenUids.has(item.uid)) continue;
@@ -5753,6 +5800,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
       if (unknownBuffer.length >= STATES_MAX_IDS) {
         await flushUnknownBuffer(false);
+        if (unknownBuffer.length > 0 && !stopped) {
+          scheduleUnknownFlush();
+        }
+      } else if (unknownBuffer.length > 0 && !stopped) {
+        scheduleUnknownFlush();
+        syncStatus();
       } else if (addedToUnknown === 0) {
         syncStatus();
       }
@@ -5774,7 +5827,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const cfg = getConfig();
       const st = getState();
       while (true) {
-        if (stopped || authAborted) break;
+        if (isClaimAborted()) break;
         if (claimQueue.length === 0) {
           if (scanDoneRef.done) break;
           await new Promise((resolve) => {
@@ -5799,7 +5852,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             syncStatus();
             continue;
           }
-          const gateOk = await waitRateGate();
+          const gateOk = await waitRateGate({ allowDrain: true });
           if (!gateOk) {
             claimQueue.unshift(task);
             break;
@@ -6047,6 +6100,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (descRes.aborted || ascRes.aborted) return;
         let descPage = null;
         if (descRes.ok) {
+          calibratedDescPrefetched = true;
           descPage = ls.parsePage(descRes.json);
           currentStats.pagesFetched += 1;
           await processPageItems(descPage.items, { flushImmediately: false });
@@ -6113,8 +6167,83 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         pages: 0
       }];
     }, "calibrateRun");
-    const runScanWorker = /* @__PURE__ */ __name(async (workerIdx, baseParams, stopPages) => {
+    const stepSlicePage = /* @__PURE__ */ __name(async (slice, baseParams, { flushImmediately = false } = {}) => {
       const ls = getListingSource();
+      const url = buildSearchUrl(baseParams, slice.cursor, slice.extraParams);
+      const res = await fetchSearchPageRaw(url, slice.id);
+      if (res.aborted || stopped || authAborted) return { aborted: true };
+      if (res.error) {
+        logMsg("warn", `[FastScanner] \u5206\u7247 ${slice.id} \u8BF7\u6C42\u8FDE\u7EED\u5931\u8D25\uFF0C\u4FDD\u7559\u65AD\u70B9\u5F85\u7EED\u626B: ${res.error.message}`);
+        slice.failedThisRun = true;
+        slice.lastError = res.error.message || "Search error";
+        currentStats.failedSlices += 1;
+        return { error: res.error };
+      }
+      const page = ls.parsePage(res.json);
+      slice.pages += 1;
+      currentStats.pagesFetched += 1;
+      const pageResult = await processPageItems(page.items, { flushImmediately });
+      if (stopped || authAborted) return { aborted: true };
+      if (baseParams.sort_by === "-firstPublishedAt" && page.nextCursor) {
+        noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
+      }
+      if (!page.nextCursor) {
+        slice.cursor = null;
+        slice.done = true;
+      } else if (slice.lowerMs != null) {
+        const nextMs = decodeTimeCursorMs(page.nextCursor);
+        if (nextMs != null && nextMs < slice.lowerMs - OVERLAP_MS) {
+          slice.cursor = null;
+          slice.done = true;
+        } else {
+          slice.cursor = page.nextCursor;
+        }
+      } else {
+        slice.cursor = page.nextCursor;
+      }
+      return { ok: true, page, pageResult };
+    }, "stepSlicePage");
+    const runQuickPrepass = /* @__PURE__ */ __name(async (baseParams) => {
+      if (String(baseParams?.is_discounted || "") !== "1" && quickDiscountedMaxPages > 0) {
+        let pageIdx = 0;
+        let discCursor = null;
+        while (pageIdx < quickDiscountedMaxPages && !stopped && !authAborted) {
+          const discUrl = buildSearchUrl(baseParams, discCursor, {
+            is_free: "1",
+            is_discounted: "1",
+            sort_by: "-firstPublishedAt"
+          });
+          const res = await fetchSearchPageRaw(discUrl, "prepass-discounted");
+          if (res.aborted || res.error || stopped || authAborted) break;
+          const page = getListingSource().parsePage(res.json);
+          currentStats.pagesFetched += 1;
+          pageIdx += 1;
+          await processPageItems(page.items, { flushImmediately: true, trackHeadTimestamp: false });
+          syncStatus();
+          if (!page.nextCursor) break;
+          discCursor = page.nextCursor;
+        }
+      }
+      if (stopped || authAborted) return;
+      await flushUnknownBuffer(true);
+      const headSteps = Math.max(0, quickHeadPages - (calibratedDescPrefetched ? 1 : 0));
+      if (headSteps > 0 && currentSlices.length > 0 && (currentMode === "time-shards" || currentMode === "sequential")) {
+        const headSlice = currentSlices[0];
+        for (let i = 0; i < headSteps && !stopped && !authAborted && !headSlice.done && !headSlice.failedThisRun; i += 1) {
+          const stepRes = await stepSlicePage(headSlice, baseParams, { flushImmediately: true });
+          if (stepRes.aborted || stepRes.error) break;
+          syncStatus();
+          await saveCheckpoint(false);
+        }
+      }
+      if (!isClaimAborted()) {
+        await flushUnknownBuffer(true);
+        while (!isClaimAborted() && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+          await sleep(20);
+        }
+      }
+    }, "runQuickPrepass");
+    const runScanWorker = /* @__PURE__ */ __name(async (workerIdx, baseParams, stopPages) => {
       while (!stopped && !authAborted && !earlyStopped) {
         if (workerIdx >= activeConcurrency) {
           const remaining = currentSlices.some((s) => !s.done && !s.failedThisRun);
@@ -6139,39 +6268,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             if (workerIdx >= activeConcurrency) {
               break;
             }
-            const url = buildSearchUrl(baseParams, slice.cursor, slice.extraParams);
-            const res = await fetchSearchPageRaw(url, slice.id);
-            if (res.aborted || stopped || authAborted) break;
-            if (res.error) {
-              logMsg("warn", `[FastScanner] \u5206\u7247 ${slice.id} \u8BF7\u6C42\u8FDE\u7EED\u5931\u8D25\uFF0C\u4FDD\u7559\u65AD\u70B9\u5F85\u7EED\u626B: ${res.error.message}`);
-              slice.failedThisRun = true;
-              slice.lastError = res.error.message || "Search error";
-              currentStats.failedSlices += 1;
-              break;
-            }
-            const page = ls.parsePage(res.json);
-            slice.pages += 1;
-            currentStats.pagesFetched += 1;
             const isIncremental = currentMode === "incremental";
-            const pageResult = await processPageItems(page.items, { flushImmediately: isIncremental });
-            if (stopped || authAborted) break;
-            if (baseParams.sort_by === "-firstPublishedAt" && page.nextCursor) {
-              noteHeadTimestamp(decodeTimeCursorMs(page.nextCursor));
-            }
-            if (!page.nextCursor) {
-              slice.cursor = null;
-              slice.done = true;
-            } else if (slice.lowerMs != null) {
-              const nextMs = decodeTimeCursorMs(page.nextCursor);
-              if (nextMs != null && nextMs < slice.lowerMs - OVERLAP_MS) {
-                slice.cursor = null;
-                slice.done = true;
-              } else {
-                slice.cursor = page.nextCursor;
-              }
-            } else {
-              slice.cursor = page.nextCursor;
-            }
+            const stepRes = await stepSlicePage(slice, baseParams, { flushImmediately: isIncremental });
+            if (stepRes.aborted || stepRes.error || stopped || authAborted) break;
+            const { page, pageResult } = stepRes;
             if (isIncremental && page.items.length > 0) {
               if (pageResult.unownedTotal === 0) {
                 consecutiveOwnedPages += 1;
@@ -6227,29 +6327,41 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         const scanDoneRef = { done: false };
         let claimLoops = [];
         try {
-          await calibrateRun(baseParams, {
-            incrementalEarlyStop: incEnabled,
-            resumeCheckpoint: options.resumeCheckpoint
-          });
-          if (stopped || authAborted) {
-            return buildSnapshot();
-          }
-          currentPhase = "scanning";
-          logMsg(
-            "info",
-            `[FastScanner] \u5F00\u59CB\u6781\u901F\u626B\u63CF (${currentMode}, ${activeConcurrency} \u8DEF\u5E76\u53D1` + (currentStats.totalEstimated > 0 ? `, \u9884\u8BA1 ${currentStats.totalEstimated} \u4EF6` : "") + (incEnabled && currentMode === "incremental" ? `, \u8FDE\u7EED ${stopPages} \u9875\u5DF2\u62E5\u6709\u65E9\u505C` : "") + ")"
-          );
-          syncStatus(true);
           claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
           if (Array.isArray(options.priorityItems) && options.priorityItems.length > 0) {
             const addedPriority = enqueuePriorityItems(options.priorityItems, { flush: false });
             if (addedPriority > 0) {
               logMsg("info", `[FastScanner] \u4F18\u5148\u6838\u9A8C\u5E76\u9886\u53D6\u5F53\u524D\u9875\u9762\u53EF\u89C1\u514D\u8D39\u5546\u54C1 (${addedPriority} \u9879)...`);
               await flushUnknownBuffer(true);
-              while (!stopped && !authAborted && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+              while (!isClaimAborted() && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
                 await sleep(20);
               }
             }
+          }
+          await calibrateRun(baseParams, {
+            incrementalEarlyStop: incEnabled,
+            resumeCheckpoint: options.resumeCheckpoint
+          });
+          if (stopped || authAborted) {
+            scanDoneRef.done = true;
+            wakeClaimWorkers();
+            await Promise.all(claimLoops);
+            return buildSnapshot();
+          }
+          const quickPrepassEnabled = !incEnabled && (options.quickPrepass !== void 0 ? Boolean(options.quickPrepass) : Boolean(options.globalFreeScan));
+          if (quickPrepassEnabled) {
+            currentPhase = "prepass";
+            syncStatus(true);
+            logMsg("info", "[FastScanner] \u524D\u7F6E\u5FEB\u7B5B\uFF1A\u4F18\u5148\u6838\u9A8C\u5168\u7AD9\u9650\u514D\u6298\u6263\u6C60\u4E0E\u6700\u65B0\u4E0A\u67B6\u514D\u8D39\u54C1...");
+            await runQuickPrepass(baseParams);
+          }
+          if (!stopped && !authAborted) {
+            currentPhase = "scanning";
+            logMsg(
+              "info",
+              `[FastScanner] \u5F00\u59CB\u6781\u901F\u626B\u63CF (${currentMode}, ${activeConcurrency} \u8DEF\u5E76\u53D1` + (currentStats.totalEstimated > 0 ? `, \u9884\u8BA1 ${currentStats.totalEstimated} \u4EF6` : "") + (incEnabled && currentMode === "incremental" ? `, \u8FDE\u7EED ${stopPages} \u9875\u5DF2\u62E5\u6709\u65E9\u505C` : "") + ")"
+            );
+            syncStatus(true);
           }
           if (!stopped && !authAborted && currentSlices.some((s) => !s.done)) {
             const spawnCount = currentMode === "incremental" ? 1 : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
@@ -6259,14 +6371,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             );
             await Promise.all(scanWorkers);
           }
-          if (!stopped && !authAborted) {
-            currentPhase = "draining";
+          if ((!stopped || drainingBeforeStop) && !hardStopped && !authAborted) {
+            currentPhase = stopped ? "paused" : "draining";
             syncStatus(true);
             await flushUnknownBuffer(true);
           }
           scanDoneRef.done = true;
           wakeClaimWorkers();
           await Promise.all(claimLoops);
+          drainingBeforeStop = false;
           await db.flushSaveDone();
           currentStats.finishedAt = nowFn();
           const incompleteSlices = currentSlices.filter((s) => !s.done).length;
@@ -6315,6 +6428,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           syncStatus(true);
           throw err;
         } finally {
+          clearUnknownFlushTimer();
+          drainingBeforeStop = false;
           scanDoneRef.done = true;
           wakeClaimWorkers();
           if (claimLoops.length > 0) {
@@ -6331,15 +6446,22 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       activeRunPromise = runWork();
       return activeRunPromise;
     }, "start");
-    const stop = /* @__PURE__ */ __name(async () => {
+    const stop = /* @__PURE__ */ __name(async (opts = {}) => {
       if (!running && !activeRunPromise) return;
+      clearUnknownFlushTimer();
+      const pendingCount = unknownBuffer.length + claimQueue.length + activeClaimsInFlight + inFlightStateChunks.size;
+      const canDrain = Boolean(opts?.drainDiscovered) && !stopped && !authAborted && nowFn() >= pauseUntil && unknownBuffer.length + claimQueue.length <= STATES_MAX_IDS && pendingCount > 0;
       stopped = true;
+      drainingBeforeStop = canDrain;
+      hardStopped = !canDrain;
       currentPhase = "paused";
       wakeClaimWorkers();
       wakeWorkerSlots();
       syncStatus(true);
-      saveCheckpoint(true);
-      getDatabase().flushSaveDone();
+      if (!canDrain) {
+        saveCheckpoint(true);
+        getDatabase().flushSaveDone();
+      }
       if (activeRunPromise) {
         try {
           await activeRunPromise;
@@ -7048,7 +7170,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (!Utils.checkAuthentication()) return;
       if (State.isExecuting || FastScanner.isRunning()) {
         if (FastScanner.isRunning()) {
-          await FastScanner.stop();
+          await FastScanner.stop({ drainDiscovered: true });
         }
         State.isExecuting = false;
         Database.saveExecutingState();
@@ -10248,7 +10370,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           setTrack(pct != null, pct || 0);
           const rateLimited = fs.rateLimitedUntil > Date.now();
           if (metaLeftEl) {
-            metaLeftEl.textContent = rateLimited ? zh2 ? "\u9650\u901F\u7B49\u5F85\u4E2D" : "Rate limited" : zh2 ? `${fs.itemsPerSec} \u4EF6/\u79D2` : `${fs.itemsPerSec}/s`;
+            metaLeftEl.textContent = rateLimited ? zh2 ? "\u9650\u901F\u7B49\u5F85\u4E2D" : "Rate limited" : fs.phase === "prepass" ? zh2 ? "\u524D\u7F6E\u5FEB\u7B5B\u4E2D" : "Quick pre-scan" : zh2 ? `${fs.itemsPerSec} \u4EF6/\u79D2` : `${fs.itemsPerSec}/s`;
             metaLeftEl.classList.toggle("is-warn", rateLimited);
           }
           setClaimedMeta(fs.claimedDirect);
