@@ -314,6 +314,165 @@ export const TaskRunner = {
         return TaskRunner.hasPositivePriceText(cardText);
     },
 
+    syncClaimedCardToDom: (uidOrUrl) => {
+        if (!uidOrUrl) return 0;
+        const raw = String(uidOrUrl).trim();
+        const uid = (raw.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1] || raw).toLowerCase();
+        if (!uid) return 0;
+
+        DataCache.saveOwnedStatus([{
+            uid,
+            acquired: true,
+            lastUpdatedAt: new Date().toISOString()
+        }]);
+
+        if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') {
+            return 0;
+        }
+
+        const badgeText = State.lang === 'zh' ? '✅ 已保存在我的库中' : '✅ Saved in My Library';
+        const cards = [...document.querySelectorAll(Config.SELECTORS.card)];
+        const isInsideOrContainsLink = (el) => {
+            if (!el) return false;
+            if (el.tagName === 'A') return true;
+            if (typeof el.querySelector === 'function' && el.querySelector('a[href]')) return true;
+            if (typeof el.closest === 'function' && el.closest('a[href]')) return true;
+            let cur = el.parentElement;
+            while (cur) {
+                if (cur.tagName === 'A') return true;
+                cur = cur.parentElement;
+            }
+            return false;
+        };
+        const prefixedFreeRe = /^(?:起始价格\s*免费|低至\s*免费|Starting at\s*Free|From\s*Free|选择许可.*免费.*)/i;
+        const plainFreeRe = /^(?:起始价格\s*免费|低至\s*免费|Starting at\s*Free|From\s*Free|选择许可.*免费.*|免费|Free\*?|\$?0\.00|-\s*100\s*%(?:\s*OFF|\s*折扣)?)(?:\s*-\s*100\s*%(?:\s*OFF|\s*折扣)?)?$/i;
+
+        let updated = 0;
+        cards.forEach((card) => {
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            const href = link ? (link.href || link.getAttribute?.('href') || '') : '';
+            const cardUid = href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1]?.toLowerCase() || '';
+            if (cardUid !== uid) return;
+
+            card.removeAttribute('data-fab-processed');
+            updated += 1;
+
+            if (!TaskRunner.hasSavedLibraryText(card) && !card.querySelector('[data-fab-owned-badge="true"]')) {
+                const badgeEl = document.createElement('span');
+                badgeEl.className = 'fab-helper-owned-inline';
+                badgeEl.setAttribute('data-fab-owned-badge', 'true');
+                badgeEl.textContent = badgeText;
+
+                let targetNode = card.querySelector(Config.SELECTORS.freeStatus);
+                if (!targetNode || isInsideOrContainsLink(targetNode)) {
+                    targetNode = null;
+                    const descendants = [...card.querySelectorAll('*')];
+                    let prefixedMatch = null;
+                    let plainMatch = null;
+                    for (const el of descendants) {
+                        if (isInsideOrContainsLink(el)) continue;
+                        const text = Utils.normalizeWhitespace(el.textContent || '');
+                        if (!text || text.length > 48) continue;
+                        if (prefixedFreeRe.test(text) && plainFreeRe.test(text)) {
+                            // 优先匹配包含完整「起始价格 免费」的容器，避免替换后残留「起始价格」前缀
+                            if (!prefixedMatch) prefixedMatch = el;
+                        } else if (plainFreeRe.test(text)) {
+                            plainMatch = el;
+                        }
+                    }
+                    targetNode = prefixedMatch || plainMatch;
+                }
+
+                if (targetNode) {
+                    targetNode.innerHTML = '';
+                    targetNode.textContent = '';
+                    targetNode.appendChild(badgeEl);
+                } else {
+                    card.appendChild(badgeEl);
+                }
+            }
+        });
+
+        if (updated > 0) {
+            TaskRunner.invalidateCardCountCache();
+            if (State.hideSaved) {
+                TaskRunner.scheduleHideOrShow();
+            } else if (UI) {
+                UI.update();
+            }
+        }
+        return updated;
+    },
+
+    collectVisibleFreeTasks: () => {
+        if (typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') {
+            return [];
+        }
+        const cards = [...document.querySelectorAll(TaskRunner.getVisibleCardSelector())];
+        const tasks = [];
+        const seen = new Set();
+
+        cards.forEach((card) => {
+            if (TaskRunner.isCardHidden(card)) return;
+            if (!TaskRunner.isCardSettled(card)) return;
+            if (TaskRunner.isCardFinished(card)) return;
+            if (!TaskRunner.isFreeCard(card)) return;
+
+            const link = card.querySelector(Config.SELECTORS.cardLink);
+            const rawHref = link ? (link.href || link.getAttribute?.('href') || '') : '';
+            if (!rawHref) return;
+            const uidMatch = rawHref.match(/\/(listings|bundles)\/([^/?#]+)/i);
+            if (!uidMatch) return;
+
+            const kind = uidMatch[1].toLowerCase();
+            const uid = uidMatch[2].toLowerCase();
+            if (seen.has(uid)) return;
+            seen.add(uid);
+
+            const url = `https://www.fab.com/${kind}/${uid}`;
+            if (Database.isDone(url) || Database.isFailed(url) || Database.isTodo(url)) return;
+
+            const name = card.querySelector('a[aria-label*="创作的"], a[aria-label*="by "]')?.textContent.trim() ||
+                link?.textContent.trim() ||
+                Utils.getText('untitled');
+            const isBundle = kind === 'bundles';
+            tasks.push(enrichTaskFromCache(uid, {
+                uid,
+                name,
+                url,
+                type: 'detail',
+                listingType: isBundle ? 'bundle' : '',
+                isBundle
+            }));
+        });
+
+        return tasks;
+    },
+
+    claimVisibleDomCards: async () => {
+        if (State.isWorkerTab || State.manualVerificationPending || State.appStatus === 'RATE_LIMITED') {
+            return { queued: 0, claimed: 0, owned: 0 };
+        }
+        if (!Utils.checkAuthentication(true)) {
+            return { queued: 0, claimed: 0, owned: 0 };
+        }
+        const tasks = TaskRunner.collectVisibleFreeTasks();
+        if (tasks.length === 0) {
+            return { queued: 0, claimed: 0, owned: 0 };
+        }
+        FastScanner.configure({
+            onUiUpdate: () => { if (UI) UI.update(); },
+            onToast: (msg, persist) => { if (UI && typeof UI.showToast === 'function') UI.showToast(msg, persist); },
+            onAuthFailure: () => {
+                Utils.notifyAuthFailure();
+                TaskRunner.stop();
+            },
+            onItemClaimed: (item) => TaskRunner.syncClaimedCardToDom(item?.uid || item?.url),
+            enqueueWorkerFallback: (task) => TaskRunner.enqueueWorkerFallback(task)
+        });
+        return FastScanner.claimVisibleItems(tasks);
+    },
+
     // Toggle execution state
     enqueueWorkerFallback: async (task) => {
         if (!task || !task.uid) return false;
@@ -334,7 +493,6 @@ export const TaskRunner = {
     },
 
     startFastScan: async () => {
-        if (State.apiPipelineActive) return null;
         if (typeof InstanceManager !== 'undefined' && InstanceManager.activate) {
             InstanceManager.activate();
         }
@@ -345,15 +503,24 @@ export const TaskRunner = {
                 Utils.notifyAuthFailure();
                 TaskRunner.stop();
             },
+            onItemClaimed: (item) => TaskRunner.syncClaimedCardToDom(item?.uid || item?.url),
             enqueueWorkerFallback: (task) => TaskRunner.enqueueWorkerFallback(task)
         });
+        const priorityItems = TaskRunner.collectVisibleFreeTasks();
         KeepAlive.start();
         State.isExecuting = true;
         Database.saveExecutingState();
         if (UI) UI.update();
 
         try {
-            const summary = await FastScanner.start();
+            const summary = await FastScanner.start({
+                globalFreeScan: true,
+                priorityItems
+            });
+            if (summary?.phase === 'completed') {
+                State.hasFastScanCheckpoint = false;
+                State.fastScanCheckpointMeta = null;
+            }
             if (!State.isExecuting) return summary;
             if (State.db.todo.length > 0 || State.activeWorkers > 0) {
                 if (TaskRunner.hasDispatchSlot() && State.db.todo.length > 0) {
@@ -381,19 +548,6 @@ export const TaskRunner = {
 
     toggleExecution: async () => {
         if (!Utils.checkAuthentication()) return;
-
-        // API 模式不再扫描 DOM，也不走旧版 startExecution（后者会派发 worker）。
-        // 这里只切换共享执行开关，让 pipeline-scheduler 在下一拍启动/暂停；
-        // 重新开启时 scheduler 会识别上升沿并保留 EventLog 去重历史。
-        if (State.apiPipelineActive) {
-            State.isExecuting = !State.isExecuting;
-            Database.saveExecutingState();
-            Utils.logger('info', State.isExecuting
-                ? '[Pipeline] 已恢复 API 流水线。'
-                : '[Pipeline] 已暂停 API 流水线。');
-            if (UI) UI.update();
-            return;
-        }
 
         if (State.isExecuting || FastScanner.isRunning()) {
             if (FastScanner.isRunning()) {
@@ -430,7 +584,7 @@ export const TaskRunner = {
             return;
         }
 
-        if (State.fastApiScan) {
+        if (!State.domFallbackMode) {
             return await TaskRunner.startFastScan();
         }
 
@@ -513,10 +667,6 @@ export const TaskRunner = {
     // Start execution without scanning
     startExecution: () => {
         if (State.manualVerificationPending) return;
-        if (State.apiPipelineActive) {
-            Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧 worker 执行请求。');
-            return;
-        }
         if (State.isExecuting) {
             const newTotal = State.db.todo.length;
             if (newTotal > State.executionTotalTasks) {
@@ -705,83 +855,45 @@ export const TaskRunner = {
         return safeVal;
     },
 
-    getWorkMode: () => {
-        if (!State.fastApiScan) return 'page';
-        return State.incrementalEarlyStop ? 'incremental' : 'full';
+    toggleAutoClaimVisible: async () => {
+        State.autoClaimVisible = !State.autoClaimVisible;
+        await Database.saveAutoClaimVisiblePref();
+        Utils.logger(
+            'info',
+            Utils.getText('log_auto_claim_visible_toggle', State.autoClaimVisible ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
+        );
+        if (UI) UI.update();
+        if (State.autoClaimVisible && !State.domFallbackMode) {
+            TaskRunner.claimVisibleDomCards().catch((e) => Utils.logger('debug', `[浏览自动领] 扫描失败: ${e.message}`));
+        }
+        return State.autoClaimVisible;
     },
 
-    setWorkMode: async (mode) => {
-        const validModes = ['full', 'incremental', 'page'];
-        if (!validModes.includes(mode)) return TaskRunner.getWorkMode();
-        if (TaskRunner.getWorkMode() === mode) {
-            if (UI) UI.update();
-            return mode;
-        }
+    setDomFallbackMode: async (enabled) => {
+        const next = Boolean(enabled);
         if (State.isExecuting || FastScanner.isRunning()) {
             if (FastScanner.isRunning()) {
                 await FastScanner.stop();
             }
             TaskRunner.stop();
         }
-        if (mode === 'full') {
-            State.fastApiScan = true;
-            State.incrementalEarlyStop = false;
-        } else if (mode === 'incremental') {
-            State.fastApiScan = true;
-            State.incrementalEarlyStop = true;
-        } else {
-            State.fastApiScan = false;
-        }
-        await Database.saveFastApiScanPref();
-        await Database.saveIncrementalEarlyStopPref();
-        Utils.logger('info', Utils.getText('log_work_mode_changed', Utils.getText(`mode_${mode}`)));
-        if (UI) UI.update();
-        return mode;
-    },
-
-    getPageSubMode: () => {
-        if (State.autoScroll) return 'auto_scroll';
-        if (State.autoAddOnScroll) return 'on_scroll';
-        return 'visible';
-    },
-
-    setPageSubMode: async (subMode) => {
-        const validSubModes = ['visible', 'on_scroll', 'auto_scroll'];
-        if (!validSubModes.includes(subMode)) return TaskRunner.getPageSubMode();
-        if (subMode === 'visible') {
-            State.autoAddOnScroll = false;
-            State.autoScroll = false;
-        } else if (subMode === 'on_scroll') {
-            State.autoAddOnScroll = true;
-            State.autoScroll = false;
-        } else {
-            State.autoAddOnScroll = false;
-            State.autoScroll = true;
+        State.domFallbackMode = next;
+        State.fastApiScan = !next;
+        State.autoScroll = next;
+        if (next) {
             State.isEndOfSearchList = false;
             State.autoScrollAttempts = 0;
             State.hasReachedBottomToastShown = false;
         }
-        await Database.saveAutoAddPref();
-        await Database.saveAutoScrollPref();
-        Utils.logger('info', Utils.getText('log_page_submode_changed', Utils.getText(`page_submode_${subMode}`)));
-        if (UI) UI.update();
-        return subMode;
-    },
-
-    toggleFastApiScan: async () => {
-        if (State.isExecuting || FastScanner.isRunning()) {
-            if (FastScanner.isRunning()) {
-                await FastScanner.stop();
-            }
-            TaskRunner.stop();
-        }
-        State.fastApiScan = !State.fastApiScan;
+        await Database.saveDomFallbackModePref();
         await Database.saveFastApiScanPref();
+        await Database.saveAutoScrollPref();
         Utils.logger(
             'info',
-            Utils.getText('log_fast_api_scan_toggle', State.fastApiScan ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
+            Utils.getText('log_dom_fallback_toggle', next ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
         );
         if (UI) UI.update();
+        return next;
     },
 
     setApiScanConcurrency: async (count) => {
@@ -793,27 +905,6 @@ export const TaskRunner = {
         await Database.saveApiScanConcurrencyPref();
         FastScanner.setConcurrency(safeVal);
         Utils.logger('info', Utils.getText('log_api_scan_concurrency_changed', safeVal));
-        if (UI) UI.update();
-        return safeVal;
-    },
-
-    toggleIncrementalEarlyStop: async () => {
-        State.incrementalEarlyStop = !State.incrementalEarlyStop;
-        await Database.saveIncrementalEarlyStopPref();
-        Utils.logger(
-            'info',
-            Utils.getText('log_incremental_early_stop_toggle', State.incrementalEarlyStop ? Utils.getText('status_enabled') : Utils.getText('status_disabled'))
-        );
-        if (UI) UI.update();
-    },
-
-    setIncrementalStopPages: async (pages) => {
-        const parsed = parseInt(pages, 10);
-        const defPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5;
-        const safeVal = Math.max(1, Math.min(50, Number.isFinite(parsed) ? parsed : defPages));
-        State.incrementalStopPages = safeVal;
-        await Database.saveIncrementalStopPagesPref();
-        Utils.logger('info', Utils.getText('log_incremental_stop_pages_changed', safeVal));
         if (UI) UI.update();
         return safeVal;
     },
@@ -966,6 +1057,10 @@ export const TaskRunner = {
                     });
                     Utils.logger('info', Utils.getText('log_cleared_from_failed', initialFailedCount - State.db.failed.length));
                 }
+
+                ownedUids.forEach((uid) => {
+                    TaskRunner.syncClaimedCardToDom(uid);
+                });
             }
 
             if (dbUpdated) {
@@ -1085,10 +1180,6 @@ export const TaskRunner = {
     hasDispatchSlot: () => State.activeWorkers < TaskRunner.maxDispatchSlots(),
 
     executeBatch: async () => {
-        if (State.apiPipelineActive) {
-            Utils.logger('debug', '[Legacy] API 流水线已接管，阻止旧 worker 派发。');
-            return;
-        }
         if (!Utils.checkAuthentication()) return;
 
         if (!State.isWorkerTab && !InstanceManager.isActive) {
@@ -2262,7 +2353,7 @@ export const TaskRunner = {
         if (!Config.MEMORY_RECYCLE_ENABLED || threshold <= 0) return false;
         if (State.memoryRecycleDisabled || State.memoryRecycleInFlight) return false;
         // 只在「自动滚动全量扫描」模式下回收：其它模式刷新会打断用户手动浏览。
-        if (!State.autoScroll || State.apiPipelineActive) return false;
+        if (!State.autoScroll) return false;
         if (State.appStatus !== 'NORMAL' || State.manualVerificationPending) return false;
         if (State.isAutoScrolling || State.isScanningTasks || State.isDispatchingTasks) return false;
         if (State.isRefreshScheduled || State.isRecoveryMode) return false;
@@ -2318,11 +2409,11 @@ export const TaskRunner = {
     resumeAfterMemoryRecycle: () => {
         if (TaskRunner._sessionGet(MEM_RECYCLE_KEYS.PENDING) !== '1') return false;
         TaskRunner._sessionRemove(MEM_RECYCLE_KEYS.PENDING);
-        if (!State.autoScroll || State.apiPipelineActive || State.isWorkerTab) return false;
+        if (!State.autoScroll || State.isWorkerTab) return false;
 
         Utils.logger('info', Utils.getText('memory_recycle_resume'));
         setTimeout(() => {
-            if (!State.autoScroll || State.apiPipelineActive) return;
+            if (!State.autoScroll) return;
             if (State.isEndOfSearchList) return;
             if (State.db.todo.length > 0) {
                 TaskRunner.startExecution();
@@ -2338,10 +2429,6 @@ export const TaskRunner = {
         // 限速恢复期间不继续滚动触发分页；恢复后的定时检查会接续推进。
         if (State.appStatus === 'RATE_LIMITED') return;
         if (FastScanner.isRunning()) return;
-        if (State.apiPipelineActive) {
-            Utils.logger('debug', '[Legacy] API 流水线已接管，忽略旧自动滚动请求。');
-            return;
-        }
         if (State.isAutoScrolling) return;
         State.isAutoScrolling = true;
 

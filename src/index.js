@@ -126,7 +126,7 @@ import { isCheckoutPage } from './modules/bundle-claim.js';
 import { Utils, setUIReference as setUtilsUIRef } from './modules/utils.js';
 import { PageDiagnostics } from './modules/page-diagnostics.js';
 import { DataCache } from './modules/data-cache.js';
-import { API } from './modules/api.js';
+import { API, gmPostImpl } from './modules/api.js';
 import { Database, setUIReference as setDbUIRef } from './modules/database.js';
 import { RateLimitManager, setDependencies as setRateLimitDeps } from './modules/rate-limit-manager.js';
 import { isRateLimitedPage } from './modules/rate-limit-detection.js';
@@ -135,23 +135,7 @@ import { TaskRunner, setUIReference as setTaskRunnerUIRef, setDependencies as se
 import { UI, setTaskRunnerReference as setUITaskRunnerRef } from './modules/ui.js';
 import { InstanceManager } from './modules/instance-manager.js';
 import { KeepAlive } from './modules/keepalive.js';
-import { createIframeAcquire } from './modules/iframe-claim.js';
 import { FastScanner } from './modules/fast-scanner.js';
-
-// API 优先流水线（重构目标架构）。USE_API_PIPELINE 关闭时以下仅引入，不执行任何逻辑。
-import { Pipeline } from './modules/pipeline.js';
-import { createPipelineScheduler } from './modules/pipeline-scheduler.js';
-import {
-    bootstrapPipeline,
-    gmFetchImpl,
-    gmPostImpl,
-    hasClaimBackend,
-    isApiPipelineActive,
-    loadApiCursor,
-    loadEventLog,
-    migrateLegacyTodoToEventLog,
-    persistEventLog
-} from './modules/pipeline-adapter.js';
 import { ApiClaim, FAB_CLAIM_ENDPOINT } from './modules/claim-strategy.js';
 
 // Global countdown variables
@@ -327,6 +311,20 @@ setRateLimitDeps({
     countdownRefresh
 });
 
+let _autoClaimVisibleTimer = null;
+function scheduleAutoClaimVisible(delayMs = 500) {
+    if (!State.autoClaimVisible || State.domFallbackMode || State.isWorkerTab) return;
+    if (State.manualVerificationPending || State.appStatus === 'RATE_LIMITED') return;
+    clearTimeout(_autoClaimVisibleTimer);
+    _autoClaimVisibleTimer = setTimeout(() => {
+        _autoClaimVisibleTimer = null;
+        if (!State.autoClaimVisible || State.domFallbackMode || State.isWorkerTab) return;
+        TaskRunner.claimVisibleDomCards().catch((e) => {
+            Utils.logger('debug', `[浏览自动领] 扫描失败: ${e.message}`);
+        });
+    }, delayMs);
+}
+
 // Triggers hide/show + status check when ownership data arrives, debounced so
 // multiple listings-states responses in a burst coalesce into a single DOM pass.
 let _ownedStatusUpdateTimer = null;
@@ -337,7 +335,11 @@ function triggerOwnedStatusUpdate() {
         if (State.hideSaved) {
             try { TaskRunner.scheduleHideOrShow(); } catch (e) { Utils.logger('debug', `[ownedStatus] scheduleHideOrShow失败: ${e.message}`); }
         }
-        try { TaskRunner.checkVisibleCardsStatus().catch(() => { }); } catch (e) { Utils.logger('debug', `[ownedStatus] 状态检查失败: ${e.message}`); }
+        try {
+            TaskRunner.checkVisibleCardsStatus().then(() => {
+                scheduleAutoClaimVisible(300);
+            }).catch(() => { });
+        } catch (e) { Utils.logger('debug', `[ownedStatus] 状态检查失败: ${e.message}`); }
     }, 50);
 }
 
@@ -933,7 +935,8 @@ async function runDomDependentPart() {
                 const shouldProcessNewCards = State.hideSaved ||
                     State.hideDiscountedPaid ||
                     State.hidePaid ||
-                    (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll)) ||
+                    (State.autoClaimVisible && !State.domFallbackMode) ||
+                    (State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll)) ||
                     State.isExecuting ||
                     State.db.todo.length > 0;
 
@@ -946,7 +949,10 @@ async function runDomDependentPart() {
                     if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
                         TaskRunner.scheduleHideOrShow();
                     }
-                    if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
+                    if (State.autoClaimVisible && !State.domFallbackMode) {
+                        scheduleAutoClaimVisible(500);
+                    }
+                    if (State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll)) {
                         TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
                             .catch(error => Utils.logger('error', `自动添加任务失败: ${error.message}`));
                     }
@@ -965,28 +971,14 @@ async function runDomDependentPart() {
     // Initial hide/show
     TaskRunner.runHideOrShow();
 
-    // API 优先流水线：必须等启动结果确定后再决定旧路径是否让位。
-    // 若事件日志等关键状态无法载入，startApiPipeline 会返回且保持 inactive，
-    // 随后的 DOM 扫描应正常接手，不能留下一个“开关开着但什么都不做”的空档。
-    if (Config.USE_API_PIPELINE) {
-        try {
-            await startApiPipeline();
-        } catch (e) {
-            State.apiPipelineActive = false;
-            Utils.logger('error', `[Pipeline] 启动失败，已回退旧路径: ${e.message}`);
-        }
-    }
-
-    // 初始加载时，若处于极速 API 扫描执行态则恢复极速扫描，否则走旧版初始扫描
-    if (State.fastApiScan && State.isExecuting && !isApiPipelineActive()) {
+    // 默认主力模式：页面加载稳定后自动识别并秒领眼前可见免费商品（绝不自动恢复后台全站扫描断点）
+    if (State.autoClaimVisible && !State.domFallbackMode) {
         if (!State.manualVerificationPending && State.appStatus === 'NORMAL' && State.isAuthenticated) {
             setTimeout(() => {
-                if (State.fastApiScan && State.isExecuting && !State.manualVerificationPending && State.appStatus === 'NORMAL') {
-                    TaskRunner.startFastScan().catch(error => Utils.logger('error', `[FastScanner] 自动恢复失败: ${error.message}`));
-                }
+                scheduleAutoClaimVisible(0);
             }, 1500);
         }
-    } else if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    } else if (State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll)) {
         setTimeout(() => {
             Utils.logger('debug', '页面加载完成，正在执行初始商品扫描...');
             TaskRunner.scanAndAddTasks(document.querySelectorAll(TaskRunner.getVisibleCardSelector()))
@@ -1074,10 +1066,8 @@ async function runDomDependentPart() {
                         Utils.logger('error', `限速状态周期检查失败: ${err.message}`));
                 }
             } else if (State.appStatus === 'NORMAL' && actualVisibleCards === 0 && !State.isEndOfSearchList
-                && !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
-                // v3.5.20 修复：自动入库模式下页面已无可见商品但服务器未确认到底（如 429 恢复后
-                // 页面仍停在错误页、或隐藏后虚拟化渲染不再加载新卡），主动推进滚动/刷新，
-                // 避免「入库/隐藏卡在 N 不动、需手动刷新才能继续」。
+                && State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !FastScanner.isRunning()) {
+                // 应急滚页备用模式：页面已无可见商品但服务器未确认到底时，主动推进滚动/刷新
                 const { hidden: actualHidden } = TaskRunner.getCardCounts(true);
                 if (actualHidden > 0) {
                     Utils.logger('info', Utils.getText('auto_scroll_resume_hidden', actualHidden));
@@ -1089,7 +1079,7 @@ async function runDomDependentPart() {
                 }
             }
 
-            // 周期兜底：滚动循环停住时也能在空闲态触发内存回收
+            // 周期兜底：应急滚页循环停住时也能在空闲态触发内存回收
             TaskRunner.maybeRecycleMemory();
         } catch (error) {
             Utils.logger('error', `页面状态检查出错: ${error.message}`);
@@ -1098,9 +1088,6 @@ async function runDomDependentPart() {
 
     // Ensure tasks are executed
     State.domIntervals.push(setInterval(() => {
-        // 只有「新流水线真的跑起来了」才让位；开关开着但没有领取后端时
-        // 它拒绝启动，旧路径必须继续干活，否则脚本整体停摆。
-        if (isApiPipelineActive()) return;
         if (State.db.todo.length === 0) return;
         TaskRunner.ensureTasksAreExecuted();
     }, 5000));
@@ -1210,17 +1197,6 @@ export async function main() {
         await InstanceManager.init();
         Utils.logger('info', `工作标签页初始化完成，开始处理任务...`);
         await TaskRunner.processDetailPage();
-        return;
-    }
-
-    // 领取帧：这个详情页是流水线自己塞进隐藏 iframe 的，由主标签页跨文档驱动。
-    // 脚本在这里必须立刻退出，只留下 document-start 那段资源拦截 —— 一旦继续往下
-    // 走，实例管理 / UI / 任务派发 / 保活都会在帧里跑第二份，与主标签页抢占
-    // active instance 并互相干扰。放在 InstanceManager.init 之前退出，
-    // 连实例都不注册，最干净。
-    if (urlParams.get(Config.CLAIM_FRAME_PARAM)) {
-        State.isClaimFrame = true;
-        Utils.logger('debug', '[Pipeline] 领取帧内不初始化脚本主体，等待主标签页驱动。');
         return;
     }
 
@@ -1345,7 +1321,7 @@ export async function main() {
     }
 
     State.domIntervals.push(setInterval(() => {
-        if (State.appStatus === 'NORMAL' && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
+        if (State.domFallbackMode && State.appStatus === 'NORMAL' && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
             const inactiveTime = Date.now() - lastNetworkActivityTime;
             if (inactiveTime > 30000) {
                 Utils.logger('warn', `⚠️ 检测到在任务执行状态下已持续 ${Math.floor(inactiveTime / 1000)} 秒无网络活动，即将强制刷新页面以恢复任务...`);
@@ -1411,6 +1387,7 @@ export function registerWorkerDoneListener(workerId) {
                 await Database.markAsDone(task);
                 State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
                 State.executionCompletedTasks++;
+                TaskRunner.syncClaimedCardToDom(task.uid || task.url);
             } else {
                 if (rateLimited) {
                     const retryHint = Number.isFinite(retryAfterMs) && retryAfterMs > 0
@@ -1470,7 +1447,7 @@ export function registerWorkerDoneListener(workerId) {
             if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
                 if (FastScanner.isRunning()) {
                     // FastScanner 仍在扫尾或扫描，完成后统一收尾
-                } else if (State.fastApiScan) {
+                } else if (!State.domFallbackMode) {
                     await TaskRunner.stopExecutionAndSettle();
                 } else if (State.autoScroll) {
                     TaskRunner.attemptAutoScroll();
@@ -1512,90 +1489,15 @@ window.addEventListener('load', () => {
     setTimeout(ensureUILoaded, 2000);
 });
 
-// ─── API 优先流水线装配 ──────────────────────────────────────────────────
-// 仅在 Config.USE_API_PIPELINE 开启时由 runDomDependentPart 调用。
-// 取代旧的「滚动触发加载 + 开 worker 标签页领取」：枚举走 cursor 分页，
-// 领取走 ApiClaim（已确认端点时）或注入的 DomClaim，全程单标签页、按速率推进。
-//
-// 这里只做装配，调度策略本身（何时推进、何时重扫、失败如何退避）在
-// pipeline-scheduler 模块里，可以脱离真实定时器被测试。
-let _apiPipelineScheduler = null;
-
-async function startApiPipeline() {
-    if (State.isWorkerTab) return;
-    // 接管状态只代表一次完整、可运行的启动，绝不能由配置或半初始化推断。
-    State.apiPipelineActive = false;
-
-    // 领取传输层：CLAIM_TRANSPORT 只在 ApiClaim 不可用时才生效（回落到 DOM）。
-    //   'iframe' —— 同源隐藏 iframe，由主标签页跨文档驱动（未经线上验证，需显式开启）
-    //   'none'   —— 不注入 DOM 领取，ApiClaim 已确认端点时仍可正常启动
-    let acquireFn = null;
-    if (Config.CLAIM_TRANSPORT === 'iframe') {
-        acquireFn = createIframeAcquire({
-            taskRunner: TaskRunner,
-            log: (msg) => Utils.logger('debug', msg)
-        });
-        Utils.logger('info', '[Pipeline] 领取传输层：同源 iframe（单标签页，不开 worker 标签页）。');
-    }
-
-    bootstrapPipeline({
-        fetchImpl: gmFetchImpl,
-        acquireFn,
-        // USE_API_CLAIM 是 API 后端的唯一开关；关闭时只允许显式配置的 DOM/iframe 路径。
-        ...(Config.USE_API_CLAIM ? {
-            apiEndpoint: FAB_CLAIM_ENDPOINT,
-            apiFetchImpl: gmPostImpl
-        } : {})
-    });
-
-    // 没有领取后端就拒绝启动：否则整页商品会被逐条标记为「领取失败」，
-    // 事件日志被污染，用户还看不出原因。
-    // 好在这里拒绝不会让脚本停摆：旧路径的护栏问的是 isApiPipelineActive()
-    // （开关 && 有后端），本函数返回后旧路径照常运行，只是日志里会留下这一条。
-    if (!hasClaimBackend()) {
-        State.apiPipelineActive = false;
-        Utils.logger('error',
-            `[Pipeline] 未配置任何领取后端（CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}、ApiClaim 不可用）。` +
-            '流水线不启动。已自动回退到旧的「滚动枚举 + worker 标签页」路径，功能不受影响。');
-        return;
-    }
-
-    // 事件历史不落盘 = 每次刷新页面都从零开始，已领过的商品会被重新领一遍。
-    // 在此之前不宣布接管：读取失败时 runDomDependentPart 会无缝继续旧路径。
-    const eventLogLoad = await loadEventLog();
-    if (!eventLogLoad.ok) return;
-    const migrated = await migrateLegacyTodoToEventLog();
-    if (migrated < 0) return;
-    const apiCursor = await loadApiCursor();
-
-    // 所有关键状态已就绪后才接管旧 worker 派发。
-    State.apiPipelineActive = true;
-    _apiPipelineScheduler = createPipelineScheduler({
-        pipeline: Pipeline,
-        isExecuting: () => State.isExecuting,
-        resumeCursor: apiCursor,
-        persist: () => persistEventLog({ cursor: Pipeline.cursor }),
-        rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
-        log: (level, msg) => Utils.logger(level, msg)
-    });
-    _apiPipelineScheduler.start();
-
-    Utils.logger('info', '[Pipeline] API 优先流水线已启动（取代旧滚动枚举 + worker 领取）。');
-}
-
 // ─── 锁屏 / 后台冻结恢复 ───────────────────────────────────────────────────
 // 浏览器在标签页不可见（锁屏、切换到其他应用）时会暂停或大幅节流
 // setInterval / setTimeout，导致 watchdog、任务调度全部冻结。
-// 当标签页重新可见时，主动做一次恢复：
-//   1. 清理冻结期间已超时但 watchdog 来不及处理的 stale workers
-//   2. 若 isExecuting && todo 有任务，重新踢起 executeBatch
+// 当标签页重新可见时，仅在存在在途 Worker 标签页或开启应急滚页模式时恢复。
 // ─────────────────────────────────────────────────────────────────────────────
 async function handleWakeRecovery() {
     // 只在主标签页（非 worker tab）执行恢复逻辑
     if (State.isWorkerTab) return;
-    // API 流水线接管后，旧版 todo / worker 恢复逻辑必须完全让位；旧任务已在
-    // startApiPipeline 中迁入 EventLog，继续执行这里会重新打开商品详情页。
-    if (isApiPipelineActive()) return;
+    if (!State.domFallbackMode && State.activeWorkers === 0 && State.db.todo.length === 0) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
 
     Utils.logger('info', Utils.getText('log_wake_recovery'));

@@ -20,28 +20,24 @@ export const State = {
     hidePaid: false, // 是否隐藏所有付费商品
     blockLargeResources: true, // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
     maxWorkers: 7, // 并发工作标签页数量（默认7）
-    // 极速 API 分片扫描：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
+    // 极速 API 分片扫描 & 浏览自动领：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
     // 真实环境由 Database.load() 读取并默认开启。
     fastApiScan: false,
     apiScanConcurrency: 4, // API 极速扫描并发路数（1-6）
-    incrementalEarlyStop: false, // 倒序追新模式下连续 N 页全已拥有自动停止
-    incrementalStopPages: 5, // 增量早停阈值（页）
+    autoClaimVisible: false, // 浏览页面时自动领取可见免费商品（真实环境由 Database.load 默认开启）
+    domFallbackMode: false, // 应急网页滚页备用模式（默认关闭，仅在设定→高级中启用）
     fastScanStatus: null, // 极速扫描实时遥测状态
+    fastScanCheckpointMeta: null, // 断点进度元数据 { itemsScanned, totalEstimated, pct }
     nativeFetch: null, // 页面未拦截前的原生 window.fetch 引用
     debugMode: false, // 是否启用调试模式
     lang: 'zh', // 当前语言，默认中文，会在detectLanguage中更新
     isExecuting: false, // 是否正在执行任务
     manualVerificationPending: false, // 人工验证期间阻止自动扫描重新启动；只由执行按钮解除
-    // 新 API 流水线已完成后端校验并接管旧 worker 派发
-    apiPipelineActive: false,
     // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。
     apiClaimNextDispatchAt: 0,
     apiClaimDispatchTimer: null,
     isRefreshScheduled: false, // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false, // 是否是工作标签页
-    // 本帧是不是流水线挂的隐藏领取 iframe。为 true 时脚本主体（实例/UI/派发/保活）
-    // 一律不初始化，只留下 document-start 的资源拦截，由主标签页跨文档驱动。
-    isClaimFrame: false,
     totalTasks: 0, // API扫描的总任务数
     completedTasks: 0, // API扫描的已完成任务数
     isDispatchingTasks: false, // 新增：标记是否正在派发任务
@@ -54,9 +50,7 @@ export const State = {
     memoryRecycleDisabled: false,
     totalScannedOwned: 0, // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
                           // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
-    savedCursor: null, // Holds the loaded cursor for hijacking
-    apiCursor: null, // API 流水线独立保存的分页游标，仅用于显示/恢复 API 分页
-    apiCursorSavedAt: null, // API 分页位置最后保存时间
+    savedCursor: null, // Holds the loaded cursor for hijacking (domFallbackMode only)
     isEndOfSearchList: false, // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
     hasReachedBottomToastShown: false, // 标记是否已展示到底Toast，防止重复弹出
     // --- NEW: State for 429 monitoring ---
@@ -129,22 +123,21 @@ export const State = {
         tabsContainer: null,
         tabs: {},
         tabContents: {},
-        modeButtons: {},
-        modePanels: {},
-        pageSubModeButtons: {},
+        quickAutoClaimBtn: null,
+        quickHideSavedBtn: null,
+        quickHidePaidBtn: null,
         statusVisible: null,
         statusTodo: null,
         statusDone: null,
         statusFailed: null,
         statusHidden: null,
         execBtn: null,
-        syncBtn: null,
-        hideBtn: null,
         resetCheckpointBtn: null,
         retryFailedBtn: null,
         maxWorkersInput: null,
         apiScanConcurrencyInput: null,
-        incrementalStopPagesInput: null,
+        domFallbackCheckbox: null,
+        domFallbackControls: null,
         rememberPositionCheckbox: null,
         debugModeCheckbox: null,
         settingsAdvancedToggle: null,
@@ -155,7 +148,6 @@ export const State = {
         logPanel: null,
         savedPositionDisplay: null,
         fastScanStatusDisplay: null,
-        incScanStatusDisplay: null,
         debugContent: null,
         historyContainer: null,
     },

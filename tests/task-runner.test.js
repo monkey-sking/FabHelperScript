@@ -1815,3 +1815,113 @@ test('attemptAutoScroll scrolls stepwise (not a single jump) to trigger the infi
         State.autoAddOnScroll = false;
     }
 });
+
+test('syncClaimedCardToDom replaces two-span free price text without touching title and hides when hideSaved is enabled', () => {
+    const originalDocument = globalThis.document;
+    const originalHideSaved = State.hideSaved;
+    const originalHideRetryTimer = State.hideRetryTimer;
+    const uid = 'cccccccc-0000-4000-8000-000000000001';
+
+    const makeNode = (tagName) => {
+        const attrs = new Map();
+        const node = {
+            tagName: tagName.toUpperCase(),
+            className: '',
+            style: {},
+            children: [],
+            parentElement: null,
+            _textContent: '',
+            innerHTML: '',
+            get textContent() {
+                if (this.children.length > 0) {
+                    return this.children.map((c) => c.textContent).join(' ');
+                }
+                return this._textContent;
+            },
+            set textContent(v) {
+                this._textContent = String(v);
+                this.children = [];
+            },
+            setAttribute(k, v) { attrs.set(k, String(v)); },
+            getAttribute(k) { return attrs.has(k) ? attrs.get(k) : null; },
+            removeAttribute(k) { attrs.delete(k); },
+            appendChild(child) {
+                child.parentElement = this;
+                this.children.push(child);
+                return child;
+            },
+            matches(sel) {
+                return sel.split(',').some((s) => {
+                    const t = s.trim();
+                    if (t === 'a[href]') return this.tagName === 'A' && Boolean(this.href);
+                    if (t.startsWith('div.')) return this.tagName === 'DIV' && this.className.split(/\s+/).includes(t.slice(4));
+                    return false;
+                });
+            },
+            querySelectorAll(sel) {
+                const out = [];
+                const walk = (n) => {
+                    for (const c of n.children) {
+                        if (sel === '*') out.push(c);
+                        else if (sel.includes('listings') && c.tagName === 'A' && c.href) out.push(c);
+                        else if (sel === 'a[href]' && c.tagName === 'A' && c.href) out.push(c);
+                        walk(c);
+                    }
+                };
+                walk(this);
+                return out;
+            },
+            querySelector(sel) {
+                return this.querySelectorAll(sel)[0] || null;
+            },
+            closest(sel) {
+                let cur = this;
+                while (cur) {
+                    if (cur.matches && cur.matches(sel)) return cur;
+                    cur = cur.parentElement;
+                }
+                return null;
+            }
+        };
+        return node;
+    };
+
+    const card = makeNode('div');
+    card.className = 'AssetCard-root';
+    const titleLink = makeNode('a');
+    titleLink.href = `https://www.fab.com/listings/${uid}`;
+    titleLink.textContent = 'Rusted Range Six-Shooter - Free';
+    const priceRow = makeNode('div');
+    const prefixSpan = makeNode('span');
+    prefixSpan.textContent = '起始价格';
+    const freeSpan = makeNode('span');
+    freeSpan.textContent = '免费';
+    priceRow.appendChild(prefixSpan);
+    priceRow.appendChild(freeSpan);
+    card.appendChild(titleLink);
+    card.appendChild(priceRow);
+
+    globalThis.document = {
+        createElement: (tag) => makeNode(tag),
+        querySelectorAll: (sel) => (sel.includes('AssetCard-root') ? [card] : [])
+    };
+    State.lang = 'zh';
+    State.hideSaved = false;
+
+    try {
+        const updated = TaskRunner.syncClaimedCardToDom(uid);
+        assert.equal(updated, 1);
+        assert.equal(titleLink.textContent, 'Rusted Range Six-Shooter - Free');
+        assert.equal(priceRow.textContent, '✅ 已保存在我的库中');
+        assert.ok(priceRow.querySelector('[data-fab-owned-badge="true"]') || priceRow.children[0]?.getAttribute('data-fab-owned-badge') === 'true');
+        assert.equal(TaskRunner.hasSavedLibraryText(card), true);
+    } finally {
+        if (originalDocument === undefined) delete globalThis.document;
+        else globalThis.document = originalDocument;
+        if (State.hideRetryTimer) {
+            clearTimeout(State.hideRetryTimer);
+        }
+        State.hideRetryTimer = originalHideRetryTimer;
+        State.hideSaved = originalHideSaved;
+    }
+});

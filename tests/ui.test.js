@@ -155,7 +155,7 @@ function createFakeDomEnv(t) {
         confirm: () => true,
         scrollTo: () => {}
     };
-    globalThis.GM_info = { script: { version: '3.5.27' } };
+    globalThis.GM_info = { script: { version: '3.6.0' } };
     globalThis.GM_openInTab = () => {};
     globalThis.GM_getValue = async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def);
     globalThis.GM_setValue = async (k, v) => {
@@ -167,13 +167,17 @@ function createFakeDomEnv(t) {
     const snapshot = {
         lang: State.lang,
         fastApiScan: State.fastApiScan,
-        incrementalEarlyStop: State.incrementalEarlyStop,
+        autoClaimVisible: State.autoClaimVisible,
+        domFallbackMode: State.domFallbackMode,
         autoAddOnScroll: State.autoAddOnScroll,
         autoScroll: State.autoScroll,
+        hideSaved: State.hideSaved,
+        hidePaid: State.hidePaid,
         rememberScrollPosition: State.rememberScrollPosition,
         uiExpanded: State.uiExpanded,
         settingsAdvancedOpen: State.settingsAdvancedOpen,
         hasFastScanCheckpoint: State.hasFastScanCheckpoint,
+        fastScanCheckpointMeta: State.fastScanCheckpointMeta,
         fastScanStatus: State.fastScanStatus,
         isExecuting: State.isExecuting,
         executionTotalTasks: State.executionTotalTasks,
@@ -184,7 +188,6 @@ function createFakeDomEnv(t) {
         db: State.db,
         savedCursor: State.savedCursor,
         apiScanConcurrency: State.apiScanConcurrency,
-        incrementalStopPages: State.incrementalStopPages,
         UI: { ...State.UI }
     };
 
@@ -196,13 +199,17 @@ function createFakeDomEnv(t) {
 
     State.lang = 'zh';
     State.fastApiScan = true;
-    State.incrementalEarlyStop = false;
+    State.autoClaimVisible = true;
+    State.domFallbackMode = false;
     State.autoAddOnScroll = false;
     State.autoScroll = false;
+    State.hideSaved = false;
+    State.hidePaid = false;
     State.rememberScrollPosition = false;
     State.uiExpanded = true;
     State.settingsAdvancedOpen = false;
     State.hasFastScanCheckpoint = false;
+    State.fastScanCheckpointMeta = null;
     State.fastScanStatus = null;
     State.isExecuting = false;
     State.executionTotalTasks = 0;
@@ -213,7 +220,6 @@ function createFakeDomEnv(t) {
     State.db = { todo: [], done: [], failed: [] };
     State.savedCursor = null;
     State.apiScanConcurrency = 4;
-    State.incrementalStopPages = 5;
 
     t.after(() => {
         globalThis.document = prevDocument;
@@ -230,108 +236,101 @@ function createFakeDomEnv(t) {
     return { doc, gmStore, gmCalls };
 }
 
-test('UI renders 3 work modes and toggles panels, metrics, buttons, and CTA labels', async (t) => {
-    createFakeDomEnv(t);
+test('Dashboard renders mode-free UI, checkpoint resume/restart, unified pending count, and quick pills', async (t) => {
+    const { gmStore } = createFakeDomEnv(t);
     assert.equal(UI.create(), true);
 
-    assert.deepEqual(Object.keys(State.UI.modeButtons), ['full', 'incremental', 'page']);
+    assert.equal(State.UI.tabContents.dashboard.querySelectorAll('.fab-mode-switcher').length, 0);
+    assert.equal(State.UI.execBtn.textContent, '🚀 全站扫描入库');
+    assert.equal(State.UI.resetCheckpointBtn.style.display, 'none');
+    assert.equal(State.UI.retryFailedBtn.style.display, 'none');
+    assert.equal(State.UI.fastScanStatusDisplay.textContent, '已开启眼前免费自动领 · 点上方可扫全站 4.8万+ 查漏');
 
-    // Default: Full API scan mode
-    assert.equal(TaskRunner.getWorkMode(), 'full');
-    assert.equal(State.UI.modeButtons.full.classList.contains('active'), true);
-    assert.equal(State.UI.modePanels.full.style.display, 'block');
-    assert.equal(State.UI.modePanels.incremental.style.display, 'none');
-    assert.equal(State.UI.modePanels.page.style.display, 'none');
-    assert.equal(State.UI.statusVisible.style.display, 'none');
-    assert.equal(State.UI.statusHidden.style.display, 'none');
-    assert.equal(State.UI.syncBtn.style.display, 'none');
-    assert.equal(State.UI.hideBtn.style.display, 'none');
-    assert.equal(State.UI.resetCheckpointBtn.style.display, '');
-    assert.equal(State.UI.resetCheckpointBtn.disabled, true);
-    assert.equal(State.UI.execBtn.textContent, '⚡ 开始全量扫描');
-
-    // Checkpoint available -> CTA says resume & reset button enables
+    // Checkpoint available with percentage -> Resume (30%) + side Restart button
     State.hasFastScanCheckpoint = true;
+    State.fastScanCheckpointMeta = { itemsScanned: 14161, totalEstimated: 47978, pct: 30 };
     UI.update();
-    assert.equal(State.UI.execBtn.textContent, '⚡ 继续全量扫描');
+    assert.equal(State.UI.execBtn.textContent, '▶ 继续上次扫描 (30%)');
+    assert.equal(State.UI.resetCheckpointBtn.style.display, '');
     assert.equal(State.UI.resetCheckpointBtn.disabled, false);
+    assert.equal(State.UI.fastScanStatusDisplay.textContent, '上次停在 30%（14,161 / 47,978）· 可继续或重扫');
 
-    // Switch to Incremental catch-up mode
-    await TaskRunner.setWorkMode('incremental');
-    assert.equal(TaskRunner.getWorkMode(), 'incremental');
-    assert.equal(State.fastApiScan, true);
-    assert.equal(State.incrementalEarlyStop, true);
-    assert.equal(State.UI.modeButtons.incremental.classList.contains('active'), true);
-    assert.equal(State.UI.modePanels.full.style.display, 'none');
-    assert.equal(State.UI.modePanels.incremental.style.display, 'block');
-    assert.equal(State.UI.modePanels.page.style.display, 'none');
-    assert.equal(State.UI.statusVisible.style.display, 'none');
-    assert.equal(State.UI.syncBtn.style.display, 'none');
+    // Running scan combines State.db.todo + FastScanner.pendingCount in unified 待入库
+    State.isExecuting = true;
+    State.db.todo = [{ uid: 'bundle-1', url: 'https://www.fab.com/bundles/bundle-1' }];
+    State.fastScanStatus = {
+        running: true,
+        phase: 'scanning',
+        mode: 'time-shards',
+        activeConcurrency: 4,
+        itemsScanned: 24000,
+        totalEstimated: 48000,
+        itemsPerSec: 120,
+        claimedDirect: 9,
+        pendingCount: 7,
+        rateLimitedUntil: 0
+    };
+    UI.update();
+    assert.equal(State.UI.execBtn.textContent, '■ 停止扫描');
     assert.equal(State.UI.resetCheckpointBtn.style.display, 'none');
-    assert.equal(State.UI.execBtn.textContent, '🆕 开始追新扫描');
+    assert.equal(State.UI.statusTodo._valueEl.textContent, '8');
 
-    // Switch to Page DOM mode
-    await TaskRunner.setWorkMode('page');
-    assert.equal(TaskRunner.getWorkMode(), 'page');
-    assert.equal(State.fastApiScan, false);
-    assert.equal(State.UI.modeButtons.page.classList.contains('active'), true);
-    assert.equal(State.UI.modePanels.page.style.display, 'block');
-    assert.equal(State.UI.statusVisible.style.display, '');
-    assert.equal(State.UI.statusHidden.style.display, '');
-    assert.equal(State.UI.syncBtn.style.display, '');
-    assert.equal(State.UI.hideBtn.style.display, '');
-    assert.equal(State.UI.resetCheckpointBtn.style.display, 'none');
-    assert.equal(State.UI.execBtn.textContent, '📜 领取当前页面');
+    // Failed items reveal compact retry banner
+    State.isExecuting = false;
+    State.fastScanStatus = null;
+    State.hasFastScanCheckpoint = false;
+    State.fastScanCheckpointMeta = null;
+    State.db.failed = [{ uid: 'fail-1', url: 'https://www.fab.com/listings/fail-1' }];
+    UI.update();
+    assert.equal(State.UI.retryFailedBtn.style.display, '');
+    assert.equal(State.UI.retryFailedBtn.textContent, '🔁 重试失败 (1)');
+
+    // Quick pills toggle & persist
+    assert.equal(State.UI.quickAutoClaimBtn.classList.contains('active'), true);
+    await TaskRunner.toggleAutoClaimVisible();
+    assert.equal(State.autoClaimVisible, false);
+    assert.equal(gmStore.get(Config.DB_KEYS.AUTO_CLAIM_VISIBLE), false);
+    assert.equal(State.UI.quickAutoClaimBtn.classList.contains('active'), false);
+
+    await TaskRunner.toggleHideSaved();
+    assert.equal(State.hideSaved, true);
+    assert.equal(State.UI.quickHideSavedBtn.classList.contains('active'), true);
+
+    await TaskRunner.toggleHidePaid();
+    assert.equal(State.hidePaid, true);
+    assert.equal(State.UI.quickHidePaidBtn.classList.contains('active'), true);
 });
 
-test('TaskRunner.setPageSubMode switches cleanly between visible, on_scroll, and auto_scroll', async (t) => {
-    createFakeDomEnv(t);
-    UI.create();
-    await TaskRunner.setWorkMode('page');
-
-    await TaskRunner.setPageSubMode('on_scroll');
-    assert.equal(State.autoAddOnScroll, true);
-    assert.equal(State.autoScroll, false);
-    assert.equal(State.UI.pageSubModeButtons.on_scroll.classList.contains('active'), true);
-    assert.equal(State.UI.execBtn.textContent, '📜 开始滚到即领');
-
-    await TaskRunner.setPageSubMode('auto_scroll');
-    assert.equal(State.autoAddOnScroll, false);
-    assert.equal(State.autoScroll, true);
-    assert.equal(State.UI.pageSubModeButtons.auto_scroll.classList.contains('active'), true);
-    assert.equal(State.UI.execBtn.textContent, '📜 开始自动翻页');
-
-    await TaskRunner.setPageSubMode('visible');
-    assert.equal(State.autoAddOnScroll, false);
-    assert.equal(State.autoScroll, false);
-    assert.equal(State.UI.pageSubModeButtons.visible.classList.contains('active'), true);
-    assert.equal(State.UI.execBtn.textContent, '📜 领取当前页面');
-});
-
-test('Settings tab shows 5 visible items + collapsed Advanced drawer; Debug mode lives in Debug tab', (t) => {
-    createFakeDomEnv(t);
+test('Settings tab shows 4 general/filter rows + collapsed Advanced & Fallback drawer with isolated DOM fallback controls', async (t) => {
+    const { gmStore } = createFakeDomEnv(t);
     UI.create();
 
     const settingsTab = State.UI.tabContents.settings;
     const primaryCards = settingsTab.children.filter((c) => c.classList.contains('fab-card-group'));
-    assert.equal(primaryCards.length, 2);
+    assert.equal(primaryCards.length, 1);
 
     const visibleRows = primaryCards.flatMap((c) => c.querySelectorAll('.fab-setting-row'));
-    assert.equal(visibleRows.length, 5);
-
+    assert.equal(visibleRows.length, 4);
     const visibleLabels = visibleRows.map((r) => r.querySelector('.fab-setting-label')?.textContent);
-    assert.deepEqual(visibleLabels, ['过滤打折商品', '过滤付费商品', '并发工作标签', '无图省流模式', '人机验证通知']);
+    assert.deepEqual(visibleLabels, ['过滤打折商品', 'API 并发路数', '无图省流模式', '人机验证通知']);
 
-    // Advanced drawer starts collapsed and holds 2 toggles + 1 danger button
     assert.equal(State.UI.settingsAdvancedBody.style.display, 'none');
-    assert.equal(State.UI.settingsAdvancedBody.querySelectorAll('.fab-setting-row').length, 2);
-    assert.equal(State.UI.settingsAdvancedBody.querySelectorAll('.fab-danger-btn').length, 1);
+    assert.equal(State.UI.domFallbackControls.style.display, 'none');
 
     State.UI.settingsAdvancedToggle.click();
     assert.equal(State.settingsAdvancedOpen, true);
     assert.equal(State.UI.settingsAdvancedBody.style.display, 'block');
 
-    // Debug mode toggle is in Debug tab, not Settings
+    // Enabling DOM fallback mode switches primary CTA and reveals fallback controls
+    await TaskRunner.setDomFallbackMode(true);
+    assert.equal(State.domFallbackMode, true);
+    assert.equal(State.fastApiScan, false);
+    assert.equal(State.autoScroll, true);
+    assert.equal(gmStore.get(Config.DB_KEYS.DOM_FALLBACK_MODE), true);
+    assert.equal(State.UI.domFallbackControls.style.display, 'block');
+    assert.equal(State.UI.execBtn.textContent, '📜 开始滚页扫描 (备用)');
+
+    // Debug mode toggle remains in Debug tab
     const debugRows = State.UI.tabContents.debug.querySelectorAll('.fab-setting-row');
     assert.equal(debugRows.length, 1);
     assert.equal(debugRows[0].querySelector('.fab-setting-label')?.textContent, '调试模式');
@@ -369,40 +368,4 @@ test('Collapse button hides panel body, shows live badge when active, and persis
     assert.equal(State.UI.container.classList.contains('fab-helper-collapsed'), false);
     assert.equal(State.UI.tabContents.dashboard.style.display, 'block');
     assert.equal(State.UI.headerLiveBadge.style.display, 'none');
-});
-
-test('UI shows partial scan status and resume CTA when FastScanner finishes with incomplete slices', (t) => {
-    createFakeDomEnv(t);
-    UI.create();
-
-    State.hasFastScanCheckpoint = true;
-    State.fastScanStatus = {
-        running: false,
-        phase: 'partial',
-        mode: 'time-shards',
-        itemsScanned: 47097,
-        claimedDirect: 3,
-        incompleteSlices: 2,
-        queuedFallback: 0,
-        failed: 0
-    };
-    UI.update();
-
-    assert.equal(State.UI.execBtn.textContent, '⚡ 继续全量扫描');
-    assert.equal(State.UI.fastScanStatusDisplay.textContent, '⚡ 扫描未完整 · 共 47,097 件 · 新领 3 · 2 分片失败(已存断点)');
-
-    State.fastScanStatus = {
-        running: false,
-        phase: 'completed',
-        mode: 'time-shards',
-        itemsScanned: 47710,
-        claimedDirect: 616,
-        incompleteSlices: 0,
-        queuedFallback: 2,
-        failed: 1
-    };
-    State.hasFastScanCheckpoint = false;
-    UI.update();
-
-    assert.equal(State.UI.fastScanStatusDisplay.textContent, '⚡ 扫描完成 · 共 47,710 件 · 新领 616 · 待领 2 · 失败 1');
 });

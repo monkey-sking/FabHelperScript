@@ -692,14 +692,18 @@ test('legacy scanAndAddTasks enriches queued tasks with cached offerId and TaskR
 
     assert.equal(await TaskRunner.setApiScanConcurrency(99), Config.MAX_API_SCAN_CONCURRENCY);
     assert.equal(await TaskRunner.setApiScanConcurrency(0), 1);
-    assert.equal(await TaskRunner.setIncrementalStopPages(999), 50);
-    assert.equal(await TaskRunner.setIncrementalStopPages(0), 1);
 
-    // When fastApiScan is active, DOM scroll scanning must not queue items even if autoAddOnScroll is true
+    // When domFallbackMode is false (default fast API), DOM scroll scanning must not queue items even if autoAddOnScroll is true
     const prevFastApi = State.fastApiScan;
-    State.fastApiScan = true;
+    const prevFallback = State.domFallbackMode;
+    const prevAutoScroll = State.autoScroll;
+    await TaskRunner.setDomFallbackMode(false);
     State.db.todo = [];
-    t.after(() => { State.fastApiScan = prevFastApi; });
+    t.after(() => {
+        State.fastApiScan = prevFastApi;
+        State.domFallbackMode = prevFallback;
+        State.autoScroll = prevAutoScroll;
+    });
     await TaskRunner.scanAndAddTasks([card]);
     assert.equal(State.db.todo.length, 0);
 });
@@ -1170,4 +1174,140 @@ test('retried markAsFailed tasks increment queuedFallback rather than failed', a
     assert.equal(summary.queuedFallback, 1);
     assert.equal(State.db.todo.length, 1);
     assert.equal(State.db.failed.length, 0);
+});
+
+test('priorityItems are verified and claimed before shard pages on both fresh and resumed scans, and globalFreeScan enforces global query', async (t) => {
+    const baseMs = Date.parse('2026-06-01T00:00:00.000Z');
+    const items = Array.from({ length: 30 }, (_, i) => mkItem(i, baseMs - i * 86400 * 1000));
+    setupMemoryDb(t);
+
+    const visibleUid = 'aaaaaaaa-0000-4000-8000-000000000099';
+    const orderLog = [];
+    const { fetchImpl: baseFetchImpl, requestLog } = setupMockServer(items, new Set());
+    const fetchImpl = async (url) => {
+        const u = new URL(url, 'https://www.fab.com');
+        if (u.pathname === '/i/users/me/listings-states') {
+            orderLog.push({ type: 'states', ids: u.searchParams.getAll('listing_ids') });
+        } else if (u.pathname === '/i/listings/search' && u.searchParams.get('count') !== '0') {
+            orderLog.push({ type: 'search', url });
+        }
+        return baseFetchImpl(url);
+    };
+
+    const gmStore = new Map();
+    gmStore.set(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, {
+        version: 1,
+        queryKey: 'is_free=1&sort_by=-firstPublishedAt',
+        mode: 'time-shards',
+        headUpperMs: baseMs,
+        totalEstimated: 30,
+        slices: [{
+            id: 'time-0',
+            extraParams: null,
+            upperMs: baseMs,
+            lowerMs: null,
+            cursor: null,
+            done: false,
+            pages: 0
+        }],
+        pendingUnknowns: [],
+        pendingClaims: [],
+        stats: { itemsScanned: 5, totalEstimated: 30 }
+    });
+
+    const claimedEvents = [];
+    const scanner = createFastScanner({
+        fetchImpl,
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async (task) => {
+                orderLog.push({ type: 'claim', uid: task.uid });
+                return { result: CLAIM_RESULT.SUCCESS };
+            }
+        },
+        onItemClaimed: (item, source) => claimedEvents.push({ uid: item.uid, source }),
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        claimWorkers: 1,
+        getHref: () => 'https://www.fab.com/search?q=castle&sort_by=relevance',
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+
+    const summary = await scanner.start({
+        concurrency: 2,
+        globalFreeScan: true,
+        priorityItems: [{ uid: visibleUid, url: `https://www.fab.com/listings/${visibleUid}`, name: 'Visible Free', offerId: 'vis_offer' }]
+    });
+
+    assert.equal(summary.resumedFromCheckpoint, true);
+    const firstSearchIdx = orderLog.findIndex((e) => e.type === 'search');
+    const visClaimIdx = orderLog.findIndex((e) => e.type === 'claim' && e.uid === visibleUid);
+    assert.ok(visClaimIdx !== -1, 'Priority visible item should be claimed');
+    assert.ok(visClaimIdx < firstSearchIdx, 'Priority visible item must be claimed before background shard search');
+    assert.ok(claimedEvents.some((e) => e.uid === visibleUid && e.source === 'claimed'));
+    assert.ok(requestLog.searchUrls.every((u) => {
+        const sp = new URL(u, 'https://www.fab.com').searchParams;
+        return sp.get('is_free') === '1' && sp.get('q') === null;
+    }), 'globalFreeScan must ignore subpage q filter');
+});
+
+test('claimVisibleItems claims visible items without touching checkpoint and triggers onItemClaimed', async (t) => {
+    const uidOwned = 'bbbbbbbb-0000-4000-8000-000000000001';
+    const uidFree = 'bbbbbbbb-0000-4000-8000-000000000002';
+    setupMemoryDb(t);
+
+    const gmStore = new Map();
+    const claimedCallbacks = [];
+    const scanner = createFastScanner({
+        fetchImpl: async (url) => {
+            const u = new URL(url, 'https://www.fab.com');
+            if (u.pathname === '/i/users/me/listings-states') {
+                const ids = u.searchParams.getAll('listing_ids');
+                return {
+                    status: 200,
+                    responseText: JSON.stringify(ids.map((id) => ({ uid: id, acquired: id === uidOwned })))
+                };
+            }
+            return { status: 404, responseText: '{}' };
+        },
+        apiClaim: {
+            isAvailable: () => true,
+            claim: async () => ({ result: CLAIM_RESULT.SUCCESS })
+        },
+        onItemClaimed: (item, source) => claimedCallbacks.push({ uid: item.uid, source }),
+        database: Database,
+        dataCache: DataCache,
+        state: State,
+        config: Config,
+        utils: Utils,
+        sleep: async () => {},
+        claimIntervalMs: 0,
+        getHeaders: () => ({}),
+        gmGetValue: async (k, def) => (gmStore.has(k) ? gmStore.get(k) : def),
+        gmSetValue: async (k, v) => { gmStore.set(k, v); },
+        gmDeleteValue: async (k) => { gmStore.delete(k); }
+    });
+
+    const res = await scanner.claimVisibleItems([
+        { uid: uidOwned, url: `https://www.fab.com/listings/${uidOwned}`, name: 'Already Owned', offerId: 'off_owned' },
+        { uid: uidFree, url: `https://www.fab.com/listings/${uidFree}`, name: 'Free Visible', offerId: 'off_free' }
+    ]);
+
+    assert.equal(res.owned, 1);
+    assert.equal(res.claimed, 1);
+    assert.equal(Database.isDone(`https://www.fab.com/listings/${uidOwned}`), true);
+    assert.equal(Database.isDone(`https://www.fab.com/listings/${uidFree}`), true);
+    assert.equal(gmStore.has(Config.DB_KEYS.FAST_SCAN_CHECKPOINT), false);
+    assert.deepEqual(claimedCallbacks, [
+        { uid: uidOwned, source: 'server-owned' },
+        { uid: uidFree, source: 'claimed' }
+    ]);
 });

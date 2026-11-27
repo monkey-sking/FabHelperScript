@@ -7,7 +7,6 @@ import { Database } from '../src/modules/database.js';
 import { DataCache } from '../src/modules/data-cache.js';
 import { TaskRunner } from '../src/modules/task-runner.js';
 import { ListingSource } from '../src/modules/listing-source.js';
-import { EventLog } from '../src/modules/event-log.js';
 import { ApiClaim, CLAIM_RESULT, FAB_CLAIM_ENDPOINT } from '../src/modules/claim-strategy.js';
 import { Utils } from '../src/modules/utils.js';
 
@@ -66,6 +65,14 @@ test('auto scan queues a free bundle with its real page URL, rejects paid bundle
 });
 
 test('bundle tasks survive storage reload, while search links are discarded', async t => {
+    const prevFastApi = State.fastApiScan;
+    const prevFallback = State.domFallbackMode;
+    const prevAutoClaim = State.autoClaimVisible;
+    t.after(() => {
+        State.fastApiScan = prevFastApi;
+        State.domFallbackMode = prevFallback;
+        State.autoClaimVisible = prevAutoClaim;
+    });
     const storedTasks = [
         { uid, url: bundleUrl, name: 'Bundle' },
         { uid: 'ordinary', url: 'https://www.fab.com/listings/ordinary', name: 'Listing' },
@@ -77,13 +84,12 @@ test('bundle tasks survive storage reload, while search links are discarded', as
     assert.deepEqual(State.db.todo, storedTasks.slice(0, 2));
 });
 
-test('bundle ownership shares a single UID with listing aliases across database and event history', () => {
+test('bundle ownership shares a single UID with listing aliases across database history', () => {
     State.db.done = [bundleUrl, `${identityUrl}?ref=old`];
     Database.normalizeDoneList();
     assert.deepEqual(State.db.done, [identityUrl]);
     assert.equal(Database.isDone(`/zh-cn/bundles/${uid}`), true);
     assert.equal(Database.getListingUid(bundleUrl), uid);
-    assert.equal(EventLog.uidOf(bundleUrl), uid);
     State.db.failed = [{ uid, url: bundleUrl }];
     assert.equal(Database.isFailed(identityUrl), true);
 });

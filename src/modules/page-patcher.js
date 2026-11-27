@@ -160,10 +160,10 @@ export const PagePatcher = {
         return 0;
     },
 
-    // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
-    // 自动滚动/自动加任务运行期间也必须保存当前游标，否则 UI 永远显示无位置。
+    // 自动扫描依赖位置记录来恢复进度。仅在应急滚页备用模式或用户显式开启「记住位置」时启用，
+    // 绝不因主力 API 扫描 (State.isExecuting) 而误触 DOM 游标保存/注入。
     isPositionTrackingEnabled() {
-        return Boolean(State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll || State.isExecuting);
+        return Boolean(State.domFallbackMode || State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll);
     },
 
     async init() {

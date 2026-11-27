@@ -5,7 +5,6 @@ import { Config } from '../config.js';
 import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { DataCache } from './data-cache.js';
-import { EventLog } from './event-log.js';
 import { PagePatcher } from './page-patcher.js';
 
 // Forward declaration for circular dependency
@@ -149,7 +148,12 @@ export const Database = {
         State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false); // 加载隐藏所有付费设置
         State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true); // 加载工作标签页禁用大资源设置
         State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS); // 加载并发工作标签页设置
-        State.fastApiScan = Boolean(await Database._safeGet(Config.DB_KEYS.FAST_API_SCAN, true));
+        State.domFallbackMode = Boolean(await Database._safeGet(Config.DB_KEYS.DOM_FALLBACK_MODE, false));
+        State.fastApiScan = !State.domFallbackMode;
+        State.autoClaimVisible = Boolean(await Database._safeGet(Config.DB_KEYS.AUTO_CLAIM_VISIBLE, true));
+        if (State.domFallbackMode) {
+            State.autoScroll = true;
+        }
         const loadedScanConc = Number(await Database._safeGet(
             Config.DB_KEYS.API_SCAN_CONCURRENCY,
             Config.DEFAULT_API_SCAN_CONCURRENCY
@@ -161,30 +165,36 @@ export const Database = {
                 Number.isFinite(loadedScanConc) ? Math.floor(loadedScanConc) : Config.DEFAULT_API_SCAN_CONCURRENCY
             )
         );
-        State.incrementalEarlyStop = Boolean(await Database._safeGet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, false));
-        const loadedStopPages = Number(await Database._safeGet(
-            Config.DB_KEYS.INCREMENTAL_STOP_PAGES,
-            Config.DEFAULT_INCREMENTAL_STOP_PAGES
-        ));
-        State.incrementalStopPages = Math.max(
-            1,
-            Math.min(
-                50,
-                Number.isFinite(loadedStopPages) ? Math.floor(loadedStopPages) : Config.DEFAULT_INCREMENTAL_STOP_PAGES
-            )
-        );
         State.debugMode = await Database._safeGet('fab_helper_debug_mode', false); // 加载调试模式设置
         State.uiExpanded = Boolean(await Database._safeGet(Config.DB_KEYS.UI_EXPANDED, true));
         const savedCheckpoint = await Database._safeGet(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null);
-        State.hasFastScanCheckpoint = Boolean(
+        const hasCheckpoint = Boolean(
             savedCheckpoint && (
                 (Array.isArray(savedCheckpoint.slices) && savedCheckpoint.slices.some((s) => !s.done))
                 || (Array.isArray(savedCheckpoint.pendingUnknowns) && savedCheckpoint.pendingUnknowns.length > 0)
                 || (Array.isArray(savedCheckpoint.pendingClaims) && savedCheckpoint.pendingClaims.length > 0)
             )
         );
+        State.hasFastScanCheckpoint = hasCheckpoint;
+        if (hasCheckpoint) {
+            const itemsScanned = Number(savedCheckpoint?.stats?.itemsScanned) || 0;
+            const totalEstimated = Number(savedCheckpoint?.stats?.totalEstimated || savedCheckpoint?.totalEstimated) || 0;
+            const pct = totalEstimated > 0 ? Math.min(99, Math.max(1, Math.round((itemsScanned / totalEstimated) * 100))) : null;
+            State.fastScanCheckpointMeta = { itemsScanned, totalEstimated, pct };
+        } else {
+            State.fastScanCheckpointMeta = null;
+        }
         State.currentSortOption = await Database._safeGet('fab_helper_sort_option', 'title_desc'); // 加载排序设置
-        State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false); // Load the execution state
+        const storedExecuting = Boolean(await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false));
+        if (!State.domFallbackMode) {
+            // 主力 API 模式下刷新或重开页面绝不静默续跑，交由用户显式点击「继续上次扫描」触发
+            State.isExecuting = false;
+            if (storedExecuting) {
+                Database._safeSet(Config.DB_KEYS.IS_EXECUTING, false);
+            }
+        } else {
+            State.isExecuting = storedExecuting;
+        }
 
         State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
 
@@ -228,8 +238,8 @@ export const Database = {
     saveMaxWorkersPref: () => Database._safeSet(Config.DB_KEYS.MAX_WORKERS, State.maxWorkers), // 保存并发工作标签页设置
     saveFastApiScanPref: () => Database._safeSet(Config.DB_KEYS.FAST_API_SCAN, State.fastApiScan),
     saveApiScanConcurrencyPref: () => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency),
-    saveIncrementalEarlyStopPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop),
-    saveIncrementalStopPagesPref: () => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages),
+    saveAutoClaimVisiblePref: () => Database._safeSet(Config.DB_KEYS.AUTO_CLAIM_VISIBLE, State.autoClaimVisible),
+    saveDomFallbackModePref: () => Database._safeSet(Config.DB_KEYS.DOM_FALLBACK_MODE, State.domFallbackMode),
     saveUiExpandedPref: () => Database._safeSet(Config.DB_KEYS.UI_EXPANDED, State.uiExpanded),
     saveExecutingState: () => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), // Save the execution state
 
@@ -244,18 +254,14 @@ export const Database = {
             await GM_deleteValue(Config.DB_KEYS.TODO);
             await GM_deleteValue(Config.DB_KEYS.DONE);
             await GM_deleteValue(Config.DB_KEYS.FAILED);
-            // 新流水线的事件历史同样要清：它记录了「哪些商品已处理过」，
-            // 不清的话重置后重新执行会一无所获（所有商品都被判定为已处理）。
-            await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
-            EventLog.reset();
             await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED); // 清除隐藏打折设置
             await GM_deleteValue(Config.DB_KEYS.HIDE_PAID); // 清除隐藏所有付费设置
             await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES); // 清除禁用大资源设置
             await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS); // 清除并发工作标签页设置
             await GM_deleteValue(Config.DB_KEYS.FAST_API_SCAN);
             await GM_deleteValue(Config.DB_KEYS.API_SCAN_CONCURRENCY);
-            await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_EARLY_STOP);
-            await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_STOP_PAGES);
+            await GM_deleteValue(Config.DB_KEYS.AUTO_CLAIM_VISIBLE);
+            await GM_deleteValue(Config.DB_KEYS.DOM_FALLBACK_MODE);
             await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
             // 直接走模块实现：它会同时清掉内存游标、GM 键和 sessionStorage 恢复标记。
             await PagePatcher.clearSavedPosition('Reset all data');
@@ -267,11 +273,13 @@ export const Database = {
             State.db.failed = [];
             State.blockLargeResources = true;
             State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
+            State.domFallbackMode = false;
             State.fastApiScan = true;
+            State.autoClaimVisible = true;
+            State.autoScroll = false;
             State.apiScanConcurrency = Config.DEFAULT_API_SCAN_CONCURRENCY;
-            State.incrementalEarlyStop = false;
-            State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
             State.fastScanStatus = null;
+            State.fastScanCheckpointMeta = null;
             State.hasFastScanCheckpoint = false;
             Utils.logger('info', '所有脚本数据（包括滚动记忆与大资源禁用设置）已重置。');
             if (UI) {

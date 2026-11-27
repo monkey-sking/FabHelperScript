@@ -15,7 +15,6 @@ import { PageDiagnostics } from './page-diagnostics.js';
 import { Database } from './database.js';
 import { RateLimitManager } from './rate-limit-manager.js';
 import { KeepAlive } from './keepalive.js';
-import { EventLog } from './event-log.js';
 import { VerificationNotifications } from './verification-notifications.js';
 import { PagePatcher } from './page-patcher.js';
 import { FastScanner } from './fast-scanner.js';
@@ -28,11 +27,6 @@ export function setTaskRunnerReference(taskRunnerModule) {
 }
 
 export const UI = {
-    getApiPositionText: () => {
-        if (!State.apiCursorSavedAt) return Utils.getText('no_saved_position');
-        const date = new Date(State.apiCursorSavedAt);
-        return `${Utils.getText('position_label')}: "${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour12: false })}"`;
-    },
     init: () => {
         return UI.create();
     },
@@ -204,76 +198,63 @@ export const UI = {
                 background: rgba(255, 255, 255, 0.22);
                 border-radius: 3px;
             }
-            .fab-mode-switcher {
-                display: flex;
-                gap: 3px;
-                padding: 3px;
-                background: var(--card-bg-recessed);
-                border: 1px solid var(--card-border);
-                border-radius: var(--radius-m);
-                margin-bottom: 8px;
+            .fab-helper-owned-inline {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                color: #30d158;
+                font-weight: 600;
+                font-size: 12px;
+                line-height: 1.3;
             }
-            .fab-mode-btn {
-                flex: 1;
-                min-width: 0;
-                padding: 6px 4px;
-                border: none;
-                border-radius: var(--radius-s);
-                background: transparent;
-                color: var(--text-color-secondary);
+            .fab-primary-action-row {
+                display: flex;
+                gap: 6px;
+                align-items: stretch;
+                margin-bottom: 6px;
+            }
+            .fab-reset-checkpoint-btn {
+                flex: 0 0 auto;
+                padding: 0 11px;
+                border-radius: var(--radius-m);
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
+                color: var(--text-color-primary);
                 font-size: 12px;
                 font-weight: 500;
                 cursor: pointer;
                 white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                transition: background-color 0.15s, color 0.15s;
+                transition: background-color 0.15s, border-color 0.15s;
             }
-            .fab-mode-btn:hover {
-                color: var(--text-color-primary);
+            .fab-reset-checkpoint-btn:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.12);
+                border-color: rgba(255, 255, 255, 0.22);
             }
-            .fab-mode-btn.active {
-                background: var(--blue);
-                color: #fff;
-                font-weight: 600;
-                box-shadow: 0 1px 4px rgba(10, 132, 255, 0.35);
+            .fab-reset-checkpoint-btn:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
             }
-            .fab-mode-panel {
-                background: var(--card-bg);
-                border: 1px solid var(--card-border);
-                border-radius: var(--radius-m);
-                padding: 7px 9px;
-                margin-bottom: 8px;
-            }
-            .fab-mode-panel .fab-setting-row {
-                padding: 4px 0;
-            }
-            .fab-mode-telemetry {
+            .fab-status-telemetry {
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
-                padding-top: 5px;
-                margin-top: 4px;
-                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                margin-bottom: 6px;
+                padding: 0 2px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            .fab-submode-switcher {
+            .fab-quick-pills {
                 display: flex;
-                gap: 3px;
-                padding: 2px;
-                background: var(--card-bg-recessed);
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: var(--radius-s);
-                margin-bottom: 5px;
+                gap: 5px;
+                margin-bottom: 8px;
             }
-            .fab-submode-btn {
+            .fab-pill-btn {
                 flex: 1;
                 min-width: 0;
-                padding: 4px 3px;
-                border: none;
-                border-radius: 4px;
-                background: transparent;
+                padding: 6px 4px;
+                border-radius: 999px;
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
                 color: var(--text-color-secondary);
                 font-size: 11.5px;
                 font-weight: 500;
@@ -281,15 +262,35 @@ export const UI = {
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                transition: background-color 0.15s, color 0.15s;
+                text-align: center;
+                transition: all 0.15s ease;
             }
-            .fab-submode-btn:hover {
+            .fab-pill-btn:hover {
                 color: var(--text-color-primary);
+                background: rgba(255, 255, 255, 0.08);
             }
-            .fab-submode-btn.active {
-                background: rgba(10, 132, 255, 0.24);
+            .fab-pill-btn.active {
+                background: rgba(10, 132, 255, 0.22);
+                border-color: rgba(10, 132, 255, 0.6);
                 color: #fff;
                 font-weight: 600;
+            }
+            .fab-retry-banner-btn {
+                width: 100%;
+                margin-bottom: 8px;
+                padding: 6px 10px;
+                border-radius: var(--radius-m);
+                border: 1px solid rgba(255, 55, 95, 0.45);
+                background: rgba(255, 55, 95, 0.12);
+                color: #ff6987;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                transition: background-color 0.15s;
+            }
+            .fab-retry-banner-btn:hover {
+                background: rgba(255, 55, 95, 0.2);
             }
             .fab-helper-status-bar {
                 display: flex;
@@ -346,17 +347,18 @@ export const UI = {
                 100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
-                width: 100%;
+                flex: 1;
+                min-width: 0;
                 border: none;
                 border-radius: var(--radius-m);
                 padding: 10px 14px;
-                font-size: 14.5px;
+                font-size: 14px;
                 font-weight: 600;
                 cursor: pointer;
                 transition: all 0.2s ease;
                 color: #fff;
                 background: var(--blue);
-                margin-bottom: 8px;
+                margin-bottom: 0;
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -758,10 +760,8 @@ export const UI = {
 
                 if (!TaskRunner) return;
 
-                if (stateKey === 'fastApiScan') {
-                    await TaskRunner.toggleFastApiScan();
-                } else if (stateKey === 'incrementalEarlyStop') {
-                    await TaskRunner.toggleIncrementalEarlyStop();
+                if (stateKey === 'domFallbackMode') {
+                    await TaskRunner.setDomFallbackMode(!State.domFallbackMode);
                 } else if (stateKey === 'autoAddOnScroll') {
                     TaskRunner.toggleAutoAdd();
                 } else if (stateKey === 'autoScroll') {
@@ -926,163 +926,42 @@ export const UI = {
         });
         container.appendChild(tabContainer);
 
-        // Dashboard Tab
+        // Dashboard Tab (Mode-Free Unified Workbench)
         const dashboardContent = document.createElement('div');
         dashboardContent.className = 'fab-helper-tab-content';
         dashboardContent.style.display = 'block';
         State.UI.tabContents.dashboard = dashboardContent;
 
-        // 1. Work Mode Switcher (Full / Incremental / Page)
-        const modeSwitcher = document.createElement('div');
-        modeSwitcher.className = 'fab-mode-switcher';
-        State.UI.modeButtons = {};
-        ['full', 'incremental', 'page'].forEach((mode) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'fab-mode-btn';
-            btn.setAttribute('data-mode', mode);
-            bindText(btn, `mode_${mode}`);
-            btn.onclick = () => TaskRunner && TaskRunner.setWorkMode(mode);
-            modeSwitcher.appendChild(btn);
-            State.UI.modeButtons[mode] = btn;
-        });
+        // 1. Primary Action Row (Execute / Resume + optional Restart Checkpoint)
+        const primaryRow = document.createElement('div');
+        primaryRow.className = 'fab-primary-action-row';
 
-        // 2. Contextual Mode Panels
-        State.UI.modePanels = {};
-
-        // 2a. Full API Scan Panel
-        const fullPanel = document.createElement('div');
-        fullPanel.className = 'fab-mode-panel';
-        fullPanel.appendChild(createNumberSettingRow(
-            'setting_api_scan_concurrency',
-            'apiScanConcurrency',
-            1,
-            Config.MAX_API_SCAN_CONCURRENCY || 6,
-            'setting_api_scan_concurrency_tooltip',
-            {
-                onChange: (v) => TaskRunner && TaskRunner.setApiScanConcurrency(v),
-                uiRefKey: 'apiScanConcurrencyInput',
-                defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
-            }
-        ));
-        const fastScanStatusDisplay = document.createElement('div');
-        fastScanStatusDisplay.className = 'fab-mode-telemetry';
-        State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
-        fullPanel.appendChild(fastScanStatusDisplay);
-        State.UI.modePanels.full = fullPanel;
-
-        // 2b. Incremental Catch-up Panel
-        const incPanel = document.createElement('div');
-        incPanel.className = 'fab-mode-panel';
-        incPanel.appendChild(createNumberSettingRow(
-            'setting_incremental_stop_pages',
-            'incrementalStopPages',
-            1,
-            50,
-            'setting_incremental_stop_pages_tooltip',
-            {
-                onChange: (v) => TaskRunner && TaskRunner.setIncrementalStopPages(v),
-                uiRefKey: 'incrementalStopPagesInput',
-                defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
-            }
-        ));
-        const incScanStatusDisplay = document.createElement('div');
-        incScanStatusDisplay.className = 'fab-mode-telemetry';
-        State.UI.incScanStatusDisplay = incScanStatusDisplay;
-        incPanel.appendChild(incScanStatusDisplay);
-        State.UI.modePanels.incremental = incPanel;
-
-        // 2c. Page DOM Mode Panel
-        const pagePanel = document.createElement('div');
-        pagePanel.className = 'fab-mode-panel';
-
-        const subModeSwitcher = document.createElement('div');
-        subModeSwitcher.className = 'fab-submode-switcher';
-        State.UI.pageSubModeButtons = {};
-        ['visible', 'on_scroll', 'auto_scroll'].forEach((subMode) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'fab-submode-btn';
-            btn.setAttribute('data-submode', subMode);
-            bindText(btn, `page_submode_${subMode}`);
-            btn.onclick = () => TaskRunner && TaskRunner.setPageSubMode(subMode);
-            subModeSwitcher.appendChild(btn);
-            State.UI.pageSubModeButtons[subMode] = btn;
-        });
-        pagePanel.appendChild(subModeSwitcher);
-
-        pagePanel.appendChild(createSettingRow(
-            'setting_remember_position',
-            'rememberScrollPosition',
-            'setting_page_only_tooltip',
-            'rememberPositionCheckbox'
-        ));
-
-        // DOM Position Display inside Page Panel
-        const positionContainer = document.createElement('div');
-        positionContainer.className = 'fab-helper-position-container';
-
-        const positionIcon = document.createElement('span');
-        positionIcon.textContent = Utils.getText('position_indicator');
-        positionIcon.style.marginRight = '2px';
-
-        const positionInfo = document.createElement('span');
-        positionInfo.textContent = Config.USE_API_PIPELINE
-            ? UI.getApiPositionText()
-            : Utils.decodeCursor(State.savedCursor);
-        positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
-        State.UI.savedPositionDisplay = positionInfo;
-
-        const clearPositionBtn = document.createElement('button');
-        clearPositionBtn.type = 'button';
-        clearPositionBtn.textContent = '↺';
-        clearPositionBtn.title = Utils.getText('clear_position_tooltip');
-        clearPositionBtn.style.cssText = 'background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);';
-        clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
-        clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
-        clearPositionBtn.onclick = async () => {
-            const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
-            if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
-                PagePatcher.lockCursorSaving();
-                if (confirm(Utils.getText('confirm_reset_position'))) {
-                    await PagePatcher.clearSavedPosition('User UI Reset');
-
-                    // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
-                    PagePatcher.armResetGuard();
-
-                    // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
-                    try {
-                        window.scrollTo(0, 0);
-                    } catch (e) { }
-
-                    try {
-                        const url = new URL(window.location.href);
-                        if (url.searchParams.has('cursor')) {
-                            url.searchParams.delete('cursor');
-                            window.location.href = url.toString();
-                            return;
-                        }
-                    } catch (e) { }
-
-                    window.location.reload();
-                } else {
-                    PagePatcher.unlockCursorSaving();
-                }
-            } else {
-                Utils.logger('info', Utils.getText('no_position_to_reset'));
-            }
-        };
-        positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
-        pagePanel.appendChild(positionContainer);
-        State.UI.modePanels.page = pagePanel;
-
-        // 3. Primary Execute Button
         State.UI.execBtn = document.createElement('button');
         State.UI.execBtn.type = 'button';
         State.UI.execBtn.className = 'fab-helper-execute-btn';
         State.UI.execBtn.onclick = () => TaskRunner && TaskRunner.toggleExecution();
 
-        // 4. Micro progress bar & Keep-alive status
+        State.UI.resetCheckpointBtn = document.createElement('button');
+        State.UI.resetCheckpointBtn.type = 'button';
+        State.UI.resetCheckpointBtn.className = 'fab-reset-checkpoint-btn';
+        bindText(State.UI.resetCheckpointBtn, 'reset_checkpoint');
+        State.UI.resetCheckpointBtn.style.display = 'none';
+        State.UI.resetCheckpointBtn.onclick = async () => {
+            if (State.isExecuting || FastScanner.isRunning()) return;
+            if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
+            if (window.confirm(Utils.getText('confirm_reset_checkpoint'))) {
+                await FastScanner.clearCheckpoint();
+                State.fastScanStatus = null;
+                State.fastScanCheckpointMeta = null;
+                State.hasFastScanCheckpoint = false;
+                Utils.logger('info', Utils.getText('log_checkpoint_cleared'));
+                UI.update();
+            }
+        };
+
+        primaryRow.append(State.UI.execBtn, State.UI.resetCheckpointBtn);
+
+        // 2. Micro progress bar, readable telemetry, & Keep-alive status
         const progressTrack = document.createElement('div');
         progressTrack.className = 'fab-progress-track';
         const progressBar = document.createElement('div');
@@ -1091,11 +970,15 @@ export const UI = {
         State.UI.progressTrack = progressTrack;
         State.UI.progressBar = progressBar;
 
+        const fastScanStatusDisplay = document.createElement('div');
+        fastScanStatusDisplay.className = 'fab-status-telemetry';
+        State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
+
         State.UI.statusKeepAlive = document.createElement('div');
         State.UI.statusKeepAlive.className = 'fab-helper-keepalive-status';
         State.UI.statusKeepAlive.title = '后台保活：♥心跳(Worker,不被节流) + ❄️防冻结(WebRTC)。后台/锁屏时应持续刷新；若显示未启动说明 Worker 被页面 CSP 拦截';
 
-        // 5. Status Metrics Bar
+        // 3. Unified 3-Metric Status Bar (待入库 / 已入库 / 失败)
         const statusBar = document.createElement('div');
         statusBar.className = 'fab-helper-status-bar';
 
@@ -1130,45 +1013,34 @@ export const UI = {
                 });
             }
         };
-        State.UI.statusVisible = createStatusItem('fab-status-visible', 'visible', '👁️', 'grid-2');
-        State.UI.statusHidden = createStatusItem('fab-status-hidden', 'hidden', '🙈', 'grid-2');
-        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
+        statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
 
-        // 6. Action Buttons Row
-        const actionButtons = document.createElement('div');
-        actionButtons.className = 'fab-helper-actions';
-
-        State.UI.syncBtn = document.createElement('button');
-        State.UI.syncBtn.type = 'button';
-        bindText(State.UI.syncBtn, 'sync', '🔄 ');
-        State.UI.syncBtn.onclick = () => TaskRunner && TaskRunner.refreshVisibleStates();
-
-        State.UI.hideBtn = document.createElement('button');
-        State.UI.hideBtn.type = 'button';
-        State.UI.hideBtn.onclick = () => TaskRunner && TaskRunner.toggleHideSaved();
-
-        State.UI.resetCheckpointBtn = document.createElement('button');
-        State.UI.resetCheckpointBtn.type = 'button';
-        bindText(State.UI.resetCheckpointBtn, 'reset_checkpoint', '↺ ');
-        State.UI.resetCheckpointBtn.onclick = async () => {
-            if (State.isExecuting || FastScanner.isRunning()) return;
-            if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
-            if (window.confirm(Utils.getText('confirm_reset_checkpoint'))) {
-                await FastScanner.clearCheckpoint();
-                State.fastScanStatus = null;
-                State.hasFastScanCheckpoint = false;
-                Utils.logger('info', Utils.getText('log_checkpoint_cleared'));
-                UI.update();
-            }
-        };
-
+        // 4. Conditional Retry Failed Banner Button (only shown when failedCount > 0)
         State.UI.retryFailedBtn = document.createElement('button');
         State.UI.retryFailedBtn.type = 'button';
+        State.UI.retryFailedBtn.className = 'fab-retry-banner-btn';
+        State.UI.retryFailedBtn.style.display = 'none';
         State.UI.retryFailedBtn.onclick = () => TaskRunner && TaskRunner.retryFailedTasks();
 
-        actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.resetCheckpointBtn, State.UI.retryFailedBtn);
+        // 5. Quick Pills Row (Auto-Claim Visible / Hide Owned / Hide Paid)
+        const quickPills = document.createElement('div');
+        quickPills.className = 'fab-quick-pills';
 
-        // 7. Collapsible Operation Log Panel
+        const makeQuickPill = (labelKey, onClick) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'fab-pill-btn';
+            bindText(btn, labelKey);
+            btn.onclick = onClick;
+            return btn;
+        };
+
+        State.UI.quickAutoClaimBtn = makeQuickPill('pill_auto_claim', () => TaskRunner && TaskRunner.toggleAutoClaimVisible());
+        State.UI.quickHideSavedBtn = makeQuickPill('pill_hide_saved', () => TaskRunner && TaskRunner.toggleHideSaved());
+        State.UI.quickHidePaidBtn = makeQuickPill('pill_hide_paid', () => TaskRunner && TaskRunner.toggleHidePaid());
+        quickPills.append(State.UI.quickAutoClaimBtn, State.UI.quickHideSavedBtn, State.UI.quickHidePaidBtn);
+
+        // 6. Collapsible Operation Log Panel
         const logContainer = document.createElement('div');
         logContainer.className = 'fab-log-container';
 
@@ -1222,45 +1094,38 @@ export const UI = {
         logContainer.append(logHeader, State.UI.logPanel);
 
         dashboardContent.append(
-            modeSwitcher,
-            fullPanel,
-            incPanel,
-            pagePanel,
-            State.UI.execBtn,
+            primaryRow,
             State.UI.progressTrack,
+            fastScanStatusDisplay,
             State.UI.statusKeepAlive,
             statusBar,
-            actionButtons,
+            State.UI.retryFailedBtn,
+            quickPills,
             logContainer
         );
         container.appendChild(dashboardContent);
 
-        // Settings Tab (Slimmed: 5 visible controls + 1 collapsed Advanced drawer)
+        // Settings Tab (Slimmed: 4 visible controls + collapsed Advanced & Fallback drawer)
         const settingsContent = document.createElement('div');
         settingsContent.className = 'fab-helper-tab-content';
         settingsContent.style.display = 'none';
 
-        // Card 1: 浏览过滤
-        const groupFilter = createCardGroup('settings_group_browse_filter');
-        groupFilter.appendChild(createSettingRow('setting_hide_discounted', 'hideDiscountedPaid'));
-        groupFilter.appendChild(createSettingRow('setting_hide_paid', 'hidePaid'));
-        settingsContent.appendChild(groupFilter);
-
-        // Card 2: 通用与兜底
-        const groupGeneral = createCardGroup('settings_group_general');
-        groupGeneral.appendChild(createNumberSettingRow(
-            'setting_max_workers',
-            'maxWorkers',
+        // Card 1: 常规与过滤
+        const groupGeneralFilter = createCardGroup('settings_group_general_filter');
+        groupGeneralFilter.appendChild(createSettingRow('setting_hide_discounted', 'hideDiscountedPaid'));
+        groupGeneralFilter.appendChild(createNumberSettingRow(
+            'setting_api_scan_concurrency',
+            'apiScanConcurrency',
             1,
-            15,
-            'setting_max_workers_desc_tooltip',
+            Config.MAX_API_SCAN_CONCURRENCY || 6,
+            'setting_api_scan_concurrency_tooltip',
             {
-                onChange: (v) => TaskRunner && TaskRunner.setMaxWorkers(v),
-                uiRefKey: 'maxWorkersInput',
-                defaultValue: 7
+                onChange: (v) => TaskRunner && TaskRunner.setApiScanConcurrency(v),
+                uiRefKey: 'apiScanConcurrencyInput',
+                defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
             }
         ));
-        groupGeneral.appendChild(createSettingRow('setting_block_large_resources', 'blockLargeResources'));
+        groupGeneralFilter.appendChild(createSettingRow('setting_block_large_resources', 'blockLargeResources'));
 
         const notificationRow = document.createElement('div');
         notificationRow.className = 'fab-setting-row';
@@ -1288,10 +1153,10 @@ export const UI = {
             if (permission !== 'granted') Utils.logger('warn', notificationButton.title);
         };
         notificationRow.append(notificationLabel, notificationButton);
-        groupGeneral.appendChild(notificationRow);
-        settingsContent.appendChild(groupGeneral);
+        groupGeneralFilter.appendChild(notificationRow);
+        settingsContent.appendChild(groupGeneralFilter);
 
-        // Card 3: Collapsible Advanced & Maintenance
+        // Card 2: Collapsible Advanced & Fallback
         const advancedCard = document.createElement('div');
         advancedCard.className = 'fab-collapsible-card';
 
@@ -1299,7 +1164,7 @@ export const UI = {
         advancedToggle.type = 'button';
         advancedToggle.className = 'fab-collapsible-toggle';
         const advancedTitle = document.createElement('span');
-        bindText(advancedTitle, 'settings_group_advanced');
+        bindText(advancedTitle, 'settings_group_advanced_fallback');
         const advancedChevron = document.createElement('span');
         advancedChevron.textContent = State.settingsAdvancedOpen ? '▾' : '▸';
         advancedToggle.append(advancedTitle, advancedChevron);
@@ -1308,6 +1173,91 @@ export const UI = {
         const advancedBody = document.createElement('div');
         advancedBody.className = 'fab-collapsible-body';
         advancedBody.style.display = State.settingsAdvancedOpen ? 'block' : 'none';
+
+        advancedBody.appendChild(createSettingRow(
+            'setting_dom_fallback',
+            'domFallbackMode',
+            'setting_dom_fallback_tooltip',
+            'domFallbackCheckbox'
+        ));
+
+        const fallbackControls = document.createElement('div');
+        fallbackControls.style.display = State.domFallbackMode ? 'block' : 'none';
+        fallbackControls.appendChild(createSettingRow(
+            'setting_remember_position',
+            'rememberScrollPosition',
+            'setting_page_only_tooltip',
+            'rememberPositionCheckbox'
+        ));
+
+        const positionContainer = document.createElement('div');
+        positionContainer.className = 'fab-helper-position-container';
+
+        const positionIcon = document.createElement('span');
+        positionIcon.textContent = Utils.getText('position_indicator');
+        positionIcon.style.marginRight = '2px';
+
+        const positionInfo = document.createElement('span');
+        positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+        positionInfo.style.cssText = 'flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        State.UI.savedPositionDisplay = positionInfo;
+
+        const clearPositionBtn = document.createElement('button');
+        clearPositionBtn.type = 'button';
+        clearPositionBtn.textContent = '↺';
+        clearPositionBtn.title = Utils.getText('clear_position_tooltip');
+        clearPositionBtn.style.cssText = 'background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);';
+        clearPositionBtn.onmouseover = () => { clearPositionBtn.style.opacity = '1'; };
+        clearPositionBtn.onmouseout = () => { clearPositionBtn.style.opacity = '0.7'; };
+        clearPositionBtn.onclick = async () => {
+            const hasRecoveryCursor = typeof sessionStorage !== 'undefined' && (sessionStorage.getItem('fab_helper_recovery_cursor') || sessionStorage.getItem('fab_helper_last_recovery_cursor'));
+            if (State.savedCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+                PagePatcher.lockCursorSaving();
+                if (confirm(Utils.getText('confirm_reset_position'))) {
+                    await PagePatcher.clearSavedPosition('User UI Reset');
+
+                    // 刷新后浏览器可能还原旧滚动深度并触发深游标回放，先立守卫挡掉回放写入
+                    PagePatcher.armResetGuard();
+
+                    // 交还给浏览器还原滚动位置等于把刚清掉的位置又滚回去，这里从顶部开始加载
+                    try {
+                        window.scrollTo(0, 0);
+                    } catch (e) { }
+
+                    try {
+                        const url = new URL(window.location.href);
+                        if (url.searchParams.has('cursor')) {
+                            url.searchParams.delete('cursor');
+                            window.location.href = url.toString();
+                            return;
+                        }
+                    } catch (e) { }
+
+                    window.location.reload();
+                } else {
+                    PagePatcher.unlockCursorSaving();
+                }
+            } else {
+                Utils.logger('info', Utils.getText('no_position_to_reset'));
+            }
+        };
+        positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
+        fallbackControls.appendChild(positionContainer);
+        State.UI.domFallbackControls = fallbackControls;
+        advancedBody.appendChild(fallbackControls);
+
+        advancedBody.appendChild(createNumberSettingRow(
+            'setting_max_workers',
+            'maxWorkers',
+            1,
+            15,
+            'setting_max_workers_desc_tooltip',
+            {
+                onChange: (v) => TaskRunner && TaskRunner.setMaxWorkers(v),
+                uiRefKey: 'maxWorkersInput',
+                defaultValue: 7
+            }
+        ));
         advancedBody.appendChild(createSettingRow('setting_auto_resume_429', 'autoResumeAfter429'));
         advancedBody.appendChild(createSettingRow('setting_auto_refresh', 'autoRefreshEmptyPage'));
 
@@ -1484,15 +1434,23 @@ export const UI = {
             });
         }
 
-        const mode = TaskRunner?.getWorkMode
-            ? TaskRunner.getWorkMode()
-            : (!State.fastApiScan ? 'page' : (State.incrementalEarlyStop ? 'incremental' : 'full'));
-        const pageSubMode = TaskRunner?.getPageSubMode
-            ? TaskRunner.getPageSubMode()
-            : (State.autoScroll ? 'auto_scroll' : (State.autoAddOnScroll ? 'on_scroll' : 'visible'));
+        const isFallback = Boolean(State.domFallbackMode);
         const isRunning = Boolean(State.isExecuting || FastScanner.isRunning());
         const fs = State.fastScanStatus;
         const expanded = Boolean(State.uiExpanded);
+        const hasCheckpoint = !isFallback && Boolean(
+            State.hasFastScanCheckpoint || fs?.phase === 'paused' || fs?.phase === 'partial'
+        );
+
+        const getCheckpointPct = () => {
+            if (fs && fs.totalEstimated > 0 && Number.isFinite(fs.itemsScanned)) {
+                return Math.min(99, Math.max(1, Math.round((fs.itemsScanned / fs.totalEstimated) * 100)));
+            }
+            if (State.fastScanCheckpointMeta && Number.isFinite(State.fastScanCheckpointMeta.pct)) {
+                return State.fastScanCheckpointMeta.pct;
+            }
+            return null;
+        };
 
         // Collapsed / expanded chrome
         State.UI.container.classList.toggle('fab-helper-collapsed', !expanded);
@@ -1516,11 +1474,9 @@ export const UI = {
             const fastRunning = FastScanner.isRunning() || Boolean(fs?.running);
             if (!expanded) {
                 if (fastRunning && fs) {
-                    if (mode === 'full' && fs.totalEstimated > 0) {
+                    if (fs.totalEstimated > 0) {
                         const pct = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
                         badgeText = `⚡ ${pct}%`;
-                    } else if (mode === 'incremental') {
-                        badgeText = `🆕 ${fs.itemsScanned.toLocaleString()}`;
                     } else {
                         badgeText = `⚡ ${fs.itemsScanned.toLocaleString()}`;
                     }
@@ -1528,146 +1484,103 @@ export const UI = {
                     badgeText = State.executionTotalTasks > 0
                         ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}`
                         : (State.lang === 'zh' ? '执行中' : 'Running');
-                } else if (mode === 'full' && (State.hasFastScanCheckpoint || fs?.phase === 'paused' || fs?.phase === 'partial')) {
-                    badgeText = State.lang === 'zh' ? '⚡ 断点' : '⚡ Paused';
+                } else if (hasCheckpoint) {
+                    const pct = getCheckpointPct();
+                    badgeText = pct != null ? `▶ ${pct}%` : (State.lang === 'zh' ? '⚡ 断点' : '⚡ Paused');
                 }
             }
             State.UI.headerLiveBadge.textContent = badgeText;
             State.UI.headerLiveBadge.style.display = badgeText ? 'inline-flex' : 'none';
         }
 
-        // Work mode switcher & contextual panels
-        for (const key in State.UI.modeButtons) {
-            const btn = State.UI.modeButtons[key];
-            if (!btn) continue;
-            const isActive = key === mode;
-            btn.classList.toggle('active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        }
-        for (const key in State.UI.modePanels) {
-            const panel = State.UI.modePanels[key];
-            if (panel) panel.style.display = key === mode ? 'block' : 'none';
-        }
-        for (const key in State.UI.pageSubModeButtons) {
-            const btn = State.UI.pageSubModeButtons[key];
-            if (!btn) continue;
-            const isActive = key === pageSubMode;
-            btn.classList.toggle('active', isActive);
-            btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-        }
-
-        // Mode-specific telemetry text
+        // Single-line readable status telemetry
         if (State.UI.fastScanStatusDisplay) {
             const zh = State.lang === 'zh';
-            if (fs && fs.running && fs.mode !== 'incremental') {
+            if (isFallback) {
+                if (isRunning && State.executionTotalTasks > 0) {
+                    const done = State.executionCompletedTasks + State.executionFailedTasks;
+                    State.UI.fastScanStatusDisplay.textContent = zh
+                        ? `📜 滚页备用运行中 · ${done}/${State.executionTotalTasks}`
+                        : `📜 Fallback running · ${done}/${State.executionTotalTasks}`;
+                } else if (isRunning) {
+                    State.UI.fastScanStatusDisplay.textContent = zh
+                        ? '📜 正在滚页扫描当前列表...'
+                        : '📜 Scrolling list in fallback mode...';
+                } else {
+                    State.UI.fastScanStatusDisplay.textContent = Utils.getText('status_idle_fallback');
+                }
+            } else if (fs && fs.running) {
                 const totalStr = fs.totalEstimated > 0
-                    ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
+                    ? ` / ${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100))}%)`
                     : '';
-                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
+                const rateTag = fs.rateLimitedUntil > Date.now()
+                    ? (zh ? ' · ⏳限速等待中' : ' · ⏳429')
+                    : '';
                 State.UI.fastScanStatusDisplay.textContent = zh
-                    ? `⚡ ${fs.activeConcurrency}路 · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 新领 ${fs.claimedDirect}${rateTag}`
-                    : `⚡ ${fs.activeConcurrency}x · ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
-            } else if (fs && fs.phase === 'paused' && fs.mode !== 'incremental') {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-                    'fast_scan_status_paused',
-                    fs.itemsScanned.toLocaleString(),
-                    fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : '?'
-                );
-            } else if (fs && fs.phase === 'partial' && fs.mode !== 'incremental') {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-                    'fast_scan_status_partial',
-                    fs.claimedDirect,
-                    fs.itemsScanned.toLocaleString(),
-                    fs.incompleteSlices || 1
-                );
-            } else if (fs && fs.phase === 'completed' && fs.mode !== 'incremental') {
+                    ? `⚡ 已核对 ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · 本次新领 ${fs.claimedDirect}${rateTag}`
+                    : `⚡ ${fs.itemsScanned.toLocaleString()}${totalStr} · ${fs.itemsPerSec}/s · +${fs.claimedDirect}${rateTag}`;
+            } else if (fs && fs.phase === 'completed') {
                 let text = Utils.getText(
-                    'fast_scan_status_completed',
+                    'status_scan_done',
                     fs.claimedDirect,
                     fs.itemsScanned.toLocaleString()
                 );
-                if (fs.queuedFallback > 0) {
-                    text += zh ? ` · 待领 ${fs.queuedFallback}` : ` · ${fs.queuedFallback} queued`;
-                }
                 if (fs.failed > 0) {
                     text += zh ? ` · 失败 ${fs.failed}` : ` · ${fs.failed} failed`;
                 }
                 State.UI.fastScanStatusDisplay.textContent = text;
-            } else if (State.hasFastScanCheckpoint) {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText('fast_full_checkpoint_ready');
-            } else {
-                State.UI.fastScanStatusDisplay.textContent = Utils.getText('fast_full_idle_hint');
-            }
-        }
-
-        if (State.UI.incScanStatusDisplay) {
-            if (fs && fs.running && fs.mode === 'incremental') {
-                const rateTag = fs.rateLimitedUntil > Date.now() ? ' · ⏳429' : '';
-                State.UI.incScanStatusDisplay.textContent = Utils.getText(
-                    'fast_inc_running_status',
-                    fs.itemsScanned.toLocaleString(),
-                    fs.itemsPerSec,
-                    fs.claimedDirect
-                ) + rateTag;
-            } else if (fs && fs.phase === 'completed' && fs.mode === 'incremental') {
-                State.UI.incScanStatusDisplay.textContent = Utils.getText(
-                    'fast_inc_completed_status',
+            } else if (fs && fs.phase === 'partial') {
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                    'status_scan_partial',
                     fs.claimedDirect,
-                    fs.itemsScanned.toLocaleString()
+                    fs.itemsScanned.toLocaleString(),
+                    fs.incompleteSlices || 1
                 );
+            } else if (hasCheckpoint) {
+                const pct = getCheckpointPct();
+                const scanned = fs?.itemsScanned ?? State.fastScanCheckpointMeta?.itemsScanned ?? 0;
+                const total = fs?.totalEstimated ?? State.fastScanCheckpointMeta?.totalEstimated ?? 0;
+                if (pct != null && total > 0) {
+                    State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                        'status_checkpoint_pct',
+                        pct,
+                        Number(scanned).toLocaleString(),
+                        Number(total).toLocaleString()
+                    );
+                } else {
+                    State.UI.fastScanStatusDisplay.textContent = Utils.getText('status_checkpoint_generic');
+                }
             } else {
-                State.UI.incScanStatusDisplay.textContent = Utils.getText('fast_inc_idle_hint');
+                State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+                    State.autoClaimVisible ? 'status_idle_auto' : 'status_idle_manual'
+                );
             }
         }
 
-        if (Config.USE_API_PIPELINE && State.UI.savedPositionDisplay) {
-            State.UI.savedPositionDisplay.textContent = UI.getApiPositionText();
-        } else if (mode === 'page' && State.UI.savedPositionDisplay) {
-            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
-        }
-
-        // Update Status Numbers
-        const apiMode = Config.USE_API_PIPELINE;
-        const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
-        const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
-        const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
-
-        const cardCounts = TaskRunner?.getCardCounts
-            ? TaskRunner.getCardCounts()
-            : {
-                total: document.querySelectorAll(Config.SELECTORS.card).length,
-                hidden: State.hiddenThisPageCount,
-                visible: Math.max(0, document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount)
-            };
-        const hiddenCount = cardCounts.hidden;
-        const visibleCount = cardCounts.visible;
+        // Update Unified Status Numbers (single source of truth)
+        const todoCount = State.db.todo.length + (fs && fs.running ? (fs.pendingCount || 0) : 0);
+        const doneCount = State.db.done.length;
+        const failedCount = State.db.failed.length;
 
         const setStatusCount = (item, val) => {
             if (!item) return;
             const span = item._valueEl || item.querySelector('span');
-            if (span) span.textContent = val;
+            if (span) span.textContent = String(val);
         };
         setStatusCount(State.UI.statusTodo, todoCount);
         setStatusCount(State.UI.statusDone, doneCount);
         setStatusCount(State.UI.statusFailed, failedCount);
-        setStatusCount(State.UI.statusHidden, hiddenCount);
-        setStatusCount(State.UI.statusVisible, visibleCount);
 
-        if (State.UI.statusVisible) State.UI.statusVisible.style.display = mode === 'page' ? '' : 'none';
-        if (State.UI.statusHidden) State.UI.statusHidden.style.display = mode === 'page' ? '' : 'none';
         if (State.UI.statusFailed) {
             State.UI.statusFailed.classList.toggle('has-failed', failedCount > 0);
         }
 
-        // Update Primary Execute Button
+        // Update Primary Execute Button & Checkpoint Reset Button
         if (State.UI.execBtn) {
             if (isRunning) {
-                const stopKey = mode === 'full'
-                    ? 'exec_full_stop'
-                    : (mode === 'incremental' ? 'exec_inc_stop' : 'exec_page_stop');
-                State.UI.execBtn.textContent = Utils.getText(stopKey);
+                State.UI.execBtn.textContent = Utils.getText(isFallback ? 'exec_fallback_stop' : 'exec_full_stop');
                 State.UI.execBtn.classList.add('executing');
-                if (mode === 'full' && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
+                if (!isFallback && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
                     const percentage = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
                     State.UI.execBtn.title = Utils.getText('tooltip_executing_progress', fs.itemsScanned, fs.totalEstimated, percentage);
                 } else if (State.executionTotalTasks > 0) {
@@ -1678,18 +1591,25 @@ export const UI = {
                     State.UI.execBtn.title = Utils.getText('tooltip_executing');
                 }
             } else {
-                let startKey = 'exec_full_start';
-                if (mode === 'full') {
-                    startKey = (State.hasFastScanCheckpoint || fs?.phase === 'paused' || fs?.phase === 'partial') ? 'exec_full_resume' : 'exec_full_start';
-                } else if (mode === 'incremental') {
-                    startKey = 'exec_inc_start';
+                if (isFallback) {
+                    State.UI.execBtn.textContent = Utils.getText('exec_fallback_start');
+                } else if (hasCheckpoint) {
+                    const pct = getCheckpointPct();
+                    State.UI.execBtn.textContent = pct != null
+                        ? Utils.getText('exec_full_resume_pct', pct)
+                        : Utils.getText('exec_full_resume');
                 } else {
-                    startKey = `exec_page_${pageSubMode}`;
+                    State.UI.execBtn.textContent = Utils.getText('exec_full_start');
                 }
-                State.UI.execBtn.textContent = Utils.getText(startKey);
                 State.UI.execBtn.classList.remove('executing');
                 State.UI.execBtn.title = Utils.getText('tooltip_start_tasks');
             }
+        }
+
+        if (State.UI.resetCheckpointBtn) {
+            const showRestart = !isRunning && !isFallback && hasCheckpoint;
+            State.UI.resetCheckpointBtn.style.display = showRestart ? '' : 'none';
+            State.UI.resetCheckpointBtn.disabled = !showRestart;
         }
 
         // 后台保活状态(实测用)：执行时显示心跳/防冻结状态，非执行时隐藏
@@ -1710,7 +1630,7 @@ export const UI = {
         }
 
         if (State.UI.progressTrack && State.UI.progressBar) {
-            if (State.fastApiScan && fs && fs.running && fs.totalEstimated > 0) {
+            if (!isFallback && fs && fs.running && fs.totalEstimated > 0) {
                 State.UI.progressTrack.style.display = 'block';
                 const percentage = Math.min(100, Math.round((fs.itemsScanned / fs.totalEstimated) * 100));
                 State.UI.progressBar.style.width = `${percentage}%`;
@@ -1725,19 +1645,9 @@ export const UI = {
             }
         }
 
-        // Context-aware action buttons
-        if (State.UI.syncBtn) {
-            State.UI.syncBtn.style.display = mode === 'page' ? '' : 'none';
-        }
-        if (State.UI.hideBtn) {
-            State.UI.hideBtn.style.display = mode === 'page' ? '' : 'none';
-            State.UI.hideBtn.textContent = (State.hideSaved ? '🙈 ' : '👁️ ') + (State.hideSaved ? Utils.getText('show') : Utils.getText('hide'));
-        }
-        if (State.UI.resetCheckpointBtn) {
-            State.UI.resetCheckpointBtn.style.display = mode === 'full' ? '' : 'none';
-            State.UI.resetCheckpointBtn.disabled = isRunning || (!State.hasFastScanCheckpoint && !State.fastScanStatus);
-        }
+        // Conditional retry button
         if (State.UI.retryFailedBtn) {
+            State.UI.retryFailedBtn.style.display = failedCount > 0 ? '' : 'none';
             State.UI.retryFailedBtn.textContent = '🔁 ' + Utils.getText('retry_failed') + (failedCount > 0 ? ` (${failedCount})` : '');
             State.UI.retryFailedBtn.disabled = failedCount === 0;
             State.UI.retryFailedBtn.title = failedCount > 0
@@ -1745,15 +1655,32 @@ export const UI = {
                 : Utils.getText('no_failed_tasks');
         }
 
-        // Sync inputs & checkboxes
+        // Quick Pills
+        const syncPill = (btn, active) => {
+            if (!btn) return;
+            const on = Boolean(active);
+            btn.classList.toggle('active', on);
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        };
+        syncPill(State.UI.quickAutoClaimBtn, State.autoClaimVisible);
+        syncPill(State.UI.quickHideSavedBtn, State.hideSaved);
+        syncPill(State.UI.quickHidePaidBtn, State.hidePaid);
+
+        // Sync Settings inputs & fallback controls
+        if (State.UI.domFallbackCheckbox) {
+            State.UI.domFallbackCheckbox.checked = isFallback;
+        }
+        if (State.UI.domFallbackControls) {
+            State.UI.domFallbackControls.style.display = isFallback ? 'block' : 'none';
+        }
+        if (State.UI.savedPositionDisplay) {
+            State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
+        }
         if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
             State.UI.maxWorkersInput.value = State.maxWorkers;
         }
         if (State.UI.apiScanConcurrencyInput && document.activeElement !== State.UI.apiScanConcurrencyInput) {
             State.UI.apiScanConcurrencyInput.value = State.apiScanConcurrency;
-        }
-        if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
-            State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
         }
         if (State.UI.rememberPositionCheckbox) {
             State.UI.rememberPositionCheckbox.checked = Boolean(State.rememberScrollPosition);

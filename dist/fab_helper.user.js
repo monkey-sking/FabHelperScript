@@ -3,7 +3,7 @@
 // @name:zh-CN   Fab Helper
 // @name:en      Fab Helper
 // @namespace    https://www.fab.com/
-// @version      3.5.27-20261125-1023
+// @version      3.6.0-20261127-1407
 // @description  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:zh-CN  Fab Helper 优化版 - 自动领取免费商品与 Bundle 集合，已拥有自动隐藏，人机验证安全提醒与暂停保护，后台多标签与 API 极速处理，智能限速恢复
 // @description:en  Fab Helper Optimized - Auto-claim free items & bundles, auto-hide owned, captcha notification & safe pause, background multi-tab & fast API claims, smart rate-limit recovery
@@ -53,43 +53,36 @@
     toast_reached_bottom: "\u{1F3C1} Reached the bottom of the list, all items scanned!",
     close: "Close",
     // 设置分组
-    settings_group_automation: "\u26A1 Automation",
-    settings_group_filter: "\u{1F3AF} Filters",
-    settings_group_performance: "\u{1F680} Performance & Alerts",
-    settings_group_maintenance: "\u{1F6E0}\uFE0F Maintenance & Advanced",
-    settings_group_browse_filter: "\u{1F3AF} Browse Filters",
-    settings_group_general: "\u2699\uFE0F General & Fallback",
-    settings_group_advanced: "Advanced & Maintenance",
-    // 工作模式与子模式
-    mode_full: "\u26A1 Full",
-    mode_incremental: "\u{1F195} Latest",
-    mode_page: "\u{1F4DC} Page",
-    page_submode_visible: "Visible",
-    page_submode_on_scroll: "On Scroll",
-    page_submode_auto_scroll: "Auto Page",
-    exec_full_start: "\u26A1 Start Full Scan",
-    exec_full_resume: "\u26A1 Resume Full Scan",
-    exec_full_stop: "\u23F9 Stop Full Scan",
-    exec_inc_start: "\u{1F195} Start Catch-up",
-    exec_inc_stop: "\u23F9 Stop Catch-up",
-    exec_page_visible: "\u{1F4DC} Claim Visible",
-    exec_page_on_scroll: "\u{1F4DC} Start On-Scroll",
-    exec_page_auto_scroll: "\u{1F4DC} Start Auto-Scroll",
-    exec_page_stop: "\u23F9 Stop Claim",
-    fast_full_idle_hint: "Parallel API shard scan for current filters",
-    fast_full_checkpoint_ready: "\u26A1 Checkpoint saved \xB7 Ready to resume",
-    fast_inc_idle_hint: "Newest first (-firstPublishedAt) \xB7 Keeps filters",
-    fast_inc_running_status: "\u{1F195} Catch-up \xB7 {0} scanned \xB7 {1}/s \xB7 +{2}",
-    fast_inc_completed_status: "\u{1F195} Catch-up done \xB7 {1} scanned \xB7 +{0}",
-    reset_checkpoint: "Reset Checkpoint",
-    confirm_reset_checkpoint: "Clear the saved fast-scan checkpoint and start over?",
-    log_checkpoint_cleared: "Fast-scan checkpoint cleared.",
-    setting_max_workers_desc_tooltip: "Worker tabs for bundles, CAPTCHA fallback, and Page mode (1-15, default 7)",
-    setting_page_only_tooltip: "Only applies in Page mode",
+    settings_group_general_filter: "\u{1F3AF} General & Filters",
+    settings_group_advanced_fallback: "Advanced & Fallback",
+    // Mode-free dashboard strings
+    exec_full_start: "\u{1F680} Scan All Free Items",
+    exec_full_resume: "\u25B6 Resume Scan",
+    exec_full_resume_pct: "\u25B6 Resume Scan ({0}%)",
+    exec_full_stop: "\u25A0 Stop Scan",
+    exec_fallback_start: "\u{1F4DC} Scroll Scan (Fallback)",
+    exec_fallback_stop: "\u25A0 Stop Scroll Scan",
+    reset_checkpoint: "\u21BA Restart",
+    confirm_reset_checkpoint: "Clear the saved scan checkpoint and start over?",
+    log_checkpoint_cleared: "Scan checkpoint cleared.",
+    status_idle_auto: "Auto-claiming visible free items \xB7 Click above to scan all 48k+",
+    status_idle_manual: "Click above to claim visible items & scan all 48k+ free items",
+    status_idle_fallback: "Fallback DOM scroll mode is active",
+    status_checkpoint_pct: "Paused at {0}% ({1} / {2}) \xB7 Resume or restart",
+    status_checkpoint_generic: "Unfinished scan checkpoint \xB7 Resume or restart",
+    status_scan_done: "\u2705 Scan done \xB7 {1} checked \xB7 +{0} claimed",
+    status_scan_partial: "\u26A0\uFE0F Incomplete ({2} shards left) \xB7 {1} checked \xB7 +{0} claimed",
+    pill_auto_claim: "\u26A1 Auto-Claim",
+    pill_hide_saved: "\u{1F648} Hide Owned",
+    pill_hide_paid: "\u{1F4B2} Hide Paid",
+    setting_dom_fallback: "DOM Scroll Fallback (if API fails)",
+    setting_dom_fallback_tooltip: "Use fast API by default; enable only if API fails to fall back to DOM auto-scroll",
+    setting_max_workers_desc_tooltip: "Worker tabs for bundles, CAPTCHA fallback, and DOM fallback mode (1-15, default 7)",
+    setting_page_only_tooltip: "Only applies in DOM scroll fallback mode",
     tooltip_collapse_ui: "Collapse panel",
     tooltip_expand_ui: "Expand panel",
-    log_work_mode_changed: "Switched to {0} mode.",
-    log_page_submode_changed: "Page capture mode set to {0}.",
+    log_auto_claim_visible_toggle: "Browse auto-claim {0}.",
+    log_dom_fallback_toggle: "DOM scroll fallback mode {0}.",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "Free",
@@ -470,7 +463,7 @@
     showPaid: "\u663E\u793A\u4ED8\u8D39",
     added: "\u5DF2\u5165\u5E93",
     failed: "\u5931\u8D25",
-    todo: "\u5F85\u5904\u7406",
+    todo: "\u5F85\u5165\u5E93",
     hidden: "\u5DF2\u6EE4",
     visible: "\u53EF\u89C1",
     clearLog: "\u6E05\u7A7A\u65E5\u5FD7",
@@ -483,43 +476,36 @@
     toast_reached_bottom: "\u{1F3C1} \u5DF2\u5230\u8FBE\u5546\u54C1\u5217\u8868\u5E95\u90E8\uFF0C\u5168\u90E8\u5546\u54C1\u626B\u63CF\u5B8C\u6BD5\uFF01",
     close: "\u5173\u95ED",
     // 设置分组
-    settings_group_automation: "\u26A1 \u81EA\u52A8\u5316",
-    settings_group_filter: "\u{1F3AF} \u89C6\u56FE\u8FC7\u6EE4",
-    settings_group_performance: "\u{1F680} \u6027\u80FD\u4E0E\u901A\u77E5",
-    settings_group_maintenance: "\u{1F6E0}\uFE0F \u7EF4\u62A4\u4E0E\u9AD8\u7EA7",
-    settings_group_browse_filter: "\u{1F3AF} \u6D4F\u89C8\u8FC7\u6EE4",
-    settings_group_general: "\u2699\uFE0F \u901A\u7528\u4E0E\u515C\u5E95",
-    settings_group_advanced: "\u9AD8\u7EA7\u4E0E\u7EF4\u62A4",
-    // 工作模式与子模式
-    mode_full: "\u26A1 \u5168\u91CF",
-    mode_incremental: "\u{1F195} \u8FFD\u65B0",
-    mode_page: "\u{1F4DC} \u9875\u9762",
-    page_submode_visible: "\u5F53\u524D\u9875",
-    page_submode_on_scroll: "\u6EDA\u5230\u5373\u9886",
-    page_submode_auto_scroll: "\u81EA\u52A8\u7FFB\u9875",
-    exec_full_start: "\u26A1 \u5F00\u59CB\u5168\u91CF\u626B\u63CF",
-    exec_full_resume: "\u26A1 \u7EE7\u7EED\u5168\u91CF\u626B\u63CF",
-    exec_full_stop: "\u23F9 \u505C\u6B62\u5168\u91CF\u626B\u63CF",
-    exec_inc_start: "\u{1F195} \u5F00\u59CB\u8FFD\u65B0\u626B\u63CF",
-    exec_inc_stop: "\u23F9 \u505C\u6B62\u8FFD\u65B0\u626B\u63CF",
-    exec_page_visible: "\u{1F4DC} \u9886\u53D6\u5F53\u524D\u9875\u9762",
-    exec_page_on_scroll: "\u{1F4DC} \u5F00\u59CB\u6EDA\u5230\u5373\u9886",
-    exec_page_auto_scroll: "\u{1F4DC} \u5F00\u59CB\u81EA\u52A8\u7FFB\u9875",
-    exec_page_stop: "\u23F9 \u505C\u6B62\u5165\u5E93",
-    fast_full_idle_hint: "\u6309\u5F53\u524D\u7B5B\u9009\u591A\u8DEF\u5E76\u53D1\u626B\u5168\u91CF",
-    fast_full_checkpoint_ready: "\u26A1 \u6709\u672A\u5B8C\u65AD\u70B9 \xB7 \u70B9\u51FB\u7EE7\u7EED\u626B\u63CF",
-    fast_inc_idle_hint: "\u6309\u6700\u65B0\u53D1\u5E03\u5012\u5E8F \xB7 \u4FDD\u7559\u5F53\u524D\u7B5B\u9009",
-    fast_inc_running_status: "\u{1F195} \u8FFD\u65B0\u4E2D \xB7 \u5DF2\u626B {0} \u4EF6 \xB7 {1}/s \xB7 \u65B0\u9886 {2}",
-    fast_inc_completed_status: "\u{1F195} \u8FFD\u65B0\u5B8C\u6210 \xB7 \u5DF2\u626B {1} \u4EF6 \xB7 \u65B0\u9886 {0}",
-    reset_checkpoint: "\u91CD\u7F6E\u65AD\u70B9",
-    confirm_reset_checkpoint: "\u786E\u5B9A\u6E05\u9664\u5F53\u524D\u6781\u901F\u626B\u63CF\u65AD\u70B9\u5E76\u91CD\u65B0\u5F00\u59CB\u5417\uFF1F",
-    log_checkpoint_cleared: "\u5DF2\u6E05\u9664\u6781\u901F\u626B\u63CF\u65AD\u70B9\u3002",
-    setting_max_workers_desc_tooltip: "Bundle\u3001\u4EBA\u673A\u9A8C\u8BC1\u515C\u5E95\u4E0E\u9875\u9762\u6A21\u5F0F\u4F7F\u7528\u7684\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u6570\uFF081-15\uFF0C\u9ED8\u8BA4 7\uFF09",
-    setting_page_only_tooltip: "\u4EC5\u5728\u300C\u9875\u9762\u300D\u6A21\u5F0F\u4E0B\u751F\u6548",
+    settings_group_general_filter: "\u{1F3AF} \u5E38\u89C4\u4E0E\u8FC7\u6EE4",
+    settings_group_advanced_fallback: "\u9AD8\u7EA7\u4E0E\u5907\u7528\u65B9\u6848",
+    // 零模式工作台文案
+    exec_full_start: "\u{1F680} \u5168\u7AD9\u626B\u63CF\u5165\u5E93",
+    exec_full_resume: "\u25B6 \u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF",
+    exec_full_resume_pct: "\u25B6 \u7EE7\u7EED\u4E0A\u6B21\u626B\u63CF ({0}%)",
+    exec_full_stop: "\u25A0 \u505C\u6B62\u626B\u63CF",
+    exec_fallback_start: "\u{1F4DC} \u5F00\u59CB\u6EDA\u9875\u626B\u63CF (\u5907\u7528)",
+    exec_fallback_stop: "\u25A0 \u505C\u6B62\u6EDA\u9875\u626B\u63CF",
+    reset_checkpoint: "\u21BA \u91CD\u626B",
+    confirm_reset_checkpoint: "\u786E\u5B9A\u6E05\u9664\u4E0A\u6B21\u626B\u63CF\u65AD\u70B9\u5E76\u4ECE\u5934\u5F00\u59CB\u5417\uFF1F",
+    log_checkpoint_cleared: "\u5DF2\u6E05\u9664\u626B\u63CF\u65AD\u70B9\u3002",
+    status_idle_auto: "\u5DF2\u5F00\u542F\u773C\u524D\u514D\u8D39\u81EA\u52A8\u9886 \xB7 \u70B9\u4E0A\u65B9\u53EF\u626B\u5168\u7AD9 4.8\u4E07+ \u67E5\u6F0F",
+    status_idle_manual: "\u70B9\u4E0A\u65B9\u4E00\u952E\u9886\u773C\u524D\u9875\u5E76\u626B\u5168\u7AD9 4.8\u4E07+ \u514D\u8D39\u5546\u54C1",
+    status_idle_fallback: "\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u5DF2\u542F\u7528",
+    status_checkpoint_pct: "\u4E0A\u6B21\u505C\u5728 {0}%\uFF08{1} / {2}\uFF09\xB7 \u53EF\u7EE7\u7EED\u6216\u91CD\u626B",
+    status_checkpoint_generic: "\u6709\u672A\u5B8C\u6210\u65AD\u70B9 \xB7 \u53EF\u7EE7\u7EED\u6216\u91CD\u626B",
+    status_scan_done: "\u2705 \u626B\u63CF\u5B8C\u6210 \xB7 \u6838\u5BF9 {1} \u4EF6 \xB7 \u672C\u6B21\u65B0\u9886 {0}",
+    status_scan_partial: "\u26A0\uFE0F \u672A\u5B8C\u6574\uFF08{2} \u5206\u7247\u5F85\u8865\uFF09\xB7 \u6838\u5BF9 {1} \u4EF6 \xB7 \u672C\u6B21\u65B0\u9886 {0}",
+    pill_auto_claim: "\u26A1 \u6D4F\u89C8\u81EA\u52A8\u9886",
+    pill_hide_saved: "\u{1F648} \u9690\u85CF\u5DF2\u5F97",
+    pill_hide_paid: "\u{1F4B2} \u9690\u85CF\u4ED8\u8D39",
+    setting_dom_fallback: "\u5E94\u6025\u6EDA\u9875\u6A21\u5F0F\uFF08API \u5931\u6548\u5907\u7528\uFF09",
+    setting_dom_fallback_tooltip: "\u9ED8\u8BA4\u8D70\u6781\u901F API\uFF1B\u4EC5\u5F53\u63A5\u53E3\u5931\u6548\u65F6\u5F00\u542F\uFF0C\u5207\u56DE\u65E7\u7248\u7F51\u9875\u81EA\u52A8\u6EDA\u9875 + \u8BE6\u60C5\u6807\u7B7E\u515C\u5E95",
+    setting_max_workers_desc_tooltip: "Bundle\u3001\u4EBA\u673A\u9A8C\u8BC1\u515C\u5E95\u4E0E\u5E94\u6025\u6EDA\u9875\u6A21\u5F0F\u4F7F\u7528\u7684\u5E76\u53D1\u5DE5\u4F5C\u6807\u7B7E\u6570\uFF081-15\uFF0C\u9ED8\u8BA4 7\uFF09",
+    setting_page_only_tooltip: "\u4EC5\u5728\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u4E0B\u751F\u6548",
     tooltip_collapse_ui: "\u6536\u8D77\u9762\u677F",
     tooltip_expand_ui: "\u5C55\u5F00\u9762\u677F",
-    log_work_mode_changed: "\u5DF2\u5207\u6362\u81F3\u300C{0}\u300D\u6A21\u5F0F\u3002",
-    log_page_submode_changed: "\u9875\u9762\u9886\u53D6\u65B9\u5F0F\u5DF2\u5207\u6362\u4E3A\u300C{0}\u300D\u3002",
+    log_auto_claim_visible_toggle: "\u6D4F\u89C8\u81EA\u52A8\u9886\u5DF2{0}\u3002",
+    log_dom_fallback_toggle: "\u5E94\u6025\u6EDA\u9875\u5907\u7528\u6A21\u5F0F\u5DF2{0}\u3002",
     // 应用标题和标签
     app_title: "Fab Helper",
     free_label: "\u514D\u8D39",
@@ -897,27 +883,16 @@
     // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true,
     // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
-    // 保持原来的页面枚举逻辑：DOM 滚动负责加载商品、保存页面时间位置，
-    // 不用 cursor API 取代旧 worker 流程。只有实际“加入我的库”动作走 API。
-    USE_API_PIPELINE: false,
-    // 旧 DOM 枚举仍会开 worker 标签页；API 领取支持 3 个并发工作标签页，
+    // 主力领取走主标签 ApiClaim；仅 Bundle 或 5xx 兜底才开后台详情标签页，
     // 并通过 API_CLAIM_MIN_INTERVAL_MS 错开派发节拍，避免同时打满请求触发 429。
     USE_API_CLAIM: true,
     API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
     DEFAULT_API_SCAN_CONCURRENCY: 4,
     MAX_API_SCAN_CONCURRENCY: 6,
-    DEFAULT_INCREMENTAL_STOP_PAGES: 5,
-    // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
-    // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
-    // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
-    // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
-    PIPELINE_RESCAN_INTERVAL_MS: 0,
-    // 内存回收（分块刷新续跑）：Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直
-    // 留在 DOM 里（实测 11,893 张免费卡 ≈ 15.5 万节点 / 单渲染进程 2GB）。
-    // 全站 4 万+ 免费商品一次性滚完会线性涨到 6-7GB 并触发 V8 OOM。
-    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的
-    // cursor 从原位置继续，把内存占用重新压回阈值附近。
+    // 内存回收（分块刷新续跑，仅在应急滚页备用模式下启用）：
+    // Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直留在 DOM 里。
+    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的 cursor 从原位置继续。
     MEMORY_RECYCLE_ENABLED: true,
     MEMORY_RECYCLE_CARD_THRESHOLD: 3e3,
     // 页面内卡片总数达到该值触发刷新；0 = 关闭
@@ -925,21 +900,6 @@
     // 两次回收的最小间隔（跨刷新，防抖动/防循环）
     MEMORY_RECYCLE_MAX_PER_SESSION: 30,
     // 单标签页会话最多回收次数，兜底防循环刷新
-    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
-    //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
-    //               仍作为领取后端，流水线照常启动、走接口领取。
-    //   'iframe' —— 额外启用同源隐藏 iframe 的 DOM 领取作为回落。该路径尚未经过线上验证，
-    //               所以刻意保持默认关闭：它一旦不工作会把整份列表标成「领取失败」并定型。
-    //   （在主标签页里挂同源隐藏 iframe 加载详情页，由主标签页直接驱动其 DOM 完成领取；
-    //    www.fab.com 返回 x-frame-options: SAMEORIGIN，同源 iframe 是允许的。）
-    // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
-    // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
-    // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
-    CLAIM_TRANSPORT: "none",
-    // 领取 iframe 的标记参数。带这个参数的详情页是流水线自己塞进隐藏 iframe 的，
-    // 脚本在该帧里必须立刻退出，否则会二次初始化（实例抢占 / UI 重复 / 任务派发），
-    // 与主标签页互相打架。
-    CLAIM_FRAME_PARAM: "fab_claim_frame",
     UI_CONTAINER_ID: "fab-helper-container",
     UI_LOG_ID: "fab-helper-log",
     DB_KEYS: {
@@ -951,14 +911,10 @@
       AUTO_ADD: "fab_autoAdd_v8",
       // 自动添加设置键
       AUTO_SCROLL: "fab_autoScroll_v1",
-      // 自动滚动页面（自动扫描全部）开关键
+      // 自动滚动页面（应急备用扫描）开关键
       REMEMBER_POS: "fab_rememberPos_v8",
       LAST_CURSOR: "fab_lastCursor_v8",
       // Store only the cursor string
-      API_CURSOR: "fab_api_cursor_v1",
-      // API 流水线分页游标，独立于旧 DOM 滚动游标
-      API_CURSOR_SAVED_AT: "fab_api_cursor_saved_at_v1",
-      // API 分页位置最后保存时间
       // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
       // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
       WORKER_DONE_PREFIX: "fab_worker_done_v8_",
@@ -986,17 +942,14 @@
       // 极速 API 分片扫描开关
       API_SCAN_CONCURRENCY: "fab_api_scan_concurrency_v1",
       // API 扫描并发路数 (1-6)
-      INCREMENTAL_EARLY_STOP: "fab_incremental_early_stop_v1",
-      // 增量早停开关 (-firstPublishedAt)
-      INCREMENTAL_STOP_PAGES: "fab_incremental_stop_pages_v1",
-      // 连续全已拥有页数早停阈值
+      AUTO_CLAIM_VISIBLE: "fab_auto_claim_visible_v1",
+      // 浏览页面时自动领取眼前免费商品
+      DOM_FALLBACK_MODE: "fab_dom_fallback_mode_v1",
+      // 应急网页滚页备用模式开关
       FAST_SCAN_CHECKPOINT: "fab_fast_scan_checkpoint_v1",
       // 极速扫描断点进度
-      UI_EXPANDED: "fab_ui_expanded_v1",
+      UI_EXPANDED: "fab_ui_expanded_v1"
       // 主面板展开/收起状态
-      // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
-      // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
-      EVENT_LOG: "fab_event_log_v1"
       // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {
@@ -1130,17 +1083,19 @@
     // 新增：是否在工作标签页中禁用图片/媒体等大资源以节省流量和并发
     maxWorkers: 7,
     // 并发工作标签页数量（默认7）
-    // 极速 API 分片扫描：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
+    // 极速 API 分片扫描 & 浏览自动领：默认 false 以保持未调用 Database.load() 的旧版 DOM 测试兼容；
     // 真实环境由 Database.load() 读取并默认开启。
     fastApiScan: false,
     apiScanConcurrency: 4,
     // API 极速扫描并发路数（1-6）
-    incrementalEarlyStop: false,
-    // 倒序追新模式下连续 N 页全已拥有自动停止
-    incrementalStopPages: 5,
-    // 增量早停阈值（页）
+    autoClaimVisible: false,
+    // 浏览页面时自动领取可见免费商品（真实环境由 Database.load 默认开启）
+    domFallbackMode: false,
+    // 应急网页滚页备用模式（默认关闭，仅在设定→高级中启用）
     fastScanStatus: null,
     // 极速扫描实时遥测状态
+    fastScanCheckpointMeta: null,
+    // 断点进度元数据 { itemsScanned, totalEstimated, pct }
     nativeFetch: null,
     // 页面未拦截前的原生 window.fetch 引用
     debugMode: false,
@@ -1151,8 +1106,6 @@
     // 是否正在执行任务
     manualVerificationPending: false,
     // 人工验证期间阻止自动扫描重新启动；只由执行按钮解除
-    // 新 API 流水线已完成后端校验并接管旧 worker 派发
-    apiPipelineActive: false,
     // 旧 worker 枚举 + ApiClaim 模式下的主标签派发节拍，避免多个 worker 同时 POST。
     apiClaimNextDispatchAt: 0,
     apiClaimDispatchTimer: null,
@@ -1160,9 +1113,6 @@
     // 新增：标记是否已经安排了页面刷新
     isWorkerTab: false,
     // 是否是工作标签页
-    // 本帧是不是流水线挂的隐藏领取 iframe。为 true 时脚本主体（实例/UI/派发/保活）
-    // 一律不初始化，只留下 document-start 的资源拦截，由主标签页跨文档驱动。
-    isClaimFrame: false,
     totalTasks: 0,
     // API扫描的总任务数
     completedTasks: 0,
@@ -1182,11 +1132,7 @@
     // 累计扫描到的「已入库」卡片数。自动滚动用此做快照差值，
     // 解决「某页全部已入库时 DOM/scrollHeight/processedCardUids 三信号全盲」问题。
     savedCursor: null,
-    // Holds the loaded cursor for hijacking
-    apiCursor: null,
-    // API 流水线独立保存的分页游标，仅用于显示/恢复 API 分页
-    apiCursorSavedAt: null,
-    // API 分页位置最后保存时间
+    // Holds the loaded cursor for hijacking (domFallbackMode only)
     isEndOfSearchList: false,
     // 标记搜索接口是否已经没有下一页游标（到达全站真实末尾）
     hasReachedBottomToastShown: false,
@@ -1274,22 +1220,21 @@
       tabsContainer: null,
       tabs: {},
       tabContents: {},
-      modeButtons: {},
-      modePanels: {},
-      pageSubModeButtons: {},
+      quickAutoClaimBtn: null,
+      quickHideSavedBtn: null,
+      quickHidePaidBtn: null,
       statusVisible: null,
       statusTodo: null,
       statusDone: null,
       statusFailed: null,
       statusHidden: null,
       execBtn: null,
-      syncBtn: null,
-      hideBtn: null,
       resetCheckpointBtn: null,
       retryFailedBtn: null,
       maxWorkersInput: null,
       apiScanConcurrencyInput: null,
-      incrementalStopPagesInput: null,
+      domFallbackCheckbox: null,
+      domFallbackControls: null,
       rememberPositionCheckbox: null,
       debugModeCheckbox: null,
       settingsAdvancedToggle: null,
@@ -1300,7 +1245,6 @@
       logPanel: null,
       savedPositionDisplay: null,
       fastScanStatusDisplay: null,
-      incScanStatusDisplay: null,
       debugContent: null,
       historyContainer: null
     }
@@ -2011,6 +1955,56 @@
   };
 
   // src/modules/api.js
+  var parseResponseHeader = /* @__PURE__ */ __name((headersText, name) => {
+    if (!headersText) return null;
+    const key = String(name).toLowerCase();
+    for (const line of String(headersText).split(/\r?\n/)) {
+      const idx = line.indexOf(":");
+      if (idx === -1) continue;
+      if (line.slice(0, idx).trim().toLowerCase() === key) {
+        return line.slice(idx + 1).trim();
+      }
+    }
+    return null;
+  }, "parseResponseHeader");
+  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = State.nativeFetch || (typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null);
+    if (nativeFetch) {
+      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = setTimeout(() => controller && controller.abort(), 3e4);
+      nativeFetch(url, {
+        method: method || "POST",
+        credentials: "include",
+        headers: headers || {},
+        body: data,
+        ...controller ? { signal: controller.signal } : {}
+      }).then(async (response) => {
+        clearTimeout(timer);
+        resolve({
+          status: response.status,
+          responseText: await response.text(),
+          getResponseHeader: /* @__PURE__ */ __name((name) => response.headers.get(name), "getResponseHeader")
+        });
+      }).catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      return;
+    }
+    API.gmFetch({
+      method: method || "POST",
+      url,
+      headers,
+      data,
+      onload: /* @__PURE__ */ __name((res) => resolve({
+        status: res.status,
+        responseText: res.responseText,
+        getResponseHeader: /* @__PURE__ */ __name((h) => parseResponseHeader(res.responseHeaders, h), "getResponseHeader")
+      }), "onload"),
+      onerror: /* @__PURE__ */ __name((err) => reject(err), "onerror"),
+      ontimeout: /* @__PURE__ */ __name(() => reject(new Error("claim request timeout")), "ontimeout")
+    });
+  }), "gmPostImpl");
   var API = {
     gmFetch: /* @__PURE__ */ __name((options) => {
       return new Promise((resolve, reject) => {
@@ -2184,10 +2178,10 @@
     const utils = options.utils || Utils;
     const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
     const now = options.now || Date.now;
-    const log2 = options.log || (() => {
+    const log = options.log || (() => {
     });
     const fail = /* @__PURE__ */ __name((reason, extra = {}) => {
-      log2(`[Bundle] ${reason}`);
+      log(`[Bundle] ${reason}`);
       return { success: false, reason, ...extra };
     }, "fail");
     const get = /* @__PURE__ */ __name(async (url) => {
@@ -2221,7 +2215,7 @@
       } else if (listingType) {
         task.listingType = listingType;
         task.isBundle = false;
-        log2(`[Bundle] \u63A5\u53E3\u7C7B\u578B\u4E3A ${listingType}\uFF0C\u4E0D\u662F bundle\uFF0C\u8F6C\u666E\u901A\u9886\u53D6\u6D41\u7A0B`);
+        log(`[Bundle] \u63A5\u53E3\u7C7B\u578B\u4E3A ${listingType}\uFF0C\u4E0D\u662F bundle\uFF0C\u8F6C\u666E\u901A\u9886\u53D6\u6D41\u7A0B`);
         return { success: false, notBundle: true };
       }
       const offers = freeBundleOffers(listing);
@@ -2248,7 +2242,7 @@
           if (button) {
             utils.deepClick(button);
             clicked = true;
-            log2("[Bundle] \u5DF2\u6253\u5F00\u5B98\u7F51\u514D\u8D39\u7ED3\u7B97\u5165\u53E3");
+            log("[Bundle] \u5DF2\u6253\u5F00\u5B98\u7F51\u514D\u8D39\u7ED3\u7B97\u5165\u53E3");
           }
         }
         await sleep(250);
@@ -2277,11 +2271,11 @@
             utils.deepClick(button);
             submitted = true;
             nextVerifyAt = now() + 2e3;
-            log2("[Bundle] \u5DF2\u70B9\u51FB\u96F6\u5143\u6DFB\u52A0\u5230\u5E93\uFF0C\u7B49\u5F85\u670D\u52A1\u7AEF\u786E\u8BA4");
+            log("[Bundle] \u5DF2\u70B9\u51FB\u96F6\u5143\u6DFB\u52A0\u5230\u5E93\uFF0C\u7B49\u5F85\u670D\u52A1\u7AEF\u786E\u8BA4");
           }
         } else if (now() >= nextVerifyAt) {
           if (await owned()) {
-            log2("[Bundle] \u670D\u52A1\u7AEF\u786E\u8BA4\u5DF2\u5165\u5E93");
+            log("[Bundle] \u670D\u52A1\u7AEF\u786E\u8BA4\u5DF2\u5165\u5E93");
             return { success: true };
           }
           nextVerifyAt = now() + 2e3;
@@ -2397,184 +2391,6 @@
       }
       console.groupEnd();
     }, "logDiagnosticReport")
-  };
-
-  // src/modules/event-log.js
-  var EVENT_STATE = {
-    DISCOVERED: "discovered",
-    // 在列表中发现，等待领取
-    CLAIMED: "claimed",
-    // 领取成功（已入库）
-    FAILED: "failed",
-    // 领取最终失败（含归因）
-    SKIPPED: "skipped"
-    // 主动跳过（付费 / 外部站 / 不可购买）
-  };
-  var EventLog = {
-    events: [],
-    // uid -> 该 uid 的最新事件，派生视图的唯一依据
-    _latest: /* @__PURE__ */ new Map(),
-    /**
-     * 从 URL 或裸 uid 提取规范 uid。
-     * 与 Database.getListingUid 行为一致（有测试守护两者不漂移），
-     * 此处独立实现是为了让本模块不依赖 Database，保持可单独测试。
-     */
-    uidOf: /* @__PURE__ */ __name((urlOrUid) => {
-      if (!urlOrUid) return "";
-      const match = String(urlOrUid).split("?")[0].match(/\/(?:listings|bundles)\/([^/?#]+)/i);
-      if (match && match[1]) return match[1].toLowerCase();
-      const bare = String(urlOrUid).trim().toLowerCase();
-      return /^[a-z0-9_-]+$/.test(bare) ? bare : "";
-    }, "uidOf"),
-    canonicalUrl: /* @__PURE__ */ __name((uid) => `https://www.fab.com/listings/${uid}`, "canonicalUrl"),
-    reset: /* @__PURE__ */ __name(() => {
-      EventLog.events = [];
-      EventLog._latest = /* @__PURE__ */ new Map();
-    }, "reset"),
-    _rebuildIndex: /* @__PURE__ */ __name(() => {
-      EventLog._latest = /* @__PURE__ */ new Map();
-      EventLog.events.forEach((e) => EventLog._latest.set(e.uid, e));
-    }, "_rebuildIndex"),
-    load: /* @__PURE__ */ __name(async () => {
-      let raw = [];
-      try {
-        raw = await GM_getValue(Config.DB_KEYS.EVENT_LOG, []);
-      } catch (e) {
-        Utils.logger("error", `\u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
-        return null;
-      }
-      if (!Array.isArray(raw)) raw = [];
-      EventLog.events = raw.filter(
-        (e) => e && typeof e.uid === "string" && e.uid && Object.values(EVENT_STATE).includes(e.state)
-      );
-      EventLog._rebuildIndex();
-      return EventLog.events.length;
-    }, "load"),
-    save: /* @__PURE__ */ __name(async () => {
-      try {
-        await GM_setValue(Config.DB_KEYS.EVENT_LOG, EventLog.events);
-        return true;
-      } catch (e) {
-        Utils.logger("error", `\u5199\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25: ${e.message}`);
-        return false;
-      }
-    }, "save"),
-    /**
-     * 追加一条事件。name / url 若本次未提供，则继承该 uid 上一次已知的值，
-     * 这样任何时刻的派生视图都能还原出完整任务对象，而不必回头翻历史事件。
-     */
-    append: /* @__PURE__ */ __name((uid, state, meta = {}) => {
-      const id = EventLog.uidOf(uid);
-      if (!id) return null;
-      if (!Object.values(EVENT_STATE).includes(state)) return null;
-      const prev = EventLog._latest.get(id);
-      const event = {
-        uid: id,
-        state,
-        ts: meta.ts != null ? meta.ts : Date.now(),
-        name: meta.name || prev && prev.name || "",
-        url: meta.url || prev && prev.url || EventLog.canonicalUrl(id),
-        reason: meta.reason || ""
-      };
-      const offerId = meta.offerId || prev && prev.offerId;
-      if (offerId) event.offerId = offerId;
-      EventLog.events.push(event);
-      EventLog._latest.set(id, event);
-      return event;
-    }, "append"),
-    appendMany: /* @__PURE__ */ __name((entries) => entries.map((e) => EventLog.append(e.uid, e.state, e)).filter(Boolean), "appendMany"),
-    latestOf: /* @__PURE__ */ __name((uid) => {
-      const id = EventLog.uidOf(uid);
-      return id ? EventLog._latest.get(id) || null : null;
-    }, "latestOf"),
-    stateOf: /* @__PURE__ */ __name((uid) => {
-      const latest = EventLog.latestOf(uid);
-      return latest ? latest.state : null;
-    }, "stateOf"),
-    isDone: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.CLAIMED, "isDone"),
-    isFailed: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.FAILED, "isFailed"),
-    isSkipped: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.SKIPPED, "isSkipped"),
-    isPending: /* @__PURE__ */ __name((uid) => EventLog.stateOf(uid) === EVENT_STATE.DISCOVERED, "isPending"),
-    isKnown: /* @__PURE__ */ __name((uid) => EventLog.latestOf(uid) !== null, "isKnown"),
-    getTodo: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.DISCOVERED).map((e) => {
-      const task = { uid: e.uid, url: e.url, name: e.name };
-      if (e.offerId) task.offerId = e.offerId;
-      return task;
-    }), "getTodo"),
-    getDone: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.CLAIMED).map((e) => ({ uid: e.uid, url: e.url, name: e.name })), "getDone"),
-    getFailed: /* @__PURE__ */ __name(() => [...EventLog._latest.values()].filter((e) => e.state === EVENT_STATE.FAILED).map((e) => ({
-      uid: e.uid,
-      url: e.url,
-      name: e.name,
-      failureReason: e.reason || "\u672A\u77E5\u539F\u56E0",
-      failedAt: new Date(e.ts).toISOString()
-    })), "getFailed"),
-    stats: /* @__PURE__ */ __name(() => {
-      const counts = { total: EventLog._latest.size };
-      Object.values(EVENT_STATE).forEach((s) => {
-        counts[s] = 0;
-      });
-      EventLog._latest.forEach((e) => {
-        counts[e.state] += 1;
-      });
-      return counts;
-    }, "stats"),
-    /**
-     * 控制存储体积。只保留最近 maxEvents 条，但保证每个 uid 的最新事件绝不丢失
-     * （丢失会让该 uid 在派生视图里凭空消失，等于数据损坏）。
-     */
-    prune: /* @__PURE__ */ __name((maxEvents) => {
-      if (!Number.isFinite(maxEvents) || maxEvents <= 0) return 0;
-      if (EventLog.events.length <= maxEvents) return 0;
-      const before = EventLog.events.length;
-      const kept = EventLog.events.slice(-maxEvents);
-      const previousLatest = new Map(EventLog._latest);
-      EventLog.events = kept;
-      EventLog._rebuildIndex();
-      const recovered = [];
-      previousLatest.forEach((event, uid) => {
-        if (!EventLog._latest.has(uid)) recovered.push(event);
-      });
-      if (recovered.length > 0) {
-        EventLog.events = recovered.concat(EventLog.events);
-        EventLog._rebuildIndex();
-      }
-      return before - EventLog.events.length;
-    }, "prune"),
-    /**
-     * 一次性导入旧的三份并行数组，用于从旧版本迁移。
-     * ts 递增保证 discovered 早于其后续结果事件，派生视图才正确。
-     */
-    importLegacy: /* @__PURE__ */ __name(({ todo = [], done = [], failed = [] }) => {
-      let ts = Date.now() - (todo.length + done.length + failed.length + 1) * 1e3;
-      const nextTs = /* @__PURE__ */ __name(() => ts += 1e3, "nextTs");
-      todo.forEach((task) => {
-        EventLog.append(task.uid || task.url, EVENT_STATE.DISCOVERED, {
-          ts: nextTs(),
-          name: task.name,
-          url: task.url
-        });
-      });
-      done.forEach((entry) => {
-        const url = typeof entry === "string" ? entry : entry.url;
-        EventLog.append(url, EVENT_STATE.CLAIMED, { ts: nextTs() });
-      });
-      failed.forEach((task) => {
-        EventLog.append(task.uid || task.url, EVENT_STATE.FAILED, {
-          ts: nextTs(),
-          name: task.name,
-          url: task.url,
-          reason: task.failureReason
-        });
-      });
-      return EventLog.events.length;
-    }, "importLegacy"),
-    /** 反向导出为旧格式，用于灰度期间回退到旧数据层。 */
-    exportLegacy: /* @__PURE__ */ __name(() => ({
-      todo: EventLog.getTodo(),
-      done: EventLog.getDone().map((e) => e.url),
-      failed: EventLog.getFailed()
-    }), "exportLegacy")
   };
 
   // src/modules/rate-limit-detection.js
@@ -3074,10 +2890,10 @@
       }
       return 0;
     },
-    // 自动扫描依赖位置记录来恢复进度。即使用户没有单独打开“记住位置”，
-    // 自动滚动/自动加任务运行期间也必须保存当前游标，否则 UI 永远显示无位置。
+    // 自动扫描依赖位置记录来恢复进度。仅在应急滚页备用模式或用户显式开启「记住位置」时启用，
+    // 绝不因主力 API 扫描 (State.isExecuting) 而误触 DOM 游标保存/注入。
     isPositionTrackingEnabled() {
-      return Boolean(State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll || State.isExecuting);
+      return Boolean(State.domFallbackMode || State.rememberScrollPosition || State.autoScroll || State.autoAddOnScroll);
     },
     async init() {
       this._isCursorSaveLocked = false;
@@ -3659,7 +3475,12 @@
       State.hidePaid = await Database._safeGet(Config.DB_KEYS.HIDE_PAID, false);
       State.blockLargeResources = await Database._safeGet(Config.DB_KEYS.BLOCK_RESOURCES, true);
       State.maxWorkers = await Database._safeGet(Config.DB_KEYS.MAX_WORKERS, Config.API_CLAIM_MAX_CONCURRENT_WORKERS);
-      State.fastApiScan = Boolean(await Database._safeGet(Config.DB_KEYS.FAST_API_SCAN, true));
+      State.domFallbackMode = Boolean(await Database._safeGet(Config.DB_KEYS.DOM_FALLBACK_MODE, false));
+      State.fastApiScan = !State.domFallbackMode;
+      State.autoClaimVisible = Boolean(await Database._safeGet(Config.DB_KEYS.AUTO_CLAIM_VISIBLE, true));
+      if (State.domFallbackMode) {
+        State.autoScroll = true;
+      }
       const loadedScanConc = Number(await Database._safeGet(
         Config.DB_KEYS.API_SCAN_CONCURRENCY,
         Config.DEFAULT_API_SCAN_CONCURRENCY
@@ -3671,26 +3492,31 @@
           Number.isFinite(loadedScanConc) ? Math.floor(loadedScanConc) : Config.DEFAULT_API_SCAN_CONCURRENCY
         )
       );
-      State.incrementalEarlyStop = Boolean(await Database._safeGet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, false));
-      const loadedStopPages = Number(await Database._safeGet(
-        Config.DB_KEYS.INCREMENTAL_STOP_PAGES,
-        Config.DEFAULT_INCREMENTAL_STOP_PAGES
-      ));
-      State.incrementalStopPages = Math.max(
-        1,
-        Math.min(
-          50,
-          Number.isFinite(loadedStopPages) ? Math.floor(loadedStopPages) : Config.DEFAULT_INCREMENTAL_STOP_PAGES
-        )
-      );
       State.debugMode = await Database._safeGet("fab_helper_debug_mode", false);
       State.uiExpanded = Boolean(await Database._safeGet(Config.DB_KEYS.UI_EXPANDED, true));
       const savedCheckpoint = await Database._safeGet(Config.DB_KEYS.FAST_SCAN_CHECKPOINT, null);
-      State.hasFastScanCheckpoint = Boolean(
+      const hasCheckpoint = Boolean(
         savedCheckpoint && (Array.isArray(savedCheckpoint.slices) && savedCheckpoint.slices.some((s) => !s.done) || Array.isArray(savedCheckpoint.pendingUnknowns) && savedCheckpoint.pendingUnknowns.length > 0 || Array.isArray(savedCheckpoint.pendingClaims) && savedCheckpoint.pendingClaims.length > 0)
       );
+      State.hasFastScanCheckpoint = hasCheckpoint;
+      if (hasCheckpoint) {
+        const itemsScanned = Number(savedCheckpoint?.stats?.itemsScanned) || 0;
+        const totalEstimated = Number(savedCheckpoint?.stats?.totalEstimated || savedCheckpoint?.totalEstimated) || 0;
+        const pct = totalEstimated > 0 ? Math.min(99, Math.max(1, Math.round(itemsScanned / totalEstimated * 100))) : null;
+        State.fastScanCheckpointMeta = { itemsScanned, totalEstimated, pct };
+      } else {
+        State.fastScanCheckpointMeta = null;
+      }
       State.currentSortOption = await Database._safeGet("fab_helper_sort_option", "title_desc");
-      State.isExecuting = await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false);
+      const storedExecuting = Boolean(await Database._safeGet(Config.DB_KEYS.IS_EXECUTING, false));
+      if (!State.domFallbackMode) {
+        State.isExecuting = false;
+        if (storedExecuting) {
+          Database._safeSet(Config.DB_KEYS.IS_EXECUTING, false);
+        }
+      } else {
+        State.isExecuting = storedExecuting;
+      }
       State.statusHistory = await Database._safeGet(Config.DB_KEYS.STATUS_HISTORY, []);
       if (Database.normalizeDoneList()) {
         await Database.saveDone();
@@ -3737,8 +3563,8 @@
     // 保存并发工作标签页设置
     saveFastApiScanPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.FAST_API_SCAN, State.fastApiScan), "saveFastApiScanPref"),
     saveApiScanConcurrencyPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.API_SCAN_CONCURRENCY, State.apiScanConcurrency), "saveApiScanConcurrencyPref"),
-    saveIncrementalEarlyStopPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_EARLY_STOP, State.incrementalEarlyStop), "saveIncrementalEarlyStopPref"),
-    saveIncrementalStopPagesPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.INCREMENTAL_STOP_PAGES, State.incrementalStopPages), "saveIncrementalStopPagesPref"),
+    saveAutoClaimVisiblePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.AUTO_CLAIM_VISIBLE, State.autoClaimVisible), "saveAutoClaimVisiblePref"),
+    saveDomFallbackModePref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.DOM_FALLBACK_MODE, State.domFallbackMode), "saveDomFallbackModePref"),
     saveUiExpandedPref: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.UI_EXPANDED, State.uiExpanded), "saveUiExpandedPref"),
     saveExecutingState: /* @__PURE__ */ __name(() => Database._safeSet(Config.DB_KEYS.IS_EXECUTING, State.isExecuting), "saveExecutingState"),
     // Save the execution state
@@ -3752,16 +3578,14 @@
         await GM_deleteValue(Config.DB_KEYS.TODO);
         await GM_deleteValue(Config.DB_KEYS.DONE);
         await GM_deleteValue(Config.DB_KEYS.FAILED);
-        await GM_deleteValue(Config.DB_KEYS.EVENT_LOG);
-        EventLog.reset();
         await GM_deleteValue(Config.DB_KEYS.HIDE_DISCOUNTED);
         await GM_deleteValue(Config.DB_KEYS.HIDE_PAID);
         await GM_deleteValue(Config.DB_KEYS.BLOCK_RESOURCES);
         await GM_deleteValue(Config.DB_KEYS.MAX_WORKERS);
         await GM_deleteValue(Config.DB_KEYS.FAST_API_SCAN);
         await GM_deleteValue(Config.DB_KEYS.API_SCAN_CONCURRENCY);
-        await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_EARLY_STOP);
-        await GM_deleteValue(Config.DB_KEYS.INCREMENTAL_STOP_PAGES);
+        await GM_deleteValue(Config.DB_KEYS.AUTO_CLAIM_VISIBLE);
+        await GM_deleteValue(Config.DB_KEYS.DOM_FALLBACK_MODE);
         await GM_deleteValue(Config.DB_KEYS.FAST_SCAN_CHECKPOINT);
         await PagePatcher.clearSavedPosition("Reset all data");
         State.db.todo = [];
@@ -3772,11 +3596,13 @@
         State.db.failed = [];
         State.blockLargeResources = true;
         State.maxWorkers = Config.API_CLAIM_MAX_CONCURRENT_WORKERS;
+        State.domFallbackMode = false;
         State.fastApiScan = true;
+        State.autoClaimVisible = true;
+        State.autoScroll = false;
         State.apiScanConcurrency = Config.DEFAULT_API_SCAN_CONCURRENCY;
-        State.incrementalEarlyStop = false;
-        State.incrementalStopPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES;
         State.fastScanStatus = null;
+        State.fastScanCheckpointMeta = null;
         State.hasFastScanCheckpoint = false;
         Utils.logger("info", "\u6240\u6709\u811A\u672C\u6570\u636E\uFF08\u5305\u62EC\u6EDA\u52A8\u8BB0\u5FC6\u4E0E\u5927\u8D44\u6E90\u7981\u7528\u8BBE\u7F6E\uFF09\u5DF2\u91CD\u7F6E\u3002");
         if (UI3) {
@@ -3882,8 +3708,8 @@
       }
       if (failedTask.workerLogs && failedTask.workerLogs.length > 0) {
         Utils.logger("warn", `   - \u5DE5\u4F5C\u7EBF\u7A0B\u65E5\u5FD7 (${failedTask.workerLogs.length} \u6761):`);
-        failedTask.workerLogs.slice(-5).forEach((log2, i) => {
-          Utils.logger("warn", `     ${i + 1}. ${log2}`);
+        failedTask.workerLogs.slice(-5).forEach((log, i) => {
+          Utils.logger("warn", `     ${i + 1}. ${log}`);
         });
       }
       const existingIndex = State.db.failed.findIndex((f) => f.uid === task.uid);
@@ -4877,10 +4703,6 @@
       };
     }, "claim")
   };
-  var domClaimImpl = null;
-  var setDomClaim = /* @__PURE__ */ __name((fn) => {
-    domClaimImpl = fn;
-  }, "setDomClaim");
   var isFabInternalServerError = /* @__PURE__ */ __name((response) => {
     if (!response || Number(response.status) !== 500) return false;
     const text = String(response.responseText || "").trim();
@@ -4894,99 +4716,6 @@
     }
     return /"detail"\s*:\s*"Internal error"/i.test(text);
   }, "isFabInternalServerError");
-  var normalizeClaimOutcome = /* @__PURE__ */ __name((raw) => {
-    if (typeof raw === "boolean") {
-      return { result: raw ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE, reason: "" };
-    }
-    if (raw && typeof raw === "object") {
-      if (raw.result) return raw;
-      if (typeof raw.success === "boolean") {
-        return {
-          result: raw.success ? CLAIM_RESULT.SUCCESS : CLAIM_RESULT.FAILURE,
-          reason: typeof raw.reason === "string" ? raw.reason : "",
-          retryable: raw.retryable === true
-        };
-      }
-    }
-    return {
-      result: CLAIM_RESULT.FAILURE,
-      reason: "\u9886\u53D6\u8FD4\u56DE\u503C\u65E0\u6CD5\u8BC6\u522B",
-      retryable: false
-    };
-  }, "normalizeClaimOutcome");
-  var DomClaim = {
-    name: "dom",
-    isAvailable: /* @__PURE__ */ __name(() => typeof domClaimImpl === "function", "isAvailable"),
-    claim: /* @__PURE__ */ __name(async (task) => {
-      if (!DomClaim.isAvailable()) {
-        return { result: CLAIM_RESULT.UNAVAILABLE, reason: "DOM \u9886\u53D6\u672A\u6CE8\u5165" };
-      }
-      return normalizeClaimOutcome(await domClaimImpl(task));
-    }, "claim")
-  };
-  var ClaimExecutor = {
-    preferApi: true,
-    metrics: {
-      api: { attempts: 0, success: 0 },
-      dom: { attempts: 0, success: 0 },
-      unavailable: 0
-    },
-    resetMetrics: /* @__PURE__ */ __name(() => {
-      ClaimExecutor.metrics = {
-        api: { attempts: 0, success: 0 },
-        dom: { attempts: 0, success: 0 },
-        unavailable: 0
-      };
-    }, "resetMetrics"),
-    /**
-     * 依次尝试策略，返回首个非 UNAVAILABLE 的结果。
-     * 策略抛异常或不可用都会回落到下一个，绝不向上冒泡。
-     */
-    claim: /* @__PURE__ */ __name(async (task, { preferApi = ClaimExecutor.preferApi } = {}) => {
-      const order = preferApi ? [ApiClaim, DomClaim] : [DomClaim, ApiClaim];
-      for (const strategy of order) {
-        if (!strategy.isAvailable()) {
-          ClaimExecutor.metrics.unavailable += 1;
-          continue;
-        }
-        let outcome;
-        try {
-          ClaimExecutor.metrics[strategy.name].attempts += 1;
-          outcome = await strategy.claim(task);
-        } catch (e) {
-          outcome = { result: CLAIM_RESULT.FAILURE, reason: `\u7B56\u7565\u5F02\u5E38: ${e.message}`, retryable: true };
-        }
-        if (!outcome || outcome.result === CLAIM_RESULT.UNAVAILABLE) continue;
-        if (outcome.result === CLAIM_RESULT.FAILURE && !outcome.retryable) {
-          return { ...outcome, strategy: strategy.name };
-        }
-        if (outcome.result === CLAIM_RESULT.FAILURE && outcome.retryable) continue;
-        if (outcome.result === CLAIM_RESULT.SUCCESS) {
-          ClaimExecutor.metrics[strategy.name].success += 1;
-        }
-        return { ...outcome, strategy: strategy.name };
-      }
-      return { result: CLAIM_RESULT.FAILURE, reason: "\u6CA1\u6709\u53EF\u7528\u7684\u9886\u53D6\u7B56\u7565", strategy: null };
-    }, "claim"),
-    /**
-     * 回落率：DOM 尝试数占总尝试数的比例。
-     * API 通路健康时应趋近 0；若长期为 1，说明接口路径没生效。
-     */
-    fallbackRate: /* @__PURE__ */ __name(() => {
-      const { api, dom } = ClaimExecutor.metrics;
-      const total = api.attempts + dom.attempts;
-      return total === 0 ? 0 : dom.attempts / total;
-    }, "fallbackRate"),
-    stats: /* @__PURE__ */ __name(() => {
-      const { api, dom, unavailable } = ClaimExecutor.metrics;
-      return {
-        api,
-        dom,
-        unavailable,
-        fallbackRate: ClaimExecutor.fallbackRate()
-      };
-    }, "stats")
-  };
 
   // src/modules/verification-notifications.js
   var VerificationNotifications = {
@@ -5509,6 +5238,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     });
     let onAuthFailure = deps.onAuthFailure || (() => {
     });
+    let onItemClaimed = deps.onItemClaimed || (() => {
+    });
     const onRecordNetwork = deps.onRecordNetwork || (() => {
       try {
         if (typeof window !== "undefined" && typeof window.recordNetworkActivity === "function") {
@@ -5559,6 +5290,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     let lastCheckpointAt = 0;
     let currentPhase = "idle";
     let workerSlotWaiters = [];
+    const sightClaimSet = /* @__PURE__ */ new Set();
+    let sightClaimInFlightCount = 0;
+    let sightClaimChain = Promise.resolve();
+    const notifyItemClaimed = /* @__PURE__ */ __name((item, source = "claimed") => {
+      try {
+        onItemClaimed(item, source);
+      } catch (_e) {
+      }
+    }, "notifyItemClaimed");
     const wakeWorkerSlots = /* @__PURE__ */ __name(() => {
       while (workerSlotWaiters.length > 0) {
         const resolve = workerSlotWaiters.shift();
@@ -5629,6 +5369,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     const buildSnapshot = /* @__PURE__ */ __name(() => {
       const now = nowFn();
       const elapsedSec = Math.max(1e-3, ((currentStats.finishedAt || now) - currentStats.startedAt) / 1e3);
+      const inFlightStateCount = Array.from(inFlightStateChunks).reduce((sum, chunk) => sum + chunk.length, 0);
+      const pendingCount = unknownBuffer.length + inFlightStateCount + claimQueue.length + activeClaimsInFlight + sightClaimInFlightCount;
       return {
         running,
         phase: currentPhase,
@@ -5639,6 +5381,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         itemsScanned: currentStats.itemsScanned,
         totalEstimated: currentStats.totalEstimated,
         itemsPerSec: Math.round(currentStats.itemsScanned / elapsedSec),
+        pendingCount,
         skippedLocal: currentStats.skippedLocal,
         skippedNonFree: currentStats.skippedNonFree,
         skippedFailed: currentStats.skippedFailed,
@@ -5800,15 +5543,26 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (!force && now - lastCheckpointAt < checkpointIntervalMs) return;
       lastCheckpointAt = now;
       try {
-        await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, buildCheckpointPayload());
-        getState().hasFastScanCheckpoint = true;
+        const payload = buildCheckpointPayload();
+        await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, payload);
+        const st = getState();
+        st.hasFastScanCheckpoint = true;
+        const totalEst = Number(payload.totalEstimated) || 0;
+        const scanned = Number(payload.stats?.itemsScanned) || 0;
+        st.fastScanCheckpointMeta = {
+          itemsScanned: scanned,
+          totalEstimated: totalEst,
+          pct: totalEst > 0 ? Math.min(99, Math.max(1, Math.round(scanned / totalEst * 100))) : null
+        };
       } catch (_e) {
       }
     }, "saveCheckpoint");
     const clearCheckpoint = /* @__PURE__ */ __name(async () => {
       try {
         await gmDelete(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT);
-        getState().hasFastScanCheckpoint = false;
+        const st = getState();
+        st.hasFastScanCheckpoint = false;
+        st.fastScanCheckpointMeta = null;
       } catch (_e) {
       }
     }, "clearCheckpoint");
@@ -5906,10 +5660,12 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               states.filter((s) => s && s.acquired && s.uid).map((s) => String(s.uid).toLowerCase())
             );
             const ownedUrls = [];
+            const ownedItems = [];
             const unownedItems = [];
             chunk.forEach((item) => {
               if (acquiredSet.has(item.uid)) {
                 ownedUrls.push(item.url);
+                ownedItems.push(item);
               } else {
                 unownedItems.push(item);
               }
@@ -5918,6 +5674,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               db.addDoneUrls(ownedUrls);
               db.scheduleSaveDone();
               currentStats.confirmedOwnedServer += ownedUrls.length;
+              ownedItems.forEach((item) => notifyItemClaimed(item, "server-owned"));
             }
             unownedItems.forEach((item) => enqueueClaim(item));
             syncStatus();
@@ -6063,6 +5820,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             await db.markAsDone(task, { deferSave: true });
             st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
             currentStats.claimedDirect += 1;
+            notifyItemClaimed(task, "claimed");
             syncStatus(true);
           } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
             await handleRateLimit(outcome.retryAfterMs, "add-to-library");
@@ -6448,7 +6206,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const stopPages = Math.max(1, Math.min(50, Math.floor(
         Number.isFinite(options.incrementalStopPages) ? options.incrementalStopPages : Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5
       )));
-      const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+      const rawBaseParams = options.globalFreeScan ? { is_free: "1", sort_by: "-firstPublishedAt" } : options.baseParams || extractSearchParamsFromUrl(getHref());
       const baseParams = { ...rawBaseParams };
       if (!options.preserveQuery && baseParams.is_free === void 0) {
         baseParams.is_free = "1";
@@ -6466,6 +6224,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       currentPhase = "calibrating";
       syncStatus(true);
       const runWork = /* @__PURE__ */ __name(async () => {
+        const scanDoneRef = { done: false };
+        let claimLoops = [];
         try {
           await calibrateRun(baseParams, {
             incrementalEarlyStop: incEnabled,
@@ -6480,10 +6240,19 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             `[FastScanner] \u5F00\u59CB\u6781\u901F\u626B\u63CF (${currentMode}, ${activeConcurrency} \u8DEF\u5E76\u53D1` + (currentStats.totalEstimated > 0 ? `, \u9884\u8BA1 ${currentStats.totalEstimated} \u4EF6` : "") + (incEnabled && currentMode === "incremental" ? `, \u8FDE\u7EED ${stopPages} \u9875\u5DF2\u62E5\u6709\u65E9\u505C` : "") + ")"
           );
           syncStatus(true);
-          const scanDoneRef = { done: false };
-          const spawnCount = currentMode === "incremental" ? 1 : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
-          const claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
-          if (currentSlices.some((s) => !s.done)) {
+          claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
+          if (Array.isArray(options.priorityItems) && options.priorityItems.length > 0) {
+            const addedPriority = enqueuePriorityItems(options.priorityItems, { flush: false });
+            if (addedPriority > 0) {
+              logMsg("info", `[FastScanner] \u4F18\u5148\u6838\u9A8C\u5E76\u9886\u53D6\u5F53\u524D\u9875\u9762\u53EF\u89C1\u514D\u8D39\u5546\u54C1 (${addedPriority} \u9879)...`);
+              await flushUnknownBuffer(true);
+              while (!stopped && !authAborted && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+                await sleep(20);
+              }
+            }
+          }
+          if (!stopped && !authAborted && currentSlices.some((s) => !s.done)) {
+            const spawnCount = currentMode === "incremental" ? 1 : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
             const scanWorkers = Array.from(
               { length: spawnCount },
               (_, idx) => runScanWorker(idx, baseParams, stopPages)
@@ -6546,6 +6315,14 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           syncStatus(true);
           throw err;
         } finally {
+          scanDoneRef.done = true;
+          wakeClaimWorkers();
+          if (claimLoops.length > 0) {
+            try {
+              await Promise.all(claimLoops);
+            } catch (_e) {
+            }
+          }
           running = false;
           activeRunPromise = null;
           syncStatus(true);
@@ -6584,10 +6361,253 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       syncStatus(true);
       return safe;
     }, "setConcurrency");
+    const normalizeStandaloneItem = /* @__PURE__ */ __name((raw) => {
+      if (!raw || typeof raw !== "object") return null;
+      const url = raw.url ? String(raw.url).split("?")[0] : "";
+      const uidMatch = raw.uid || url.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1] || "";
+      const uid = String(uidMatch).trim().toLowerCase();
+      if (!uid) return null;
+      const isBundle = Boolean(raw.isBundle || raw.listingType === "bundle" || url.includes("/bundles/"));
+      const canonicalUrl = url || `https://www.fab.com/${isBundle ? "bundles" : "listings"}/${uid}`;
+      return {
+        uid,
+        url: canonicalUrl,
+        name: raw.name || raw.title || "Untitled",
+        offerId: raw.offerId || "",
+        offerIds: Array.isArray(raw.offerIds) ? raw.offerIds : [],
+        listingType: raw.listingType || (isBundle ? "bundle" : ""),
+        isBundle,
+        needsDiscountVerify: Boolean(raw.needsDiscountVerify)
+      };
+    }, "normalizeStandaloneItem");
+    const enqueuePriorityItems = /* @__PURE__ */ __name((items = [], { flush = true } = {}) => {
+      if (!running || stopped || authAborted || !Array.isArray(items) || items.length === 0) return 0;
+      const db = getDatabase();
+      const cache = getDataCache();
+      const fresh = [];
+      for (const raw of items) {
+        const item = normalizeStandaloneItem(raw);
+        if (!item || seenUids.has(item.uid)) continue;
+        if (db.isDone(item.url) || db.isFailed(item.url)) continue;
+        seenUids.add(item.uid);
+        if (item.offerId) {
+          cache.offerListingUids.set(item.offerId, item.uid);
+        }
+        fresh.push(item);
+      }
+      if (fresh.length > 0) {
+        unknownBuffer.unshift(...fresh);
+        if (flush) flushUnknownBuffer(true);
+        syncStatus(true);
+      }
+      return fresh.length;
+    }, "enqueuePriorityItems");
+    const claimVisibleItems = /* @__PURE__ */ __name((items = []) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return Promise.resolve({ queued: 0, claimed: 0, owned: 0, fallback: 0, failed: 0 });
+      }
+      if (running) {
+        const queued = enqueuePriorityItems(items);
+        return Promise.resolve({ queued, claimed: 0, owned: 0, fallback: 0, failed: 0 });
+      }
+      const job = /* @__PURE__ */ __name(async () => {
+        if (running) {
+          const queued = enqueuePriorityItems(items);
+          return { queued, claimed: 0, owned: 0, fallback: 0, failed: 0 };
+        }
+        const db = getDatabase();
+        const cache = getDataCache();
+        const apiClaim = getApiClaim();
+        const cfg = getConfig();
+        const st = getState();
+        const fresh = [];
+        for (const raw of items) {
+          const item = normalizeStandaloneItem(raw);
+          if (!item) continue;
+          if (sightClaimSet.has(item.uid) || db.isDone(item.url) || db.isFailed(item.url)) continue;
+          sightClaimSet.add(item.uid);
+          if (item.offerId) {
+            cache.offerListingUids.set(item.offerId, item.uid);
+          }
+          fresh.push(item);
+        }
+        if (fresh.length === 0) {
+          return { queued: 0, claimed: 0, owned: 0, fallback: 0, failed: 0 };
+        }
+        sightClaimInFlightCount += fresh.length;
+        try {
+          try {
+            onUiUpdate(buildSnapshot());
+          } catch (_e) {
+          }
+          let owned = 0;
+          let claimed = 0;
+          let fallback = 0;
+          let failed = 0;
+          const unowned = [];
+          let sightAuthAborted = false;
+          for (let i = 0; i < fresh.length && !sightAuthAborted; i += STATES_MAX_IDS) {
+            const chunk = fresh.slice(i, i + STATES_MAX_IDS);
+            const u = new URL(`https://www.fab.com${STATES_PATH}`);
+            chunk.forEach((item) => u.searchParams.append("listing_ids", item.uid));
+            let resolved = false;
+            for (let attempt = 0; attempt < 2 && !resolved && !sightAuthAborted; attempt += 1) {
+              const now = nowFn();
+              if (now < pauseUntil) {
+                await sleep(Math.min(2e3, pauseUntil - now));
+              }
+              let res;
+              try {
+                res = await doFetch(u.toString());
+              } catch (_e) {
+                await sleep(Math.min(500, rateLimitBaseBackoffMs));
+                continue;
+              }
+              const status = Number(res?.status) || 0;
+              if (status === 429) {
+                await handleRateLimit(parseRetryAfterMs2(res), "visible-states");
+                continue;
+              }
+              if (status === 401 || status === 403) {
+                sightAuthAborted = true;
+                onAuthFailure();
+                break;
+              }
+              if (status >= 200 && status < 300) {
+                resolved = true;
+                let raw = [];
+                try {
+                  raw = JSON.parse(res.responseText || "[]");
+                } catch (_e) {
+                  raw = [];
+                }
+                const states = Array.isArray(raw) ? raw : API.extractStateData(raw, "FastScanner") || [];
+                const acquiredSet = new Set(
+                  states.filter((s) => s && s.acquired && s.uid).map((s) => String(s.uid).toLowerCase())
+                );
+                const ownedUrls = [];
+                const ownedItems = [];
+                chunk.forEach((item) => {
+                  if (acquiredSet.has(item.uid)) {
+                    ownedUrls.push(item.url);
+                    ownedItems.push(item);
+                  } else {
+                    unowned.push(item);
+                  }
+                });
+                if (ownedUrls.length > 0) {
+                  db.addDoneUrls(ownedUrls);
+                  db.scheduleSaveDone();
+                  owned += ownedUrls.length;
+                  ownedItems.forEach((it) => notifyItemClaimed(it, "server-owned"));
+                }
+              } else {
+                await sleep(Math.min(500, rateLimitBaseBackoffMs));
+              }
+            }
+            if (!resolved && !sightAuthAborted) {
+              unowned.push(...chunk);
+            }
+          }
+          for (let idx = 0; idx < unowned.length && !sightAuthAborted; idx += 1) {
+            const task = unowned[idx];
+            if (db.isDone(task.url)) continue;
+            if (isConfirmedBundleTask(task)) {
+              await routeToFallback(task);
+              fallback += 1;
+              continue;
+            }
+            const canApiClaim = Boolean(cfg.USE_API_CLAIM && typeof apiClaim.isAvailable === "function" && apiClaim.isAvailable());
+            if (!canApiClaim) {
+              await routeToFallback(task);
+              fallback += 1;
+              continue;
+            }
+            const now = nowFn();
+            if (now < pauseUntil) {
+              await sleep(Math.min(2e3, pauseUntil - now));
+            }
+            if (claimIntervalMs > 0) {
+              const sinceLast = nowFn() - lastClaimAt;
+              if (sinceLast < claimIntervalMs) {
+                await sleep(claimIntervalMs - sinceLast);
+              }
+              lastClaimAt = nowFn();
+            }
+            let outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+            if (outcome.serverInternalError && task.offerId) {
+              outcome = await runClaimWithSlowPathGuard({ ...task, offerId: "" }, apiClaim);
+            }
+            if (outcome.result === CLAIM_RESULT.SUCCESS) {
+              noteSuccess();
+              await db.markAsDone(task, { deferSave: true });
+              st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
+              claimed += 1;
+              notifyItemClaimed(task, "claimed");
+              logMsg("info", `[\u6D4F\u89C8\u81EA\u52A8\u9886] \u2705 ${task.name}`);
+            } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
+              await handleRateLimit(outcome.retryAfterMs, "visible-claim");
+              const retries = (task._sightRateRetries || 0) + 1;
+              if (retries <= 2) {
+                task._sightRateRetries = retries;
+                unowned.push(task);
+              } else {
+                const failRes = await db.markAsFailed(task, { reason: `\u9650\u901F\u91CD\u8BD5\u5931\u8D25 (${retries - 1} \u6B21)` });
+                if (failRes && failRes.retried) fallback += 1;
+                else failed += 1;
+              }
+            } else if (outcome.isBundle) {
+              task.listingType = "bundle";
+              task.isBundle = true;
+              await routeToFallback(task);
+              fallback += 1;
+            } else if (outcome.serverInternalError) {
+              const failRes = await db.markAsFailed(task, { reason: "Fab \u670D\u52A1\u7AEF\u5185\u90E8\u9519\u8BEF (500 Internal error)\uFF0C\u5B98\u7F51\u6309\u94AE\u4EA6\u65E0\u6CD5\u5165\u5E93" });
+              if (failRes && failRes.retried) fallback += 1;
+              else failed += 1;
+            } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
+              await routeToFallback(task);
+              fallback += 1;
+            } else {
+              const reason = outcome.reason || "\u9886\u53D6\u5931\u8D25";
+              if (/CSRF|401|未登录|会话/i.test(reason)) {
+                sightAuthAborted = true;
+                onAuthFailure();
+                break;
+              }
+              if (task.needsDiscountVerify && /未找到免费许可/.test(reason)) {
+                continue;
+              }
+              const failRes = await db.markAsFailed(task, { reason });
+              if (failRes && failRes.retried) fallback += 1;
+              else failed += 1;
+            }
+          }
+          await db.flushSaveDone();
+          try {
+            onUiUpdate(buildSnapshot());
+          } catch (_e) {
+          }
+          return { queued: 0, claimed, owned, fallback, failed };
+        } finally {
+          fresh.forEach((it) => sightClaimSet.delete(it.uid));
+          sightClaimInFlightCount = Math.max(0, sightClaimInFlightCount - fresh.length);
+          try {
+            onUiUpdate(buildSnapshot());
+          } catch (_e) {
+          }
+        }
+      }, "job");
+      const run = sightClaimChain.then(job, job);
+      sightClaimChain = run.catch(() => {
+      });
+      return run;
+    }, "claimVisibleItems");
     const configure = /* @__PURE__ */ __name((nextDeps = {}) => {
       if (typeof nextDeps.onUiUpdate === "function") onUiUpdate = nextDeps.onUiUpdate;
       if (typeof nextDeps.onToast === "function") onToast = nextDeps.onToast;
       if (typeof nextDeps.onAuthFailure === "function") onAuthFailure = nextDeps.onAuthFailure;
+      if (typeof nextDeps.onItemClaimed === "function") onItemClaimed = nextDeps.onItemClaimed;
       if (typeof nextDeps.enqueueWorkerFallback === "function") enqueueFallbackFn = nextDeps.enqueueWorkerFallback;
     }, "configure");
     return {
@@ -6596,6 +6616,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       stop,
       clearCheckpoint,
       setConcurrency,
+      enqueuePriorityItems,
+      claimVisibleItems,
       isRunning: /* @__PURE__ */ __name(() => running, "isRunning"),
       getStatus: /* @__PURE__ */ __name(() => buildSnapshot(), "getStatus")
     };
@@ -6806,6 +6828,148 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (!hasDiscountTag) return false;
       return TaskRunner2.hasPositivePriceText(cardText);
     }, "isDiscountedPaidCard"),
+    syncClaimedCardToDom: /* @__PURE__ */ __name((uidOrUrl) => {
+      if (!uidOrUrl) return 0;
+      const raw = String(uidOrUrl).trim();
+      const uid = (raw.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1] || raw).toLowerCase();
+      if (!uid) return 0;
+      DataCache.saveOwnedStatus([{
+        uid,
+        acquired: true,
+        lastUpdatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }]);
+      if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") {
+        return 0;
+      }
+      const badgeText = State.lang === "zh" ? "\u2705 \u5DF2\u4FDD\u5B58\u5728\u6211\u7684\u5E93\u4E2D" : "\u2705 Saved in My Library";
+      const cards = [...document.querySelectorAll(Config.SELECTORS.card)];
+      const isInsideOrContainsLink = /* @__PURE__ */ __name((el) => {
+        if (!el) return false;
+        if (el.tagName === "A") return true;
+        if (typeof el.querySelector === "function" && el.querySelector("a[href]")) return true;
+        if (typeof el.closest === "function" && el.closest("a[href]")) return true;
+        let cur = el.parentElement;
+        while (cur) {
+          if (cur.tagName === "A") return true;
+          cur = cur.parentElement;
+        }
+        return false;
+      }, "isInsideOrContainsLink");
+      const prefixedFreeRe = /^(?:起始价格\s*免费|低至\s*免费|Starting at\s*Free|From\s*Free|选择许可.*免费.*)/i;
+      const plainFreeRe = /^(?:起始价格\s*免费|低至\s*免费|Starting at\s*Free|From\s*Free|选择许可.*免费.*|免费|Free\*?|\$?0\.00|-\s*100\s*%(?:\s*OFF|\s*折扣)?)(?:\s*-\s*100\s*%(?:\s*OFF|\s*折扣)?)?$/i;
+      let updated = 0;
+      cards.forEach((card) => {
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const href = link ? link.href || link.getAttribute?.("href") || "" : "";
+        const cardUid = href.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1]?.toLowerCase() || "";
+        if (cardUid !== uid) return;
+        card.removeAttribute("data-fab-processed");
+        updated += 1;
+        if (!TaskRunner2.hasSavedLibraryText(card) && !card.querySelector('[data-fab-owned-badge="true"]')) {
+          const badgeEl = document.createElement("span");
+          badgeEl.className = "fab-helper-owned-inline";
+          badgeEl.setAttribute("data-fab-owned-badge", "true");
+          badgeEl.textContent = badgeText;
+          let targetNode = card.querySelector(Config.SELECTORS.freeStatus);
+          if (!targetNode || isInsideOrContainsLink(targetNode)) {
+            targetNode = null;
+            const descendants = [...card.querySelectorAll("*")];
+            let prefixedMatch = null;
+            let plainMatch = null;
+            for (const el of descendants) {
+              if (isInsideOrContainsLink(el)) continue;
+              const text = Utils.normalizeWhitespace(el.textContent || "");
+              if (!text || text.length > 48) continue;
+              if (prefixedFreeRe.test(text) && plainFreeRe.test(text)) {
+                if (!prefixedMatch) prefixedMatch = el;
+              } else if (plainFreeRe.test(text)) {
+                plainMatch = el;
+              }
+            }
+            targetNode = prefixedMatch || plainMatch;
+          }
+          if (targetNode) {
+            targetNode.innerHTML = "";
+            targetNode.textContent = "";
+            targetNode.appendChild(badgeEl);
+          } else {
+            card.appendChild(badgeEl);
+          }
+        }
+      });
+      if (updated > 0) {
+        TaskRunner2.invalidateCardCountCache();
+        if (State.hideSaved) {
+          TaskRunner2.scheduleHideOrShow();
+        } else if (UI4) {
+          UI4.update();
+        }
+      }
+      return updated;
+    }, "syncClaimedCardToDom"),
+    collectVisibleFreeTasks: /* @__PURE__ */ __name(() => {
+      if (typeof document === "undefined" || typeof document.querySelectorAll !== "function") {
+        return [];
+      }
+      const cards = [...document.querySelectorAll(TaskRunner2.getVisibleCardSelector())];
+      const tasks = [];
+      const seen = /* @__PURE__ */ new Set();
+      cards.forEach((card) => {
+        if (TaskRunner2.isCardHidden(card)) return;
+        if (!TaskRunner2.isCardSettled(card)) return;
+        if (TaskRunner2.isCardFinished(card)) return;
+        if (!TaskRunner2.isFreeCard(card)) return;
+        const link = card.querySelector(Config.SELECTORS.cardLink);
+        const rawHref = link ? link.href || link.getAttribute?.("href") || "" : "";
+        if (!rawHref) return;
+        const uidMatch = rawHref.match(/\/(listings|bundles)\/([^/?#]+)/i);
+        if (!uidMatch) return;
+        const kind = uidMatch[1].toLowerCase();
+        const uid = uidMatch[2].toLowerCase();
+        if (seen.has(uid)) return;
+        seen.add(uid);
+        const url = `https://www.fab.com/${kind}/${uid}`;
+        if (Database.isDone(url) || Database.isFailed(url) || Database.isTodo(url)) return;
+        const name = card.querySelector('a[aria-label*="\u521B\u4F5C\u7684"], a[aria-label*="by "]')?.textContent.trim() || link?.textContent.trim() || Utils.getText("untitled");
+        const isBundle = kind === "bundles";
+        tasks.push(enrichTaskFromCache(uid, {
+          uid,
+          name,
+          url,
+          type: "detail",
+          listingType: isBundle ? "bundle" : "",
+          isBundle
+        }));
+      });
+      return tasks;
+    }, "collectVisibleFreeTasks"),
+    claimVisibleDomCards: /* @__PURE__ */ __name(async () => {
+      if (State.isWorkerTab || State.manualVerificationPending || State.appStatus === "RATE_LIMITED") {
+        return { queued: 0, claimed: 0, owned: 0 };
+      }
+      if (!Utils.checkAuthentication(true)) {
+        return { queued: 0, claimed: 0, owned: 0 };
+      }
+      const tasks = TaskRunner2.collectVisibleFreeTasks();
+      if (tasks.length === 0) {
+        return { queued: 0, claimed: 0, owned: 0 };
+      }
+      FastScanner.configure({
+        onUiUpdate: /* @__PURE__ */ __name(() => {
+          if (UI4) UI4.update();
+        }, "onUiUpdate"),
+        onToast: /* @__PURE__ */ __name((msg, persist) => {
+          if (UI4 && typeof UI4.showToast === "function") UI4.showToast(msg, persist);
+        }, "onToast"),
+        onAuthFailure: /* @__PURE__ */ __name(() => {
+          Utils.notifyAuthFailure();
+          TaskRunner2.stop();
+        }, "onAuthFailure"),
+        onItemClaimed: /* @__PURE__ */ __name((item) => TaskRunner2.syncClaimedCardToDom(item?.uid || item?.url), "onItemClaimed"),
+        enqueueWorkerFallback: /* @__PURE__ */ __name((task) => TaskRunner2.enqueueWorkerFallback(task), "enqueueWorkerFallback")
+      });
+      return FastScanner.claimVisibleItems(tasks);
+    }, "claimVisibleDomCards"),
     // Toggle execution state
     enqueueWorkerFallback: /* @__PURE__ */ __name(async (task) => {
       if (!task || !task.uid) return false;
@@ -6825,7 +6989,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       return true;
     }, "enqueueWorkerFallback"),
     startFastScan: /* @__PURE__ */ __name(async () => {
-      if (State.apiPipelineActive) return null;
       if (typeof InstanceManager !== "undefined" && InstanceManager.activate) {
         InstanceManager.activate();
       }
@@ -6840,14 +7003,23 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           Utils.notifyAuthFailure();
           TaskRunner2.stop();
         }, "onAuthFailure"),
+        onItemClaimed: /* @__PURE__ */ __name((item) => TaskRunner2.syncClaimedCardToDom(item?.uid || item?.url), "onItemClaimed"),
         enqueueWorkerFallback: /* @__PURE__ */ __name((task) => TaskRunner2.enqueueWorkerFallback(task), "enqueueWorkerFallback")
       });
+      const priorityItems = TaskRunner2.collectVisibleFreeTasks();
       KeepAlive.start();
       State.isExecuting = true;
       Database.saveExecutingState();
       if (UI4) UI4.update();
       try {
-        const summary = await FastScanner.start();
+        const summary = await FastScanner.start({
+          globalFreeScan: true,
+          priorityItems
+        });
+        if (summary?.phase === "completed") {
+          State.hasFastScanCheckpoint = false;
+          State.fastScanCheckpointMeta = null;
+        }
         if (!State.isExecuting) return summary;
         if (State.db.todo.length > 0 || State.activeWorkers > 0) {
           if (TaskRunner2.hasDispatchSlot() && State.db.todo.length > 0) {
@@ -6874,13 +7046,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     }, "startFastScan"),
     toggleExecution: /* @__PURE__ */ __name(async () => {
       if (!Utils.checkAuthentication()) return;
-      if (State.apiPipelineActive) {
-        State.isExecuting = !State.isExecuting;
-        Database.saveExecutingState();
-        Utils.logger("info", State.isExecuting ? "[Pipeline] \u5DF2\u6062\u590D API \u6D41\u6C34\u7EBF\u3002" : "[Pipeline] \u5DF2\u6682\u505C API \u6D41\u6C34\u7EBF\u3002");
-        if (UI4) UI4.update();
-        return;
-      }
       if (State.isExecuting || FastScanner.isRunning()) {
         if (FastScanner.isRunning()) {
           await FastScanner.stop();
@@ -6909,7 +7074,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         Utils.notifyAuthFailure();
         return;
       }
-      if (State.fastApiScan) {
+      if (!State.domFallbackMode) {
         return await TaskRunner2.startFastScan();
       }
       if (State.autoAddOnScroll || State.autoScroll) {
@@ -6976,10 +7141,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     // Start execution without scanning
     startExecution: /* @__PURE__ */ __name(() => {
       if (State.manualVerificationPending) return;
-      if (State.apiPipelineActive) {
-        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7 worker \u6267\u884C\u8BF7\u6C42\u3002");
-        return;
-      }
       if (State.isExecuting) {
         const newTotal = State.db.todo.length;
         if (newTotal > State.executionTotalTasks) {
@@ -7145,80 +7306,45 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (UI4) UI4.update();
       return safeVal;
     }, "setMaxWorkers"),
-    getWorkMode: /* @__PURE__ */ __name(() => {
-      if (!State.fastApiScan) return "page";
-      return State.incrementalEarlyStop ? "incremental" : "full";
-    }, "getWorkMode"),
-    setWorkMode: /* @__PURE__ */ __name(async (mode) => {
-      const validModes = ["full", "incremental", "page"];
-      if (!validModes.includes(mode)) return TaskRunner2.getWorkMode();
-      if (TaskRunner2.getWorkMode() === mode) {
-        if (UI4) UI4.update();
-        return mode;
+    toggleAutoClaimVisible: /* @__PURE__ */ __name(async () => {
+      State.autoClaimVisible = !State.autoClaimVisible;
+      await Database.saveAutoClaimVisiblePref();
+      Utils.logger(
+        "info",
+        Utils.getText("log_auto_claim_visible_toggle", State.autoClaimVisible ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
+      );
+      if (UI4) UI4.update();
+      if (State.autoClaimVisible && !State.domFallbackMode) {
+        TaskRunner2.claimVisibleDomCards().catch((e) => Utils.logger("debug", `[\u6D4F\u89C8\u81EA\u52A8\u9886] \u626B\u63CF\u5931\u8D25: ${e.message}`));
       }
+      return State.autoClaimVisible;
+    }, "toggleAutoClaimVisible"),
+    setDomFallbackMode: /* @__PURE__ */ __name(async (enabled) => {
+      const next = Boolean(enabled);
       if (State.isExecuting || FastScanner.isRunning()) {
         if (FastScanner.isRunning()) {
           await FastScanner.stop();
         }
         TaskRunner2.stop();
       }
-      if (mode === "full") {
-        State.fastApiScan = true;
-        State.incrementalEarlyStop = false;
-      } else if (mode === "incremental") {
-        State.fastApiScan = true;
-        State.incrementalEarlyStop = true;
-      } else {
-        State.fastApiScan = false;
-      }
-      await Database.saveFastApiScanPref();
-      await Database.saveIncrementalEarlyStopPref();
-      Utils.logger("info", Utils.getText("log_work_mode_changed", Utils.getText(`mode_${mode}`)));
-      if (UI4) UI4.update();
-      return mode;
-    }, "setWorkMode"),
-    getPageSubMode: /* @__PURE__ */ __name(() => {
-      if (State.autoScroll) return "auto_scroll";
-      if (State.autoAddOnScroll) return "on_scroll";
-      return "visible";
-    }, "getPageSubMode"),
-    setPageSubMode: /* @__PURE__ */ __name(async (subMode) => {
-      const validSubModes = ["visible", "on_scroll", "auto_scroll"];
-      if (!validSubModes.includes(subMode)) return TaskRunner2.getPageSubMode();
-      if (subMode === "visible") {
-        State.autoAddOnScroll = false;
-        State.autoScroll = false;
-      } else if (subMode === "on_scroll") {
-        State.autoAddOnScroll = true;
-        State.autoScroll = false;
-      } else {
-        State.autoAddOnScroll = false;
-        State.autoScroll = true;
+      State.domFallbackMode = next;
+      State.fastApiScan = !next;
+      State.autoScroll = next;
+      if (next) {
         State.isEndOfSearchList = false;
         State.autoScrollAttempts = 0;
         State.hasReachedBottomToastShown = false;
       }
-      await Database.saveAutoAddPref();
-      await Database.saveAutoScrollPref();
-      Utils.logger("info", Utils.getText("log_page_submode_changed", Utils.getText(`page_submode_${subMode}`)));
-      if (UI4) UI4.update();
-      return subMode;
-    }, "setPageSubMode"),
-    toggleFastApiScan: /* @__PURE__ */ __name(async () => {
-      if (State.isExecuting || FastScanner.isRunning()) {
-        if (FastScanner.isRunning()) {
-          await FastScanner.stop();
-        }
-        TaskRunner2.stop();
-      }
-      State.fastApiScan = !State.fastApiScan;
+      await Database.saveDomFallbackModePref();
       await Database.saveFastApiScanPref();
+      await Database.saveAutoScrollPref();
       Utils.logger(
         "info",
-        Utils.getText("log_fast_api_scan_toggle", State.fastApiScan ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
+        Utils.getText("log_dom_fallback_toggle", next ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
       );
       if (UI4) UI4.update();
-    }, "toggleFastApiScan"),
+      return next;
+    }, "setDomFallbackMode"),
     setApiScanConcurrency: /* @__PURE__ */ __name(async (count) => {
       const parsed = parseInt(count, 10);
       const maxConc = Config.MAX_API_SCAN_CONCURRENCY || 6;
@@ -7231,25 +7357,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (UI4) UI4.update();
       return safeVal;
     }, "setApiScanConcurrency"),
-    toggleIncrementalEarlyStop: /* @__PURE__ */ __name(async () => {
-      State.incrementalEarlyStop = !State.incrementalEarlyStop;
-      await Database.saveIncrementalEarlyStopPref();
-      Utils.logger(
-        "info",
-        Utils.getText("log_incremental_early_stop_toggle", State.incrementalEarlyStop ? Utils.getText("status_enabled") : Utils.getText("status_disabled"))
-      );
-      if (UI4) UI4.update();
-    }, "toggleIncrementalEarlyStop"),
-    setIncrementalStopPages: /* @__PURE__ */ __name(async (pages) => {
-      const parsed = parseInt(pages, 10);
-      const defPages = Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5;
-      const safeVal = Math.max(1, Math.min(50, Number.isFinite(parsed) ? parsed : defPages));
-      State.incrementalStopPages = safeVal;
-      await Database.saveIncrementalStopPagesPref();
-      Utils.logger("info", Utils.getText("log_incremental_stop_pages_changed", safeVal));
-      if (UI4) UI4.update();
-      return safeVal;
-    }, "setIncrementalStopPages"),
     stop: /* @__PURE__ */ __name(() => {
       if (FastScanner.isRunning()) {
         FastScanner.stop();
@@ -7368,6 +7475,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             });
             Utils.logger("info", Utils.getText("log_cleared_from_failed", initialFailedCount - State.db.failed.length));
           }
+          ownedUids.forEach((uid) => {
+            TaskRunner2.syncClaimedCardToDom(uid);
+          });
         }
         if (dbUpdated) {
           await Database.saveFailed();
@@ -7465,10 +7575,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     }, "maxDispatchSlots"),
     hasDispatchSlot: /* @__PURE__ */ __name(() => State.activeWorkers < TaskRunner2.maxDispatchSlots(), "hasDispatchSlot"),
     executeBatch: /* @__PURE__ */ __name(async () => {
-      if (State.apiPipelineActive) {
-        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u963B\u6B62\u65E7 worker \u6D3E\u53D1\u3002");
-        return;
-      }
       if (!Utils.checkAuthentication()) return;
       if (!State.isWorkerTab && !InstanceManager.isActive) {
         Utils.logger("warn", Utils.getText("log_not_active_instance"));
@@ -8411,7 +8517,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const threshold = Number(Config.MEMORY_RECYCLE_CARD_THRESHOLD) || 0;
       if (!Config.MEMORY_RECYCLE_ENABLED || threshold <= 0) return false;
       if (State.memoryRecycleDisabled || State.memoryRecycleInFlight) return false;
-      if (!State.autoScroll || State.apiPipelineActive) return false;
+      if (!State.autoScroll) return false;
       if (State.appStatus !== "NORMAL" || State.manualVerificationPending) return false;
       if (State.isAutoScrolling || State.isScanningTasks || State.isDispatchingTasks) return false;
       if (State.isRefreshScheduled || State.isRecoveryMode) return false;
@@ -8458,10 +8564,10 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     resumeAfterMemoryRecycle: /* @__PURE__ */ __name(() => {
       if (TaskRunner2._sessionGet(MEM_RECYCLE_KEYS.PENDING) !== "1") return false;
       TaskRunner2._sessionRemove(MEM_RECYCLE_KEYS.PENDING);
-      if (!State.autoScroll || State.apiPipelineActive || State.isWorkerTab) return false;
+      if (!State.autoScroll || State.isWorkerTab) return false;
       Utils.logger("info", Utils.getText("memory_recycle_resume"));
       setTimeout(() => {
-        if (!State.autoScroll || State.apiPipelineActive) return;
+        if (!State.autoScroll) return;
         if (State.isEndOfSearchList) return;
         if (State.db.todo.length > 0) {
           TaskRunner2.startExecution();
@@ -8475,10 +8581,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       if (State.manualVerificationPending) return;
       if (State.appStatus === "RATE_LIMITED") return;
       if (FastScanner.isRunning()) return;
-      if (State.apiPipelineActive) {
-        Utils.logger("debug", "[Legacy] API \u6D41\u6C34\u7EBF\u5DF2\u63A5\u7BA1\uFF0C\u5FFD\u7565\u65E7\u81EA\u52A8\u6EDA\u52A8\u8BF7\u6C42\u3002");
-        return;
-      }
       if (State.isAutoScrolling) return;
       State.isAutoScrolling = true;
       if (typeof State.autoScrollAttempts === "undefined") {
@@ -8626,11 +8728,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
   }
   __name(setTaskRunnerReference, "setTaskRunnerReference");
   var UI5 = {
-    getApiPositionText: /* @__PURE__ */ __name(() => {
-      if (!State.apiCursorSavedAt) return Utils.getText("no_saved_position");
-      const date = new Date(State.apiCursorSavedAt);
-      return `${Utils.getText("position_label")}: "${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour12: false })}"`;
-    }, "getApiPositionText"),
     init: /* @__PURE__ */ __name(() => {
       return UI5.create();
     }, "init"),
@@ -8795,76 +8892,63 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 background: rgba(255, 255, 255, 0.22);
                 border-radius: 3px;
             }
-            .fab-mode-switcher {
-                display: flex;
-                gap: 3px;
-                padding: 3px;
-                background: var(--card-bg-recessed);
-                border: 1px solid var(--card-border);
-                border-radius: var(--radius-m);
-                margin-bottom: 8px;
+            .fab-helper-owned-inline {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                color: #30d158;
+                font-weight: 600;
+                font-size: 12px;
+                line-height: 1.3;
             }
-            .fab-mode-btn {
-                flex: 1;
-                min-width: 0;
-                padding: 6px 4px;
-                border: none;
-                border-radius: var(--radius-s);
-                background: transparent;
-                color: var(--text-color-secondary);
+            .fab-primary-action-row {
+                display: flex;
+                gap: 6px;
+                align-items: stretch;
+                margin-bottom: 6px;
+            }
+            .fab-reset-checkpoint-btn {
+                flex: 0 0 auto;
+                padding: 0 11px;
+                border-radius: var(--radius-m);
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
+                color: var(--text-color-primary);
                 font-size: 12px;
                 font-weight: 500;
                 cursor: pointer;
                 white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                transition: background-color 0.15s, color 0.15s;
+                transition: background-color 0.15s, border-color 0.15s;
             }
-            .fab-mode-btn:hover {
-                color: var(--text-color-primary);
+            .fab-reset-checkpoint-btn:hover:not(:disabled) {
+                background: rgba(255, 255, 255, 0.12);
+                border-color: rgba(255, 255, 255, 0.22);
             }
-            .fab-mode-btn.active {
-                background: var(--blue);
-                color: #fff;
-                font-weight: 600;
-                box-shadow: 0 1px 4px rgba(10, 132, 255, 0.35);
+            .fab-reset-checkpoint-btn:disabled {
+                opacity: 0.45;
+                cursor: not-allowed;
             }
-            .fab-mode-panel {
-                background: var(--card-bg);
-                border: 1px solid var(--card-border);
-                border-radius: var(--radius-m);
-                padding: 7px 9px;
-                margin-bottom: 8px;
-            }
-            .fab-mode-panel .fab-setting-row {
-                padding: 4px 0;
-            }
-            .fab-mode-telemetry {
+            .fab-status-telemetry {
                 font-size: 11.5px;
                 color: var(--text-color-secondary);
-                padding-top: 5px;
-                margin-top: 4px;
-                border-top: 1px solid rgba(255, 255, 255, 0.06);
+                margin-bottom: 6px;
+                padding: 0 2px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            .fab-submode-switcher {
+            .fab-quick-pills {
                 display: flex;
-                gap: 3px;
-                padding: 2px;
-                background: var(--card-bg-recessed);
-                border: 1px solid rgba(255, 255, 255, 0.06);
-                border-radius: var(--radius-s);
-                margin-bottom: 5px;
+                gap: 5px;
+                margin-bottom: 8px;
             }
-            .fab-submode-btn {
+            .fab-pill-btn {
                 flex: 1;
                 min-width: 0;
-                padding: 4px 3px;
-                border: none;
-                border-radius: 4px;
-                background: transparent;
+                padding: 6px 4px;
+                border-radius: 999px;
+                border: 1px solid var(--card-border);
+                background: var(--card-bg);
                 color: var(--text-color-secondary);
                 font-size: 11.5px;
                 font-weight: 500;
@@ -8872,15 +8956,35 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
-                transition: background-color 0.15s, color 0.15s;
+                text-align: center;
+                transition: all 0.15s ease;
             }
-            .fab-submode-btn:hover {
+            .fab-pill-btn:hover {
                 color: var(--text-color-primary);
+                background: rgba(255, 255, 255, 0.08);
             }
-            .fab-submode-btn.active {
-                background: rgba(10, 132, 255, 0.24);
+            .fab-pill-btn.active {
+                background: rgba(10, 132, 255, 0.22);
+                border-color: rgba(10, 132, 255, 0.6);
                 color: #fff;
                 font-weight: 600;
+            }
+            .fab-retry-banner-btn {
+                width: 100%;
+                margin-bottom: 8px;
+                padding: 6px 10px;
+                border-radius: var(--radius-m);
+                border: 1px solid rgba(255, 55, 95, 0.45);
+                background: rgba(255, 55, 95, 0.12);
+                color: #ff6987;
+                font-size: 12px;
+                font-weight: 600;
+                cursor: pointer;
+                text-align: center;
+                transition: background-color 0.15s;
+            }
+            .fab-retry-banner-btn:hover {
+                background: rgba(255, 55, 95, 0.2);
             }
             .fab-helper-status-bar {
                 display: flex;
@@ -8937,17 +9041,18 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
                 100% { box-shadow: 0 0 0 0 rgba(255, 55, 95, 0); }
             }
             .fab-helper-execute-btn {
-                width: 100%;
+                flex: 1;
+                min-width: 0;
                 border: none;
                 border-radius: var(--radius-m);
                 padding: 10px 14px;
-                font-size: 14.5px;
+                font-size: 14px;
                 font-weight: 600;
                 cursor: pointer;
                 transition: all 0.2s ease;
                 color: #fff;
                 background: var(--blue);
-                margin-bottom: 8px;
+                margin-bottom: 0;
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -9340,10 +9445,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           e.stopPropagation();
           e.preventDefault();
           if (!TaskRunner3) return;
-          if (stateKey === "fastApiScan") {
-            await TaskRunner3.toggleFastApiScan();
-          } else if (stateKey === "incrementalEarlyStop") {
-            await TaskRunner3.toggleIncrementalEarlyStop();
+          if (stateKey === "domFallbackMode") {
+            await TaskRunner3.setDomFallbackMode(!State.domFallbackMode);
           } else if (stateKey === "autoAddOnScroll") {
             TaskRunner3.toggleAutoAdd();
           } else if (stateKey === "autoScroll") {
@@ -9485,135 +9588,30 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       dashboardContent.className = "fab-helper-tab-content";
       dashboardContent.style.display = "block";
       State.UI.tabContents.dashboard = dashboardContent;
-      const modeSwitcher = document.createElement("div");
-      modeSwitcher.className = "fab-mode-switcher";
-      State.UI.modeButtons = {};
-      ["full", "incremental", "page"].forEach((mode) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "fab-mode-btn";
-        btn.setAttribute("data-mode", mode);
-        bindText(btn, `mode_${mode}`);
-        btn.onclick = () => TaskRunner3 && TaskRunner3.setWorkMode(mode);
-        modeSwitcher.appendChild(btn);
-        State.UI.modeButtons[mode] = btn;
-      });
-      State.UI.modePanels = {};
-      const fullPanel = document.createElement("div");
-      fullPanel.className = "fab-mode-panel";
-      fullPanel.appendChild(createNumberSettingRow(
-        "setting_api_scan_concurrency",
-        "apiScanConcurrency",
-        1,
-        Config.MAX_API_SCAN_CONCURRENCY || 6,
-        "setting_api_scan_concurrency_tooltip",
-        {
-          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setApiScanConcurrency(v), "onChange"),
-          uiRefKey: "apiScanConcurrencyInput",
-          defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
-        }
-      ));
-      const fastScanStatusDisplay = document.createElement("div");
-      fastScanStatusDisplay.className = "fab-mode-telemetry";
-      State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
-      fullPanel.appendChild(fastScanStatusDisplay);
-      State.UI.modePanels.full = fullPanel;
-      const incPanel = document.createElement("div");
-      incPanel.className = "fab-mode-panel";
-      incPanel.appendChild(createNumberSettingRow(
-        "setting_incremental_stop_pages",
-        "incrementalStopPages",
-        1,
-        50,
-        "setting_incremental_stop_pages_tooltip",
-        {
-          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setIncrementalStopPages(v), "onChange"),
-          uiRefKey: "incrementalStopPagesInput",
-          defaultValue: Config.DEFAULT_INCREMENTAL_STOP_PAGES || 5
-        }
-      ));
-      const incScanStatusDisplay = document.createElement("div");
-      incScanStatusDisplay.className = "fab-mode-telemetry";
-      State.UI.incScanStatusDisplay = incScanStatusDisplay;
-      incPanel.appendChild(incScanStatusDisplay);
-      State.UI.modePanels.incremental = incPanel;
-      const pagePanel = document.createElement("div");
-      pagePanel.className = "fab-mode-panel";
-      const subModeSwitcher = document.createElement("div");
-      subModeSwitcher.className = "fab-submode-switcher";
-      State.UI.pageSubModeButtons = {};
-      ["visible", "on_scroll", "auto_scroll"].forEach((subMode) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "fab-submode-btn";
-        btn.setAttribute("data-submode", subMode);
-        bindText(btn, `page_submode_${subMode}`);
-        btn.onclick = () => TaskRunner3 && TaskRunner3.setPageSubMode(subMode);
-        subModeSwitcher.appendChild(btn);
-        State.UI.pageSubModeButtons[subMode] = btn;
-      });
-      pagePanel.appendChild(subModeSwitcher);
-      pagePanel.appendChild(createSettingRow(
-        "setting_remember_position",
-        "rememberScrollPosition",
-        "setting_page_only_tooltip",
-        "rememberPositionCheckbox"
-      ));
-      const positionContainer = document.createElement("div");
-      positionContainer.className = "fab-helper-position-container";
-      const positionIcon = document.createElement("span");
-      positionIcon.textContent = Utils.getText("position_indicator");
-      positionIcon.style.marginRight = "2px";
-      const positionInfo = document.createElement("span");
-      positionInfo.textContent = Config.USE_API_PIPELINE ? UI5.getApiPositionText() : Utils.decodeCursor(State.savedCursor);
-      positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
-      State.UI.savedPositionDisplay = positionInfo;
-      const clearPositionBtn = document.createElement("button");
-      clearPositionBtn.type = "button";
-      clearPositionBtn.textContent = "\u21BA";
-      clearPositionBtn.title = Utils.getText("clear_position_tooltip");
-      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);";
-      clearPositionBtn.onmouseover = () => {
-        clearPositionBtn.style.opacity = "1";
-      };
-      clearPositionBtn.onmouseout = () => {
-        clearPositionBtn.style.opacity = "0.7";
-      };
-      clearPositionBtn.onclick = async () => {
-        const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
-        if (State.savedCursor || State.apiCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
-          PagePatcher.lockCursorSaving();
-          if (confirm(Utils.getText("confirm_reset_position"))) {
-            await PagePatcher.clearSavedPosition("User UI Reset");
-            PagePatcher.armResetGuard();
-            try {
-              window.scrollTo(0, 0);
-            } catch (e) {
-            }
-            try {
-              const url = new URL(window.location.href);
-              if (url.searchParams.has("cursor")) {
-                url.searchParams.delete("cursor");
-                window.location.href = url.toString();
-                return;
-              }
-            } catch (e) {
-            }
-            window.location.reload();
-          } else {
-            PagePatcher.unlockCursorSaving();
-          }
-        } else {
-          Utils.logger("info", Utils.getText("no_position_to_reset"));
-        }
-      };
-      positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
-      pagePanel.appendChild(positionContainer);
-      State.UI.modePanels.page = pagePanel;
+      const primaryRow = document.createElement("div");
+      primaryRow.className = "fab-primary-action-row";
       State.UI.execBtn = document.createElement("button");
       State.UI.execBtn.type = "button";
       State.UI.execBtn.className = "fab-helper-execute-btn";
       State.UI.execBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleExecution();
+      State.UI.resetCheckpointBtn = document.createElement("button");
+      State.UI.resetCheckpointBtn.type = "button";
+      State.UI.resetCheckpointBtn.className = "fab-reset-checkpoint-btn";
+      bindText(State.UI.resetCheckpointBtn, "reset_checkpoint");
+      State.UI.resetCheckpointBtn.style.display = "none";
+      State.UI.resetCheckpointBtn.onclick = async () => {
+        if (State.isExecuting || FastScanner.isRunning()) return;
+        if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
+        if (window.confirm(Utils.getText("confirm_reset_checkpoint"))) {
+          await FastScanner.clearCheckpoint();
+          State.fastScanStatus = null;
+          State.fastScanCheckpointMeta = null;
+          State.hasFastScanCheckpoint = false;
+          Utils.logger("info", Utils.getText("log_checkpoint_cleared"));
+          UI5.update();
+        }
+      };
+      primaryRow.append(State.UI.execBtn, State.UI.resetCheckpointBtn);
       const progressTrack = document.createElement("div");
       progressTrack.className = "fab-progress-track";
       const progressBar = document.createElement("div");
@@ -9621,6 +9619,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       progressTrack.appendChild(progressBar);
       State.UI.progressTrack = progressTrack;
       State.UI.progressBar = progressBar;
+      const fastScanStatusDisplay = document.createElement("div");
+      fastScanStatusDisplay.className = "fab-status-telemetry";
+      State.UI.fastScanStatusDisplay = fastScanStatusDisplay;
       State.UI.statusKeepAlive = document.createElement("div");
       State.UI.statusKeepAlive.className = "fab-helper-keepalive-status";
       State.UI.statusKeepAlive.title = "\u540E\u53F0\u4FDD\u6D3B\uFF1A\u2665\u5FC3\u8DF3(Worker,\u4E0D\u88AB\u8282\u6D41) + \u2744\uFE0F\u9632\u51BB\u7ED3(WebRTC)\u3002\u540E\u53F0/\u9501\u5C4F\u65F6\u5E94\u6301\u7EED\u5237\u65B0\uFF1B\u82E5\u663E\u793A\u672A\u542F\u52A8\u8BF4\u660E Worker \u88AB\u9875\u9762 CSP \u62E6\u622A";
@@ -9656,36 +9657,26 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           });
         }
       };
-      State.UI.statusVisible = createStatusItem("fab-status-visible", "visible", "\u{1F441}\uFE0F", "grid-2");
-      State.UI.statusHidden = createStatusItem("fab-status-hidden", "hidden", "\u{1F648}", "grid-2");
-      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed, State.UI.statusVisible, State.UI.statusHidden);
-      const actionButtons = document.createElement("div");
-      actionButtons.className = "fab-helper-actions";
-      State.UI.syncBtn = document.createElement("button");
-      State.UI.syncBtn.type = "button";
-      bindText(State.UI.syncBtn, "sync", "\u{1F504} ");
-      State.UI.syncBtn.onclick = () => TaskRunner3 && TaskRunner3.refreshVisibleStates();
-      State.UI.hideBtn = document.createElement("button");
-      State.UI.hideBtn.type = "button";
-      State.UI.hideBtn.onclick = () => TaskRunner3 && TaskRunner3.toggleHideSaved();
-      State.UI.resetCheckpointBtn = document.createElement("button");
-      State.UI.resetCheckpointBtn.type = "button";
-      bindText(State.UI.resetCheckpointBtn, "reset_checkpoint", "\u21BA ");
-      State.UI.resetCheckpointBtn.onclick = async () => {
-        if (State.isExecuting || FastScanner.isRunning()) return;
-        if (!State.hasFastScanCheckpoint && !State.fastScanStatus) return;
-        if (window.confirm(Utils.getText("confirm_reset_checkpoint"))) {
-          await FastScanner.clearCheckpoint();
-          State.fastScanStatus = null;
-          State.hasFastScanCheckpoint = false;
-          Utils.logger("info", Utils.getText("log_checkpoint_cleared"));
-          UI5.update();
-        }
-      };
+      statusBar.append(State.UI.statusTodo, State.UI.statusDone, State.UI.statusFailed);
       State.UI.retryFailedBtn = document.createElement("button");
       State.UI.retryFailedBtn.type = "button";
+      State.UI.retryFailedBtn.className = "fab-retry-banner-btn";
+      State.UI.retryFailedBtn.style.display = "none";
       State.UI.retryFailedBtn.onclick = () => TaskRunner3 && TaskRunner3.retryFailedTasks();
-      actionButtons.append(State.UI.syncBtn, State.UI.hideBtn, State.UI.resetCheckpointBtn, State.UI.retryFailedBtn);
+      const quickPills = document.createElement("div");
+      quickPills.className = "fab-quick-pills";
+      const makeQuickPill = /* @__PURE__ */ __name((labelKey, onClick) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "fab-pill-btn";
+        bindText(btn, labelKey);
+        btn.onclick = onClick;
+        return btn;
+      }, "makeQuickPill");
+      State.UI.quickAutoClaimBtn = makeQuickPill("pill_auto_claim", () => TaskRunner3 && TaskRunner3.toggleAutoClaimVisible());
+      State.UI.quickHideSavedBtn = makeQuickPill("pill_hide_saved", () => TaskRunner3 && TaskRunner3.toggleHideSaved());
+      State.UI.quickHidePaidBtn = makeQuickPill("pill_hide_paid", () => TaskRunner3 && TaskRunner3.toggleHidePaid());
+      quickPills.append(State.UI.quickAutoClaimBtn, State.UI.quickHideSavedBtn, State.UI.quickHidePaidBtn);
       const logContainer = document.createElement("div");
       logContainer.className = "fab-log-container";
       const logHeader = document.createElement("div");
@@ -9733,39 +9724,34 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       };
       logContainer.append(logHeader, State.UI.logPanel);
       dashboardContent.append(
-        modeSwitcher,
-        fullPanel,
-        incPanel,
-        pagePanel,
-        State.UI.execBtn,
+        primaryRow,
         State.UI.progressTrack,
+        fastScanStatusDisplay,
         State.UI.statusKeepAlive,
         statusBar,
-        actionButtons,
+        State.UI.retryFailedBtn,
+        quickPills,
         logContainer
       );
       container.appendChild(dashboardContent);
       const settingsContent = document.createElement("div");
       settingsContent.className = "fab-helper-tab-content";
       settingsContent.style.display = "none";
-      const groupFilter = createCardGroup("settings_group_browse_filter");
-      groupFilter.appendChild(createSettingRow("setting_hide_discounted", "hideDiscountedPaid"));
-      groupFilter.appendChild(createSettingRow("setting_hide_paid", "hidePaid"));
-      settingsContent.appendChild(groupFilter);
-      const groupGeneral = createCardGroup("settings_group_general");
-      groupGeneral.appendChild(createNumberSettingRow(
-        "setting_max_workers",
-        "maxWorkers",
+      const groupGeneralFilter = createCardGroup("settings_group_general_filter");
+      groupGeneralFilter.appendChild(createSettingRow("setting_hide_discounted", "hideDiscountedPaid"));
+      groupGeneralFilter.appendChild(createNumberSettingRow(
+        "setting_api_scan_concurrency",
+        "apiScanConcurrency",
         1,
-        15,
-        "setting_max_workers_desc_tooltip",
+        Config.MAX_API_SCAN_CONCURRENCY || 6,
+        "setting_api_scan_concurrency_tooltip",
         {
-          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setMaxWorkers(v), "onChange"),
-          uiRefKey: "maxWorkersInput",
-          defaultValue: 7
+          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setApiScanConcurrency(v), "onChange"),
+          uiRefKey: "apiScanConcurrencyInput",
+          defaultValue: Config.DEFAULT_API_SCAN_CONCURRENCY || 4
         }
       ));
-      groupGeneral.appendChild(createSettingRow("setting_block_large_resources", "blockLargeResources"));
+      groupGeneralFilter.appendChild(createSettingRow("setting_block_large_resources", "blockLargeResources"));
       const notificationRow = document.createElement("div");
       notificationRow.className = "fab-setting-row";
       const notificationLabel = document.createElement("span");
@@ -9788,15 +9774,15 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         if (permission !== "granted") Utils.logger("warn", notificationButton.title);
       };
       notificationRow.append(notificationLabel, notificationButton);
-      groupGeneral.appendChild(notificationRow);
-      settingsContent.appendChild(groupGeneral);
+      groupGeneralFilter.appendChild(notificationRow);
+      settingsContent.appendChild(groupGeneralFilter);
       const advancedCard = document.createElement("div");
       advancedCard.className = "fab-collapsible-card";
       const advancedToggle = document.createElement("button");
       advancedToggle.type = "button";
       advancedToggle.className = "fab-collapsible-toggle";
       const advancedTitle = document.createElement("span");
-      bindText(advancedTitle, "settings_group_advanced");
+      bindText(advancedTitle, "settings_group_advanced_fallback");
       const advancedChevron = document.createElement("span");
       advancedChevron.textContent = State.settingsAdvancedOpen ? "\u25BE" : "\u25B8";
       advancedToggle.append(advancedTitle, advancedChevron);
@@ -9804,6 +9790,84 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       const advancedBody = document.createElement("div");
       advancedBody.className = "fab-collapsible-body";
       advancedBody.style.display = State.settingsAdvancedOpen ? "block" : "none";
+      advancedBody.appendChild(createSettingRow(
+        "setting_dom_fallback",
+        "domFallbackMode",
+        "setting_dom_fallback_tooltip",
+        "domFallbackCheckbox"
+      ));
+      const fallbackControls = document.createElement("div");
+      fallbackControls.style.display = State.domFallbackMode ? "block" : "none";
+      fallbackControls.appendChild(createSettingRow(
+        "setting_remember_position",
+        "rememberScrollPosition",
+        "setting_page_only_tooltip",
+        "rememberPositionCheckbox"
+      ));
+      const positionContainer = document.createElement("div");
+      positionContainer.className = "fab-helper-position-container";
+      const positionIcon = document.createElement("span");
+      positionIcon.textContent = Utils.getText("position_indicator");
+      positionIcon.style.marginRight = "2px";
+      const positionInfo = document.createElement("span");
+      positionInfo.textContent = Utils.decodeCursor(State.savedCursor);
+      positionInfo.style.cssText = "flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
+      State.UI.savedPositionDisplay = positionInfo;
+      const clearPositionBtn = document.createElement("button");
+      clearPositionBtn.type = "button";
+      clearPositionBtn.textContent = "\u21BA";
+      clearPositionBtn.title = Utils.getText("clear_position_tooltip");
+      clearPositionBtn.style.cssText = "background: none; border: none; cursor: pointer; margin-left: auto; font-size: 14px; padding: 0 4px; opacity: 0.7; transition: opacity 0.2s; color: var(--text-color-primary);";
+      clearPositionBtn.onmouseover = () => {
+        clearPositionBtn.style.opacity = "1";
+      };
+      clearPositionBtn.onmouseout = () => {
+        clearPositionBtn.style.opacity = "0.7";
+      };
+      clearPositionBtn.onclick = async () => {
+        const hasRecoveryCursor = typeof sessionStorage !== "undefined" && (sessionStorage.getItem("fab_helper_recovery_cursor") || sessionStorage.getItem("fab_helper_last_recovery_cursor"));
+        if (State.savedCursor || PagePatcher._lastSeenCursor || hasRecoveryCursor) {
+          PagePatcher.lockCursorSaving();
+          if (confirm(Utils.getText("confirm_reset_position"))) {
+            await PagePatcher.clearSavedPosition("User UI Reset");
+            PagePatcher.armResetGuard();
+            try {
+              window.scrollTo(0, 0);
+            } catch (e) {
+            }
+            try {
+              const url = new URL(window.location.href);
+              if (url.searchParams.has("cursor")) {
+                url.searchParams.delete("cursor");
+                window.location.href = url.toString();
+                return;
+              }
+            } catch (e) {
+            }
+            window.location.reload();
+          } else {
+            PagePatcher.unlockCursorSaving();
+          }
+        } else {
+          Utils.logger("info", Utils.getText("no_position_to_reset"));
+        }
+      };
+      positionContainer.append(positionIcon, positionInfo, clearPositionBtn);
+      fallbackControls.appendChild(positionContainer);
+      State.UI.domFallbackControls = fallbackControls;
+      advancedBody.appendChild(fallbackControls);
+      advancedBody.appendChild(createNumberSettingRow(
+        "setting_max_workers",
+        "maxWorkers",
+        1,
+        15,
+        "setting_max_workers_desc_tooltip",
+        {
+          onChange: /* @__PURE__ */ __name((v) => TaskRunner3 && TaskRunner3.setMaxWorkers(v), "onChange"),
+          uiRefKey: "maxWorkersInput",
+          defaultValue: 7
+        }
+      ));
       advancedBody.appendChild(createSettingRow("setting_auto_resume_429", "autoResumeAfter429"));
       advancedBody.appendChild(createSettingRow("setting_auto_refresh", "autoRefreshEmptyPage"));
       const resetButton = document.createElement("button");
@@ -9959,11 +10023,22 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (el) el.textContent = `${prefix}${Utils.getText(key)}${suffix}`;
         });
       }
-      const mode = TaskRunner3?.getWorkMode ? TaskRunner3.getWorkMode() : !State.fastApiScan ? "page" : State.incrementalEarlyStop ? "incremental" : "full";
-      const pageSubMode = TaskRunner3?.getPageSubMode ? TaskRunner3.getPageSubMode() : State.autoScroll ? "auto_scroll" : State.autoAddOnScroll ? "on_scroll" : "visible";
+      const isFallback = Boolean(State.domFallbackMode);
       const isRunning = Boolean(State.isExecuting || FastScanner.isRunning());
       const fs = State.fastScanStatus;
       const expanded = Boolean(State.uiExpanded);
+      const hasCheckpoint = !isFallback && Boolean(
+        State.hasFastScanCheckpoint || fs?.phase === "paused" || fs?.phase === "partial"
+      );
+      const getCheckpointPct = /* @__PURE__ */ __name(() => {
+        if (fs && fs.totalEstimated > 0 && Number.isFinite(fs.itemsScanned)) {
+          return Math.min(99, Math.max(1, Math.round(fs.itemsScanned / fs.totalEstimated * 100)));
+        }
+        if (State.fastScanCheckpointMeta && Number.isFinite(State.fastScanCheckpointMeta.pct)) {
+          return State.fastScanCheckpointMeta.pct;
+        }
+        return null;
+      }, "getCheckpointPct");
       State.UI.container.classList.toggle("fab-helper-collapsed", !expanded);
       if (State.UI.tabsContainer) {
         State.UI.tabsContainer.style.display = expanded ? "flex" : "none";
@@ -9985,135 +10060,93 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         const fastRunning = FastScanner.isRunning() || Boolean(fs?.running);
         if (!expanded) {
           if (fastRunning && fs) {
-            if (mode === "full" && fs.totalEstimated > 0) {
+            if (fs.totalEstimated > 0) {
               const pct = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
               badgeText = `\u26A1 ${pct}%`;
-            } else if (mode === "incremental") {
-              badgeText = `\u{1F195} ${fs.itemsScanned.toLocaleString()}`;
             } else {
               badgeText = `\u26A1 ${fs.itemsScanned.toLocaleString()}`;
             }
           } else if (isRunning) {
             badgeText = State.executionTotalTasks > 0 ? `${State.executionCompletedTasks + State.executionFailedTasks}/${State.executionTotalTasks}` : State.lang === "zh" ? "\u6267\u884C\u4E2D" : "Running";
-          } else if (mode === "full" && (State.hasFastScanCheckpoint || fs?.phase === "paused" || fs?.phase === "partial")) {
-            badgeText = State.lang === "zh" ? "\u26A1 \u65AD\u70B9" : "\u26A1 Paused";
+          } else if (hasCheckpoint) {
+            const pct = getCheckpointPct();
+            badgeText = pct != null ? `\u25B6 ${pct}%` : State.lang === "zh" ? "\u26A1 \u65AD\u70B9" : "\u26A1 Paused";
           }
         }
         State.UI.headerLiveBadge.textContent = badgeText;
         State.UI.headerLiveBadge.style.display = badgeText ? "inline-flex" : "none";
       }
-      for (const key in State.UI.modeButtons) {
-        const btn = State.UI.modeButtons[key];
-        if (!btn) continue;
-        const isActive = key === mode;
-        btn.classList.toggle("active", isActive);
-        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
-      }
-      for (const key in State.UI.modePanels) {
-        const panel = State.UI.modePanels[key];
-        if (panel) panel.style.display = key === mode ? "block" : "none";
-      }
-      for (const key in State.UI.pageSubModeButtons) {
-        const btn = State.UI.pageSubModeButtons[key];
-        if (!btn) continue;
-        const isActive = key === pageSubMode;
-        btn.classList.toggle("active", isActive);
-        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
-      }
       if (State.UI.fastScanStatusDisplay) {
         const zh2 = State.lang === "zh";
-        if (fs && fs.running && fs.mode !== "incremental") {
-          const totalStr = fs.totalEstimated > 0 ? `/${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
-          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
-          State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u26A1 ${fs.activeConcurrency}\u8DEF \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.activeConcurrency}x \xB7 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
-        } else if (fs && fs.phase === "paused" && fs.mode !== "incremental") {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-            "fast_scan_status_paused",
-            fs.itemsScanned.toLocaleString(),
-            fs.totalEstimated > 0 ? fs.totalEstimated.toLocaleString() : "?"
-          );
-        } else if (fs && fs.phase === "partial" && fs.mode !== "incremental") {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
-            "fast_scan_status_partial",
-            fs.claimedDirect,
-            fs.itemsScanned.toLocaleString(),
-            fs.incompleteSlices || 1
-          );
-        } else if (fs && fs.phase === "completed" && fs.mode !== "incremental") {
+        if (isFallback) {
+          if (isRunning && State.executionTotalTasks > 0) {
+            const done = State.executionCompletedTasks + State.executionFailedTasks;
+            State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u{1F4DC} \u6EDA\u9875\u5907\u7528\u8FD0\u884C\u4E2D \xB7 ${done}/${State.executionTotalTasks}` : `\u{1F4DC} Fallback running \xB7 ${done}/${State.executionTotalTasks}`;
+          } else if (isRunning) {
+            State.UI.fastScanStatusDisplay.textContent = zh2 ? "\u{1F4DC} \u6B63\u5728\u6EDA\u9875\u626B\u63CF\u5F53\u524D\u5217\u8868..." : "\u{1F4DC} Scrolling list in fallback mode...";
+          } else {
+            State.UI.fastScanStatusDisplay.textContent = Utils.getText("status_idle_fallback");
+          }
+        } else if (fs && fs.running) {
+          const totalStr = fs.totalEstimated > 0 ? ` / ${fs.totalEstimated.toLocaleString()} (${Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100))}%)` : "";
+          const rateTag = fs.rateLimitedUntil > Date.now() ? zh2 ? " \xB7 \u23F3\u9650\u901F\u7B49\u5F85\u4E2D" : " \xB7 \u23F3429" : "";
+          State.UI.fastScanStatusDisplay.textContent = zh2 ? `\u26A1 \u5DF2\u6838\u5BF9 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 \u672C\u6B21\u65B0\u9886 ${fs.claimedDirect}${rateTag}` : `\u26A1 ${fs.itemsScanned.toLocaleString()}${totalStr} \xB7 ${fs.itemsPerSec}/s \xB7 +${fs.claimedDirect}${rateTag}`;
+        } else if (fs && fs.phase === "completed") {
           let text = Utils.getText(
-            "fast_scan_status_completed",
+            "status_scan_done",
             fs.claimedDirect,
             fs.itemsScanned.toLocaleString()
           );
-          if (fs.queuedFallback > 0) {
-            text += zh2 ? ` \xB7 \u5F85\u9886 ${fs.queuedFallback}` : ` \xB7 ${fs.queuedFallback} queued`;
-          }
           if (fs.failed > 0) {
             text += zh2 ? ` \xB7 \u5931\u8D25 ${fs.failed}` : ` \xB7 ${fs.failed} failed`;
           }
           State.UI.fastScanStatusDisplay.textContent = text;
-        } else if (State.hasFastScanCheckpoint) {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText("fast_full_checkpoint_ready");
-        } else {
-          State.UI.fastScanStatusDisplay.textContent = Utils.getText("fast_full_idle_hint");
-        }
-      }
-      if (State.UI.incScanStatusDisplay) {
-        if (fs && fs.running && fs.mode === "incremental") {
-          const rateTag = fs.rateLimitedUntil > Date.now() ? " \xB7 \u23F3429" : "";
-          State.UI.incScanStatusDisplay.textContent = Utils.getText(
-            "fast_inc_running_status",
-            fs.itemsScanned.toLocaleString(),
-            fs.itemsPerSec,
-            fs.claimedDirect
-          ) + rateTag;
-        } else if (fs && fs.phase === "completed" && fs.mode === "incremental") {
-          State.UI.incScanStatusDisplay.textContent = Utils.getText(
-            "fast_inc_completed_status",
+        } else if (fs && fs.phase === "partial") {
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+            "status_scan_partial",
             fs.claimedDirect,
-            fs.itemsScanned.toLocaleString()
+            fs.itemsScanned.toLocaleString(),
+            fs.incompleteSlices || 1
           );
+        } else if (hasCheckpoint) {
+          const pct = getCheckpointPct();
+          const scanned = fs?.itemsScanned ?? State.fastScanCheckpointMeta?.itemsScanned ?? 0;
+          const total = fs?.totalEstimated ?? State.fastScanCheckpointMeta?.totalEstimated ?? 0;
+          if (pct != null && total > 0) {
+            State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+              "status_checkpoint_pct",
+              pct,
+              Number(scanned).toLocaleString(),
+              Number(total).toLocaleString()
+            );
+          } else {
+            State.UI.fastScanStatusDisplay.textContent = Utils.getText("status_checkpoint_generic");
+          }
         } else {
-          State.UI.incScanStatusDisplay.textContent = Utils.getText("fast_inc_idle_hint");
+          State.UI.fastScanStatusDisplay.textContent = Utils.getText(
+            State.autoClaimVisible ? "status_idle_auto" : "status_idle_manual"
+          );
         }
       }
-      if (Config.USE_API_PIPELINE && State.UI.savedPositionDisplay) {
-        State.UI.savedPositionDisplay.textContent = UI5.getApiPositionText();
-      } else if (mode === "page" && State.UI.savedPositionDisplay) {
-        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
-      }
-      const apiMode = Config.USE_API_PIPELINE;
-      const todoCount = apiMode ? EventLog.getTodo().length : State.db.todo.length;
-      const doneCount = apiMode ? Math.max(State.db.done.length, EventLog.getDone().length) : State.db.done.length;
-      const failedCount = apiMode ? Math.max(State.db.failed.length, EventLog.getFailed().length) : State.db.failed.length;
-      const cardCounts = TaskRunner3?.getCardCounts ? TaskRunner3.getCardCounts() : {
-        total: document.querySelectorAll(Config.SELECTORS.card).length,
-        hidden: State.hiddenThisPageCount,
-        visible: Math.max(0, document.querySelectorAll(Config.SELECTORS.card).length - State.hiddenThisPageCount)
-      };
-      const hiddenCount = cardCounts.hidden;
-      const visibleCount = cardCounts.visible;
+      const todoCount = State.db.todo.length + (fs && fs.running ? fs.pendingCount || 0 : 0);
+      const doneCount = State.db.done.length;
+      const failedCount = State.db.failed.length;
       const setStatusCount = /* @__PURE__ */ __name((item, val) => {
         if (!item) return;
         const span = item._valueEl || item.querySelector("span");
-        if (span) span.textContent = val;
+        if (span) span.textContent = String(val);
       }, "setStatusCount");
       setStatusCount(State.UI.statusTodo, todoCount);
       setStatusCount(State.UI.statusDone, doneCount);
       setStatusCount(State.UI.statusFailed, failedCount);
-      setStatusCount(State.UI.statusHidden, hiddenCount);
-      setStatusCount(State.UI.statusVisible, visibleCount);
-      if (State.UI.statusVisible) State.UI.statusVisible.style.display = mode === "page" ? "" : "none";
-      if (State.UI.statusHidden) State.UI.statusHidden.style.display = mode === "page" ? "" : "none";
       if (State.UI.statusFailed) {
         State.UI.statusFailed.classList.toggle("has-failed", failedCount > 0);
       }
       if (State.UI.execBtn) {
         if (isRunning) {
-          const stopKey = mode === "full" ? "exec_full_stop" : mode === "incremental" ? "exec_inc_stop" : "exec_page_stop";
-          State.UI.execBtn.textContent = Utils.getText(stopKey);
+          State.UI.execBtn.textContent = Utils.getText(isFallback ? "exec_fallback_stop" : "exec_full_stop");
           State.UI.execBtn.classList.add("executing");
-          if (mode === "full" && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
+          if (!isFallback && FastScanner.isRunning() && fs && fs.totalEstimated > 0) {
             const percentage = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
             State.UI.execBtn.title = Utils.getText("tooltip_executing_progress", fs.itemsScanned, fs.totalEstimated, percentage);
           } else if (State.executionTotalTasks > 0) {
@@ -10124,18 +10157,22 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
             State.UI.execBtn.title = Utils.getText("tooltip_executing");
           }
         } else {
-          let startKey = "exec_full_start";
-          if (mode === "full") {
-            startKey = State.hasFastScanCheckpoint || fs?.phase === "paused" || fs?.phase === "partial" ? "exec_full_resume" : "exec_full_start";
-          } else if (mode === "incremental") {
-            startKey = "exec_inc_start";
+          if (isFallback) {
+            State.UI.execBtn.textContent = Utils.getText("exec_fallback_start");
+          } else if (hasCheckpoint) {
+            const pct = getCheckpointPct();
+            State.UI.execBtn.textContent = pct != null ? Utils.getText("exec_full_resume_pct", pct) : Utils.getText("exec_full_resume");
           } else {
-            startKey = `exec_page_${pageSubMode}`;
+            State.UI.execBtn.textContent = Utils.getText("exec_full_start");
           }
-          State.UI.execBtn.textContent = Utils.getText(startKey);
           State.UI.execBtn.classList.remove("executing");
           State.UI.execBtn.title = Utils.getText("tooltip_start_tasks");
         }
+      }
+      if (State.UI.resetCheckpointBtn) {
+        const showRestart = !isRunning && !isFallback && hasCheckpoint;
+        State.UI.resetCheckpointBtn.style.display = showRestart ? "" : "none";
+        State.UI.resetCheckpointBtn.disabled = !showRestart;
       }
       if (State.UI.statusKeepAlive) {
         if (!isRunning) {
@@ -10153,7 +10190,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       }
       if (State.UI.progressTrack && State.UI.progressBar) {
-        if (State.fastApiScan && fs && fs.running && fs.totalEstimated > 0) {
+        if (!isFallback && fs && fs.running && fs.totalEstimated > 0) {
           State.UI.progressTrack.style.display = "block";
           const percentage = Math.min(100, Math.round(fs.itemsScanned / fs.totalEstimated * 100));
           State.UI.progressBar.style.width = `${percentage}%`;
@@ -10167,30 +10204,35 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           State.UI.progressBar.style.width = "0%";
         }
       }
-      if (State.UI.syncBtn) {
-        State.UI.syncBtn.style.display = mode === "page" ? "" : "none";
-      }
-      if (State.UI.hideBtn) {
-        State.UI.hideBtn.style.display = mode === "page" ? "" : "none";
-        State.UI.hideBtn.textContent = (State.hideSaved ? "\u{1F648} " : "\u{1F441}\uFE0F ") + (State.hideSaved ? Utils.getText("show") : Utils.getText("hide"));
-      }
-      if (State.UI.resetCheckpointBtn) {
-        State.UI.resetCheckpointBtn.style.display = mode === "full" ? "" : "none";
-        State.UI.resetCheckpointBtn.disabled = isRunning || !State.hasFastScanCheckpoint && !State.fastScanStatus;
-      }
       if (State.UI.retryFailedBtn) {
+        State.UI.retryFailedBtn.style.display = failedCount > 0 ? "" : "none";
         State.UI.retryFailedBtn.textContent = "\u{1F501} " + Utils.getText("retry_failed") + (failedCount > 0 ? ` (${failedCount})` : "");
         State.UI.retryFailedBtn.disabled = failedCount === 0;
         State.UI.retryFailedBtn.title = failedCount > 0 ? Utils.getText("retry_failed") + ` (${failedCount})` : Utils.getText("no_failed_tasks");
+      }
+      const syncPill = /* @__PURE__ */ __name((btn, active) => {
+        if (!btn) return;
+        const on = Boolean(active);
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-pressed", on ? "true" : "false");
+      }, "syncPill");
+      syncPill(State.UI.quickAutoClaimBtn, State.autoClaimVisible);
+      syncPill(State.UI.quickHideSavedBtn, State.hideSaved);
+      syncPill(State.UI.quickHidePaidBtn, State.hidePaid);
+      if (State.UI.domFallbackCheckbox) {
+        State.UI.domFallbackCheckbox.checked = isFallback;
+      }
+      if (State.UI.domFallbackControls) {
+        State.UI.domFallbackControls.style.display = isFallback ? "block" : "none";
+      }
+      if (State.UI.savedPositionDisplay) {
+        State.UI.savedPositionDisplay.textContent = Utils.decodeCursor(State.savedCursor);
       }
       if (State.UI.maxWorkersInput && document.activeElement !== State.UI.maxWorkersInput) {
         State.UI.maxWorkersInput.value = State.maxWorkers;
       }
       if (State.UI.apiScanConcurrencyInput && document.activeElement !== State.UI.apiScanConcurrencyInput) {
         State.UI.apiScanConcurrencyInput.value = State.apiScanConcurrency;
-      }
-      if (State.UI.incrementalStopPagesInput && document.activeElement !== State.UI.incrementalStopPagesInput) {
-        State.UI.incrementalStopPagesInput.value = State.incrementalStopPages;
       }
       if (State.UI.rememberPositionCheckbox) {
         State.UI.rememberPositionCheckbox.checked = Boolean(State.rememberScrollPosition);
@@ -10334,1090 +10376,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       reversedHistory.forEach((entry) => State.UI.historyContainer.appendChild(createHistoryItem(entry)));
     }, "updateDebugTab")
   };
-
-  // src/modules/iframe-claim.js
-  var noop2 = /* @__PURE__ */ __name(() => {
-  }, "noop");
-  var defaultBuildUrl = /* @__PURE__ */ __name((task) => {
-    const base = `https://www.fab.com/listings/${encodeURIComponent(task && task.uid)}`;
-    return `${base}?${Config.CLAIM_FRAME_PARAM}=1`;
-  }, "defaultBuildUrl");
-  var CLAIM_FRAME_STYLE = "position:fixed;left:-10000px;top:0;width:1200px;height:800px;border:0;";
-  var isRealDocument = /* @__PURE__ */ __name((doc) => {
-    if (!doc || doc.readyState !== "interactive" && doc.readyState !== "complete") return false;
-    let href = "";
-    try {
-      href = doc.location && doc.location.href || "";
-    } catch (e) {
-      return false;
-    }
-    return /^https?:/.test(href);
-  }, "isRealDocument");
-  var waitForFrameReady = /* @__PURE__ */ __name(async (iframe, { timeoutMs, sleep, now }) => {
-    const startAt = now();
-    while (now() - startAt < timeoutMs) {
-      let doc = null;
-      try {
-        doc = iframe.contentDocument;
-      } catch (e) {
-        return { ok: false, reason: `\u8BFB\u4E0D\u5230 iframe \u6587\u6863\uFF08\u8DE8\u57DF\u6216\u88AB CSP \u62E6\u622A\uFF09: ${e.message}` };
-      }
-      if (isRealDocument(doc)) return { ok: true };
-      await sleep(200);
-    }
-    return { ok: false, reason: `iframe \u5728 ${timeoutMs}ms \u5185\u6CA1\u6709\u52A0\u8F7D\u5B8C\u6210` };
-  }, "waitForFrameReady");
-  var createRealFrameOpener = /* @__PURE__ */ __name((options = {}) => {
-    const {
-      parentDoc = typeof document !== "undefined" ? document : null,
-      container = null,
-      timeoutMs = 3e4,
-      sleep = /* @__PURE__ */ __name((ms) => new Promise((r) => setTimeout(r, ms)), "sleep"),
-      now = /* @__PURE__ */ __name(() => Date.now(), "now"),
-      log: log2 = noop2
-    } = options;
-    return async (url) => {
-      if (!parentDoc || typeof parentDoc.createElement !== "function") {
-        throw new Error("\u6CA1\u6709\u53EF\u7528\u7684\u7236\u6587\u6863\uFF0C\u65E0\u6CD5\u521B\u5EFA\u9886\u53D6 iframe");
-      }
-      const host = container || parentDoc.body || parentDoc.documentElement;
-      const iframe = parentDoc.createElement("iframe");
-      iframe.setAttribute("data-fab-claim-frame", "1");
-      iframe.setAttribute("aria-hidden", "true");
-      iframe.style.cssText = CLAIM_FRAME_STYLE;
-      iframe.src = url;
-      host.appendChild(iframe);
-      let closed = false;
-      const close = /* @__PURE__ */ __name(() => {
-        if (closed) return;
-        closed = true;
-        try {
-          iframe.remove();
-        } catch (e) {
-        }
-      }, "close");
-      const ready = await waitForFrameReady(iframe, { timeoutMs, sleep, now });
-      if (!ready.ok) {
-        close();
-        const err = new Error(ready.reason);
-        err.retryable = true;
-        throw err;
-      }
-      log2(`[IframeClaim] \u8BE6\u60C5\u9875\u5DF2\u5728\u9886\u53D6\u5E27\u5185\u5C31\u7EEA: ${url}`);
-      return { iframe, doc: iframe.contentDocument, win: iframe.contentWindow, close };
-    };
-  }, "createRealFrameOpener");
-  var createIframeAcquire = /* @__PURE__ */ __name((options = {}) => {
-    const {
-      taskRunner = null,
-      openFrame = createRealFrameOpener(options),
-      buildUrl = defaultBuildUrl,
-      log: log2 = noop2,
-      claimOptions = {}
-    } = options;
-    return /* @__PURE__ */ __name(async function acquireViaIframe(task) {
-      if (!task || !task.uid) {
-        return { success: false, reason: "\u4EFB\u52A1\u7F3A\u5C11 uid", retryable: false };
-      }
-      let frame = null;
-      try {
-        frame = await openFrame(buildUrl(task));
-        if (!frame || !frame.doc) {
-          return { success: false, reason: "\u9886\u53D6\u5E27\u6CA1\u6709\u53EF\u7528\u6587\u6863", retryable: true };
-        }
-        const result = await acquireOnDetailPage(task, {
-          doc: frame.doc,
-          win: frame.win,
-          taskRunner,
-          log: log2,
-          ...claimOptions
-        });
-        return {
-          success: Boolean(result && result.success),
-          reason: result && result.logs && result.logs.slice(-1)[0] || "",
-          retryable: false
-        };
-      } catch (e) {
-        return {
-          success: false,
-          reason: e && e.message || String(e),
-          retryable: (e && e.retryable) !== false
-        };
-      } finally {
-        if (frame && typeof frame.close === "function") frame.close();
-      }
-    }, "acquireViaIframe");
-  }, "createIframeAcquire");
-
-  // src/modules/rate-limiter.js
-  var RateLimiter = {
-    // 基准速率（次/分钟），突发上限，降速下限
-    baseRatePerMin: 40,
-    minRatePerMin: 4,
-    currentRatePerMin: 40,
-    capacity: 5,
-    tokens: 5,
-    lastRefill: 0,
-    pauseUntil: 0,
-    // 连续成功计数，用于和性增
-    _successStreak: 0,
-    _penaltyCount: 0,
-    configure: /* @__PURE__ */ __name(({ ratePerMin, burst, minRatePerMin } = {}) => {
-      if (Number.isFinite(ratePerMin) && ratePerMin > 0) {
-        RateLimiter.baseRatePerMin = ratePerMin;
-        RateLimiter.currentRatePerMin = ratePerMin;
-      }
-      if (Number.isFinite(minRatePerMin) && minRatePerMin > 0) {
-        RateLimiter.minRatePerMin = Math.min(minRatePerMin, RateLimiter.baseRatePerMin);
-      }
-      if (Number.isFinite(burst) && burst > 0) {
-        RateLimiter.capacity = burst;
-      }
-      RateLimiter.reset();
-    }, "configure"),
-    reset: /* @__PURE__ */ __name((now = 0) => {
-      RateLimiter.currentRatePerMin = RateLimiter.baseRatePerMin;
-      RateLimiter.capacity = Math.max(1, RateLimiter.capacity);
-      RateLimiter.tokens = RateLimiter.capacity;
-      RateLimiter.lastRefill = now;
-      RateLimiter.pauseUntil = 0;
-      RateLimiter._successStreak = 0;
-      RateLimiter._penaltyCount = 0;
-    }, "reset"),
-    get refillPerMs() {
-      return RateLimiter.currentRatePerMin / 6e4;
-    },
-    isPaused: /* @__PURE__ */ __name((now) => now < RateLimiter.pauseUntil, "isPaused"),
-    /**
-     * 补充令牌。暂停期间冻结补充（不推进 lastRefill），
-     * 避免解除限速的瞬间攒满一桶、立刻再次撞上限速。
-     */
-    _refill: /* @__PURE__ */ __name((now) => {
-      if (RateLimiter.isPaused(now)) {
-        RateLimiter.lastRefill = now;
-        return;
-      }
-      if (RateLimiter.pauseUntil > RateLimiter.lastRefill) {
-        RateLimiter.lastRefill = Math.max(RateLimiter.lastRefill, RateLimiter.pauseUntil);
-      }
-      const elapsed = Math.max(0, now - RateLimiter.lastRefill);
-      if (elapsed <= 0) return;
-      RateLimiter.tokens = Math.min(
-        RateLimiter.capacity,
-        RateLimiter.tokens + elapsed * RateLimiter.refillPerMs
-      );
-      RateLimiter.lastRefill = now;
-    }, "_refill"),
-    /** 尝试取 n 个令牌。取到返回 true，否则 false（调用方应等待 nextAvailableMs）。 */
-    tryAcquire: /* @__PURE__ */ __name((count = 1, now = Date.now()) => {
-      if (RateLimiter.isPaused(now)) {
-        RateLimiter.lastRefill = now;
-        return false;
-      }
-      RateLimiter._refill(now);
-      if (RateLimiter.tokens >= count) {
-        RateLimiter.tokens -= count;
-        RateLimiter._successStreak = 0;
-        return true;
-      }
-      return false;
-    }, "tryAcquire"),
-    /** 距离可以取到 n 个令牌还需等待多少毫秒（暂停中会一并计入）。 */
-    nextAvailableMs: /* @__PURE__ */ __name((count = 1, now = Date.now()) => {
-      const pauseLeft = Math.max(0, RateLimiter.pauseUntil - now);
-      if (pauseLeft > 0) return pauseLeft;
-      const tokens = Math.min(
-        RateLimiter.capacity,
-        RateLimiter.tokens + Math.max(0, now - RateLimiter.lastRefill) * RateLimiter.refillPerMs
-      );
-      const missing = count - tokens;
-      if (missing <= 0) return 0;
-      return Math.ceil(missing / RateLimiter.refillPerMs);
-    }, "nextAvailableMs"),
-    /**
-     * 收到 429：暂停到 retryAfterMs 之后，并把速率折半（乘性减）。
-     * retryAfterMs 缺省时按已连续被惩罚的次数指数退避，上限 10 分钟。
-     */
-    penalize: /* @__PURE__ */ __name((retryAfterMs, now = Date.now()) => {
-      RateLimiter._penaltyCount += 1;
-      const backoff = retryAfterMs != null && retryAfterMs >= 0 ? retryAfterMs : Math.min(6e5, 3e4 * Math.pow(2, RateLimiter._penaltyCount - 1));
-      RateLimiter.pauseUntil = now + backoff;
-      RateLimiter.currentRatePerMin = Math.max(
-        RateLimiter.minRatePerMin,
-        Math.floor(RateLimiter.currentRatePerMin / 2)
-      );
-      RateLimiter.tokens = 0;
-      RateLimiter.lastRefill = now;
-      RateLimiter._successStreak = 0;
-      return { pauseMs: backoff, ratePerMin: RateLimiter.currentRatePerMin };
-    }, "penalize"),
-    /**
-     * 领取成功后调用，连续成功则和性增，缓慢回到基准速率。
-     * 每 8 次连续成功上调基准的 25%，但绝不超过基准。
-     */
-    reward: /* @__PURE__ */ __name(() => {
-      RateLimiter._penaltyCount = 0;
-      RateLimiter._successStreak += 1;
-      if (RateLimiter._successStreak >= 8) {
-        RateLimiter._successStreak = 0;
-        const step = Math.max(1, Math.floor(RateLimiter.baseRatePerMin * 0.25));
-        RateLimiter.currentRatePerMin = Math.min(
-          RateLimiter.baseRatePerMin,
-          RateLimiter.currentRatePerMin + step
-        );
-      }
-      return RateLimiter.currentRatePerMin;
-    }, "reward"),
-    status: /* @__PURE__ */ __name((now = Date.now()) => {
-      RateLimiter._refill(now);
-      return {
-        ratePerMin: RateLimiter.currentRatePerMin,
-        baseRatePerMin: RateLimiter.baseRatePerMin,
-        tokens: Number(RateLimiter.tokens.toFixed(2)),
-        capacity: RateLimiter.capacity,
-        paused: RateLimiter.isPaused(now),
-        pauseLeftMs: Math.max(0, RateLimiter.pauseUntil - now),
-        penaltyCount: RateLimiter._penaltyCount
-      };
-    }, "status")
-  };
-
-  // src/modules/state-machine.js
-  var STATE = {
-    IDLE: "IDLE",
-    SCANNING: "SCANNING",
-    CLAIMING: "CLAIMING",
-    VERIFYING: "VERIFYING",
-    RATE_LIMITED: "RATE_LIMITED",
-    DONE: "DONE"
-  };
-  var TRANSITIONS = {
-    IDLE: ["SCANNING"],
-    SCANNING: ["CLAIMING", "DONE"],
-    // 队列排空但列表未到底时，要从领取退回扫描继续翻页
-    CLAIMING: ["VERIFYING", "SCANNING", "DONE"],
-    VERIFYING: ["CLAIMING", "SCANNING", "DONE"],
-    RATE_LIMITED: ["CLAIMING", "IDLE"],
-    DONE: ["IDLE"]
-  };
-  var TIMEOUTS = {
-    SCANNING: { ms: 15e3, to: STATE.DONE, reason: "\u5206\u9875\u62C9\u53D6\u8D85\u65F6\uFF0C\u6309\u5217\u8868\u7ED3\u675F\u5904\u7406" },
-    CLAIMING: { ms: 2e4, to: STATE.RATE_LIMITED, reason: "\u5355\u4EFB\u52A1\u9886\u53D6\u8D85\u65F6\uFF0C\u8F6C\u5165\u9000\u907F" },
-    VERIFYING: { ms: 8e3, to: STATE.CLAIMING, reason: "\u590D\u67E5\u8D85\u65F6\uFF0C\u56DE\u5230\u9886\u53D6\u91CD\u8BD5\u4E00\u6B21" },
-    RATE_LIMITED: { ms: 6e5, to: STATE.IDLE, reason: "\u9000\u907F\u8D85\u8FC7\u4E0A\u9650\uFF0C\u4EA4\u56DE\u7528\u6237" }
-  };
-  var TaskStateMachine = {
-    state: STATE.IDLE,
-    enteredAt: 0,
-    history: [],
-    _listeners: [],
-    onChange: /* @__PURE__ */ __name((fn) => {
-      TaskStateMachine._listeners.push(fn);
-      return () => {
-        TaskStateMachine._listeners = TaskStateMachine._listeners.filter((f) => f !== fn);
-      };
-    }, "onChange"),
-    reset: /* @__PURE__ */ __name((now = 0) => {
-      TaskStateMachine.state = STATE.IDLE;
-      TaskStateMachine.enteredAt = now;
-      TaskStateMachine.history = [];
-    }, "reset"),
-    /**
-     * 把「进入当前状态的时刻」推到 now，仅动时钟、不动状态。
-     *
-     * 用于外部长时间没有推进状态机之后恢复（用户暂停执行、标签页被冻结/休眠）：
-     * 不重置时钟的话，暂停时长会被算进超时判定，恢复瞬间就直接触发超时转移 ——
-     * 最典型的后果是 SCANNING 暂停几分钟后一恢复就超时，被当成「列表已到底」
-     * 而提前结束整轮枚举。
-     */
-    refreshClock: /* @__PURE__ */ __name((now = Date.now()) => {
-      TaskStateMachine.enteredAt = now;
-      return TaskStateMachine.enteredAt;
-    }, "refreshClock"),
-    canTransition: /* @__PURE__ */ __name((to) => {
-      const from = TaskStateMachine.state;
-      if (from === to) return false;
-      if (to === STATE.IDLE || to === STATE.RATE_LIMITED) return true;
-      return (TRANSITIONS[from] || []).includes(to);
-    }, "canTransition"),
-    transition: /* @__PURE__ */ __name((to, { now = Date.now(), reason = "" } = {}) => {
-      const from = TaskStateMachine.state;
-      if (!TaskStateMachine.canTransition(to)) return false;
-      TaskStateMachine.state = to;
-      TaskStateMachine.enteredAt = now;
-      TaskStateMachine.history.push({ from, to, at: now, reason });
-      if (TaskStateMachine.history.length > 50) TaskStateMachine.history.shift();
-      TaskStateMachine._listeners.forEach((fn) => {
-        try {
-          fn({ from, to, at: now, reason });
-        } catch (e) {
-        }
-      });
-      return true;
-    }, "transition"),
-    is: /* @__PURE__ */ __name((...states) => states.includes(TaskStateMachine.state), "is"),
-    elapsed: /* @__PURE__ */ __name((now = Date.now()) => Math.max(0, now - TaskStateMachine.enteredAt), "elapsed"),
-    remainingMs: /* @__PURE__ */ __name((now = Date.now()) => {
-      const rule = TIMEOUTS[TaskStateMachine.state];
-      if (!rule) return Infinity;
-      return Math.max(0, rule.ms - TaskStateMachine.elapsed(now));
-    }, "remainingMs"),
-    /**
-     * 推进状态机：若当前状态已超时，按 TIMEOUTS 表执行既定转移。
-     * 返回本次是否发生了超时转移，便于调用方记录日志。
-     */
-    tick: /* @__PURE__ */ __name((now = Date.now()) => {
-      const rule = TIMEOUTS[TaskStateMachine.state];
-      if (!rule) return null;
-      if (TaskStateMachine.elapsed(now) < rule.ms) return null;
-      const from = TaskStateMachine.state;
-      TaskStateMachine.transition(rule.to, { now, reason: rule.reason });
-      return { from, to: rule.to, reason: rule.reason, timedOut: true };
-    }, "tick"),
-    // --- 面向调用方的语义化入口，避免各处硬编码状态名 ---
-    start: /* @__PURE__ */ __name((now) => TaskStateMachine.transition(STATE.SCANNING, { now, reason: "\u7528\u6237\u5F00\u59CB" }), "start"),
-    stop: /* @__PURE__ */ __name((now) => TaskStateMachine.transition(STATE.IDLE, { now, reason: "\u7528\u6237\u505C\u6B62" }), "stop"),
-    /** 429 / 风控：任何状态都可进入退避 */
-    hitRateLimit: /* @__PURE__ */ __name((now, retryAfterMs) => {
-      const ok = TaskStateMachine.transition(STATE.RATE_LIMITED, {
-        now,
-        reason: retryAfterMs != null ? `429 \u9000\u907F ${retryAfterMs}ms` : "429 \u9650\u901F"
-      });
-      return ok;
-    }, "hitRateLimit"),
-    status: /* @__PURE__ */ __name((now = Date.now()) => ({
-      state: TaskStateMachine.state,
-      elapsedMs: TaskStateMachine.elapsed(now),
-      remainingMs: TaskStateMachine.remainingMs(now),
-      lastTransition: TaskStateMachine.history[TaskStateMachine.history.length - 1] || null
-    }), "status")
-  };
-
-  // src/modules/pipeline.js
-  var Pipeline = {
-    fsm: TaskStateMachine,
-    limiter: RateLimiter,
-    log: EventLog,
-    executor: ClaimExecutor,
-    cursor: null,
-    isEndOfList: false,
-    pendingVerify: null,
-    pagesFetched: 0,
-    deps: {
-      // 拉取一页列表，返回 { items: [{uid,url,name}], nextCursor }
-      fetchPage: null,
-      // 复查某 uid 是否确实已入库，返回 boolean
-      verifyOwned: null,
-      // 扫描阶段过滤商品：返回 null 表示纳入待领，返回字符串表示跳过原因。
-      // 入参是 fetchPage 给出的完整商品对象（含价格、许可证），
-      // 不是事件日志条目 —— 后者在领取阶段只剩 uid / name / url。
-      filter: null,
-      // 判断是否已登录，返回 boolean。只在它是函数且返回 false 时拦截领取，
-      // 未注入（null）时不拦 —— 保持测试与离线驱动下行为不变。
-      // 为什么必须有这道闸门，见 _claimBlockedByLogin 的说明。
-      isLoggedIn: null
-    },
-    /**
-     * 注入副作用适配器。显式传 null 可清除对应项——若只允许覆盖而不允许清除，
-     * 上一次注入的过滤器会静默残留并影响后续流程。
-     */
-    configure: /* @__PURE__ */ __name(({ fetchPage, verifyOwned, filter, isLoggedIn, ratePerMin, burst } = {}) => {
-      if (typeof fetchPage === "function" || fetchPage === null) Pipeline.deps.fetchPage = fetchPage;
-      if (typeof verifyOwned === "function" || verifyOwned === null) Pipeline.deps.verifyOwned = verifyOwned;
-      if (typeof filter === "function" || filter === null) Pipeline.deps.filter = filter;
-      if (typeof isLoggedIn === "function" || isLoggedIn === null) Pipeline.deps.isLoggedIn = isLoggedIn;
-      if (Number.isFinite(ratePerMin) || Number.isFinite(burst)) {
-        RateLimiter.configure({ ratePerMin, burst });
-      }
-    }, "configure"),
-    // 连续撞 429 的重试上限。超过后放弃当前商品并记为失败，否则
-    // 「退避 → 恢复 → 再撞」会无限循环：状态机的退避上限每次重新进入
-    // RATE_LIMITED 时都被重置，因此兜不住这种反复限速。
-    maxConsecutiveRateLimits: 5,
-    consecutiveRateLimits: 0,
-    /** 清空「一程运行态」：游标、到底标记、限速、状态机、领取指标。不含事件历史。 */
-    _resetRun: /* @__PURE__ */ __name((now = 0) => {
-      Pipeline.cursor = null;
-      Pipeline.isEndOfList = false;
-      Pipeline.pendingVerify = null;
-      Pipeline.pagesFetched = 0;
-      Pipeline.consecutiveRateLimits = 0;
-      RateLimiter.reset(now);
-      TaskStateMachine.reset(now);
-      ClaimExecutor.resetMetrics();
-    }, "_resetRun"),
-    /**
-     * 彻底重来：连事件历史一起清空。
-     * 只在「换号重跑 / 测试数据清零」这类场景才对。
-     */
-    reset: /* @__PURE__ */ __name((now = 0) => {
-      Pipeline._resetRun(now);
-      EventLog.reset();
-    }, "reset"),
-    /**
-     * 重新起一程枚举，但保留事件历史。
-     *
-     * 保留历史是「不重复领取」的唯一保证：_stepScan 会用 EventLog.isKnown 拦下
-     * 已 CLAIMED / FAILED / SKIPPED 的 uid，它们不会再次进入待领队列。
-     * 这里若误用 reset()，每重扫一次历史就归零，已入库的商品会被反复领取 ——
-     * 而重扫恰恰是执行开关保持开启时的默认行为，因此这个区别是致命的。
-     */
-    restart: /* @__PURE__ */ __name((now = Date.now()) => {
-      Pipeline._resetRun(now);
-      return Pipeline.start(now);
-    }, "restart"),
-    start: /* @__PURE__ */ __name((now = Date.now()) => {
-      Pipeline.fsm.start(now);
-      return Pipeline.fsm.state;
-    }, "start"),
-    stop: /* @__PURE__ */ __name((now = Date.now()) => {
-      Pipeline.fsm.stop(now);
-      Pipeline.pendingVerify = null;
-      return Pipeline.fsm.state;
-    }, "stop"),
-    /**
-     * 推进一步。返回本步的动作摘要，调用方据此决定下一步等待多久。
-     * 不持有定时器、不自己 sleep —— 调度节奏完全由调用方掌握。
-     *
-     * 注意：当由 run() 驱动时，等待发生在 nextDelayMs 之后、下一次 tick 之前，
-     * 因此 _stepClaim 内部的 'wait' 分支通常不会命中——它服务于直接调用
-     * tick() 的调度方（此时调用方尚未按 nextDelayMs 等待）。
-     */
-    tick: /* @__PURE__ */ __name(async (now = Date.now()) => {
-      const timeout = Pipeline.fsm.tick(now);
-      if (timeout) return { action: "timeout", ...timeout };
-      switch (Pipeline.fsm.state) {
-        case STATE.SCANNING:
-          return Pipeline._stepScan(now);
-        case STATE.CLAIMING:
-          return Pipeline._stepClaim(now);
-        case STATE.VERIFYING:
-          return Pipeline._stepVerify(now);
-        case STATE.RATE_LIMITED:
-          return Pipeline._stepRecover(now);
-        default:
-          return { action: "idle", state: Pipeline.fsm.state };
-      }
-    }, "tick"),
-    /** 调用方应在再次 tick 前等待的毫秒数 */
-    nextDelayMs: /* @__PURE__ */ __name((now = Date.now()) => {
-      if (Pipeline.fsm.is(STATE.IDLE, STATE.DONE)) return Infinity;
-      if (Pipeline.limiter.isPaused(now)) return Pipeline.limiter.status(now).pauseLeftMs || 1e3;
-      if (Pipeline.fsm.is(STATE.CLAIMING)) {
-        const wait = Pipeline.limiter.nextAvailableMs(1, now);
-        return wait > 0 ? wait : 0;
-      }
-      return 0;
-    }, "nextDelayMs"),
-    /**
-     * 未登录闸门：返回非 null 表示本步到此为止，不许进领取。
-     *
-     * 这是整条流水线最要紧的一道保护。未登录的详情页上根本没有「添加到我的库」
-     * 按钮（实测未登录时只有「立即购买 / 添加至购物车」），领取必然失败；
-     * 而失败一旦写进事件日志就被标成终态，整份免费列表一次性定型 ——
-     * 之后就算登录了，这些 uid 也不会再回到待领队列。
-     *
-     * 相比之下枚举是只读的（/i/listings/search 匿名也返回 200），无害，
-     * 所以允许它照常跑完，只是停在动手领取之前。
-     *
-     * 只在明确注入了 isLoggedIn 且它返回 false 时拦截；未注入（null）时不拦，
-     * 以免改变测试与离线驱动下的既有行为。
-     */
-    _claimBlockedByLogin: /* @__PURE__ */ __name((now, todoCount) => {
-      if (typeof Pipeline.deps.isLoggedIn !== "function") return null;
-      if (Pipeline.deps.isLoggedIn() !== false) return null;
-      Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u672A\u767B\u5F55\uFF0C\u505C\u5728\u9886\u53D6\u4E4B\u524D" });
-      return {
-        action: "login_required",
-        todo: todoCount,
-        state: Pipeline.fsm.state
-      };
-    }, "_claimBlockedByLogin"),
-    _stepScan: /* @__PURE__ */ __name(async (now) => {
-      if (typeof Pipeline.deps.fetchPage !== "function") {
-        return { action: "error", reason: "\u672A\u914D\u7F6E fetchPage" };
-      }
-      let page;
-      try {
-        page = await Pipeline.deps.fetchPage(Pipeline.cursor);
-      } catch (e) {
-        const retryAfterMs = e && Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null;
-        const pause = Pipeline.limiter.penalize(retryAfterMs, now);
-        Pipeline.fsm.hitRateLimit(now, pause.pauseMs);
-        return {
-          action: "scan_error",
-          error: e && e.message || String(e),
-          status: e && e.status || 0,
-          pauseMs: pause.pauseMs,
-          state: Pipeline.fsm.state
-        };
-      }
-      Pipeline.pagesFetched += 1;
-      let discovered = 0;
-      let skipped = 0;
-      (page.items || []).forEach((item) => {
-        if (EventLog.isKnown(item.uid)) return;
-        const skipReason = Pipeline.deps.filter ? Pipeline.deps.filter(item) : null;
-        if (skipReason) {
-          EventLog.append(item.uid, EVENT_STATE.SKIPPED, {
-            name: item.name,
-            url: item.url,
-            reason: skipReason,
-            ts: now
-          });
-          skipped += 1;
-        } else {
-          EventLog.append(item.uid, EVENT_STATE.DISCOVERED, {
-            name: item.name,
-            url: item.url,
-            offerId: item.offerId || "",
-            ts: now
-          });
-          discovered += 1;
-        }
-      });
-      Pipeline.cursor = page.nextCursor;
-      if (page.nextCursor == null) Pipeline.isEndOfList = true;
-      const todo = EventLog.getTodo();
-      if (todo.length > 0) {
-        const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
-        if (blocked) return blocked;
-        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u672C\u9875\u6709\u5F85\u9886\u5546\u54C1" });
-      } else if (Pipeline.isEndOfList) {
-        Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u670D\u52A1\u5668\u786E\u8BA4\u65E0\u66F4\u591A\u5546\u54C1" });
-      }
-      return {
-        action: "scan",
-        pageItems: (page.items || []).length,
-        discovered,
-        skipped,
-        cursor: Pipeline.cursor,
-        endOfList: Pipeline.isEndOfList,
-        state: Pipeline.fsm.state
-      };
-    }, "_stepScan"),
-    _stepClaim: /* @__PURE__ */ __name(async (now) => {
-      if (Pipeline.limiter.isPaused(now)) {
-        return { action: "wait", ms: Pipeline.limiter.status(now).pauseLeftMs, reason: "\u9000\u907F\u4E2D" };
-      }
-      if (!Pipeline.limiter.tryAcquire(1, now)) {
-        return { action: "wait", ms: Pipeline.limiter.nextAvailableMs(1, now), reason: "\u7B49\u5F85\u4EE4\u724C" };
-      }
-      const todo = EventLog.getTodo();
-      if (todo.length === 0) {
-        if (Pipeline.isEndOfList) {
-          Pipeline.fsm.transition(STATE.DONE, { now, reason: "\u961F\u5217\u6E05\u7A7A\u4E14\u5DF2\u5230\u5217\u8868\u672B\u5C3E" });
-        } else {
-          Pipeline.fsm.transition(STATE.SCANNING, { now, reason: "\u961F\u5217\u6E05\u7A7A\uFF0C\u62C9\u53D6\u4E0B\u4E00\u9875" });
-        }
-        return { action: "drain", state: Pipeline.fsm.state };
-      }
-      const blocked = Pipeline._claimBlockedByLogin(now, todo.length);
-      if (blocked) return blocked;
-      const task = todo[0];
-      const outcome = await Pipeline.executor.claim(task);
-      if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
-        Pipeline.consecutiveRateLimits += 1;
-        Pipeline.limiter.penalize(outcome.retryAfterMs, now);
-        Pipeline.fsm.hitRateLimit(now, outcome.retryAfterMs);
-        if (Pipeline.consecutiveRateLimits >= Pipeline.maxConsecutiveRateLimits) {
-          EventLog.append(task.uid, EVENT_STATE.FAILED, {
-            reason: `\u8FDE\u7EED\u9650\u901F ${Pipeline.consecutiveRateLimits} \u6B21\uFF0C\u653E\u5F03\u8BE5\u5546\u54C1`,
-            ts: now
-          });
-          Pipeline.consecutiveRateLimits = 0;
-          return { action: "rate_limit_abandoned", uid: task.uid };
-        }
-        return { action: "rate_limited", uid: task.uid, strategy: outcome.strategy };
-      }
-      if (outcome.result === CLAIM_RESULT.SUCCESS) {
-        Pipeline.pendingVerify = task;
-        Pipeline.fsm.transition(STATE.VERIFYING, { now, reason: `\u5DF2\u901A\u8FC7 ${outcome.strategy} \u9886\u53D6` });
-        return { action: "claimed", uid: task.uid, strategy: outcome.strategy };
-      }
-      EventLog.append(task.uid, EVENT_STATE.FAILED, {
-        reason: outcome.reason || "\u9886\u53D6\u5931\u8D25",
-        ts: now
-      });
-      return { action: "failed", uid: task.uid, reason: outcome.reason, strategy: outcome.strategy };
-    }, "_stepClaim"),
-    _stepVerify: /* @__PURE__ */ __name(async (now) => {
-      const task = Pipeline.pendingVerify;
-      Pipeline.pendingVerify = null;
-      if (!task) {
-        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u65E0\u5F85\u590D\u67E5\u4EFB\u52A1" });
-        return { action: "verify_skipped" };
-      }
-      let owned = false;
-      if (typeof Pipeline.deps.verifyOwned === "function") {
-        owned = await Pipeline.deps.verifyOwned(task.uid);
-      }
-      if (owned) {
-        EventLog.append(task.uid, EVENT_STATE.CLAIMED, { ts: now });
-        Pipeline.limiter.reward();
-        Pipeline.consecutiveRateLimits = 0;
-      } else {
-        EventLog.append(task.uid, EVENT_STATE.FAILED, {
-          reason: "\u590D\u67E5\u672A\u786E\u8BA4\u5165\u5E93",
-          ts: now
-        });
-      }
-      Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: owned ? "\u590D\u67E5\u901A\u8FC7" : "\u590D\u67E5\u672A\u901A\u8FC7" });
-      return { action: owned ? "verified" : "verify_failed", uid: task.uid };
-    }, "_stepVerify"),
-    _stepRecover: /* @__PURE__ */ __name((now) => {
-      if (!Pipeline.limiter.isPaused(now)) {
-        Pipeline.fsm.transition(STATE.CLAIMING, { now, reason: "\u9000\u907F\u7ED3\u675F" });
-        return { action: "recovered", state: Pipeline.fsm.state };
-      }
-      return { action: "wait", ms: Pipeline.limiter.status(now).pauseLeftMs, reason: "\u9000\u907F\u4E2D" };
-    }, "_stepRecover"),
-    /**
-     * 连续推进，直到停止条件满足。测试与脚本调度共用同一条路径，
-     * 保证「单步正确」与「循环正确」不会被两套代码验证。
-     */
-    run: /* @__PURE__ */ __name(async ({ maxSteps = 1e3, sleep = /* @__PURE__ */ __name(async () => {
-    }, "sleep"), now: startNow = Date.now(), advance = 0 } = {}) => {
-      const steps = [];
-      let clock = startNow;
-      for (let i = 0; i < maxSteps; i++) {
-        if (Pipeline.fsm.is(STATE.IDLE, STATE.DONE)) break;
-        const step = await Pipeline.tick(clock);
-        steps.push({ at: clock, ...step });
-        const delay = Pipeline.nextDelayMs(clock);
-        if (!Number.isFinite(delay)) break;
-        if (delay > 0) {
-          await sleep(delay);
-          clock += delay;
-        } else {
-          clock += advance;
-        }
-      }
-      return steps;
-    }, "run"),
-    status: /* @__PURE__ */ __name((now = Date.now()) => ({
-      state: Pipeline.fsm.state,
-      cursor: Pipeline.cursor,
-      endOfList: Pipeline.isEndOfList,
-      pagesFetched: Pipeline.pagesFetched,
-      pendingVerify: Pipeline.pendingVerify ? Pipeline.pendingVerify.uid : null,
-      limiter: Pipeline.limiter.status(now),
-      log: EventLog.stats(),
-      claims: ClaimExecutor.stats()
-    }), "status")
-  };
-
-  // src/modules/pipeline-scheduler.js
-  var IDLE_POLL_MS = 2e3;
-  var DONE_POLL_MS = 1e4;
-  var PERSIST_INTERVAL_MS = 15e3;
-  var RUNNING_STATES = [
-    STATE.SCANNING,
-    STATE.CLAIMING,
-    STATE.VERIFYING,
-    STATE.RATE_LIMITED
-  ];
-  var createPipelineScheduler = /* @__PURE__ */ __name((options = {}) => {
-    const {
-      pipeline = Pipeline,
-      limiter = RateLimiter,
-      isExecuting = /* @__PURE__ */ __name(() => false, "isExecuting"),
-      persist = /* @__PURE__ */ __name(() => {
-      }, "persist"),
-      log: log2 = /* @__PURE__ */ __name(() => {
-      }, "log"),
-      setTimeoutFn = /* @__PURE__ */ __name((fn, ms) => setTimeout(fn, ms), "setTimeoutFn"),
-      clearTimeoutFn = /* @__PURE__ */ __name((id) => clearTimeout(id), "clearTimeoutFn"),
-      nowFn = /* @__PURE__ */ __name(() => Date.now(), "nowFn")
-    } = options;
-    let rescanIntervalMs = Math.max(0, Number(options.rescanIntervalMs) || 0);
-    let resumeCursor = options.resumeCursor || null;
-    let running = false;
-    let timer = null;
-    let prevExecuting = false;
-    let restartRequested = true;
-    let passActive = false;
-    let lastPassAt = 0;
-    let lastPersistAt = 0;
-    const isRescanDue = /* @__PURE__ */ __name((now) => rescanIntervalMs > 0 && lastPassAt > 0 && now - lastPassAt >= rescanIntervalMs, "isRescanDue");
-    const beginPass = /* @__PURE__ */ __name((now) => {
-      pipeline.restart(now);
-      if (resumeCursor) {
-        pipeline.cursor = resumeCursor;
-        resumeCursor = null;
-      }
-      passActive = true;
-      restartRequested = false;
-      lastPassAt = now;
-      log2("info", "[Pipeline] \u5F00\u59CB\u65B0\u4E00\u7A0B\u679A\u4E3E\uFF08\u4FDD\u7559\u5386\u53F2\uFF0C\u5DF2\u5904\u7406\u5546\u54C1\u4E0D\u4F1A\u91CD\u590D\u9886\u53D6\uFF09\u3002");
-    }, "beginPass");
-    const tick = /* @__PURE__ */ __name(async () => {
-      const now = nowFn();
-      const executing = isExecuting() === true;
-      if (executing && !prevExecuting) {
-        restartRequested = true;
-        pipeline.fsm.refreshClock(now);
-      }
-      prevExecuting = executing;
-      if (!executing) return IDLE_POLL_MS;
-      try {
-        if (pipeline.fsm.is(STATE.IDLE)) {
-          if (passActive) {
-            pipeline.fsm.refreshClock(now);
-            pipeline.start(now);
-          } else if (restartRequested || isRescanDue(now)) {
-            beginPass(now);
-          }
-        } else if (pipeline.fsm.is(STATE.DONE)) {
-          if (passActive) {
-            passActive = false;
-            lastPassAt = now;
-            log2("info", `[Pipeline] \u672C\u7A0B\u7ED3\u675F\uFF1A${JSON.stringify(pipeline.log.stats())}\u3002`);
-            await persist(now);
-          }
-          if (restartRequested || isRescanDue(now)) beginPass(now);
-        }
-        if (pipeline.fsm.is(...RUNNING_STATES)) {
-          const step = await pipeline.tick(now);
-          if (step && step.action === "scan") await persist(now);
-          if (step && step.action === "scan") {
-            log2("info", `[Pipeline] API \u5DF2\u626B\u63CF\u7B2C ${pipeline.pagesFetched} \u9875\uFF0C\u672C\u9875 ${step.pageItems} \u4E2A\u5546\u54C1\uFF0C\u4E0B\u4E00\u9875\u6E38\u6807${step.cursor ? "\u5DF2\u4FDD\u5B58" : "\u4E3A\u7A7A\uFF08\u5DF2\u5230\u672B\u9875\uFF09"}\u3002`);
-          }
-          if (step && step.action === "login_required") {
-            log2(
-              "error",
-              `[Pipeline] \u672A\u767B\u5F55\uFF0C\u5DF2\u505C\u5728\u9886\u53D6\u4E4B\u524D\uFF08\u672A\u767B\u5F55\u7684\u8BE6\u60C5\u9875\u6CA1\u6709\u9886\u53D6\u6309\u94AE\uFF0C\u786C\u9886\u53EA\u4F1A\u628A\u6574\u4EFD\u5217\u8868\u6807\u8BB0\u6210\u5931\u8D25\uFF09\u3002${step.todo} \u4E2A\u5546\u54C1\u7559\u5728\u5F85\u9886\u961F\u5217\uFF0C\u767B\u5F55\u540E\u53EF\u7EE7\u7EED\uFF0C\u4E0D\u4F1A\u91CD\u590D\u9886\u53D6\u5DF2\u5904\u7406\u7684\u5546\u54C1\u3002`
-            );
-            await persist(now);
-          }
-          if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
-            lastPersistAt = now;
-            await persist(now);
-          }
-        }
-        const delay = pipeline.nextDelayMs(nowFn());
-        return Number.isFinite(delay) ? Math.max(0, delay) : DONE_POLL_MS;
-      } catch (e) {
-        const retryAfterMs = e && Number.isFinite(e.retryAfterMs) ? e.retryAfterMs : null;
-        const pause = limiter.penalize(retryAfterMs, now);
-        log2(
-          "error",
-          `[Pipeline] tick \u51FA\u9519: ${e && e.message}\uFF0C\u9000\u907F ${Math.round(pause.pauseMs / 1e3)}s\uFF08\u901F\u7387\u964D\u81F3 ${pause.ratePerMin}/min\uFF09`
-        );
-        return Math.max(0, pause.pauseMs);
-      }
-    }, "tick");
-    const loop = /* @__PURE__ */ __name(async () => {
-      if (!running) return;
-      let delay = DONE_POLL_MS;
-      try {
-        delay = await tick();
-      } catch (e) {
-        log2("error", `[Pipeline] \u8C03\u5EA6\u5FAA\u73AF\u5F02\u5E38: ${e && e.message}`);
-      }
-      if (!running) return;
-      timer = setTimeoutFn(loop, Math.max(0, delay));
-    }, "loop");
-    return {
-      tick,
-      start: /* @__PURE__ */ __name(() => {
-        if (running) return false;
-        running = true;
-        loop();
-        return true;
-      }, "start"),
-      stop: /* @__PURE__ */ __name(() => {
-        running = false;
-        prevExecuting = false;
-        if (timer != null) {
-          clearTimeoutFn(timer);
-          timer = null;
-        }
-        return true;
-      }, "stop"),
-      configure: /* @__PURE__ */ __name(({ rescanIntervalMs: interval } = {}) => {
-        if (Number.isFinite(interval)) rescanIntervalMs = Math.max(0, Number(interval));
-        return rescanIntervalMs;
-      }, "configure"),
-      status: /* @__PURE__ */ __name(() => ({
-        running,
-        passActive,
-        restartRequested,
-        lastPassAt,
-        rescanIntervalMs,
-        state: pipeline.fsm.state
-      }), "status")
-    };
-  }, "createPipelineScheduler");
-
-  // src/modules/pipeline-adapter.js
-  var EVENT_LOG_MAX = 3e3;
-  var log = /* @__PURE__ */ __name((level, msg) => {
-    try {
-      Utils.logger(level, msg);
-    } catch (e) {
-    }
-  }, "log");
-  var gmFetchImpl = /* @__PURE__ */ __name((url, { headers } = {}) => new Promise((resolve, reject) => {
-    const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
-    if (nativeFetch) {
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-      const timer = setTimeout(() => controller && controller.abort(), 3e4);
-      nativeFetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: { accept: "application/json", ...headers || {} },
-        ...controller ? { signal: controller.signal } : {}
-      }).then(async (response) => {
-        clearTimeout(timer);
-        resolve({
-          status: response.status,
-          responseText: await response.text(),
-          responseHeaders: [...response.headers.entries()].map(([k, v]) => `${k}: ${v}`).join("\r\n")
-        });
-      }).catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      return;
-    }
-    API.gmFetch({
-      method: "GET",
-      url,
-      timeout: 3e4,
-      headers: { accept: "application/json", ...headers || {} },
-      onload: /* @__PURE__ */ __name((res) => resolve({
-        status: res.status,
-        responseText: res.responseText,
-        responseHeaders: res.responseHeaders
-      }), "onload"),
-      onerror: /* @__PURE__ */ __name((err) => reject(err), "onerror"),
-      ontimeout: /* @__PURE__ */ __name(() => reject(new Error("search request timeout")), "ontimeout")
-    });
-  }), "gmFetchImpl");
-  var parseResponseHeader = /* @__PURE__ */ __name((headersText, name) => {
-    if (!headersText) return null;
-    const key = String(name).toLowerCase();
-    for (const line of String(headersText).split(/\r?\n/)) {
-      const idx = line.indexOf(":");
-      if (idx === -1) continue;
-      if (line.slice(0, idx).trim().toLowerCase() === key) {
-        return line.slice(idx + 1).trim();
-      }
-    }
-    return null;
-  }, "parseResponseHeader");
-  var gmPostImpl = /* @__PURE__ */ __name(({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
-    const nativeFetch = typeof window !== "undefined" && typeof window.fetch === "function" ? window.fetch.bind(window) : null;
-    if (nativeFetch) {
-      const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-      const timer = setTimeout(() => controller && controller.abort(), 3e4);
-      nativeFetch(url, {
-        method: method || "POST",
-        credentials: "include",
-        headers: headers || {},
-        body: data,
-        ...controller ? { signal: controller.signal } : {}
-      }).then(async (response) => {
-        clearTimeout(timer);
-        resolve({
-          status: response.status,
-          responseText: await response.text(),
-          getResponseHeader: /* @__PURE__ */ __name((name) => response.headers.get(name), "getResponseHeader")
-        });
-      }).catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      return;
-    }
-    API.gmFetch({
-      method: method || "POST",
-      url,
-      headers,
-      data,
-      onload: /* @__PURE__ */ __name((res) => resolve({
-        status: res.status,
-        responseText: res.responseText,
-        getResponseHeader: /* @__PURE__ */ __name((h) => parseResponseHeader(res.responseHeaders, h), "getResponseHeader")
-      }), "onload"),
-      onerror: /* @__PURE__ */ __name((err) => reject(err), "onerror"),
-      ontimeout: /* @__PURE__ */ __name(() => reject(new Error("claim request timeout")), "ontimeout")
-    });
-  }), "gmPostImpl");
-  var createFetchPage = /* @__PURE__ */ __name((fetchImpl = gmFetchImpl) => {
-    ListingSource.configure({ fetchImpl });
-    return async (cursor = null) => {
-      const page = await ListingSource.fetchPage(cursor);
-      return { items: page.items, nextCursor: page.nextCursor, isEnd: page.isEnd };
-    };
-  }, "createFetchPage");
-  var createVerifyOwned = /* @__PURE__ */ __name((database = Database) => async (uid) => {
-    if (!uid) return false;
-    return database.isDone(`https://www.fab.com/listings/${uid}`);
-  }, "createVerifyOwned");
-  var createDomClaim = /* @__PURE__ */ __name((acquireFn) => {
-    if (typeof acquireFn !== "function") return false;
-    setDomClaim(async (task) => normalizeClaimOutcome(await acquireFn(task)));
-    return true;
-  }, "createDomClaim");
-  var hasClaimBackend = /* @__PURE__ */ __name(() => Boolean(
-    typeof ApiClaim.isAvailable === "function" && ApiClaim.isAvailable() || typeof DomClaim.isAvailable === "function" && DomClaim.isAvailable()
-  ), "hasClaimBackend");
-  var isApiPipelineActive = /* @__PURE__ */ __name(() => Boolean(
-    Config.USE_API_PIPELINE && State.apiPipelineActive
-  ), "isApiPipelineActive");
-  var createScanFilter = /* @__PURE__ */ __name((database = Database) => (item) => {
-    if (!item || !item.uid) return "invalid_item";
-    if (database && typeof database.isDone === "function" && database.isDone(`https://www.fab.com/listings/${item.uid}`)) {
-      return "already_owned";
-    }
-    if (!ListingSource.isClaimable(item)) return "not_free";
-    return null;
-  }, "createScanFilter");
-  var defaultScanFilter = createScanFilter(Database);
-  var bootstrapPipeline = /* @__PURE__ */ __name((options = {}) => {
-    const {
-      fetchImpl,
-      database = Database,
-      acquireFn,
-      apiEndpoint,
-      apiFetchImpl,
-      apiBuildBody,
-      ratePerMin,
-      burst,
-      freePolicy,
-      // 可覆盖的登录判据。默认接真实的 checkAuthentication；测试环境里没有
-      // 页面信号，会一律判成未登录而被闸门拦下，所以需要能显式注入。
-      isLoggedIn
-    } = options;
-    if (freePolicy) ListingSource.configure({ freePolicy });
-    if (apiEndpoint) {
-      ApiClaim.configure({
-        endpoint: apiEndpoint,
-        fetchImpl: apiFetchImpl || gmPostImpl,
-        buildBody: apiBuildBody
-      });
-    }
-    Pipeline.configure({
-      fetchPage: createFetchPage(fetchImpl),
-      verifyOwned: createVerifyOwned(database),
-      filter: createScanFilter(database),
-      // 未登录时拦在领取之前。未登录的详情页只有「立即购买 / 添加至购物车」，
-      // 没有领取按钮，领取必然失败；而失败写进事件日志就被定型，
-      // 整份免费列表之后再也不会重试。用 silent 模式，避免在这里弹 alert。
-      isLoggedIn: typeof isLoggedIn === "function" ? isLoggedIn : () => Utils.checkAuthentication(true),
-      ...Number.isFinite(ratePerMin) ? { ratePerMin } : {},
-      ...Number.isFinite(burst) ? { burst } : {}
-    });
-    const domOk = createDomClaim(acquireFn);
-    const apiOk = ApiClaim.isAvailable();
-    if (!domOk && !apiOk) {
-      log(
-        "error",
-        "[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08DomClaim \u672A\u6CE8\u5165\u4E14 ApiClaim \u4E0D\u53EF\u7528\uFF09\u3002\u6B64\u65F6\u4E0D\u5F97\u542F\u52A8\u6D41\u6C34\u7EBF\uFF1A\u6574\u9875\u5546\u54C1\u4F1A\u88AB\u9010\u6761\u6807\u8BB0\u4E3A\u300C\u9886\u53D6\u5931\u8D25\u300D\u3002\u8BF7\u6CE8\u5165 acquireFn \u6216\u786E\u8BA4 ApiClaim \u7AEF\u70B9\u540E\u518D\u5F00\u542F USE_API_PIPELINE\u3002"
-      );
-    }
-    return Pipeline;
-  }, "bootstrapPipeline");
-  var loadEventLog = /* @__PURE__ */ __name(async () => {
-    let loaded = 0;
-    try {
-      loaded = await EventLog.load();
-    } catch (e) {
-      log("error", `[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u62D2\u7EDD\u542F\u52A8 API \u6D41\u6C34\u7EBF: ${e.message}`);
-      return { ok: false, loaded: 0, total: 0 };
-    }
-    if (loaded === null) {
-      log("error", "[Pipeline] \u8BFB\u53D6\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u62D2\u7EDD\u542F\u52A8 API \u6D41\u6C34\u7EBF\uFF1B\u65E7\u5F85\u529E\u4FDD\u6301\u4E0D\u53D8\u3002");
-      return { ok: false, loaded: 0, total: 0 };
-    }
-    EventLog.prune(EVENT_LOG_MAX);
-    log("info", `[Pipeline] \u5DF2\u8F7D\u5165\u4E8B\u4EF6\u5386\u53F2 ${loaded} \u6761\uFF08\u53BB\u91CD\u540E ${EventLog.stats().total} \u4E2A\u5546\u54C1\uFF09\u3002`);
-    return { ok: true, loaded, total: EventLog.stats().total };
-  }, "loadEventLog");
-  var loadApiCursor = /* @__PURE__ */ __name(async () => {
-    try {
-      const cursor = await GM_getValue(Config.DB_KEYS.API_CURSOR, null);
-      State.apiCursorSavedAt = await GM_getValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, null);
-      State.apiCursor = typeof cursor === "string" && cursor ? cursor : null;
-      return State.apiCursor;
-    } catch (e) {
-      log("warn", `[Pipeline] API \u5206\u9875\u4F4D\u7F6E\u8BFB\u53D6\u5931\u8D25\uFF0C\u5C06\u4ECE\u9996\u9875\u7EE7\u7EED: ${e.message}`);
-      return null;
-    }
-  }, "loadApiCursor");
-  var saveApiCursor = /* @__PURE__ */ __name(async (cursor) => {
-    try {
-      if (cursor) {
-        await GM_setValue(Config.DB_KEYS.API_CURSOR, cursor);
-        State.apiCursorSavedAt = Date.now();
-        await GM_setValue(Config.DB_KEYS.API_CURSOR_SAVED_AT, State.apiCursorSavedAt);
-      } else {
-        await GM_deleteValue(Config.DB_KEYS.API_CURSOR);
-        await GM_deleteValue(Config.DB_KEYS.API_CURSOR_SAVED_AT);
-        State.apiCursorSavedAt = null;
-      }
-      State.apiCursor = cursor || null;
-      return true;
-    } catch (e) {
-      log("warn", `[Pipeline] API \u5206\u9875\u4F4D\u7F6E\u4FDD\u5B58\u5931\u8D25: ${e.message}`);
-      return false;
-    }
-  }, "saveApiCursor");
-  var migrateLegacyTodoToEventLog = /* @__PURE__ */ __name(async ({ database = Database } = {}) => {
-    const legacyTodo = Array.isArray(State.db.todo) ? [...State.db.todo] : [];
-    if (legacyTodo.length === 0) return 0;
-    let imported = 0;
-    legacyTodo.forEach((task) => {
-      const uid = EventLog.uidOf(task && (task.uid || task.url));
-      if (!uid) return;
-      const latest = EventLog.latestOf(uid);
-      if (latest && latest.state !== EVENT_STATE.FAILED) return;
-      const url = EventLog.canonicalUrl(uid);
-      const alreadyOwned = database && typeof database.isDone === "function" && database.isDone(url);
-      EventLog.append(uid, alreadyOwned ? EVENT_STATE.CLAIMED : EVENT_STATE.DISCOVERED, {
-        name: task.name,
-        url: task.url || url,
-        offerId: task.offerId || ""
-      });
-      imported += 1;
-    });
-    if (!await EventLog.save()) {
-      log("error", "[Pipeline] \u65E7\u5F85\u529E\u8FC1\u5165\u4E8B\u4EF6\u65E5\u5FD7\u5931\u8D25\uFF0C\u4FDD\u7559\u539F\u961F\u5217\u5E76\u653E\u5F03 API \u6D41\u6C34\u7EBF\u63A5\u7BA1\u3002");
-      return -1;
-    }
-    State.db.todo = [];
-    if (database && typeof database.saveTodo === "function") await database.saveTodo();
-    log("info", `[Pipeline] \u5DF2\u5C06 ${legacyTodo.length} \u4E2A\u65E7\u7248\u5F85\u529E\u8FC1\u5165 API \u961F\u5217\uFF08\u65B0\u589E ${imported} \u4E2A\uFF09\u3002`);
-    return imported;
-  }, "migrateLegacyTodoToEventLog");
-  var persistEventLog = /* @__PURE__ */ __name(async (options = {}) => {
-    const { database = Database } = options;
-    EventLog.prune(EVENT_LOG_MAX);
-    if (!await EventLog.save()) {
-      log("error", "[Pipeline] \u4E8B\u4EF6\u65E5\u5FD7\u5199\u5165\u5931\u8D25\uFF0C\u672A\u63A8\u8FDB API \u5206\u9875\u4F4D\u7F6E\u3002");
-      return { synced: 0, total: EventLog.stats().total, saved: false };
-    }
-    if (Object.prototype.hasOwnProperty.call(options, "cursor") && !await saveApiCursor(options.cursor)) {
-      log("warn", "[Pipeline] \u4E8B\u4EF6\u65E5\u5FD7\u5DF2\u4FDD\u5B58\uFF0C\u4F46 API \u5206\u9875\u4F4D\u7F6E\u672A\u4FDD\u5B58\uFF1B\u4E0B\u6B21\u4F1A\u4ECE\u65E7\u4F4D\u7F6E\u5B89\u5168\u91CD\u626B\u3002");
-    }
-    let synced = 0;
-    try {
-      if (database && typeof database.addDoneUrl === "function") {
-        EventLog.getDone().forEach((entry) => {
-          const url = EventLog.canonicalUrl(entry.uid);
-          if (database.isDone && database.isDone(url)) return;
-          database.addDoneUrl(url);
-          synced += 1;
-        });
-        if (synced > 0 && typeof database.saveDone === "function") await database.saveDone();
-      }
-    } catch (e) {
-      log("error", `[Pipeline] \u56DE\u5199\u5DF2\u9886\u53D6\u5546\u54C1\u5230\u65E7\u6570\u636E\u5C42\u5931\u8D25: ${e.message}`);
-    }
-    return { synced, total: EventLog.stats().total };
-  }, "persistEventLog");
 
   // src/index.js
   (function() {
@@ -11659,6 +10617,20 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     TaskRunner: TaskRunner2,
     countdownRefresh: countdownRefresh3
   });
+  var _autoClaimVisibleTimer = null;
+  function scheduleAutoClaimVisible(delayMs = 500) {
+    if (!State.autoClaimVisible || State.domFallbackMode || State.isWorkerTab) return;
+    if (State.manualVerificationPending || State.appStatus === "RATE_LIMITED") return;
+    clearTimeout(_autoClaimVisibleTimer);
+    _autoClaimVisibleTimer = setTimeout(() => {
+      _autoClaimVisibleTimer = null;
+      if (!State.autoClaimVisible || State.domFallbackMode || State.isWorkerTab) return;
+      TaskRunner2.claimVisibleDomCards().catch((e) => {
+        Utils.logger("debug", `[\u6D4F\u89C8\u81EA\u52A8\u9886] \u626B\u63CF\u5931\u8D25: ${e.message}`);
+      });
+    }, delayMs);
+  }
+  __name(scheduleAutoClaimVisible, "scheduleAutoClaimVisible");
   var _ownedStatusUpdateTimer = null;
   function triggerOwnedStatusUpdate() {
     if (State.isWorkerTab) return;
@@ -11672,7 +10644,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
       }
       try {
-        TaskRunner2.checkVisibleCardsStatus().catch(() => {
+        TaskRunner2.checkVisibleCardsStatus().then(() => {
+          scheduleAutoClaimVisible(300);
+        }).catch(() => {
         });
       } catch (e) {
         Utils.logger("debug", `[ownedStatus] \u72B6\u6001\u68C0\u67E5\u5931\u8D25: ${e.message}`);
@@ -12194,13 +11168,16 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (State.debugMode) {
             Utils.logger("debug", `[Observer] ${Utils.getText("debug_new_content_loading")}`);
           }
-          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) || State.isExecuting || State.db.todo.length > 0;
+          const shouldProcessNewCards = State.hideSaved || State.hideDiscountedPaid || State.hidePaid || State.autoClaimVisible && !State.domFallbackMode || State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll) || State.isExecuting || State.db.todo.length > 0;
           if (!shouldProcessNewCards) return;
           TaskRunner2.checkVisibleCardsStatus().then(() => {
             if (State.hideSaved || State.hideDiscountedPaid || State.hidePaid) {
               TaskRunner2.scheduleHideOrShow();
             }
-            if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive() && !FastScanner.isRunning()) {
+            if (State.autoClaimVisible && !State.domFallbackMode) {
+              scheduleAutoClaimVisible(500);
+            }
+            if (State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll)) {
               TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u81EA\u52A8\u6DFB\u52A0\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
             }
           }).catch(() => {
@@ -12214,23 +11191,13 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
     observer.observe(targetNode, { childList: true, subtree: true });
     Utils.logger("debug", `\u2705 Core DOM observer is now active on <${targetNode.tagName.toLowerCase()}>.`);
     TaskRunner2.runHideOrShow();
-    if (Config.USE_API_PIPELINE) {
-      try {
-        await startApiPipeline();
-      } catch (e) {
-        State.apiPipelineActive = false;
-        Utils.logger("error", `[Pipeline] \u542F\u52A8\u5931\u8D25\uFF0C\u5DF2\u56DE\u9000\u65E7\u8DEF\u5F84: ${e.message}`);
-      }
-    }
-    if (State.fastApiScan && State.isExecuting && !isApiPipelineActive()) {
+    if (State.autoClaimVisible && !State.domFallbackMode) {
       if (!State.manualVerificationPending && State.appStatus === "NORMAL" && State.isAuthenticated) {
         setTimeout(() => {
-          if (State.fastApiScan && State.isExecuting && !State.manualVerificationPending && State.appStatus === "NORMAL") {
-            TaskRunner2.startFastScan().catch((error) => Utils.logger("error", `[FastScanner] \u81EA\u52A8\u6062\u590D\u5931\u8D25: ${error.message}`));
-          }
+          scheduleAutoClaimVisible(0);
         }, 1500);
       }
-    } else if (!State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !isApiPipelineActive()) {
+    } else if (State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll)) {
       setTimeout(() => {
         Utils.logger("debug", "\u9875\u9762\u52A0\u8F7D\u5B8C\u6210\uFF0C\u6B63\u5728\u6267\u884C\u521D\u59CB\u5546\u54C1\u626B\u63CF...");
         TaskRunner2.scanAndAddTasks(document.querySelectorAll(TaskRunner2.getVisibleCardSelector())).catch((error) => Utils.logger("error", `\u521D\u59CB\u626B\u63CF\u4EFB\u52A1\u5931\u8D25: ${error.message}`));
@@ -12288,7 +11255,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           if (!State.isRefreshScheduled && !currentCountdownInterval && !currentRefreshTimeout && !State.isCheckingRateLimit) {
             RateLimitManager.checkRateLimitStatus().catch((err) => Utils.logger("error", `\u9650\u901F\u72B6\u6001\u5468\u671F\u68C0\u67E5\u5931\u8D25: ${err.message}`));
           }
-        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && !State.fastApiScan && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !isApiPipelineActive() && !FastScanner.isRunning()) {
+        } else if (State.appStatus === "NORMAL" && actualVisibleCards === 0 && !State.isEndOfSearchList && State.domFallbackMode && (State.autoAddOnScroll || State.autoScroll) && !State.isAutoScrolling && !FastScanner.isRunning()) {
           const { hidden: actualHidden } = TaskRunner2.getCardCounts(true);
           if (actualHidden > 0) {
             Utils.logger("info", Utils.getText("auto_scroll_resume_hidden", actualHidden));
@@ -12305,7 +11272,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       }
     }, 1e4));
     State.domIntervals.push(setInterval(() => {
-      if (isApiPipelineActive()) return;
       if (State.db.todo.length === 0) return;
       TaskRunner2.ensureTasksAreExecuted();
     }, 5e3));
@@ -12393,11 +11359,6 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       await TaskRunner2.processDetailPage();
       return;
     }
-    if (urlParams.get(Config.CLAIM_FRAME_PARAM)) {
-      State.isClaimFrame = true;
-      Utils.logger("debug", "[Pipeline] \u9886\u53D6\u5E27\u5185\u4E0D\u521D\u59CB\u5316\u811A\u672C\u4E3B\u4F53\uFF0C\u7B49\u5F85\u4E3B\u6807\u7B7E\u9875\u9A71\u52A8\u3002");
-      return;
-    }
     await InstanceManager.init();
     await Database.load();
     KeepAlive.setTick(async () => {
@@ -12482,7 +11443,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
       });
     }
     State.domIntervals.push(setInterval(() => {
-      if (State.appStatus === "NORMAL" && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
+      if (State.domFallbackMode && State.appStatus === "NORMAL" && State.isExecuting && !FastScanner.isRunning() && (State.db.todo.length > 0 || State.activeWorkers > 0)) {
         const inactiveTime = Date.now() - lastNetworkActivityTime;
         if (inactiveTime > 3e4) {
           Utils.logger("warn", `\u26A0\uFE0F \u68C0\u6D4B\u5230\u5728\u4EFB\u52A1\u6267\u884C\u72B6\u6001\u4E0B\u5DF2\u6301\u7EED ${Math.floor(inactiveTime / 1e3)} \u79D2\u65E0\u7F51\u7EDC\u6D3B\u52A8\uFF0C\u5373\u5C06\u5F3A\u5236\u5237\u65B0\u9875\u9762\u4EE5\u6062\u590D\u4EFB\u52A1...`);
@@ -12519,8 +11480,8 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           State.activeWorkers--;
         }
         if (logs && logs.length) {
-          logs.forEach((log2) => {
-            Utils.logger("debug", log2);
+          logs.forEach((log) => {
+            Utils.logger("debug", log);
           });
         }
         const isZh = State.lang === "zh";
@@ -12531,6 +11492,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
           await Database.markAsDone(task);
           State.sessionCompleted.add(Database.normalizeListingUrl(task.url));
           State.executionCompletedTasks++;
+          TaskRunner2.syncClaimedCardToDom(task.uid || task.url);
         } else {
           if (rateLimited) {
             const retryHint = Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? `\uFF0C\u670D\u52A1\u7AEF\u5EFA\u8BAE\u7B49\u5F85 ${Math.ceil(retryAfterMs / 1e3)} \u79D2` : "";
@@ -12546,7 +11508,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
               Database.saveExecutingState();
             }
           }
-          const errorLog = logs && logs.length ? logs.find((log2) => log2.includes(Utils.getText("worker_captcha"))) || logs.find((log2) => log2.includes("\u670D\u52A1\u7AEF") || log2.includes("500") || log2.includes("Error") || log2.includes("Timeout") || log2.includes("failed") || log2.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
+          const errorLog = logs && logs.length ? logs.find((log) => log.includes(Utils.getText("worker_captcha"))) || logs.find((log) => log.includes("\u670D\u52A1\u7AEF") || log.includes("500") || log.includes("Error") || log.includes("Timeout") || log.includes("failed") || log.includes("Critical")) || logs[logs.length - 1] : isZh ? "\u5DE5\u4F5C\u6807\u7B7E\u9875\u62A5\u544A\u5931\u8D25" : "Worker tab reported failure";
           const cleanError = errorLog ? errorLog.replace(/^\[[a-f0-9-]+\]\s*/i, "") : isZh ? "\u672A\u77E5\u539F\u56E0" : "Unknown reason";
           const failMsg = isZh ? `\u274C \u4EFB\u52A1\u5931\u8D25: ${task.name} (${cleanError})` : `\u274C Task failed: ${task.name} (${cleanError})`;
           Utils.logger("warn", failMsg + timeSuffix);
@@ -12574,7 +11536,7 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
         }
         if (State.isExecuting && State.db.todo.length === 0 && State.activeWorkers === 0) {
           if (FastScanner.isRunning()) {
-          } else if (State.fastApiScan) {
+          } else if (!State.domFallbackMode) {
             await TaskRunner2.stopExecutionAndSettle();
           } else if (State.autoScroll) {
             TaskRunner2.attemptAutoScroll();
@@ -12619,56 +11581,9 @@ ${zh2 ? "\u8BF7\u5207\u6362\u5230\u6807\u9898\u542B\u3010\u9700\u9A8C\u8BC1\u301
   window.addEventListener("load", () => {
     setTimeout(ensureUILoaded, 2e3);
   });
-  var _apiPipelineScheduler = null;
-  async function startApiPipeline() {
-    if (State.isWorkerTab) return;
-    State.apiPipelineActive = false;
-    let acquireFn = null;
-    if (Config.CLAIM_TRANSPORT === "iframe") {
-      acquireFn = createIframeAcquire({
-        taskRunner: TaskRunner2,
-        log: /* @__PURE__ */ __name((msg) => Utils.logger("debug", msg), "log")
-      });
-      Utils.logger("info", "[Pipeline] \u9886\u53D6\u4F20\u8F93\u5C42\uFF1A\u540C\u6E90 iframe\uFF08\u5355\u6807\u7B7E\u9875\uFF0C\u4E0D\u5F00 worker \u6807\u7B7E\u9875\uFF09\u3002");
-    }
-    bootstrapPipeline({
-      fetchImpl: gmFetchImpl,
-      acquireFn,
-      // USE_API_CLAIM 是 API 后端的唯一开关；关闭时只允许显式配置的 DOM/iframe 路径。
-      ...Config.USE_API_CLAIM ? {
-        apiEndpoint: FAB_CLAIM_ENDPOINT,
-        apiFetchImpl: gmPostImpl
-      } : {}
-    });
-    if (!hasClaimBackend()) {
-      State.apiPipelineActive = false;
-      Utils.logger(
-        "error",
-        `[Pipeline] \u672A\u914D\u7F6E\u4EFB\u4F55\u9886\u53D6\u540E\u7AEF\uFF08CLAIM_TRANSPORT=${Config.CLAIM_TRANSPORT}\u3001ApiClaim \u4E0D\u53EF\u7528\uFF09\u3002\u6D41\u6C34\u7EBF\u4E0D\u542F\u52A8\u3002\u5DF2\u81EA\u52A8\u56DE\u9000\u5230\u65E7\u7684\u300C\u6EDA\u52A8\u679A\u4E3E + worker \u6807\u7B7E\u9875\u300D\u8DEF\u5F84\uFF0C\u529F\u80FD\u4E0D\u53D7\u5F71\u54CD\u3002`
-      );
-      return;
-    }
-    const eventLogLoad = await loadEventLog();
-    if (!eventLogLoad.ok) return;
-    const migrated = await migrateLegacyTodoToEventLog();
-    if (migrated < 0) return;
-    const apiCursor = await loadApiCursor();
-    State.apiPipelineActive = true;
-    _apiPipelineScheduler = createPipelineScheduler({
-      pipeline: Pipeline,
-      isExecuting: /* @__PURE__ */ __name(() => State.isExecuting, "isExecuting"),
-      resumeCursor: apiCursor,
-      persist: /* @__PURE__ */ __name(() => persistEventLog({ cursor: Pipeline.cursor }), "persist"),
-      rescanIntervalMs: Config.PIPELINE_RESCAN_INTERVAL_MS,
-      log: /* @__PURE__ */ __name((level, msg) => Utils.logger(level, msg), "log")
-    });
-    _apiPipelineScheduler.start();
-    Utils.logger("info", "[Pipeline] API \u4F18\u5148\u6D41\u6C34\u7EBF\u5DF2\u542F\u52A8\uFF08\u53D6\u4EE3\u65E7\u6EDA\u52A8\u679A\u4E3E + worker \u9886\u53D6\uFF09\u3002");
-  }
-  __name(startApiPipeline, "startApiPipeline");
   async function handleWakeRecovery() {
     if (State.isWorkerTab) return;
-    if (isApiPipelineActive()) return;
+    if (!State.domFallbackMode && State.activeWorkers === 0 && State.db.todo.length === 0) return;
     if (!State.isExecuting && State.db.todo.length === 0) return;
     Utils.logger("info", Utils.getText("log_wake_recovery"));
     await RateLimitManager.checkInactivity(false);

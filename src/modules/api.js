@@ -5,6 +5,59 @@ import { State } from '../state.js';
 import { Utils } from './utils.js';
 import { DataCache } from './data-cache.js';
 
+const parseResponseHeader = (headersText, name) => {
+    if (!headersText) return null;
+    const key = String(name).toLowerCase();
+    for (const line of String(headersText).split(/\r?\n/)) {
+        const idx = line.indexOf(':');
+        if (idx === -1) continue;
+        if (line.slice(0, idx).trim().toLowerCase() === key) {
+            return line.slice(idx + 1).trim();
+        }
+    }
+    return null;
+};
+
+export const gmPostImpl = ({ method, url, headers, data } = {}) => new Promise((resolve, reject) => {
+    const nativeFetch = State.nativeFetch || (typeof window !== 'undefined' && typeof window.fetch === 'function'
+        ? window.fetch.bind(window) : null);
+    if (nativeFetch) {
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        const timer = setTimeout(() => controller && controller.abort(), 30000);
+        nativeFetch(url, {
+            method: method || 'POST',
+            credentials: 'include',
+            headers: headers || {},
+            body: data,
+            ...(controller ? { signal: controller.signal } : {})
+        }).then(async response => {
+            clearTimeout(timer);
+            resolve({
+                status: response.status,
+                responseText: await response.text(),
+                getResponseHeader: (name) => response.headers.get(name)
+            });
+        }).catch(error => {
+            clearTimeout(timer);
+            reject(error);
+        });
+        return;
+    }
+    API.gmFetch({
+        method: method || 'POST',
+        url,
+        headers,
+        data,
+        onload: (res) => resolve({
+            status: res.status,
+            responseText: res.responseText,
+            getResponseHeader: (h) => parseResponseHeader(res.responseHeaders, h)
+        }),
+        onerror: (err) => reject(err),
+        ontimeout: () => reject(new Error('claim request timeout'))
+    });
+});
+
 export const API = {
     gmFetch: (options) => {
         return new Promise((resolve, reject) => {

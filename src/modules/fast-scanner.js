@@ -305,6 +305,7 @@ export const createFastScanner = (deps = {}) => {
     let onUiUpdate = deps.onUiUpdate || (() => {});
     let onToast = deps.onToast || (() => {});
     let onAuthFailure = deps.onAuthFailure || (() => {});
+    let onItemClaimed = deps.onItemClaimed || (() => {});
     const onRecordNetwork = deps.onRecordNetwork || (() => {
         try {
             if (typeof window !== 'undefined' && typeof window.recordNetworkActivity === 'function') {
@@ -358,6 +359,15 @@ export const createFastScanner = (deps = {}) => {
     let lastCheckpointAt = 0;
     let currentPhase = 'idle';
     let workerSlotWaiters = [];
+    const sightClaimSet = new Set();
+    let sightClaimInFlightCount = 0;
+    let sightClaimChain = Promise.resolve();
+
+    const notifyItemClaimed = (item, source = 'claimed') => {
+        try {
+            onItemClaimed(item, source);
+        } catch (_e) { /* ignore */ }
+    };
 
     const wakeWorkerSlots = () => {
         while (workerSlotWaiters.length > 0) {
@@ -433,6 +443,8 @@ export const createFastScanner = (deps = {}) => {
     const buildSnapshot = () => {
         const now = nowFn();
         const elapsedSec = Math.max(0.001, ((currentStats.finishedAt || now) - currentStats.startedAt) / 1000);
+        const inFlightStateCount = Array.from(inFlightStateChunks).reduce((sum, chunk) => sum + chunk.length, 0);
+        const pendingCount = unknownBuffer.length + inFlightStateCount + claimQueue.length + activeClaimsInFlight + sightClaimInFlightCount;
         return {
             running,
             phase: currentPhase,
@@ -443,6 +455,7 @@ export const createFastScanner = (deps = {}) => {
             itemsScanned: currentStats.itemsScanned,
             totalEstimated: currentStats.totalEstimated,
             itemsPerSec: Math.round(currentStats.itemsScanned / elapsedSec),
+            pendingCount,
             skippedLocal: currentStats.skippedLocal,
             skippedNonFree: currentStats.skippedNonFree,
             skippedFailed: currentStats.skippedFailed,
@@ -610,15 +623,26 @@ export const createFastScanner = (deps = {}) => {
         if (!force && now - lastCheckpointAt < checkpointIntervalMs) return;
         lastCheckpointAt = now;
         try {
-            await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, buildCheckpointPayload());
-            getState().hasFastScanCheckpoint = true;
+            const payload = buildCheckpointPayload();
+            await gmSet(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT, payload);
+            const st = getState();
+            st.hasFastScanCheckpoint = true;
+            const totalEst = Number(payload.totalEstimated) || 0;
+            const scanned = Number(payload.stats?.itemsScanned) || 0;
+            st.fastScanCheckpointMeta = {
+                itemsScanned: scanned,
+                totalEstimated: totalEst,
+                pct: totalEst > 0 ? Math.min(99, Math.max(1, Math.round((scanned / totalEst) * 100))) : null
+            };
         } catch (_e) { /* ignore */ }
     };
 
     const clearCheckpoint = async () => {
         try {
             await gmDelete(getConfig().DB_KEYS.FAST_SCAN_CHECKPOINT);
-            getState().hasFastScanCheckpoint = false;
+            const st = getState();
+            st.hasFastScanCheckpoint = false;
+            st.fastScanCheckpointMeta = null;
         } catch (_e) { /* ignore */ }
     };
 
@@ -719,10 +743,12 @@ export const createFastScanner = (deps = {}) => {
                         states.filter((s) => s && s.acquired && s.uid).map((s) => String(s.uid).toLowerCase())
                     );
                     const ownedUrls = [];
+                    const ownedItems = [];
                     const unownedItems = [];
                     chunk.forEach((item) => {
                         if (acquiredSet.has(item.uid)) {
                             ownedUrls.push(item.url);
+                            ownedItems.push(item);
                         } else {
                             unownedItems.push(item);
                         }
@@ -731,6 +757,7 @@ export const createFastScanner = (deps = {}) => {
                         db.addDoneUrls(ownedUrls);
                         db.scheduleSaveDone();
                         currentStats.confirmedOwnedServer += ownedUrls.length;
+                        ownedItems.forEach((item) => notifyItemClaimed(item, 'server-owned'));
                     }
                     unownedItems.forEach((item) => enqueueClaim(item));
                     syncStatus();
@@ -905,6 +932,7 @@ export const createFastScanner = (deps = {}) => {
                     await db.markAsDone(task, { deferSave: true });
                     st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
                     currentStats.claimedDirect += 1;
+                    notifyItemClaimed(task, 'claimed');
                     syncStatus(true);
                 } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
                     await handleRateLimit(outcome.retryAfterMs, 'add-to-library');
@@ -1337,7 +1365,9 @@ export const createFastScanner = (deps = {}) => {
                 : (Number(st.incrementalStopPages) || cfg.DEFAULT_INCREMENTAL_STOP_PAGES || 5)
         )));
 
-        const rawBaseParams = options.baseParams || extractSearchParamsFromUrl(getHref());
+        const rawBaseParams = options.globalFreeScan
+            ? { is_free: '1', sort_by: '-firstPublishedAt' }
+            : (options.baseParams || extractSearchParamsFromUrl(getHref()));
         const baseParams = { ...rawBaseParams };
         if (!options.preserveQuery && baseParams.is_free === undefined) {
             baseParams.is_free = '1';
@@ -1359,6 +1389,8 @@ export const createFastScanner = (deps = {}) => {
         syncStatus(true);
 
         const runWork = async () => {
+            const scanDoneRef = { done: false };
+            let claimLoops = [];
             try {
                 await calibrateRun(baseParams, {
                     incrementalEarlyStop: incEnabled,
@@ -1379,13 +1411,23 @@ export const createFastScanner = (deps = {}) => {
                 );
                 syncStatus(true);
 
-                const scanDoneRef = { done: false };
-                const spawnCount = currentMode === 'incremental'
-                    ? 1
-                    : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
-                const claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
+                claimLoops = Array.from({ length: claimWorkersCount }, () => runClaimLoop(scanDoneRef));
 
-                if (currentSlices.some((s) => !s.done)) {
+                if (Array.isArray(options.priorityItems) && options.priorityItems.length > 0) {
+                    const addedPriority = enqueuePriorityItems(options.priorityItems, { flush: false });
+                    if (addedPriority > 0) {
+                        logMsg('info', `[FastScanner] 优先核验并领取当前页面可见免费商品 (${addedPriority} 项)...`);
+                        await flushUnknownBuffer(true);
+                        while (!stopped && !authAborted && (claimQueue.length > 0 || activeClaimsInFlight > 0)) {
+                            await sleep(20);
+                        }
+                    }
+                }
+
+                if (!stopped && !authAborted && currentSlices.some((s) => !s.done)) {
+                    const spawnCount = currentMode === 'incremental'
+                        ? 1
+                        : Math.min(cfg.MAX_API_SCAN_CONCURRENCY || 6, Math.max(configuredConcurrency, 1), Math.max(1, currentSlices.length));
                     const scanWorkers = Array.from(
                         { length: spawnCount },
                         (_, idx) => runScanWorker(idx, baseParams, stopPages)
@@ -1455,6 +1497,11 @@ export const createFastScanner = (deps = {}) => {
                 syncStatus(true);
                 throw err;
             } finally {
+                scanDoneRef.done = true;
+                wakeClaimWorkers();
+                if (claimLoops.length > 0) {
+                    try { await Promise.all(claimLoops); } catch (_e) { /* ignore */ }
+                }
                 running = false;
                 activeRunPromise = null;
                 syncStatus(true);
@@ -1495,10 +1542,258 @@ export const createFastScanner = (deps = {}) => {
         return safe;
     };
 
+    const normalizeStandaloneItem = (raw) => {
+        if (!raw || typeof raw !== 'object') return null;
+        const url = raw.url ? String(raw.url).split('?')[0] : '';
+        const uidMatch = raw.uid || url.match(/(?:listings|bundles)\/([a-f0-9-]+)/i)?.[1] || '';
+        const uid = String(uidMatch).trim().toLowerCase();
+        if (!uid) return null;
+        const isBundle = Boolean(raw.isBundle || raw.listingType === 'bundle' || url.includes('/bundles/'));
+        const canonicalUrl = url || `https://www.fab.com/${isBundle ? 'bundles' : 'listings'}/${uid}`;
+        return {
+            uid,
+            url: canonicalUrl,
+            name: raw.name || raw.title || 'Untitled',
+            offerId: raw.offerId || '',
+            offerIds: Array.isArray(raw.offerIds) ? raw.offerIds : [],
+            listingType: raw.listingType || (isBundle ? 'bundle' : ''),
+            isBundle,
+            needsDiscountVerify: Boolean(raw.needsDiscountVerify)
+        };
+    };
+
+    const enqueuePriorityItems = (items = [], { flush = true } = {}) => {
+        if (!running || stopped || authAborted || !Array.isArray(items) || items.length === 0) return 0;
+        const db = getDatabase();
+        const cache = getDataCache();
+        const fresh = [];
+        for (const raw of items) {
+            const item = normalizeStandaloneItem(raw);
+            if (!item || seenUids.has(item.uid)) continue;
+            if (db.isDone(item.url) || db.isFailed(item.url)) continue;
+            seenUids.add(item.uid);
+            if (item.offerId) {
+                cache.offerListingUids.set(item.offerId, item.uid);
+            }
+            fresh.push(item);
+        }
+        if (fresh.length > 0) {
+            unknownBuffer.unshift(...fresh);
+            if (flush) flushUnknownBuffer(true);
+            syncStatus(true);
+        }
+        return fresh.length;
+    };
+
+    const claimVisibleItems = (items = []) => {
+        if (!Array.isArray(items) || items.length === 0) {
+            return Promise.resolve({ queued: 0, claimed: 0, owned: 0, fallback: 0, failed: 0 });
+        }
+        if (running) {
+            const queued = enqueuePriorityItems(items);
+            return Promise.resolve({ queued, claimed: 0, owned: 0, fallback: 0, failed: 0 });
+        }
+
+        const job = async () => {
+            if (running) {
+                const queued = enqueuePriorityItems(items);
+                return { queued, claimed: 0, owned: 0, fallback: 0, failed: 0 };
+            }
+
+            const db = getDatabase();
+            const cache = getDataCache();
+            const apiClaim = getApiClaim();
+            const cfg = getConfig();
+            const st = getState();
+
+            const fresh = [];
+            for (const raw of items) {
+                const item = normalizeStandaloneItem(raw);
+                if (!item) continue;
+                if (sightClaimSet.has(item.uid) || db.isDone(item.url) || db.isFailed(item.url)) continue;
+                sightClaimSet.add(item.uid);
+                if (item.offerId) {
+                    cache.offerListingUids.set(item.offerId, item.uid);
+                }
+                fresh.push(item);
+            }
+
+            if (fresh.length === 0) {
+                return { queued: 0, claimed: 0, owned: 0, fallback: 0, failed: 0 };
+            }
+
+            sightClaimInFlightCount += fresh.length;
+            try {
+                try { onUiUpdate(buildSnapshot()); } catch (_e) { /* ignore */ }
+                let owned = 0;
+                let claimed = 0;
+                let fallback = 0;
+                let failed = 0;
+                const unowned = [];
+                let sightAuthAborted = false;
+
+                for (let i = 0; i < fresh.length && !sightAuthAborted; i += STATES_MAX_IDS) {
+                    const chunk = fresh.slice(i, i + STATES_MAX_IDS);
+                    const u = new URL(`https://www.fab.com${STATES_PATH}`);
+                    chunk.forEach((item) => u.searchParams.append('listing_ids', item.uid));
+
+                    let resolved = false;
+                    for (let attempt = 0; attempt < 2 && !resolved && !sightAuthAborted; attempt += 1) {
+                        const now = nowFn();
+                        if (now < pauseUntil) {
+                            await sleep(Math.min(2000, pauseUntil - now));
+                        }
+                        let res;
+                        try {
+                            res = await doFetch(u.toString());
+                        } catch (_e) {
+                            await sleep(Math.min(500, rateLimitBaseBackoffMs));
+                            continue;
+                        }
+                        const status = Number(res?.status) || 0;
+                        if (status === 429) {
+                            await handleRateLimit(parseRetryAfterMs(res), 'visible-states');
+                            continue;
+                        }
+                        if (status === 401 || status === 403) {
+                            sightAuthAborted = true;
+                            onAuthFailure();
+                            break;
+                        }
+                        if (status >= 200 && status < 300) {
+                            resolved = true;
+                            let raw = [];
+                            try { raw = JSON.parse(res.responseText || '[]'); } catch (_e) { raw = []; }
+                            const states = Array.isArray(raw) ? raw : (API.extractStateData(raw, 'FastScanner') || []);
+                            const acquiredSet = new Set(
+                                states.filter((s) => s && s.acquired && s.uid).map((s) => String(s.uid).toLowerCase())
+                            );
+                            const ownedUrls = [];
+                            const ownedItems = [];
+                            chunk.forEach((item) => {
+                                if (acquiredSet.has(item.uid)) {
+                                    ownedUrls.push(item.url);
+                                    ownedItems.push(item);
+                                } else {
+                                    unowned.push(item);
+                                }
+                            });
+                            if (ownedUrls.length > 0) {
+                                db.addDoneUrls(ownedUrls);
+                                db.scheduleSaveDone();
+                                owned += ownedUrls.length;
+                                ownedItems.forEach((it) => notifyItemClaimed(it, 'server-owned'));
+                            }
+                        } else {
+                            await sleep(Math.min(500, rateLimitBaseBackoffMs));
+                        }
+                    }
+
+                    if (!resolved && !sightAuthAborted) {
+                        unowned.push(...chunk);
+                    }
+                }
+
+                for (let idx = 0; idx < unowned.length && !sightAuthAborted; idx += 1) {
+                    const task = unowned[idx];
+                    if (db.isDone(task.url)) continue;
+
+                    if (isConfirmedBundleTask(task)) {
+                        await routeToFallback(task);
+                        fallback += 1;
+                        continue;
+                    }
+
+                    const canApiClaim = Boolean(cfg.USE_API_CLAIM && typeof apiClaim.isAvailable === 'function' && apiClaim.isAvailable());
+                    if (!canApiClaim) {
+                        await routeToFallback(task);
+                        fallback += 1;
+                        continue;
+                    }
+
+                    const now = nowFn();
+                    if (now < pauseUntil) {
+                        await sleep(Math.min(2000, pauseUntil - now));
+                    }
+                    if (claimIntervalMs > 0) {
+                        const sinceLast = nowFn() - lastClaimAt;
+                        if (sinceLast < claimIntervalMs) {
+                            await sleep(claimIntervalMs - sinceLast);
+                        }
+                        lastClaimAt = nowFn();
+                    }
+
+                    let outcome = await runClaimWithSlowPathGuard(task, apiClaim);
+                    if (outcome.serverInternalError && task.offerId) {
+                        outcome = await runClaimWithSlowPathGuard({ ...task, offerId: '' }, apiClaim);
+                    }
+
+                    if (outcome.result === CLAIM_RESULT.SUCCESS) {
+                        noteSuccess();
+                        await db.markAsDone(task, { deferSave: true });
+                        st.sessionCompleted?.add(db.normalizeListingUrl(task.url));
+                        claimed += 1;
+                        notifyItemClaimed(task, 'claimed');
+                        logMsg('info', `[浏览自动领] ✅ ${task.name}`);
+                    } else if (outcome.result === CLAIM_RESULT.RATE_LIMITED) {
+                        await handleRateLimit(outcome.retryAfterMs, 'visible-claim');
+                        const retries = (task._sightRateRetries || 0) + 1;
+                        if (retries <= 2) {
+                            task._sightRateRetries = retries;
+                            unowned.push(task);
+                        } else {
+                            const failRes = await db.markAsFailed(task, { reason: `限速重试失败 (${retries - 1} 次)` });
+                            if (failRes && failRes.retried) fallback += 1;
+                            else failed += 1;
+                        }
+                    } else if (outcome.isBundle) {
+                        task.listingType = 'bundle';
+                        task.isBundle = true;
+                        await routeToFallback(task);
+                        fallback += 1;
+                    } else if (outcome.serverInternalError) {
+                        const failRes = await db.markAsFailed(task, { reason: 'Fab 服务端内部错误 (500 Internal error)，官网按钮亦无法入库' });
+                        if (failRes && failRes.retried) fallback += 1;
+                        else failed += 1;
+                    } else if (outcome.result === CLAIM_RESULT.UNAVAILABLE || outcome.retryable === true) {
+                        await routeToFallback(task);
+                        fallback += 1;
+                    } else {
+                        const reason = outcome.reason || '领取失败';
+                        if (/CSRF|401|未登录|会话/i.test(reason)) {
+                            sightAuthAborted = true;
+                            onAuthFailure();
+                            break;
+                        }
+                        if (task.needsDiscountVerify && /未找到免费许可/.test(reason)) {
+                            continue;
+                        }
+                        const failRes = await db.markAsFailed(task, { reason });
+                        if (failRes && failRes.retried) fallback += 1;
+                        else failed += 1;
+                    }
+                }
+
+                await db.flushSaveDone();
+                try { onUiUpdate(buildSnapshot()); } catch (_e) { /* ignore */ }
+                return { queued: 0, claimed, owned, fallback, failed };
+            } finally {
+                fresh.forEach((it) => sightClaimSet.delete(it.uid));
+                sightClaimInFlightCount = Math.max(0, sightClaimInFlightCount - fresh.length);
+                try { onUiUpdate(buildSnapshot()); } catch (_e) { /* ignore */ }
+            }
+        };
+
+        const run = sightClaimChain.then(job, job);
+        sightClaimChain = run.catch(() => {});
+        return run;
+    };
+
     const configure = (nextDeps = {}) => {
         if (typeof nextDeps.onUiUpdate === 'function') onUiUpdate = nextDeps.onUiUpdate;
         if (typeof nextDeps.onToast === 'function') onToast = nextDeps.onToast;
         if (typeof nextDeps.onAuthFailure === 'function') onAuthFailure = nextDeps.onAuthFailure;
+        if (typeof nextDeps.onItemClaimed === 'function') onItemClaimed = nextDeps.onItemClaimed;
         if (typeof nextDeps.enqueueWorkerFallback === 'function') enqueueFallbackFn = nextDeps.enqueueWorkerFallback;
     };
 
@@ -1508,6 +1803,8 @@ export const createFastScanner = (deps = {}) => {
         stop,
         clearCheckpoint,
         setConcurrency,
+        enqueuePriorityItems,
+        claimVisibleItems,
         isRunning: () => running,
         getStatus: () => buildSnapshot()
     };

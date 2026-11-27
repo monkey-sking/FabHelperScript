@@ -12,46 +12,20 @@ export const Config = {
     WORKER_TIMEOUT: 90000, // 工作标签页超时时间(watchdog 判定卡死)。领取一般 <1min，留足余量避免误杀慢任务
     KEEPALIVE_TICK_MS: 2000, // 后台保活心跳间隔(Web Worker postMessage 频率)
     ENABLE_FREEZE_GUARD: true, // 是否启用 WebRTC 防整页冻结(锁屏/最小化场景需要)
-    // 保持原来的页面枚举逻辑：DOM 滚动负责加载商品、保存页面时间位置，
-    // 不用 cursor API 取代旧 worker 流程。只有实际“加入我的库”动作走 API。
-    USE_API_PIPELINE: false,
-    // 旧 DOM 枚举仍会开 worker 标签页；API 领取支持 3 个并发工作标签页，
+    // 主力领取走主标签 ApiClaim；仅 Bundle 或 5xx 兜底才开后台详情标签页，
     // 并通过 API_CLAIM_MIN_INTERVAL_MS 错开派发节拍，避免同时打满请求触发 429。
     USE_API_CLAIM: true,
     API_CLAIM_MAX_CONCURRENT_WORKERS: 7,
     API_CLAIM_MIN_INTERVAL_MS: 1200,
     DEFAULT_API_SCAN_CONCURRENCY: 4,
     MAX_API_SCAN_CONCURRENCY: 6,
-    DEFAULT_INCREMENTAL_STOP_PAGES: 5,
-    // 新流水线跑完一程后，是否周期性重新枚举。默认 0 = 不自动重扫：
-    // 执行开关保持开启时若自动重扫，脚本会在几秒内把整个免费列表重新翻一遍，
-    // 既无意义地反复请求接口，也放大被风控的概率。需要无人值守巡检时
-    // 把它配成毫秒数（例如 30 * 60 * 1000 表示每半小时重扫一次）。
-    PIPELINE_RESCAN_INTERVAL_MS: 0,
-    // 内存回收（分块刷新续跑）：Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直
-    // 留在 DOM 里（实测 11,893 张免费卡 ≈ 15.5 万节点 / 单渲染进程 2GB）。
-    // 全站 4 万+ 免费商品一次性滚完会线性涨到 6-7GB 并触发 V8 OOM。
-    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的
-    // cursor 从原位置继续，把内存占用重新压回阈值附近。
+    // 内存回收（分块刷新续跑，仅在应急滚页备用模式下启用）：
+    // Fab 的搜索结果不是虚拟列表，滚动过的卡片会一直留在 DOM 里。
+    // 页面生命周期内累积到阈值后，等队列/worker 空闲时刷新页面，靠已保存的 cursor 从原位置继续。
     MEMORY_RECYCLE_ENABLED: true,
     MEMORY_RECYCLE_CARD_THRESHOLD: 3000, // 页面内卡片总数达到该值触发刷新；0 = 关闭
     MEMORY_RECYCLE_MIN_INTERVAL_MS: 45000, // 两次回收的最小间隔（跨刷新，防抖动/防循环）
     MEMORY_RECYCLE_MAX_PER_SESSION: 30, // 单标签页会话最多回收次数，兜底防循环刷新
-    // 领取传输层：新流水线用哪种方式把商品详情页「送到眼前」（即 DOM 回落路径）。
-    //   'none'   —— 不注入 DomClaim。注意：即便为 'none'，ApiClaim（基于已确认端点）
-    //               仍作为领取后端，流水线照常启动、走接口领取。
-    //   'iframe' —— 额外启用同源隐藏 iframe 的 DOM 领取作为回落。该路径尚未经过线上验证，
-    //               所以刻意保持默认关闭：它一旦不工作会把整份列表标成「领取失败」并定型。
-    //   （在主标签页里挂同源隐藏 iframe 加载详情页，由主标签页直接驱动其 DOM 完成领取；
-    //    www.fab.com 返回 x-frame-options: SAMEORIGIN，同源 iframe 是允许的。）
-    // 之所以要单独一个开关而不是跟着 USE_API_PIPELINE 一起开：iframe 领取一旦
-    // 不工作，整份免费列表会被逐条标记成「领取失败」且在事件日志里定型，
-    // 之后再修好也不会重试。未经线上验证的后端不该由总开关顺带激活。
-    CLAIM_TRANSPORT: 'none',
-    // 领取 iframe 的标记参数。带这个参数的详情页是流水线自己塞进隐藏 iframe 的，
-    // 脚本在该帧里必须立刻退出，否则会二次初始化（实例抢占 / UI 重复 / 任务派发），
-    // 与主标签页互相打架。
-    CLAIM_FRAME_PARAM: 'fab_claim_frame',
     UI_CONTAINER_ID: 'fab-helper-container',
     UI_LOG_ID: 'fab-helper-log',
     DB_KEYS: {
@@ -60,11 +34,9 @@ export const Config = {
         TODO: 'fab_todo_v1', // 用于永久存储待办列表
         HIDE: 'fab_hide_v8',
         AUTO_ADD: 'fab_autoAdd_v8', // 自动添加设置键
-        AUTO_SCROLL: 'fab_autoScroll_v1', // 自动滚动页面（自动扫描全部）开关键
+        AUTO_SCROLL: 'fab_autoScroll_v1', // 自动滚动页面（应急备用扫描）开关键
         REMEMBER_POS: 'fab_rememberPos_v8',
         LAST_CURSOR: 'fab_lastCursor_v8', // Store only the cursor string
-        API_CURSOR: 'fab_api_cursor_v1', // API 流水线分页游标，独立于旧 DOM 滚动游标
-        API_CURSOR_SAVED_AT: 'fab_api_cursor_saved_at_v1', // API 分页位置最后保存时间
         // 每个 worker 使用独立的回传键（前缀 + workerId），避免多标签页并发完成时
         // 后者覆盖前者导致报告丢失 / 重复加库的竞态（旧版单键 WORKER_DONE 的 P0 根因）。
         WORKER_DONE_PREFIX: 'fab_worker_done_v8_',
@@ -81,13 +53,10 @@ export const Config = {
         MAX_WORKERS: 'fab_max_workers_v1', // 并发工作标签页数量设置键
         FAST_API_SCAN: 'fab_fast_api_scan_v1', // 极速 API 分片扫描开关
         API_SCAN_CONCURRENCY: 'fab_api_scan_concurrency_v1', // API 扫描并发路数 (1-6)
-        INCREMENTAL_EARLY_STOP: 'fab_incremental_early_stop_v1', // 增量早停开关 (-firstPublishedAt)
-        INCREMENTAL_STOP_PAGES: 'fab_incremental_stop_pages_v1', // 连续全已拥有页数早停阈值
+        AUTO_CLAIM_VISIBLE: 'fab_auto_claim_visible_v1', // 浏览页面时自动领取眼前免费商品
+        DOM_FALLBACK_MODE: 'fab_dom_fallback_mode_v1', // 应急网页滚页备用模式开关
         FAST_SCAN_CHECKPOINT: 'fab_fast_scan_checkpoint_v1', // 极速扫描断点进度
         UI_EXPANDED: 'fab_ui_expanded_v1', // 主面板展开/收起状态
-        // 事件日志：唯一真相源。按规范 uid 追加写入状态事件，
-        // todo / done / failed 全部由它派生，取代多份并行数组手工互清。
-        EVENT_LOG: 'fab_event_log_v1',
         // 其他键值用于会话或主标签页持久化
     },
     SELECTORS: {

@@ -33,7 +33,6 @@ function installMemoryEnv({ cards = 0 } = {}) {
 
 function resetState() {
     State.autoScroll = true;
-    State.apiPipelineActive = false;
     State.appStatus = 'NORMAL';
     State.manualVerificationPending = false;
     State.isAutoScrolling = false;
